@@ -3,7 +3,24 @@
     .version = "0.0.0",
     .fingerprint = 0x9145da0722fc95d5,
     .minimum_zig_version = "0.16.0-dev.253+4314c9653",
-    .dependencies = .{},
+    .dependencies = .{
+        .zig_glfw = .{
+            .url = "git+https://github.com/HaraldWik/zig-glfw#5ba7757c55a89dc2f4c3ec8dbcfa8f873190a77a",
+            .hash = "zig_glfw-0.1.0-u6zPw5q_AADrfa7TB9gmCOTRfEl7f34wrBhlfRNVxQ0X",
+        },
+        .zig_opengl = .{
+            .url = "git+https://github.com/HaraldWik/zig-opengl#15a02476837144cf619e5043f81e921875bb24a2",
+            .hash = "zig_opengl-0.0.0-WXQ8j8U0CACMVqFaEtwtRILEG8c5gLKLrtqoEQQGL80y",
+        },
+        .numz = .{
+            .url = "git+https://github.com/HaraldWik/numz#f5356c61b09babda9d3e71975e35caee78c1e351",
+            .hash = "numz-0.0.2-V-sGm1GVAAAUDV9QaOB2kWcDWBADDF14zx6fLCCF3JOg",
+        },
+        .stb = .{
+            .url = "git+https://github.com/nothings/stb#fede005abaf93d9d7f3a679d1999b2db341b360f",
+            .hash = "N-V-__8AACIvTgCTqOj6KM32YnqNx1bcsaMuGAeKQEIWZ8Ph",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
