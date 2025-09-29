@@ -5,15 +5,35 @@ const nz = @import("numz");
 const stb = @import("stb");
 
 var vertices = [_]f32{
-    -0.5, -0.5, 0.0, 0.0, 0.0,
-    -0.5, 0.5,  0.0, 0.0, 1.0,
-    0.5,  0.5,  0.0, 1.0, 1.0,
-    0.5,  -0.5, 0.0, 1.0, 0.0,
+    1, 1, 1, 1.0, 0.0,
+    1, 1, 0, 0.0, 0.0,
+    1, 0, 1, 1.0, 1.0,
+    1, 0, 0, 0.0, 1.0,
+    0, 1, 1, 0.0, 0.0,
+    0, 1, 0, 1.0, 0.0,
+    0, 0, 1, 0.0, 1.0,
+    0, 0, 0, 1.0, 1.0,
 };
 
 var indices = [_]u32{
+    // Front face
+    4, 6, 0,
+    0, 6, 2,
+    // Back face
+    1, 3, 5,
+    5, 3, 7,
+    // Right face
     0, 2, 1,
-    0, 3, 2,
+    1, 2, 3,
+    // Left face
+    5, 7, 4,
+    4, 7, 6,
+    // Top face
+    4, 0, 5,
+    5, 0, 1,
+    // Bottom face
+    6, 7, 2,
+    2, 7, 3,
 };
 
 pub const vertex: [*:0]const u8 =
@@ -23,11 +43,11 @@ pub const vertex: [*:0]const u8 =
     \\
     \\out vec2 UVs;
     \\
-    \\uniform mat4 u_projection;
+    \\uniform mat4 u_camera;
     \\uniform mat4 u_model;
     \\
     \\void main() {
-    \\    gl_Position = u_projection * u_model * vec4(pos, 1.0);
+    \\    gl_Position = u_camera * u_model * vec4(pos, 1.0);
     \\    UVs = uvs;
     \\}
 ;
@@ -98,10 +118,7 @@ pub fn main() !void {
 
     vao.bind();
 
-    gl.State.enable(.blend, null);
-    gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA); // TODO: use wrapped implementation (doesn't exist yet)
-
-    const player_image: Image = try .init("assets/textures/zigger.png");
+    const player_image: Image = try .init("assets/textures/tile.png");
     defer player_image.deinit();
     const player_texture = try player_image.toTexture();
     defer player_texture.deinit();
@@ -117,37 +134,29 @@ pub fn main() !void {
 
         player.update(window, delta_time);
 
-        gl.clear.color(0.1, 0.5, 0.3, 1.0);
+        gl.State.enable(.blend, null);
+        gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA); // TODO: use wrapped implementation (doesn't exist yet)
+
+        if (glfw.io.Key.p.get(window)) {
+            gl.State.enable(.depth_test, null);
+            gl.c.glDepthFunc(gl.c.GL_LESS);
+        } else {
+            gl.State.disable(.depth_test, null);
+        }
+
         gl.clear.buffer(.{ .color = true, .depth = true });
+        gl.clear.color(0.1, 0.5, 0.3, 1.0);
+        gl.clear.depth(1000);
+
         gl.draw.viewport(0, 0, width, height);
 
-        const yaw = player.transform.rotation[1]; // yaw (around Y axis)
-        const pitch = player.transform.rotation[0]; // pitch (around X axis)
-
-        const view: nz.Mat4x4(f32) = .lookAt(
-            player.transform.position,
-            player.transform.position + nz.Vec3(f32){
-                @cos(yaw) * @cos(pitch),
-                @sin(pitch),
-                @sin(yaw) * @cos(pitch),
-            },
-            nz.Vec3(f32){ 0, 1, 0 },
-        );
-
-        const perspective: nz.Mat4x4(f32) = .perspective(
-            std.math.degreesToRadians(45),
-            @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height)),
-            1,
-            300,
-        );
-
-        const projection: nz.Mat4x4(f32) = .mul(perspective, view);
+        const camera_mat: nz.Mat4x4(f32) = camera.toMat4x4(player.transform, @floatFromInt(width), @floatFromInt(height), 1.0, 10_000.0);
 
         program.use();
-        try program.setUniform("u_projection", .{ .f32x4x4 = projection.d });
+        try program.setUniform("u_camera", .{ .f32x4x4 = camera_mat.d });
         try program.setUniform("u_model", .{
             .f32x4x4 = (nz.Transform3D(f32){
-                .position = .{ 0, 0, -10 },
+                .position = .{ @cos(time / 10) * 30, @cos(time / 10) * 1, @sin(time / 10) * 30 },
                 .rotation = .{ 0, @mod(time * 100, 360), 0 },
             }).toMat4x4().d,
         });
@@ -227,5 +236,46 @@ pub const Player = struct {
 
         if (glfw.io.Key.left.get(window)) self.transform.rotation[1] -= speed * delta_time;
         if (glfw.io.Key.right.get(window)) self.transform.rotation[1] += speed * delta_time;
+    }
+};
+
+pub const camera = struct {
+    /// Builds a projection * view matrix for the given transform.
+    /// near = 1.0, far = 10000.0 by default.
+    pub fn toMat4x4(
+        transform: nz.Transform3D(f32),
+        width: f32,
+        height: f32,
+        near: f32,
+        far: f32,
+    ) nz.Mat4x4(f32) {
+        // assuming transform.rotation = { pitch, yaw, roll } in radians
+        const pitch = transform.rotation[0];
+        const yaw = transform.rotation[1];
+        // roll is ignored for a basic FPS-style camera
+
+        // Forward vector from yaw/pitch
+        const forward: nz.Vec3(f32) = nz.vec.normalize(nz.Vec3(f32){
+            @cos(yaw) * @cos(pitch),
+            @sin(pitch),
+            @sin(yaw) * @cos(pitch),
+        });
+
+        const up: nz.Vec3(f32) = .{ 0.0, 1.0, 0.0 };
+
+        const view: nz.Mat4x4(f32) = .lookAt(
+            transform.position,
+            transform.position + forward,
+            up,
+        );
+
+        const proj: nz.Mat4x4(f32) = .perspective(
+            std.math.degreesToRadians(45.0),
+            width / height,
+            near,
+            far,
+        );
+
+        return .mul(proj, view); // Projection * View
     }
 };

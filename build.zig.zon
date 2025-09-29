@@ -9,8 +9,8 @@
             .hash = "zig_glfw-0.1.0-u6zPw5q_AADrfa7TB9gmCOTRfEl7f34wrBhlfRNVxQ0X",
         },
         .zig_opengl = .{
-            .url = "git+https://github.com/HaraldWik/zig-opengl#15a02476837144cf619e5043f81e921875bb24a2",
-            .hash = "zig_opengl-0.0.0-WXQ8j8U0CACMVqFaEtwtRILEG8c5gLKLrtqoEQQGL80y",
+            .url = "git+https://github.com/HaraldWik/zig-opengl#8b5e8bc1cb461bdf2be79d0735595678c758eaf1",
+            .hash = "zig_opengl-0.0.0-WXQ8j4w8CADfsWyKsMbGvPa0xOuxhQ61Kil2FKzmQOW1",
         },
         .numz = .{
             .url = "git+https://github.com/HaraldWik/numz#f5356c61b09babda9d3e71975e35caee78c1e351",
@@ -25,5 +25,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "README.md",
     },
 }
