@@ -6,23 +6,21 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-pub mod add_reducer;
+pub mod db_vector_3_type;
 pub mod identity_connected_reducer;
 pub mod identity_disconnected_reducer;
-pub mod person_table;
-pub mod person_type;
-pub mod say_hello_reducer;
+pub mod player_table;
+pub mod player_type;
 
-pub use add_reducer::{add, set_flags_for_add, AddCallbackId};
+pub use db_vector_3_type::DbVector3;
 pub use identity_connected_reducer::{
     identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId,
 };
 pub use identity_disconnected_reducer::{
     identity_disconnected, set_flags_for_identity_disconnected, IdentityDisconnectedCallbackId,
 };
-pub use person_table::*;
-pub use person_type::Person;
-pub use say_hello_reducer::{say_hello, set_flags_for_say_hello, SayHelloCallbackId};
+pub use player_table::*;
+pub use player_type::Player;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -32,10 +30,8 @@ pub use say_hello_reducer::{say_hello, set_flags_for_say_hello, SayHelloCallback
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    Add { name: String },
     IdentityConnected,
     IdentityDisconnected,
-    SayHello,
 }
 
 impl __sdk::InModule for Reducer {
@@ -45,10 +41,8 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::Add { .. } => "add",
             Reducer::IdentityConnected => "identity_connected",
             Reducer::IdentityDisconnected => "identity_disconnected",
-            Reducer::SayHello => "say_hello",
         }
     }
 }
@@ -56,9 +50,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
-            "add" => {
-                Ok(__sdk::parse_reducer_args::<add_reducer::AddArgs>("add", &value.args)?.into())
-            }
             "identity_connected" => Ok(__sdk::parse_reducer_args::<
                 identity_connected_reducer::IdentityConnectedArgs,
             >("identity_connected", &value.args)?
@@ -67,13 +58,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
             >("identity_disconnected", &value.args)?
             .into()),
-            "say_hello" => Ok(
-                __sdk::parse_reducer_args::<say_hello_reducer::SayHelloArgs>(
-                    "say_hello",
-                    &value.args,
-                )?
-                .into(),
-            ),
             unknown => {
                 Err(
                     __sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo")
@@ -88,7 +72,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-    person: __sdk::TableUpdate<Person>,
+    player: __sdk::TableUpdate<Player>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -97,9 +81,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "person" => db_update
-                    .person
-                    .append(person_table::parse_table_update(table_update)?),
+                "player" => db_update
+                    .player
+                    .append(player_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
@@ -126,7 +110,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
-        diff.person = cache.apply_diff_to_table::<Person>("person", &self.person);
+        diff.player = cache
+            .apply_diff_to_table::<Player>("player", &self.player)
+            .with_updates_by_pk(|row| &row.identity);
 
         diff
     }
@@ -136,7 +122,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-    person: __sdk::TableAppliedDiff<'r, Person>,
+    player: __sdk::TableAppliedDiff<'r, Player>,
 }
 
 impl __sdk::InModule for AppliedDiff<'_> {
@@ -149,7 +135,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
-        callbacks.invoke_table_row_callbacks::<Person>("person", &self.person, event);
+        callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
     }
 }
 
@@ -740,6 +726,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-        person_table::register_table(client_cache);
+        player_table::register_table(client_cache);
     }
 }

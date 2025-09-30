@@ -1,9 +1,0 @@
-/home/lucas/projects/Youtube/PlanetaryZigma/target/release/deps/spacetimedb_bindings_macro-e7e0d6a992e1a8fb.d: /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/lib.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/reducer.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/sats.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/table.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/util.rs
-
-/home/lucas/projects/Youtube/PlanetaryZigma/target/release/deps/libspacetimedb_bindings_macro-e7e0d6a992e1a8fb.so: /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/lib.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/reducer.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/sats.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/table.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/util.rs
-
-/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/lib.rs:
-/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/reducer.rs:
-/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/sats.rs:
-/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/table.rs:
-/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-bindings-macro-1.4.0/src/util.rs:
