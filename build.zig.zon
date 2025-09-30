@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0-dev.253+4314c9653",
     .dependencies = .{
         .zig_glfw = .{
-            .url = "git+https://github.com/HaraldWik/zig-glfw#5ba7757c55a89dc2f4c3ec8dbcfa8f873190a77a",
-            .hash = "zig_glfw-0.1.0-u6zPw5q_AADrfa7TB9gmCOTRfEl7f34wrBhlfRNVxQ0X",
+            .url = "git+https://github.com/HaraldWik/zig-glfw#86fbdfb634dac11e7bba72e584007c4fb731fb39",
+            .hash = "zig_glfw-0.1.0-u6zPw32_AAAOLY7Z3ejNoAMnwuCTFyMttT1-O5HfdXzF",
         },
         .zig_opengl = .{
             .url = "git+https://github.com/HaraldWik/zig-opengl#8b5e8bc1cb461bdf2be79d0735595678c758eaf1",

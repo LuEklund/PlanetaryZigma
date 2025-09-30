@@ -224,18 +224,42 @@ pub const Image = struct {
 
 pub const Player = struct {
     transform: nz.Transform3D(f32) = .{},
+    speed: f32 = 10,
+    sensitivity: f64 = 1,
 
     pub fn update(self: *@This(), window: *glfw.Window, delta_time: f32) void {
-        const speed: f32 = if (glfw.io.Key.left_shift.get(window)) 13 else 3;
-        if (glfw.io.Key.a.get(window)) self.transform.position[0] -= speed * delta_time;
-        if (glfw.io.Key.d.get(window)) self.transform.position[0] += speed * delta_time;
-        if (glfw.io.Key.w.get(window)) self.transform.position[2] += speed * delta_time;
-        if (glfw.io.Key.s.get(window)) self.transform.position[2] -= speed * delta_time;
-        if (glfw.io.Key.space.get(window)) self.transform.position[1] += speed * delta_time;
-        if (glfw.io.Key.left_shift.get(window)) self.transform.position[1] -= speed * delta_time;
+        if (glfw.io.Key.p.get(window)) std.debug.print("{any}\n", .{self.transform});
+        const pitch = &self.transform.rotation[0];
+        const yaw = &self.transform.rotation[1];
 
-        if (glfw.io.Key.left.get(window)) self.transform.rotation[1] -= speed * delta_time;
-        if (glfw.io.Key.right.get(window)) self.transform.rotation[1] += speed * delta_time;
+        pitch.* = std.math.clamp(pitch.*, std.math.degreesToRadians(-89.9), std.math.degreesToRadians(89.9));
+
+        const forward = nz.vec.forward(self.transform.position, self.transform.position + nz.Vec3(f32){ @cos(yaw.*) * @cos(pitch.*), @sin(pitch.*), @sin(yaw.*) * @cos(pitch.*) });
+        const right: nz.Vec3(f32) = nz.vec.normalize(nz.vec.cross(forward, .{ 0, 1, 0 }));
+        const up = nz.vec.normalize(nz.vec.cross(right, forward));
+
+        var move: nz.Vec3(f32) = .{ 0, 0, 0 };
+        const velocity = self.speed * delta_time;
+
+        if (glfw.io.Key.w.get(window)) move -= nz.vec.scale(forward, velocity);
+        if (glfw.io.Key.s.get(window)) move += nz.vec.scale(forward, velocity);
+        if (glfw.io.Key.a.get(window)) move += nz.vec.scale(right, velocity);
+        if (glfw.io.Key.d.get(window)) move -= nz.vec.scale(right, velocity);
+        if (glfw.io.Key.space.get(window)) move += nz.vec.scale(up, velocity);
+        // if (app.isKeyDown(.rctrl)) move -= nz.vec.scale(up, velocity);
+
+        const speed_multiplier: f32 = if (glfw.io.Key.left_shift.get(window)) 3.25 else if (glfw.io.Key.left_control.get(window)) 0.1 else 2;
+
+        self.transform.position += nz.vec.scale(move, speed_multiplier);
+
+        if (glfw.io.Key.r.get(window)) {
+            yaw.* = 0;
+            pitch.* = 0;
+            self.transform.position = .{ 0, 0, 0 };
+        }
+
+        if (glfw.io.Key.left.get(window)) self.transform.rotation[1] -= self.speed * delta_time;
+        if (glfw.io.Key.right.get(window)) self.transform.rotation[1] += self.speed * delta_time;
     }
 };
 
