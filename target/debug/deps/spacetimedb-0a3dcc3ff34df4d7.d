@@ -1,0 +1,11 @@
+/home/lucas/projects/Youtube/PlanetaryZigma/target/debug/deps/spacetimedb-0a3dcc3ff34df4d7.d: /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/lib.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/log_stopwatch.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/logger.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rng.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rt.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/table.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/../README.md
+
+/home/lucas/projects/Youtube/PlanetaryZigma/target/debug/deps/libspacetimedb-0a3dcc3ff34df4d7.rmeta: /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/lib.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/log_stopwatch.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/logger.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rng.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rt.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/table.rs /home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/../README.md
+
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/lib.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/log_stopwatch.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/logger.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rng.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/rt.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/table.rs:
+/home/lucas/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spacetimedb-1.4.0/src/../README.md:

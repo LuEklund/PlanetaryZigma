@@ -4,13 +4,46 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zig_glfw = b.dependency("zig_glfw", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zig_glfw");
+
+    const zig_opengl = b.dependency("zig_opengl", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zig_opengl");
+
+    const numz = b.dependency("numz", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("numz");
+
+    const stb = b.addTranslateC(.{
+        .root_source_file = b.addWriteFiles().add(
+            "c.h",
+            \\#define STB_IMAGE_IMPLEMENTATION
+            \\#define STBI_ONLY_PNG
+            \\#include "stb_image.h"
+            ,
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    stb.addIncludePath(b.dependency("stb", .{}).path("."));
+
     const exe = b.addExecutable(.{
         .name = "PlanetaryZigma",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{},
+            .imports = &.{
+                .{ .name = "glfw", .module = zig_glfw },
+                .{ .name = "gl", .module = zig_opengl },
+                .{ .name = "numz", .module = numz },
+                .{ .name = "stb", .module = stb.createModule() },
+            },
         }),
     });
 
