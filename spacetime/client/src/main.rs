@@ -1,4 +1,6 @@
 mod module_bindings;
+use std::ptr::{null, null_mut};
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
@@ -88,7 +90,7 @@ fn user_input_loop(ctx: &DbConnection) {
         if let Some(name) = line.strip_prefix("/name ") {
             // ctx.reducers.set_name(name.to_string()).unwrap();
         } else {
-            ctx.reducers.say_hello();
+            // ctx.reducers.say_hello();
         }
     }
 }

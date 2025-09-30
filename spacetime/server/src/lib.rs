@@ -26,13 +26,21 @@ pub fn init(ctx: &ReducerContext) {
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext)  -> Result<(), String> {
     log::info!("Identity connected, {}!", ctx.sender);
-    let _ = ctx.db.player().try_insert(Player{
-        identity: ctx.sender,
-        name: "Lucas".to_string(),
-        position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-        rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-    });
+    if let Some(player) = ctx.db.player().identity().find(ctx.sender)
+    {
+       _ = player;
+    }
+    else {
+         let _ = ctx.db.player().try_insert(Player{
+            identity: ctx.sender,
+            name: "Lucas".to_string(),
+            position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+            rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+        });
+    }
+    log::info!("Player tot: , {}!", ctx.db.player().count());
     Ok(())
+
 }
 
 #[spacetimedb::reducer(client_disconnected)]
@@ -41,6 +49,7 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
     {
         log::info!("Identity Disconnected, {}!", ctx.sender);
         ctx.db.player().delete(player);
+        log::info!("Player tot: , {}!", ctx.db.player().count());
     }
 }
 
