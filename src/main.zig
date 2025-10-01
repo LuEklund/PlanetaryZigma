@@ -2,7 +2,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const gl = @import("gl");
 const nz = @import("numz");
-const Render = @import("Render.zig");
+const Render = @import("render.zig");
 
 var vertices = [_]f32{
     1, 1, 1, 1.0, 0.0,
@@ -78,7 +78,7 @@ pub fn main() !void {
     });
     defer window.deinit();
 
-    Render.init();
+    Render.init(window);
     defer Render.deinit();
 
     const pipeline = try Render.pipeline.init(vertex, fragment);
@@ -126,7 +126,7 @@ pub fn main() !void {
 
         player_texture.bind(0);
 
-        model.draw(.{
+        try model.draw(pipeline, .{
             .position = .{ @cos(time / 10) * 30, @cos(time / 10) * 1, @sin(time / 10) * 30 },
             .rotation = .{ 0, @mod(time * 100, 360), 0 },
         });

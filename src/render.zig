@@ -4,6 +4,8 @@ const gl = @import("gl");
 const nz = @import("numz");
 const stb = @import("stb");
 
+const Player = struct {};
+
 pub export fn init(window: *glfw.Window) void {
     glfw.opengl.makeContextCurrent(window);
 
@@ -42,7 +44,7 @@ pub const Model = extern struct {
     ebo: gl.Buffer,
     index_count: usize,
 
-    pub fn init(vertices: anytype, indices: anytype) @This() {
+    pub fn init(vertices: anytype, indices: anytype) !@This() {
         const vao: gl.Vao = try .init();
         const vbo: gl.Buffer = try .init();
         const ebo: gl.Buffer = try .init();
@@ -70,9 +72,13 @@ pub const Model = extern struct {
         self.vao.deinit();
     }
 
-    pub fn draw(self: @This(), transform: nz.Transform3D(f32)) void {
+    pub fn draw(
+        self: @This(),
+        program: gl.Program,
+        transform: nz.Transform3D(f32),
+    ) !void {
         self.vao.bind();
-        try pipeline.setUniform("u_model", .{ .f32x4x4 = transform.toMat4x4().d });
+        try program.setUniform("u_model", .{ .f32x4x4 = transform.toMat4x4().d });
 
         gl.draw.elements(.triangles, self.index_count, u32, null);
     }
