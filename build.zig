@@ -22,8 +22,8 @@ pub fn build(b: *std.Build) void {
     const stb = b.addTranslateC(.{
         .root_source_file = b.addWriteFiles().add(
             "c.h",
-            \\#define STB_IMAGE_IMPLEMENTATION
             \\#define STBI_ONLY_PNG
+            \\#define STB_IMAGE_IMPLEMENTATION
             \\#include "stb_image.h"
             ,
         ),
