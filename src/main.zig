@@ -2,7 +2,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const gl = @import("gl");
 const nz = @import("numz");
-const stb = @import("stb");
+const Render = @import("render.zig");
 
 var vertices = [_]f32{
     1, 1, 1, 1.0, 0.0,
@@ -78,47 +78,16 @@ pub fn main() !void {
     });
     defer window.deinit();
 
-    glfw.opengl.makeContextCurrent(window);
-    defer glfw.opengl.makeContextCurrent(null);
+    Render.init(window);
+    defer Render.deinit();
 
-    try gl.init(glfw.opengl.getProcAddress);
-    gl.debug.set(null);
+    const pipeline = try Render.pipeline.init(vertex, fragment);
+    defer pipeline.deinit();
 
-    const vertex_shader: gl.Shader = .init(.vertex);
-    defer vertex_shader.deinit();
-    vertex_shader.source(vertex);
-    try vertex_shader.compile();
+    const model: Render.Model = try .init(&vertices, &indices);
+    defer model.deinit();
 
-    const fragment_shader: gl.Shader = .init(.fragment);
-    defer fragment_shader.deinit();
-    fragment_shader.source(fragment);
-    try fragment_shader.compile();
-
-    const program: gl.Program = try .init();
-    defer program.deinit();
-    program.attach(vertex_shader);
-    program.attach(fragment_shader);
-    try program.link();
-
-    const vao: gl.Vao = try .init();
-    const vbo: gl.Buffer = try .init();
-    const ebo: gl.Buffer = try .init();
-    defer vao.deinit();
-    defer vbo.deinit();
-    defer ebo.deinit();
-
-    vbo.bufferData(.static_draw, &vertices);
-    ebo.bufferData(.static_draw, &indices);
-
-    vao.vertexAttribute(0, 0, 3, f32, false, 0);
-    vao.vertexAttribute(1, 0, 2, f32, false, 3 * @sizeOf(f32));
-
-    vao.vertexBuffer(vbo, 0, 0, 5 * @sizeOf(f32));
-    vao.elementBuffer(ebo);
-
-    vao.bind();
-
-    const player_image: Image = try .init("assets/textures/tile.png");
+    const player_image: Render.Image = try .init("assets/textures/tile.png");
     defer player_image.deinit();
     const player_texture = try player_image.toTexture();
     defer player_texture.deinit();
@@ -152,17 +121,15 @@ pub fn main() !void {
 
         const camera_mat: nz.Mat4x4(f32) = camera.toMat4x4(player.transform, @floatFromInt(width), @floatFromInt(height), 1.0, 10_000.0);
 
-        program.use();
-        try program.setUniform("u_camera", .{ .f32x4x4 = camera_mat.d });
-        try program.setUniform("u_model", .{
-            .f32x4x4 = (nz.Transform3D(f32){
-                .position = .{ @cos(time / 10) * 30, @cos(time / 10) * 1, @sin(time / 10) * 30 },
-                .rotation = .{ 0, @mod(time * 100, 360), 0 },
-            }).toMat4x4().d,
-        });
+        pipeline.use();
+        try pipeline.setUniform("u_camera", .{ .f32x4x4 = camera_mat.d });
+
         player_texture.bind(0);
 
-        gl.draw.elements(.triangles, indices.len, u32, null);
+        try model.draw(pipeline, .{
+            .position = .{ @cos(time / 10) * 30, @cos(time / 10) * 1, @sin(time / 10) * 30 },
+            .rotation = .{ 0, @mod(time * 100, 360), 0 },
+        });
 
         try glfw.opengl.swapBuffers(window);
         try window.setTitle(@ptrCast(try std.fmt.allocPrint(std.heap.page_allocator, "{d:2.2} fps", .{1 / delta_time})));
@@ -185,42 +152,6 @@ pub fn getDeltaTime() !f32 {
 
     return @as(f32, @floatFromInt(dt_ns)) / 1_000_000_000.0;
 }
-
-pub const Image = struct {
-    width: usize,
-    height: usize,
-    pixels: [*]u8,
-
-    pub fn init(file_path: [*:0]const u8) !@This() {
-        var width: c_int = undefined;
-        var height: c_int = undefined;
-        var channels: c_int = undefined;
-        // 4 = RGBA
-        stb.stbi_set_flip_vertically_on_load(@intFromBool(true));
-        const pixels = stb.stbi_load(file_path, &width, &height, &channels, 4) orelse {
-            std.log.err("Failed to load image: {s}", .{stb.stbi_failure_reason()});
-            return error.LoadImage;
-        };
-        return .{ .width = @intCast(width), .height = @intCast(height), .pixels = @ptrCast(pixels) };
-    }
-
-    pub fn deinit(self: @This()) void {
-        stb.stbi_image_free(@ptrCast(self.pixels));
-    }
-
-    pub fn toTexture(self: @This()) !gl.Texture {
-        const texture: gl.Texture = try .init(.@"2d");
-
-        texture.setParamater(.{ .min_filter = .linear });
-        texture.setParamater(.{ .mag_filter = .linear });
-        texture.setParamater(.{ .wrap = .{ .s = .repeat, .t = .repeat } });
-
-        texture.store(.{ .@"2d" = .{ .levels = 1, .format = .rgba8, .width = self.width, .height = self.height } });
-        texture.setSubImage(.{ .@"2d" = .{ .width = self.width, .height = self.height } }, 0, .rgba8, self.pixels);
-
-        return texture;
-    }
-};
 
 pub const Player = struct {
     transform: nz.Transform3D(f32) = .{},
