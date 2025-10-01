@@ -4,17 +4,32 @@ const gl = @import("gl");
 const nz = @import("numz");
 const stb = @import("stb");
 
-const Player = struct {};
+pub var players: [2]Player = undefined;
+pub var player_count: usize = 3;
+
+const Player = struct {
+    transform: nz.Transform3D(f32),
+};
 
 pub export fn init(window: *glfw.Window) void {
     glfw.opengl.makeContextCurrent(window);
 
     gl.init(glfw.opengl.getProcAddress) catch |err| @panic(@errorName(err));
     gl.debug.set(null);
+    players[0] = .{ .transform = .{ .position = .{ -1, 0, -1 } } };
+    players[1] = .{ .transform = .{ .position = .{ 1, 0, 1 } } };
 }
 
 pub export fn deinit() void {
     glfw.opengl.makeContextCurrent(null);
+}
+
+pub export fn player_connect() void {
+    player_count += 1;
+}
+
+pub export fn player_disconnect() void {
+    player_count -= 1;
 }
 
 pub const pipeline = struct {
@@ -75,12 +90,19 @@ pub const Model = extern struct {
     pub fn draw(
         self: @This(),
         program: gl.Program,
-        transform: nz.Transform3D(f32),
     ) !void {
         self.vao.bind();
-        try program.setUniform("u_model", .{ .f32x4x4 = transform.toMat4x4().d });
+        var transform2 = players[0].transform;
+        for (0..player_count) |i| {
+            transform2.position[0] = @floatFromInt(i);
+            try program.setUniform("u_model", .{ .f32x4x4 = transform2.toMat4x4().d });
+            gl.draw.elements(.triangles, self.index_count, u32, null);
+        }
 
-        gl.draw.elements(.triangles, self.index_count, u32, null);
+        // for (0..2) |i| {
+        //     try program.setUniform("u_model", .{ .f32x4x4 = players[i].transform.toMat4x4().d });
+        //     gl.draw.elements(.triangles, self.index_count, u32, null);
+        // }
     }
 };
 
