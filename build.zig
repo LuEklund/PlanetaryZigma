@@ -49,6 +49,23 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const render_lib = b.addLibrary(.{
+        .name = "render",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/render.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "glfw", .module = zig_glfw },
+                .{ .name = "gl", .module = zig_opengl },
+                .{ .name = "numz", .module = numz },
+                .{ .name = "stb", .module = stb.createModule() },
+            },
+        }),
+    });
+
+    b.installArtifact(render_lib);
+
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);

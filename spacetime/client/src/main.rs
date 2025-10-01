@@ -5,6 +5,14 @@ use module_bindings::*;
 
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
+#[link(name = "render")] 
+unsafe extern "C" {
+    // pub fn init(window: GLFWwindowPtr);
+    pub fn deinit();
+
+    pub fn player_connect();
+    pub fn player_disconnect();
+}
 
 /// The URI of the SpacetimeDB instance hosting our chat database and module.
 const HOST: &str = "http://localhost:3000";

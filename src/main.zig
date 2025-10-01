@@ -126,10 +126,7 @@ pub fn main() !void {
 
         player_texture.bind(0);
 
-        try model.draw(pipeline, .{
-            .position = .{ @cos(time / 10) * 30, @cos(time / 10) * 1, @sin(time / 10) * 30 },
-            .rotation = .{ 0, @mod(time * 100, 360), 0 },
-        });
+        try model.draw(pipeline);
 
         try glfw.opengl.swapBuffers(window);
         try window.setTitle(@ptrCast(try std.fmt.allocPrint(std.heap.page_allocator, "{d:2.2} fps", .{1 / delta_time})));
