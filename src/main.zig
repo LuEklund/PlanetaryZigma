@@ -65,24 +65,11 @@ pub const fragment: [*:0]const u8 =
 ;
 
 pub fn main() !void {
-    try glfw.init();
-    defer glfw.deinit();
+    const window = Render.init();
+    defer Render.deinit(window);
 
-    glfw.Window.Hint.set(.{ .context_version_major = 4 });
-    glfw.Window.Hint.set(.{ .context_version_minor = 6 });
-    glfw.Window.Hint.set(.{ .opengl_profile = .core });
-
-    const window: *glfw.Window = try .init(.{
-        .title = "Hello, world!",
-        .size = .{ .width = 900, .height = 800 },
-    });
-    defer window.deinit();
-
-    Render.init(window);
-    defer Render.deinit();
-
-    const pipeline = try Render.pipeline.init(vertex, fragment);
-    defer pipeline.deinit();
+    const pipeline = Render.initPipeline(vertex, fragment);
+    defer Render.deinitPipeline(pipeline);
 
     const model: Render.Model = try .init(&vertices, &indices);
     defer model.deinit();

@@ -7,7 +7,7 @@ use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Ta
 
 #[link(name = "render")] 
 unsafe extern "C" {
-    // pub fn init(window: GLFWwindowPtr);
+    pub fn init();
     pub fn deinit();
 
     pub fn player_connect();

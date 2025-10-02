@@ -1,6 +1,7 @@
 const std = @import("std");
-const glfw = @import("glfw");
+
 const gl = @import("gl");
+const glfw = @import("glfw");
 const nz = @import("numz");
 const stb = @import("stb");
 
@@ -11,17 +12,44 @@ const Player = struct {
     transform: nz.Transform3D(f32),
 };
 
-pub export fn init(window: *glfw.Window) void {
+pub export fn init() *glfw.Window {
+    const window = initWindow() catch |err| @panic(@errorName(err));
+
     glfw.opengl.makeContextCurrent(window);
 
     gl.init(glfw.opengl.getProcAddress) catch |err| @panic(@errorName(err));
     gl.debug.set(null);
     players[0] = .{ .transform = .{ .position = .{ -1, 0, -1 } } };
     players[1] = .{ .transform = .{ .position = .{ 1, 0, 1 } } };
+    return window;
 }
 
-pub export fn deinit() void {
+pub fn initWindow() !*glfw.Window {
+    try glfw.init();
+
+    glfw.Window.Hint.set(.{ .context_version_major = 4 });
+    glfw.Window.Hint.set(.{ .context_version_minor = 6 });
+    glfw.Window.Hint.set(.{ .opengl_profile = .core });
+
+    const window: *glfw.Window = try .init(.{
+        .title = "Hello, world!",
+        .size = .{ .width = 900, .height = 800 },
+    });
+    return window;
+}
+
+pub export fn deinit(window: *glfw.Window) void {
     glfw.opengl.makeContextCurrent(null);
+    window.deinit();
+    glfw.deinit();
+}
+
+pub export fn initPipeline(vertex: [*:0]const u8, fragment: [*:0]const u8) gl.Program {
+    return pipeline.init(vertex, fragment) catch @enumFromInt(0);
+}
+
+pub export fn deinitPipeline(program: gl.Program) void {
+    program.deinit();
 }
 
 pub export fn player_connect() void {
@@ -94,7 +122,8 @@ pub const Model = extern struct {
         self.vao.bind();
         var transform2 = players[0].transform;
         for (0..player_count) |i| {
-            transform2.position[0] = @floatFromInt(i);
+            transform2.position[2] = @floatFromInt(i * 2);
+            transform2.position[2] = -transform2.position[2];
             try program.setUniform("u_model", .{ .f32x4x4 = transform2.toMat4x4().d });
             gl.draw.elements(.triangles, self.index_count, u32, null);
         }
