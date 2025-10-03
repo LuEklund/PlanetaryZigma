@@ -6,7 +6,7 @@ const nz = @import("numz");
 const stb = @import("stb");
 
 pub var player: Player = undefined;
-pub var player_count: usize = 3;
+pub var player_count: usize = 0;
 pub var model: Model = undefined;
 pub var player_image: Image = undefined;
 pub var player_texture: gl.Texture = undefined;
@@ -43,6 +43,34 @@ var indices = [_]u32{
     2, 7, 3,
 };
 
+pub const vertex: [*:0]const u8 =
+    \\#version 460 core
+    \\layout (location = 0) in vec3 pos;
+    \\layout (location = 1) in vec2 uvs;
+    \\
+    \\out vec2 UVs;
+    \\
+    \\uniform mat4 u_camera;
+    \\uniform mat4 u_model;
+    \\
+    \\void main() {
+    \\    gl_Position = u_camera * u_model * vec4(pos, 1.0);
+    \\    UVs = uvs;
+    \\}
+;
+
+pub const fragment: [*:0]const u8 =
+    \\#version 460 core
+    \\in vec2 UVs;
+    \\out vec4 FragColor;
+    \\
+    \\uniform sampler2D tex;
+    \\
+    \\void main() {
+    \\    FragColor = texture(tex, UVs);
+    \\}
+;
+
 pub export fn init() *glfw.Window {
     const window = initWindow() catch |err| @panic(@errorName(err));
 
@@ -74,11 +102,15 @@ pub export fn deinit(window: *glfw.Window) void {
     glfw.deinit();
 }
 
-pub export fn initPipeline(vertex: [*:0]const u8, fragment: [*:0]const u8) gl.Program {
+pub export fn initPipeline() gl.Program {
+    std.log.debug("Model\n", .{});
     model = Model.init() catch return @enumFromInt(0);
+    std.log.debug("Image\n", .{});
     player_image = Image.init("assets/textures/tile.png") catch return @enumFromInt(0);
+    std.log.debug("Textire\n", .{});
     player_texture = player_image.toTexture() catch return @enumFromInt(0);
-    return pipeline.init(vertex, fragment) catch @enumFromInt(0);
+    std.log.debug("Pipeline\n", .{});
+    return pipeline.init() catch @enumFromInt(0);
 }
 
 pub export fn deinitPipeline(program: gl.Program) void {
@@ -91,30 +123,23 @@ pub export fn update(
     window: *glfw.Window,
     delta_time: f32,
 ) void {
-    _ = window;
-    _ = delta_time;
-    // glfw.io.events.poll();
-    // player.update(window, delta_time);
+    glfw.io.events.poll();
+    player.update(window, delta_time);
 }
 
 pub export fn draw(
     program: gl.Program,
     window: *glfw.Window,
 ) void {
-    std.log.debug("1", .{});
-
     const width: usize, const height: usize = window.getSize().toArray();
-    std.log.debug("2", .{});
 
     gl.State.enable(.blend, null);
     gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA); // TODO: use wrapped implementation (doesn't exist yet)
-    std.log.debug("3", .{});
 
     gl.clear.buffer(.{ .color = true, .depth = true });
     gl.clear.color(0.1, 0.5, 0.3, 1.0);
     gl.clear.depth(1000);
     gl.draw.viewport(0, 0, width, height);
-    std.log.debug("4", .{});
 
     const camera_mat: nz.Mat4x4(f32) = camera.toMat4x4(player.transform, @floatFromInt(width), @floatFromInt(height), 1.0, 10_000.0);
     program.use();
@@ -123,21 +148,19 @@ pub export fn draw(
         std.log.debug("ERR", .{});
         return;
     };
-    std.log.debug("5", .{});
 
     player_texture.bind(0);
 
     for (0..player_count) |i| {
-        const og_pos = model.transform.position[2];
+        const og_pos = model.transform.position[0];
         model.transform.position[0] = @floatFromInt(i);
-        model.transform.position[0] = model.transform.position[2];
+        model.transform.position[0] = -model.transform.position[0];
         model.draw(program) catch {
             std.log.debug("ERR-1", .{});
             continue;
         };
         model.transform.position[0] = og_pos;
     }
-    std.log.debug("6", .{});
 
     glfw.opengl.swapBuffers(window) catch {
         std.log.debug("ERR2", .{});
@@ -151,10 +174,10 @@ pub export fn draw(
         std.log.debug("ERR2", .{});
         return;
     };
-    std.log.debug("7", .{});
 }
 
 pub export fn player_connect() void {
+    std.log.debug("Player COnnected {d}", .{player_count});
     player_count += 1;
 }
 
@@ -163,7 +186,7 @@ pub export fn player_disconnect() void {
 }
 
 pub const pipeline = struct {
-    pub fn init(vertex: [*:0]const u8, fragment: [*:0]const u8) !gl.Program {
+    pub fn init() !gl.Program {
         const vertex_shader: gl.Shader = .init(.vertex);
         defer vertex_shader.deinit();
         vertex_shader.source(vertex);

@@ -62,6 +62,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "stb", .module = stb.createModule() },
             },
         }),
+        .linkage = .dynamic,
     });
 
     b.installArtifact(render_lib);
