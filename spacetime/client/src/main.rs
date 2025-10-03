@@ -1,5 +1,7 @@
 mod module_bindings;
 use std::ptr::{null, null_mut};
+use std::ffi::c_void;
+use std::time::Instant;
 
 use module_bindings::*;
 
@@ -7,11 +9,18 @@ use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Ta
 
 #[link(name = "render")] 
 unsafe extern "C" {
-    pub fn init();
-    pub fn deinit();
+    fn init() -> *mut c_void;
+    fn deinit(window: *mut c_void);
 
-    pub fn player_connect();
-    pub fn player_disconnect();
+    fn initPipeline() -> u32;
+    fn deinitPipeline(program: u32);
+
+    fn update(window: *mut c_void, delta_time: f32);
+    fn draw(program: u32, window: *mut c_void);
+
+    fn player_connect() -> *mut c_void;
+
+
 }
 
 /// The URI of the SpacetimeDB instance hosting our chat database and module.
@@ -74,6 +83,9 @@ fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
 fn register_callbacks(ctx: &DbConnection) {
     // ctx.reducers.say_hello();
     // When a new user joins, print a notification.
+    let _cb_id = ctx.db.player().on_insert(|_ctx, _row| unsafe {
+        player_connect(); // call your Zig function
+    });
     // ctx.db.user().on_insert(on_user_inserted);
 
     // // When a user's status changes, print a notification.
@@ -107,6 +119,7 @@ fn main() {
     // Connect to the database
     let ctx = connect_to_db();
 
+
     // Register callbacks to run in response to database events.
     // register_callbacks(&ctx);
 
@@ -117,5 +130,40 @@ fn main() {
     ctx.run_threaded();
 
     // Handle CLI input
-    user_input_loop(&ctx);
+    unsafe {
+        player_connect();
+        player_connect();
+        player_connect();
+        player_connect();
+        let window = init();
+        if window.is_null() {
+            eprintln!("Failed to initialize window");
+            return;
+        }
+
+        let pipeline = initPipeline();
+        if pipeline == 0
+        {
+            eprintln!("Failed to initialize pipeline");
+            deinit(window);
+
+            return;
+        }
+
+        let mut last = Instant::now();
+
+        loop {
+            let now = Instant::now();
+            let delta = (now - last).as_secs_f32();
+            last = now;
+
+            update(window, delta);
+            draw(pipeline, window);
+
+            // you'll need a way to check if window.shouldClose()
+            // one option: export a `should_close(window)` fn from Zig
+        }
+        deinit(window);
+        deinitPipeline(pipeline);
+    }
 }
