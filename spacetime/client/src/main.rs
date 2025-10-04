@@ -1,4 +1,5 @@
 mod module_bindings;
+use std::io::Write;
 use std::ptr::{null, null_mut};
 use std::ffi::c_void;
 use std::time::Instant;
@@ -31,6 +32,7 @@ const DB_NAME: &str = "zigma";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
+    let token: Option<&str> = None;
     DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
@@ -41,7 +43,8 @@ fn connect_to_db() -> DbConnection {
         // If the user has previously connected, we'll have saved a token in the `on_connect` callback.
         // In that case, we'll load it and pass it to `with_token`,
         // so we can re-authenticate as the same `Identity`.
-        .with_token(creds_store().load().expect("Error loading credentials"))
+        // .with_token(creds_store().load().expect("Error loading credentials"))
+        .with_token(token)
         // Set the database name we chose when we called `spacetime publish`.
         .with_module_name(DB_NAME)
         // Set the URI of the SpacetimeDB host that's running our database.
@@ -79,13 +82,24 @@ fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
     }
 }
 
+fn on_user_inserted(_ctx: &EventContext, user: &Player) {
+    println!("User {} connected.", user.identity);
+    unsafe {
+        player_connect();
+    };
+}
+
 /// Register all the callbacks our app will use to respond to database events.
 fn register_callbacks(ctx: &DbConnection) {
-    // ctx.reducers.say_hello();
+    println!("\nregister_callbacks\n");
+
     // When a new user joins, print a notification.
-    let _cb_id = ctx.db.player().on_insert(|_ctx, _row| unsafe {
-        player_connect(); // call your Zig function
-    });
+    ctx.db.player().on_insert(on_user_inserted);
+    // let _cb_id = ctx.db.player().on_insert(|_ctx, _row| unsafe {
+    //     println!("Player connect.");
+    //     // player_connect(); // call your Zig function
+        
+    // });
     // ctx.db.user().on_insert(on_user_inserted);
 
     // // When a user's status changes, print a notification.
@@ -101,40 +115,54 @@ fn register_callbacks(ctx: &DbConnection) {
     // ctx.reducers.on_send_message(on_message_sent);
 }
 
-/// Read each line of standard input, and either set our name or send a message as appropriate.
-fn user_input_loop(ctx: &DbConnection) {
-    for line in std::io::stdin().lines() {
-        let Ok(line) = line else {
-            panic!("Failed to read from stdin.");
-        };
-        if let Some(name) = line.strip_prefix("/name ") {
-            // ctx.reducers.set_name(name.to_string()).unwrap();
-        } else {
-            // ctx.reducers.say_hello();
-        }
-    }
+fn on_sub_applied(ctx: &SubscriptionEventContext) {
+    println!("Fully connected and all subscriptions applied.");
 }
+
+fn on_sub_error(_ctx: &ErrorContext, err: Error) {
+    eprintln!("Subscription failed: {}", err);
+    std::process::exit(1);
+}
+
+/// Register subscriptions for all rows of both tables.
+fn subscribe_to_tables(ctx: &DbConnection) {
+    ctx.subscription_builder()
+        .on_applied(on_sub_applied)
+        .on_error(on_sub_error)
+        .subscribe(["SELECT * FROM player"]);
+}
+
+// fn user_input_loop(ctx: &DbConnection) {
+//     for line in std::io::stdin().lines() {
+//         let Ok(line) = line else {
+//             panic!("Failed to read from stdin.");
+//         };
+//         if let Some(name) = line.strip_prefix("/name ") {
+//             // ctx.reducers.set_name(name.to_string()).unwrap();
+//         } else {
+//             println!("MESSAGE.");
+//             // ctx.reducers.send_message(line).unwrap();
+//         }
+//     }
+// }
+
 
 fn main() {
     // Connect to the database
     let ctx = connect_to_db();
 
-
     // Register callbacks to run in response to database events.
-    // register_callbacks(&ctx);
-
+    register_callbacks(&ctx);
+    
     // Subscribe to SQL queries in order to construct a local partial replica of the database.
-    // subscribe_to_tables(&ctx);
+    subscribe_to_tables(&ctx);
 
     // Spawn a thread, where the connection will process messages and invoke callbacks.
     ctx.run_threaded();
 
     // Handle CLI input
+    // user_input_loop(&ctx);
     unsafe {
-        player_connect();
-        player_connect();
-        player_connect();
-        player_connect();
         let window = init();
         if window.is_null() {
             eprintln!("Failed to initialize window");

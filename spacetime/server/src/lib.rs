@@ -8,7 +8,7 @@ pub struct DbVector3{
     pub z: f32,
 }
 
-#[spacetimedb::table(name = player)]
+#[spacetimedb::table(name = player, public)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -28,15 +28,18 @@ pub fn identity_connected(ctx: &ReducerContext)  -> Result<(), String> {
     log::info!("Identity connected, {}!", ctx.sender);
     if let Some(player) = ctx.db.player().identity().find(ctx.sender)
     {
+        log::info!("Player FOUND", );
+
        _ = player;
     }
     else {
-         let _ = ctx.db.player().try_insert(Player{
-            identity: ctx.sender,
-            name: "Lucas".to_string(),
-            position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-            rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-        });
+        log::info!("+ Player INSERT", );
+        let _ = ctx.db.player().insert(Player{
+        identity: ctx.sender,
+        name: "Lucas".to_string(),
+        position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+        rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+});
     }
     log::info!("Player tot: , {}!", ctx.db.player().count());
     Ok(())
