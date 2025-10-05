@@ -16,10 +16,12 @@ unsafe extern "C" {
     fn initPipeline() -> u32;
     fn deinitPipeline(program: u32);
 
+    
     fn update(window: *mut c_void, delta_time: f32);
     fn draw(program: u32, window: *mut c_void);
-
-    fn player_connect() -> *mut c_void;
+    
+    fn player_connect(id: u32) -> *mut c_void;
+    fn update_player_pos(id: u32, pos: DbVector3) -> *mut c_void;
 
 
 }
@@ -82,11 +84,18 @@ fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
     }
 }
 
-fn on_user_inserted(_ctx: &EventContext, user: &Player) {
-    println!("User {} connected.", user.identity);
+fn on_player_inserted(_ctx: &EventContext, player: &Player) {
+    println!("player {} connected.", player.identity);
     unsafe {
-        player_connect();
+        player_connect(player.player_id);
     };
+}
+
+fn on_player_update(_ctx: &EventContext, old_player: &Player, new_player: &Player) {
+    println!("PLAYER UPDATED New x-Pos {}", new_player.position.x);
+    unsafe {
+        update_player_pos(new_player.player_id, new_player.position.clone());
+    }
 }
 
 /// Register all the callbacks our app will use to respond to database events.
@@ -94,13 +103,9 @@ fn register_callbacks(ctx: &DbConnection) {
     println!("\nregister_callbacks\n");
 
     // When a new user joins, print a notification.
-    ctx.db.player().on_insert(on_user_inserted);
-    // let _cb_id = ctx.db.player().on_insert(|_ctx, _row| unsafe {
-    //     println!("Player connect.");
-    //     // player_connect(); // call your Zig function
-        
-    // });
-    // ctx.db.user().on_insert(on_user_inserted);
+    ctx.db.player().on_insert(on_player_inserted);
+
+    ctx.db.player().on_update(on_player_update);
 
     // // When a user's status changes, print a notification.
     // ctx.db.user().on_update(on_user_updated);
@@ -131,20 +136,6 @@ fn subscribe_to_tables(ctx: &DbConnection) {
         .on_error(on_sub_error)
         .subscribe(["SELECT * FROM player"]);
 }
-
-// fn user_input_loop(ctx: &DbConnection) {
-//     for line in std::io::stdin().lines() {
-//         let Ok(line) = line else {
-//             panic!("Failed to read from stdin.");
-//         };
-//         if let Some(name) = line.strip_prefix("/name ") {
-//             // ctx.reducers.set_name(name.to_string()).unwrap();
-//         } else {
-//             println!("MESSAGE.");
-//             // ctx.reducers.send_message(line).unwrap();
-//         }
-//     }
-// }
 
 
 fn main() {

@@ -10,6 +10,7 @@ use super::db_vector_3_type::DbVector3;
 #[sats(crate = __lib)]
 pub struct Player {
     pub identity: __sdk::Identity,
+    pub player_id: u32,
     pub name: String,
     pub position: DbVector3,
     pub rotation: DbVector3,
