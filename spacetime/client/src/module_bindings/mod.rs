@@ -9,6 +9,9 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod db_vector_3_type;
 pub mod identity_connected_reducer;
 pub mod identity_disconnected_reducer;
+pub mod move_all_players_reducer;
+pub mod move_all_players_timer_table;
+pub mod move_all_players_timer_type;
 pub mod player_table;
 pub mod player_type;
 
@@ -19,6 +22,11 @@ pub use identity_connected_reducer::{
 pub use identity_disconnected_reducer::{
     identity_disconnected, set_flags_for_identity_disconnected, IdentityDisconnectedCallbackId,
 };
+pub use move_all_players_reducer::{
+    move_all_players, set_flags_for_move_all_players, MoveAllPlayersCallbackId,
+};
+pub use move_all_players_timer_table::*;
+pub use move_all_players_timer_type::MoveAllPlayersTimer;
 pub use player_table::*;
 pub use player_type::Player;
 
@@ -32,6 +40,7 @@ pub use player_type::Player;
 pub enum Reducer {
     IdentityConnected,
     IdentityDisconnected,
+    MoveAllPlayers { timer: MoveAllPlayersTimer },
 }
 
 impl __sdk::InModule for Reducer {
@@ -43,6 +52,7 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::IdentityConnected => "identity_connected",
             Reducer::IdentityDisconnected => "identity_disconnected",
+            Reducer::MoveAllPlayers { .. } => "move_all_players",
         }
     }
 }
@@ -58,6 +68,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
             >("identity_disconnected", &value.args)?
             .into()),
+            "move_all_players" => Ok(__sdk::parse_reducer_args::<
+                move_all_players_reducer::MoveAllPlayersArgs,
+            >("move_all_players", &value.args)?
+            .into()),
             unknown => {
                 Err(
                     __sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo")
@@ -72,6 +86,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    move_all_players_timer: __sdk::TableUpdate<MoveAllPlayersTimer>,
     player: __sdk::TableUpdate<Player>,
 }
 
@@ -81,6 +96,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
+                "move_all_players_timer" => db_update.move_all_players_timer.append(
+                    move_all_players_timer_table::parse_table_update(table_update)?,
+                ),
                 "player" => db_update
                     .player
                     .append(player_table::parse_table_update(table_update)?),
@@ -110,6 +128,12 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.move_all_players_timer = cache
+            .apply_diff_to_table::<MoveAllPlayersTimer>(
+                "move_all_players_timer",
+                &self.move_all_players_timer,
+            )
+            .with_updates_by_pk(|row| &row.scheduled_id);
         diff.player = cache
             .apply_diff_to_table::<Player>("player", &self.player)
             .with_updates_by_pk(|row| &row.identity);
@@ -122,6 +146,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    move_all_players_timer: __sdk::TableAppliedDiff<'r, MoveAllPlayersTimer>,
     player: __sdk::TableAppliedDiff<'r, Player>,
 }
 
@@ -135,6 +160,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<MoveAllPlayersTimer>(
+            "move_all_players_timer",
+            &self.move_all_players_timer,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
     }
 }
@@ -726,6 +756,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        move_all_players_timer_table::register_table(client_cache);
         player_table::register_table(client_cache);
     }
 }

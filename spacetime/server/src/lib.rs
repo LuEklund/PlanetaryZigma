@@ -1,27 +1,62 @@
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table};
+use std::time::Duration;
+pub mod math;
+
+use math::DbVector3;
+use spacetimedb::{Identity, ReducerContext, ScheduleAt, SpacetimeType, Table};
 
 
-#[derive(SpacetimeType, Debug, Clone, Copy)]
-pub struct DbVector3{
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
 
 #[spacetimedb::table(name = player, public)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
+    #[auto_inc]
+    player_id: u32,
     name: String,
     position: DbVector3,
     rotation: DbVector3,
 }
 
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    let _ = ctx;
-    // Called when the module is initially published
+#[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
+pub struct MoveAllPlayersTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
 }
+
+#[spacetimedb::reducer]
+pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
+
+    // Handle player input
+    for player_itr in ctx.db.player().iter() {
+
+        let player = ctx.db.player().identity().find(player_itr.identity);
+        let mut player = player.unwrap();
+
+        let direction = player.rotation * 0.5;
+        let new_pos = player.position + direction;
+
+        player.position = new_pos;
+
+        ctx.db.player().identity().update(player);
+    }
+
+    Ok(())
+}
+
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String>{
+    ctx.db
+    .move_all_players_timer()
+    .try_insert(MoveAllPlayersTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
+    })?;
+    Ok(())
+}
+
+
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext)  -> Result<(), String> {
@@ -36,9 +71,10 @@ pub fn identity_connected(ctx: &ReducerContext)  -> Result<(), String> {
         log::info!("+ Player INSERT", );
         let _ = ctx.db.player().insert(Player{
         identity: ctx.sender,
+        player_id: 0,
         name: "Lucas".to_string(),
         position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-        rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+        rotation: DbVector3 { x: 1.0, y: 0.0, z: 0.0 },
 });
     }
     log::info!("Player tot: , {}!", ctx.db.player().count());
@@ -56,15 +92,3 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
     }
 }
 
-// #[spacetimedb::reducer]
-// pub fn add(ctx: &ReducerContext, name: String) {
-//     ctx.db.person().insert(Person { name });
-// }
-
-// #[spacetimedb::reducer]
-// pub fn say_hello(ctx: &ReducerContext) {
-//     for person in ctx.db.person().iter() {
-//         log::info!("Hello, {}!", person.name);
-//     }
-//     log::info!("Hello, World!");
-// }
