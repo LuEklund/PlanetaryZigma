@@ -1,7 +1,9 @@
 use std::time::Duration;
 pub mod math;
+pub mod command;
 
 use math::DbVector3;
+use command::Command;
 use spacetimedb::{Identity, ReducerContext, ScheduleAt, SpacetimeType, Table};
 
 
@@ -15,6 +17,7 @@ pub struct Player {
     name: String,
     position: DbVector3,
     rotation: DbVector3,
+    direction: DbVector3,
 }
 
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
@@ -23,6 +26,26 @@ pub struct MoveAllPlayersTimer {
     #[auto_inc]
     scheduled_id: u64,
     scheduled_at: spacetimedb::ScheduleAt,
+}
+
+
+// Reducer: Handle all commands
+#[spacetimedb::reducer]
+pub fn player_command(ctx: &ReducerContext, cmd: Command) -> Result<(), String> {
+    let mut player = ctx.db.player().identity().find(&ctx.sender).unwrap();
+    match cmd {
+        Command::Move(move_cmd) => {
+            let dir_mag = move_cmd.direction.magnitude();
+            if dir_mag < 0.01 || dir_mag > 1.1 {
+                return Err("Invalid direction magnitude".to_string());
+            }
+            player.direction = move_cmd.direction.normalized();
+            ctx.db.player().identity().update(player);
+        }
+        Command::Jump => {
+        }
+    }
+    Ok(())
 }
 
 #[spacetimedb::reducer]
@@ -34,7 +57,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         let player = ctx.db.player().identity().find(player_itr.identity);
         let mut player = player.unwrap();
 
-        let direction = player.rotation * 0.5;
+        let direction = player.direction * 0.5;
         let new_pos = player.position + direction;
 
         player.position = new_pos;
@@ -74,7 +97,8 @@ pub fn identity_connected(ctx: &ReducerContext)  -> Result<(), String> {
         player_id: 0,
         name: "Lucas".to_string(),
         position: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-        rotation: DbVector3 { x: 1.0, y: 0.0, z: 0.0 },
+        rotation: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+        direction: DbVector3 { x: 0.0, y: 0.0, z: 0.0 },
 });
     }
     log::info!("Player tot: , {}!", ctx.db.player().count());

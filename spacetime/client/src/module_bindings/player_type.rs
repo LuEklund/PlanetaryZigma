@@ -14,6 +14,7 @@ pub struct Player {
     pub name: String,
     pub position: DbVector3,
     pub rotation: DbVector3,
+    pub direction: DbVector3,
 }
 
 impl __sdk::InModule for Player {
