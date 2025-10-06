@@ -206,6 +206,21 @@ pub export fn player_disconnect() void {
     player_count -= 1;
 }
 
+pub export fn is_key_down(
+    key: c_int,
+    window: *glfw.Window,
+) bool {
+    const glfw_key: glfw.io.Key =
+        switch (key) {
+            0 => .w,
+            1 => .s,
+            2 => .a,
+            3 => .d,
+            else => unreachable,
+        };
+    return glfw_key.get(window);
+}
+
 pub const pipeline = struct {
     pub fn init() !gl.Program {
         const vertex_shader: gl.Shader = .init(.vertex);

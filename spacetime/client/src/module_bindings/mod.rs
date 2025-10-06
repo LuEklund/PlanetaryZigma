@@ -6,15 +6,19 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod command_type;
 pub mod db_vector_3_type;
 pub mod identity_connected_reducer;
 pub mod identity_disconnected_reducer;
 pub mod move_all_players_reducer;
 pub mod move_all_players_timer_table;
 pub mod move_all_players_timer_type;
+pub mod move_command_type;
+pub mod player_command_reducer;
 pub mod player_table;
 pub mod player_type;
 
+pub use command_type::Command;
 pub use db_vector_3_type::DbVector3;
 pub use identity_connected_reducer::{
     identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId,
@@ -27,6 +31,10 @@ pub use move_all_players_reducer::{
 };
 pub use move_all_players_timer_table::*;
 pub use move_all_players_timer_type::MoveAllPlayersTimer;
+pub use move_command_type::MoveCommand;
+pub use player_command_reducer::{
+    player_command, set_flags_for_player_command, PlayerCommandCallbackId,
+};
 pub use player_table::*;
 pub use player_type::Player;
 
@@ -41,6 +49,7 @@ pub enum Reducer {
     IdentityConnected,
     IdentityDisconnected,
     MoveAllPlayers { timer: MoveAllPlayersTimer },
+    PlayerCommand { cmd: Command },
 }
 
 impl __sdk::InModule for Reducer {
@@ -53,6 +62,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::IdentityConnected => "identity_connected",
             Reducer::IdentityDisconnected => "identity_disconnected",
             Reducer::MoveAllPlayers { .. } => "move_all_players",
+            Reducer::PlayerCommand { .. } => "player_command",
         }
     }
 }
@@ -71,6 +81,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "move_all_players" => Ok(__sdk::parse_reducer_args::<
                 move_all_players_reducer::MoveAllPlayersArgs,
             >("move_all_players", &value.args)?
+            .into()),
+            "player_command" => Ok(__sdk::parse_reducer_args::<
+                player_command_reducer::PlayerCommandArgs,
+            >("player_command", &value.args)?
             .into()),
             unknown => {
                 Err(

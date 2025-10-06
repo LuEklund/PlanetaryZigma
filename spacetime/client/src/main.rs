@@ -24,6 +24,11 @@ unsafe extern "C" {
     fn update_player_pos(id: u32, pos: DbVector3) -> *mut c_void;
 
 
+    fn is_key_down(key: u32, window: *mut c_void) -> bool;
+
+    
+
+
 }
 
 /// The URI of the SpacetimeDB instance hosting our chat database and module.
@@ -176,6 +181,11 @@ fn main() {
             let delta = (now - last).as_secs_f32();
             last = now;
 
+            if is_key_down(0, window)
+            {
+                let cmd = Command::Move(MoveCommand { direction: {DbVector3 { x: (1.0), y: (0.0), z: (0.0) }}});
+                _ = ctx.reducers.player_command(cmd);
+            }
             update(window, delta);
             draw(pipeline, window);
 
