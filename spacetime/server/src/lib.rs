@@ -61,9 +61,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         let new_pos = player.position + direction;
 
         player.position = new_pos;
+        player.direction = DbVector3 { x: 0.0, y: 0.0, z: 0.0 };
 
         ctx.db.player().identity().update(player);
     }
+
+
 
     Ok(())
 }
