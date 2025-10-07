@@ -20,7 +20,8 @@ unsafe extern "C" {
     fn update(window: *mut c_void, delta_time: f32);
     fn draw(program: u32, window: *mut c_void);
     
-    fn player_connect(id: u32) -> *mut c_void;
+    fn player_connect_local(id: u32) -> *mut c_void;
+    fn player_connect_remote(id: u32) -> *mut c_void;
     fn update_player_pos(id: u32, pos: DbVector3) -> *mut c_void;
 
 
@@ -91,9 +92,15 @@ fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
 
 fn on_player_inserted(_ctx: &EventContext, player: &Player) {
     println!("player {} connected.", player.identity);
-    unsafe {
-        player_connect(player.player_id);
-    };
+        if _ctx.identity() == player.identity {
+        unsafe {
+            player_connect_local(player.player_id);
+        };
+    } else {
+        unsafe {
+            player_connect_remote(player.player_id);
+        };
+    }
 }
 
 fn on_player_update(_ctx: &EventContext, old_player: &Player, new_player: &Player) {
@@ -186,6 +193,19 @@ fn main() {
                 let cmd = Command::Move(MoveCommand { direction: {DbVector3 { x: (1.0), y: (0.0), z: (0.0) }}});
                 _ = ctx.reducers.player_command(cmd);
             }
+            else if is_key_down(1, window) {
+                let cmd = Command::Move(MoveCommand { direction: {DbVector3 { x: (-1.0), y: (0.0), z: (0.0) }}});
+                _ = ctx.reducers.player_command(cmd);
+            }
+            else if is_key_down(2, window) {
+                let cmd = Command::Move(MoveCommand { direction: {DbVector3 { x: (0.0), y: (0.0), z: (-1.0) }}});
+                _ = ctx.reducers.player_command(cmd);
+            }
+            else if is_key_down(3, window) {
+                let cmd = Command::Move(MoveCommand { direction: {DbVector3 { x: (0.0), y: (0.0), z: (1.0) }}});
+                _ = ctx.reducers.player_command(cmd);
+            }
+
             update(window, delta);
             draw(pipeline, window);
 

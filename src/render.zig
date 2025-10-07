@@ -6,6 +6,7 @@ const nz = @import("numz");
 const stb = @import("stb");
 
 pub var players: [32]Player = undefined;
+pub var local_player_id: usize = 0;
 pub var player_count: usize = 0;
 pub var model: Model = undefined;
 pub var player_image: Image = undefined;
@@ -134,7 +135,12 @@ pub export fn update(
     delta_time: f32,
 ) void {
     glfw.io.events.poll();
-    players[0].update(window, delta_time);
+    for (0..@min(player_count, 32)) |i| {
+        if (players[i].id == local_player_id) {
+            players[i].update(window, delta_time);
+            return;
+        }
+    }
 }
 
 pub export fn draw(
@@ -150,8 +156,13 @@ pub export fn draw(
     gl.clear.color(0.1, 0.5, 0.3, 1.0);
     gl.clear.depth(1000);
     gl.draw.viewport(0, 0, width, height);
-
-    const camera_mat: nz.Mat4x4(f32) = camera.toMat4x4(players[0].transform, @floatFromInt(width), @floatFromInt(height), 1.0, 10_000.0);
+    var camera_mat: nz.Mat4x4(f32) = undefined;
+    for (0..@min(player_count, 32)) |i| {
+        if (players[i].id == local_player_id) {
+            camera_mat = camera.toMat4x4(players[0].transform, @floatFromInt(width), @floatFromInt(height), 1.0, 10_000.0);
+            break;
+        }
+    }
     program.use();
 
     program.setUniform("u_camera", .{ .f32x4x4 = camera_mat.d }) catch {
@@ -162,14 +173,12 @@ pub export fn draw(
     player_texture.bind(0);
 
     for (0..player_count) |i| {
-        const og_pos = model.transform.position[0];
-        model.transform.position[0] = @floatFromInt(i);
-        model.transform.position[0] = -model.transform.position[0];
+        if (players[i].id == local_player_id) continue;
+        model.transform = players[i].transform;
         model.draw(program) catch {
             std.log.debug("ERR-1", .{});
             continue;
         };
-        model.transform.position[0] = og_pos;
     }
 
     glfw.opengl.swapBuffers(window) catch {
@@ -186,7 +195,13 @@ pub export fn draw(
     };
 }
 
-pub export fn player_connect(id: u32) void {
+pub export fn player_connect_local(id: u32) void {
+    std.log.debug("Player local id {d}, tot player {d}", .{ id, player_count });
+    local_player_id = id;
+    player_connect_remote(id);
+}
+
+pub export fn player_connect_remote(id: u32) void {
     std.log.debug("Player COnnected {d}", .{player_count});
     players[player_count] = .{ .id = id };
     player_count += 1;
