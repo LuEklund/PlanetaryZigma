@@ -33,7 +33,8 @@ unsafe extern "C" {
 }
 
 /// The URI of the SpacetimeDB instance hosting our chat database and module.
-const HOST: &str = "http://localhost:3000";
+// const HOST: &str = "http://localhost:3000";
+const HOST: &str = "https://gorgeous-hygiene-respect-demand.trycloudflare.com/";
 
 /// The database name we chose when we published our module.
 const DB_NAME: &str = "zigma";
