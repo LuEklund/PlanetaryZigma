@@ -77,9 +77,10 @@ pub const fragment: [*:0]const u8 =
     \\out vec4 FragColor;
     \\
     \\uniform sampler2D tex;
+    \\uniform vec3 color;
     \\
     \\void main() {
-    \\    FragColor = texture(tex, UVs);
+    \\    FragColor =  vec4(color, 1) * texture(tex, UVs);
     \\}
 ;
 
@@ -174,12 +175,20 @@ pub export fn draw(
 
     for (0..player_count) |i| {
         if (players[i].id == local_player_id) continue;
+        var prng: std.Random.DefaultPrng = .init(@intCast(i));
+        const random = prng.random();
+        model.color = .new(random.float(f32), random.float(f32), random.float(f32));
         model.transform = players[i].transform;
         model.draw(program) catch {
             std.log.debug("ERR-1", .{});
             continue;
         };
     }
+
+    model.transform = .{ .scale = @splat(0.2) };
+    model.draw(program) catch {
+        std.log.debug("ERR-1", .{});
+    };
 
     glfw.opengl.swapBuffers(window) catch {
         std.log.debug("ERR2", .{});
@@ -262,6 +271,7 @@ pub const Model = struct {
     vbo: gl.Buffer,
     ebo: gl.Buffer,
     index_count: usize,
+    color: nz.color.Rgb(f32) = .green,
     transform: nz.Transform3D(f32),
 
     pub fn init() !@This() {
@@ -299,6 +309,7 @@ pub const Model = struct {
     ) !void {
         self.vao.bind();
         try program.setUniform("u_model", .{ .f32x4x4 = self.transform.toMat4x4().d });
+        try program.setUniform("color", .{ .f32x3 = self.color.toVec() });
         gl.draw.elements(.triangles, self.index_count, u32, null);
     }
 };
@@ -346,38 +357,41 @@ pub const Player = struct {
     id: u32 = 0,
 
     pub fn update(self: *@This(), window: *glfw.Window, delta_time: f32) void {
-        if (glfw.io.Key.p.get(window)) std.debug.print("{any}\n", .{self.transform});
-        const pitch = &self.transform.rotation[0];
-        const yaw = &self.transform.rotation[1];
+        _ = self;
+        _ = window;
+        _ = delta_time;
+        //     if (glfw.io.Key.p.get(window)) std.debug.print("{any}\n", .{self.transform});
+        //     const pitch = &self.transform.rotation[0];
+        //     const yaw = &self.transform.rotation[1];
 
-        pitch.* = std.math.clamp(pitch.*, std.math.degreesToRadians(-89.9), std.math.degreesToRadians(89.9));
+        //     pitch.* = std.math.clamp(pitch.*, std.math.degreesToRadians(-89.9), std.math.degreesToRadians(89.9));
 
-        const forward = nz.vec.forward(self.transform.position, self.transform.position + nz.Vec3(f32){ @cos(yaw.*) * @cos(pitch.*), @sin(pitch.*), @sin(yaw.*) * @cos(pitch.*) });
-        const right: nz.Vec3(f32) = nz.vec.normalize(nz.vec.cross(forward, .{ 0, 1, 0 }));
-        const up = nz.vec.normalize(nz.vec.cross(right, forward));
+        //     const forward = nz.vec.forward(self.transform.position, self.transform.position + nz.Vec3(f32){ @cos(yaw.*) * @cos(pitch.*), @sin(pitch.*), @sin(yaw.*) * @cos(pitch.*) });
+        //     const right: nz.Vec3(f32) = nz.vec.normalize(nz.vec.cross(forward, .{ 0, 1, 0 }));
+        //     const up = nz.vec.normalize(nz.vec.cross(right, forward));
 
-        var move: nz.Vec3(f32) = .{ 0, 0, 0 };
-        const velocity = self.speed * delta_time;
+        //     var move: nz.Vec3(f32) = .{ 0, 0, 0 };
+        //     const velocity = self.speed * delta_time;
 
-        if (glfw.io.Key.w.get(window)) move -= nz.vec.scale(forward, velocity);
-        if (glfw.io.Key.s.get(window)) move += nz.vec.scale(forward, velocity);
-        if (glfw.io.Key.a.get(window)) move += nz.vec.scale(right, velocity);
-        if (glfw.io.Key.d.get(window)) move -= nz.vec.scale(right, velocity);
-        if (glfw.io.Key.space.get(window)) move += nz.vec.scale(up, velocity);
-        // if (app.isKeyDown(.rctrl)) move -= nz.vec.scale(up, velocity);
+        //     if (glfw.io.Key.w.get(window)) move -= nz.vec.scale(forward, velocity);
+        //     if (glfw.io.Key.s.get(window)) move += nz.vec.scale(forward, velocity);
+        //     if (glfw.io.Key.a.get(window)) move += nz.vec.scale(right, velocity);
+        //     if (glfw.io.Key.d.get(window)) move -= nz.vec.scale(right, velocity);
+        //     if (glfw.io.Key.space.get(window)) move += nz.vec.scale(up, velocity);
+        //     // if (app.isKeyDown(.rctrl)) move -= nz.vec.scale(up, velocity);
 
-        const speed_multiplier: f32 = if (glfw.io.Key.left_shift.get(window)) 3.25 else if (glfw.io.Key.left_control.get(window)) 0.1 else 2;
+        //     const speed_multiplier: f32 = if (glfw.io.Key.left_shift.get(window)) 3.25 else if (glfw.io.Key.left_control.get(window)) 0.1 else 2;
 
-        self.transform.position += nz.vec.scale(move, speed_multiplier);
+        //     self.transform.position += nz.vec.scale(move, speed_multiplier);
 
-        if (glfw.io.Key.r.get(window)) {
-            yaw.* = 0;
-            pitch.* = 0;
-            self.transform.position = .{ 0, 0, 0 };
-        }
+        //     if (glfw.io.Key.r.get(window)) {
+        //         yaw.* = 0;
+        //         pitch.* = 0;
+        //         self.transform.position = .{ 0, 0, 0 };
+        //     }
 
-        if (glfw.io.Key.left.get(window)) self.transform.rotation[1] -= self.speed * delta_time;
-        if (glfw.io.Key.right.get(window)) self.transform.rotation[1] += self.speed * delta_time;
+        //     if (glfw.io.Key.left.get(window)) self.transform.rotation[1] -= self.speed * delta_time;
+        //     if (glfw.io.Key.right.get(window)) self.transform.rotation[1] += self.speed * delta_time;
     }
 };
 
