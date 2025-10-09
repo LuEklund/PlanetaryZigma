@@ -2,6 +2,7 @@ mod module_bindings;
 use std::io::Write;
 use std::ptr::{null, null_mut};
 use std::ffi::c_void;
+// use std::os::raw::c_void;
 use std::time::Instant;
 
 use module_bindings::*;
@@ -38,6 +39,27 @@ const HOST: &str = "https://gorgeous-hygiene-respect-demand.trycloudflare.com/";
 
 /// The database name we chose when we published our module.
 const DB_NAME: &str = "zigma";
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connect_to_db_ffi() -> *mut c_void {
+    // Create the Rust DbConnection
+    let conn = connect_to_db();
+
+    // Box it and leak it so we can return a pointer
+    Box::into_raw(Box::new(conn)) as *mut c_void
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_db_connection(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        unsafe {
+            // Recover the Box and drop it
+            Box::from_raw(ptr as *mut DbConnection);
+        }
+    }
+}
+
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
