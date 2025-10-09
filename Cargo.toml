@@ -1,4 +1,12 @@
+[package]
+name = "spacetime"
+version = "0.1.0"
+edition = "2024"
 
-[workspace]
-members = ["spacetime/client", "spacetime/server"]
+[dependencies]
+spacetimedb-sdk = "1.4.0"
 
+[lib]
+name = "spacetime"
+crate-type = ["staticlib"]
+path = "src/spacetime.rs"   

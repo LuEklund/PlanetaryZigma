@@ -32,6 +32,10 @@ pub fn build(b: *std.Build) void {
     });
     stb.addIncludePath(b.dependency("stb", .{}).path("."));
 
+    const cargo_cmd = b.addSystemCommand(&.{
+        "cargo", "build", "--release",
+    });
+
     const exe = b.addExecutable(.{
         .name = "PlanetaryZigma",
         .root_module = b.createModule(.{
@@ -46,6 +50,13 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    exe.step.dependOn(&cargo_cmd.step);
+
+    exe.root_module.linkSystemLibrary("unwind", .{});
+    exe.root_module.linkSystemLibrary("openssl", .{});
+    exe.root_module.addLibraryPath(b.path("target/release/"));
+    exe.root_module.linkSystemLibrary("spacetime", .{});
 
     b.installArtifact(exe);
 
