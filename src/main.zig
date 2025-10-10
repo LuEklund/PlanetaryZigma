@@ -2,6 +2,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const gl = @import("gl");
 const nz = @import("numz");
+const Ecs = @import("ecs.zig");
 const Render = @import("render.zig");
 
 pub const db = struct {
@@ -21,8 +22,18 @@ pub const db = struct {
 };
 
 pub fn main() !void {
+    var buffer: [4096 * 4 + 2]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
     const connection: *db.Connection = try .connect();
     defer connection.disconnect();
+
+    const ecs: Ecs = try .init(allocator);
+    defer ecs.deinit(allocator);
+    while (true) {
+        std.debug.print("\n======NEW LOOP======\n", .{});
+        ecs.update();
+    }
 
     // const window = Render.init();
     // defer Render.deinit(window);
