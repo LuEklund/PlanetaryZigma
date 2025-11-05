@@ -36,7 +36,7 @@ faces: std.ArrayList(Face) = .empty,
 
 /// `l v1 v2 v3 v4 v5 v6 ...`
 /// Records the order of vertices which build a polyline.
-it: std.ArrayList(std.ArrayList(i32)) = .empty,
+lines: std.ArrayList(std.ArrayList(i32)) = .empty,
 
 /// `o [object name]`
 current_object: ?[]const u8 = null,
@@ -88,10 +88,10 @@ pub fn deinit(o: *Obj) void {
     o.faces.deinit(o.gpa);
 
     // Line elements.
-    for (o.it.items) |*line| {
+    for (o.lines.items) |*line| {
         line.deinit(o.gpa);
     }
-    o.it.deinit(o.gpa);
+    o.lines.deinit(o.gpa);
 
     if (o.current_object) |obj| {
         o.gpa.free(obj);
@@ -178,6 +178,7 @@ fn parseVertex(o: *Obj, it: *std.mem.TokenIterator(u8, .any)) !void {
     if (it.next()) |w| {
         vertex[3] = try std.fmt.parseFloat(f32, w);
     }
+
     try o.vertices.append(o.gpa, vertex);
 }
 
@@ -348,7 +349,7 @@ fn parseLineElement(o: *Obj, it: *std.mem.TokenIterator(u8, .any)) !void {
         return error.InvalidLine;
     }
 
-    try o.it.append(o.gpa, line);
+    try o.lines.append(o.gpa, line);
 }
 
 fn parseObject(o: *Obj, it: *std.mem.TokenIterator(u8, .any)) !void {
@@ -454,9 +455,9 @@ test Obj {
         try std.testing.expectEqualSlices(i32, &.{ 0, 1, 2 }, obj.faces.items[4].texture_indices.items);
         try std.testing.expectEqualSlices(i32, &.{ 0, 1, 2 }, obj.faces.items[4].normal_indices.items);
 
-        try std.testing.expectEqual(2, obj.it.items.len);
-        try std.testing.expectEqualSlices(i32, &.{ 0, 1, 2, 2 }, obj.it.items[0].items);
-        try std.testing.expectEqualSlices(i32, &.{ 1, 2 }, obj.it.items[1].items);
+        try std.testing.expectEqual(2, obj.lines.items.len);
+        try std.testing.expectEqualSlices(i32, &.{ 0, 1, 2, 2 }, obj.lines.items[0].items);
+        try std.testing.expectEqualSlices(i32, &.{ 1, 2 }, obj.lines.items[1].items);
 
         try std.testing.expectEqualStrings("TestObject", obj.current_object.?);
         try std.testing.expectEqualStrings("TestGroup", obj.current_group.?);
