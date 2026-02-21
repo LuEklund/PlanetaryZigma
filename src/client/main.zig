@@ -1,10 +1,16 @@
 const std = @import("std");
-const shared = @import("shared");
+
 const glfw = @import("glfw");
+const shared = @import("shared");
+
+const Renderer = @import("Renderer.zig");
 
 pub fn main(init: std.process.Init) !void {
     _ = glfw.glfwInit();
     defer glfw.glfwTerminate();
+
+    var renderer: Renderer = try .init();
+    defer renderer.deinit();
 
     glfw.glfwWindowHint(glfw.GLFW_NO_API, glfw.GLFW_TRUE);
 
