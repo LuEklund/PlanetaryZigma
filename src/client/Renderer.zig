@@ -98,7 +98,7 @@ pub const vulkan = struct {
             if (PFN_vkCreateDebugUtilsMessengerEXT) |vkCreateDebugUtilsMessengerEXT| {
                 check(vkCreateDebugUtilsMessengerEXT(instance.handle, &debug_messenger_create_info, null, &debug_messenger));
             } else {
-                std.log.err("note: validation layers were enabled, but vkCreateDebugUtilsMessengerEXT proc is not available", .{});
+                log.err("note: validation layers were enabled, but vkCreateDebugUtilsMessengerEXT proc is not available", .{});
                 return error.InitializationFailed;
             }
         }
