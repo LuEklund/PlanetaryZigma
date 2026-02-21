@@ -90,6 +90,11 @@ pub fn client(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
 
     exe.root_module.linkLibrary(b.dependency("glfw", .{ .target = target, .optimize = optimize }).artifact("glfw3"));
 
+    switch (target.result.os.tag) {
+        .windows, .wasi => exe.root_module.linkSystemLibrary("vulkan-1", .{}),
+        else => exe.root_module.linkSystemLibrary("vulkan", .{}),
+    }
+
     b.installArtifact(exe);
 
     return exe;
