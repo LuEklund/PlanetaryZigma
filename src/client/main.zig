@@ -9,7 +9,7 @@ pub fn main(init: std.process.Init) !void {
     _ = glfw.glfwInit();
     defer glfw.glfwTerminate();
 
-    var renderer: Renderer = try .init();
+    var renderer: Renderer = try .init(init.gpa);
     defer renderer.deinit();
 
     glfw.glfwWindowHint(glfw.GLFW_NO_API, glfw.GLFW_TRUE);
@@ -18,8 +18,6 @@ pub fn main(init: std.process.Init) !void {
     defer glfw.glfwDestroyWindow(window);
 
     while (glfw.glfwWindowShouldClose(window) != glfw.GLFW_TRUE) {}
-
-    _ = init;
 
     // std.debug.print("client\n", .{});
     // const io = init.io;

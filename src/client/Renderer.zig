@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const glfw = @import("glfw");
 const vk = @import("vulkan");
 
 instance: vulkan.Instance,
@@ -16,8 +17,16 @@ pub const Texture = enum(u32) {
     _,
 };
 
-pub fn init() vulkan.Error!Renderer {
-    var instance: vulkan.Instance = try .init(&.{}, &.{});
+pub fn init(gpa: std.mem.Allocator) vulkan.Error!Renderer {
+    const extensions = try vulkan.getRequiredInstanceExtensions(gpa);
+    defer gpa.free(extensions);
+
+    vulkan.log.debug("instance extensions:", .{});
+    for (extensions) |extension| {
+        vulkan.log.debug(" {s}", .{extension});
+    }
+
+    var instance: vulkan.Instance = try .init(extensions, &.{});
     errdefer instance.deinit();
 
     return .{ .instance = instance };
@@ -125,6 +134,30 @@ pub const vulkan = struct {
         };
     }
 
+    pub fn getRequiredInstanceExtensions(gpa: std.mem.Allocator) Error![][*:0]const u8 {
+        var required_extension_count: u32 = 0;
+        const required_extensions = glfw.glfwGetRequiredInstanceExtensions(&required_extension_count);
+
+        if (required_extensions == null) {
+            log.err("glfwGetRequiredInstanceExtensions returned null", .{});
+            return error.InitializationFailed;
+        }
+
+        // + debug utils
+        const total_extensions = if (enable_validation) required_extension_count + 1 else required_extensions;
+        const extensions = try gpa.alloc([*:0]const u8, total_extensions);
+
+        for (0..required_extension_count) |i| {
+            extensions[i] = required_extensions[i];
+        }
+
+        if (enable_validation) {
+            extensions[required_extension_count] = vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+        }
+
+        return extensions;
+    }
+
     // debug callback
     fn userCallback(
         severity: vk.VkDebugUtilsMessageSeverityFlagBitsEXT,
@@ -198,7 +231,7 @@ pub const vulkan = struct {
         PipelineBinaryMissingKhr,
         NotEnoughSpaceKhr,
         Unknown,
-    };
+    } || std.mem.Allocator.Error;
 
     pub fn check(result: vk.VkResult) Error!void {
         return switch (result) {
