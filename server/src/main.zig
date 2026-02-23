@@ -26,7 +26,6 @@ pub fn main(init: std.process.Init) !void {
     while (true) {
         count += 1;
 
-        std.debug.print("jello {d}\n", .{systems.number});
         systemsUpdate(&systems, 1.0);
         if (try system_watcher.listen()) {
             systemsDeinit(&systems, &allocator);

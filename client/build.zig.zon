@@ -1,0 +1,37 @@
+.{
+    .name = .planetary_zigma_client,
+    .version = "0.0.0",
+    .fingerprint = 0x21abd58ec3a549a4,
+    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
+    .dependencies = .{
+        .shared = .{
+            .path = "../shared",
+        },
+        .numz = .{
+            .url = "git+https://github.com/HaraldWik/numz#9f02fc1434a5cabe72bade9ea33db7ed8f171328",
+            .hash = "numz-0.0.2-V-sGm0ewAAAVATHTuvzqC2LVu7uHpaWxR_o8CIf5qu2F",
+        },
+        .ecs = .{
+            .url = "git+https://codeberg.org/HaraldWik/ecs#78c574af6b25c053f8a212a2141f101f94ea0cdb",
+            .hash = "ecs-0.0.0-8vkflw8iAAD81LYGmf2I7Kq4QR5wmyFlwfSy6SfpqGFv",
+        },
+        .glfw = .{
+            .url = "git+https://codeberg.org/HaraldWik/glfw_zig#1810b47f2dabc6f1f28d0cef194ede664e9cfa5b",
+            .hash = "glfw-3.4.0-a4Mg88DIBgAhxrur_Nm1I6n3nFdyVhaG8CK01QBiyCZe",
+        },
+        .glfw_headers = .{
+            .url = "git+https://github.com/glfw/glfw#7c9ea952338b792cb2f70d7c663e498725073797",
+            .hash = "N-V-__8AAAQdSgC7xfmpp3sHsMxANb6YDkz_kZ2i1tTRMRP8",
+        },
+        .zphysics = .{
+            .url = "git+https://github.com/zig-gamedev/zphysics.git#cef47382fb548a770ad44c7c8a20e496a11df075",
+            .hash = "zphysics-0.2.0-dev-nZDEAI_fQgAEgTR_PnmxLaBEeYAqOi4GD644fPnJ9THh",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

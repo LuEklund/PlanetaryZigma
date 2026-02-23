@@ -1,0 +1,13 @@
+.{
+    .name = .planetary_zigma_shared,
+    .version = "0.0.0",
+    .fingerprint = 0xf563256072b4a02f,
+    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}
