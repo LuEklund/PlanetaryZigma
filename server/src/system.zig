@@ -12,6 +12,7 @@ const CameraController = @import("system/CameraController.zig");
 const Bullet = @import("system/Bullet.zig");
 
 pub const Info = struct {
+    tick: u64,
     delta_time: f32,
     elapsed_time: f32,
     world: *World,
@@ -53,6 +54,7 @@ pub const Entity = struct {
     health: HealthManager.Health = .{},
     attack_cooldown: f32 = 0,
     damage: f32 = 1,
+    state: shared.Entity.State = .walk,
 
     pub const Flags = packed struct {
         transform: bool = false,
@@ -62,6 +64,7 @@ pub const Entity = struct {
         planet: bool = false,
         bullet: bool = false,
         health: bool = false,
+        invinsible: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -176,11 +179,12 @@ pub const Context = struct {
         defer tracy_scope.end();
         try self.network_manager.update(info, &self.spawner);
         try self.player_controller.update(info);
-        try self.enemy_manager.update(info, &self.physics, &self.health_manager);
+        try self.enemy_manager.update(info, &self.physics, &self.health_manager, &self.network_manager);
         try self.physics.update(info);
         try self.bullet.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
+        // std.log.debug("time : {d}", .{info.elapsed_time});
         // self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;
     }

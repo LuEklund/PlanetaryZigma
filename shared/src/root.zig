@@ -11,8 +11,6 @@ pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
 pub const Entity = struct {
-    networked: bool,
-
     pub const Kind = enum(u16) {
         unknown,
         player,
@@ -27,9 +25,9 @@ pub const Entity = struct {
             };
         }
     };
-
-    pub const Spawn = struct {
-        kind: Kind,
-        id: u32,
+    pub const State = enum(u16) {
+        idle,
+        walk,
+        attack,
     };
 };

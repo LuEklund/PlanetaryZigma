@@ -75,7 +75,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
                 .kind = .enemy,
                 .transform = .{ .position = .{ 0, 100, 0 } },
                 .collider = .{
-                    .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                    .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                     .motion_type = .dynamic,
                 },
                 .health = .{ .current = 5, .max = 5 },

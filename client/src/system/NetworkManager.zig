@@ -181,5 +181,9 @@ fn handleCommand(self: *@This(), info: *const Info, command: shared.net.ServerPa
                 info.world.camera.health += health_command.amount;
             }
         },
+        .update_state => |state_command| {
+            const entity = info.world.getServerEntityPtr(state_command.id) orelse return;
+            entity.state = state_command.state;
+        },
     }
 }

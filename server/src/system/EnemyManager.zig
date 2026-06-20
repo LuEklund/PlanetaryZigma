@@ -6,6 +6,7 @@ const system = @import("../system.zig");
 const Spawner = @import("Spawner.zig");
 const Physics = @import("Physics.zig");
 const HealthManager = @import("HealthManager.zig");
+const NetworkManager = @import("NetworkManager.zig");
 const Info = system.Info;
 
 gpa: std.mem.Allocator,
@@ -39,7 +40,7 @@ pub fn deinit(self: *@This()) !void {
     _ = self;
 }
 
-pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager) !void {
+pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager, network_manager: *NetworkManager) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -91,14 +92,22 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             if (entity.attack_cooldown >= 1) {
                 entity.attack_cooldown = 0;
                 if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
+                if (entity.state != .attack) {
+                    entity.state = .attack;
+                    network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = .attack });
+                }
             } else {
                 entity.attack_cooldown += info.delta_time;
             }
         } else {
+            if (entity.state != .walk) {
+                entity.state = .walk;
+                network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = .walk });
+            }
             entity.attack_cooldown = 0;
         }
 
-        if (distance < 10) continue;
+        if (distance < 3) continue;
         const speed: f32 = 5;
         Physics.moveOnPlanet(body_interface, body_id, planet_up, entity.transform.forward(), speed, 0);
     }
