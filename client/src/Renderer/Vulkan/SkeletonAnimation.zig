@@ -12,6 +12,8 @@ buffers: []Buffer,
 model: *Model,
 curremt_time: f32 = 0,
 active: usize = 0,
+default: usize = 0,
+loop: bool = true,
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@This() {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);

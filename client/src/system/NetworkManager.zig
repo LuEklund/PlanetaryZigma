@@ -7,6 +7,7 @@ const World = system.World;
 const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
+const SkeletonAnimation = @import("../Renderer/Vulkan/SkeletonAnimation.zig");
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
@@ -59,7 +60,11 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *@This(), info: *const Info) !void {
+pub fn update(
+    self: *@This(),
+    info: *const Info,
+    skeletons: *std.AutoHashMap(u32, SkeletonAnimation),
+) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
@@ -113,13 +118,18 @@ pub fn update(self: *@This(), info: *const Info) !void {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try self.handleCommand(info, parsed);
+        try self.handleCommand(info, parsed, skeletons);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
     self.steam_client.packet_mutex.unlock(self.io);
 }
 
-fn handleCommand(self: *@This(), info: *const Info, command: shared.net.ServerPacket) !void {
+fn handleCommand(
+    self: *@This(),
+    info: *const Info,
+    command: shared.net.ServerPacket,
+    skeletons: *std.AutoHashMap(u32, SkeletonAnimation),
+) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
@@ -184,6 +194,23 @@ fn handleCommand(self: *@This(), info: *const Info, command: shared.net.ServerPa
         .update_state => |state_command| {
             const entity = info.world.getServerEntityPtr(state_command.id) orelse return;
             entity.state = state_command.state;
+            const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
+            skeleton_animation.active, skeleton_animation.loop = switch (entity.kind) {
+                .enemy => switch (entity.state) {
+                    .idle => .{ 0, true },
+                    .walk => .{ 1, true },
+                    .attack => .{ 2, false },
+                },
+                .player => switch (entity.state) {
+                    .idle => .{ 0, true },
+                    .walk => .{ 1, true },
+                    .attack => .{ 2, false },
+                },
+                else => .{ skeleton_animation.default, true },
+            };
+            if (skeleton_animation.loop == false) {
+                skeleton_animation.curremt_time = 0;
+            }
         },
     }
 }

@@ -3,6 +3,7 @@ const shared = @import("shared");
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
 const Spawner = @import("Spawner.zig");
+const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
@@ -17,7 +18,7 @@ pub fn deinit(self: *@This()) void {
     _ = self;
 }
 
-pub fn update(self: *@This(), info: *const system.Info) !void {
+pub fn update(self: *@This(), info: *const system.Info, network_manager: *NetworkManager) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const body_interface = self.physics.physics_system.getBodyInterfaceMut();
@@ -52,9 +53,9 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
             camera.pitch = std.math.clamp(camera.pitch + delta_pitch, -pitch_limit, pitch_limit);
         }
 
-        controller.attack_cool_down += info.delta_time;
-        if (input.mouse_button_left and controller.attack_cool_down >= 0.1) {
-            controller.attack_cool_down = 0;
+        player.attack_cooldown += info.delta_time;
+        if (input.mouse_button_left and player.attack_cooldown >= 1.0) {
+            player.attack_cooldown = 0;
             const muzzle_speed: f32 = 100;
             const player_direction = player.transform.forward();
             const muzzle_velocity = nz.vec.scale(player_direction, muzzle_speed);
@@ -69,8 +70,8 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
                 },
             );
         }
-        if (player.controller.input.k and controller.attack_cool_down >= 0.1) {
-            controller.attack_cool_down = 0;
+        if (player.controller.input.k and player.attack_cooldown >= 0.1) {
+            player.attack_cooldown = 0;
             _ = try self.spawner.spawn(.{
                 .kind = .enemy,
                 .transform = .{ .position = .{ 0, 100, 0 } },
@@ -123,6 +124,12 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
             if (input.down) vertical -= speed;
 
             Physics.moveOnPlanet(body_interface, id, planet_up, dir, speed, vertical);
+            const moving = nz.vec.length(dir) > std.math.floatEps(f32);
+            const desired: shared.Entity.State =
+                if (player.attack_cooldown < 1.0) .attack else if (moving) .walk else .idle;
+            if (player.attack_cooldown == 0 or desired != player.state)
+                network_manager.pending_state.appendAssumeCapacity(.{ .id = player.id, .state = desired });
+            player.state = desired;
 
             // Body yaw tracks camera yaw (pitch stays on the camera only).
             body_interface.setRotation(id, camera.yaw_rotation.toVec(), .activate);

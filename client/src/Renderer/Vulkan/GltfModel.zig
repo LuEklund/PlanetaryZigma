@@ -105,8 +105,7 @@ model_name: []const u8,
 render_resources: *RenderResources,
 nodes: std.ArrayList(Node) = .empty,
 top_nodes: std.ArrayList(usize) = .empty,
-animations: std.ArrayList(Animation) = .empty,
-active_animation: usize = 0,
+clips: std.ArrayList(Animation) = .empty,
 skins: std.ArrayList(Skin) = .empty,
 offset: nz.Transform3D(f32) = .{},
 READY_RELOAD_DELETE_THIS: bool = false,
@@ -128,9 +127,8 @@ pub fn init(
         .render_resources = render_resources,
         .nodes = .empty,
         .top_nodes = .empty,
-        .animations = .empty,
+        .clips = .empty,
         .skins = .empty,
-        .active_animation = 0,
         .offset = offset,
     };
     try asset_server.loadAsset(@This(), self, model_name, loadModel);
@@ -139,8 +137,8 @@ pub fn init(
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     for (self.nodes.items) |*node| node.deinit(gpa);
     self.nodes.deinit(gpa);
-    for (self.animations.items) |*animation| animation.deinit(gpa);
-    self.animations.deinit(gpa);
+    for (self.clips.items) |*animation| animation.deinit(gpa);
+    self.clips.deinit(gpa);
     for (self.skins.items) |*skin| skin.deinit(gpa, self.vma);
     self.skins.deinit(gpa);
     self.top_nodes.deinit(gpa);
@@ -157,8 +155,8 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
     if (self.READY_RELOAD_DELETE_THIS) {
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
-        for (self.animations.items) |*animation| animation.deinit(gpa);
-        self.animations.clearAndFree(gpa);
+        for (self.clips.items) |*animation| animation.deinit(gpa);
+        self.clips.clearAndFree(gpa);
         for (self.skins.items) |*skin| skin.deinit(gpa, self.vma);
         self.skins.clearAndFree(gpa);
         self.top_nodes.clearAndFree(gpa);
@@ -553,7 +551,7 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
 
     std.debug.print("MODEL- Reload 9\n", .{});
     if (gltf_loaded.animations) |animations| {
-        const model_animations = try self.animations.addManyAsSlice(gpa, animations.len);
+        const model_animations = try self.clips.addManyAsSlice(gpa, animations.len);
         for (animations, model_animations) |gltf_animation, *model_animation| {
             model_animation.* = try .init(
                 gpa,

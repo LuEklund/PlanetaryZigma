@@ -88,24 +88,18 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             body_interface.setRotation(body_id, rot.toVec(), .activate);
         }
 
-        if (distance < 4) {
-            if (entity.attack_cooldown >= 1) {
-                entity.attack_cooldown = 0;
-                if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
-                if (entity.state != .attack) {
-                    entity.state = .attack;
-                    network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = .attack });
-                }
-            } else {
-                entity.attack_cooldown += info.delta_time;
-            }
-        } else {
-            if (entity.state != .walk) {
-                entity.state = .walk;
-                network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = .walk });
-            }
+        entity.attack_cooldown += info.delta_time;
+        if (distance < 4 and entity.attack_cooldown >= 1) {
             entity.attack_cooldown = 0;
+            if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
         }
+
+        const moving = distance >= 3;
+        const desired: shared.Entity.State =
+            if (distance < 4 and entity.attack_cooldown < 1.0) .attack else if (moving) .walk else .idle;
+        if (entity.attack_cooldown == 0 or desired != entity.state)
+            network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = desired });
+        entity.state = desired;
 
         if (distance < 3) continue;
         const speed: f32 = 5;

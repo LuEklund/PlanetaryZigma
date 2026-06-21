@@ -135,7 +135,7 @@ pub const Context = struct {
         try self.renderer.update(info);
         try self.animation.update(info, &self.renderer.inner.skelentons);
         try self.asset_server.update();
-        try self.network_manager.update(info);
+        try self.network_manager.update(info, &self.renderer.inner.skelentons);
         try self.spawner.update(info, self);
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
