@@ -39,19 +39,20 @@ pub fn main(init: std.process.Init) !void {
 
     defer system_table.systemContextDeinit(&system_context);
 
-    var accumlated_time: f32 = 0;
+    var loop_time_tracker: f32 = 0;
     var elapsed_time: f32 = 0;
-    var delta_time: f32 = 0;
+    var tick: u64 = 0;
     const time_step: f32 = 0.0167;
     while (true) {
         if (system_context.request_exit) break;
-        delta_time = getDeltaTime(io);
-        accumlated_time += delta_time;
-        if (accumlated_time < time_step) continue;
+        loop_time_tracker += getDeltaTime(io);
+        if (loop_time_tracker < time_step) continue;
+        tick += 1;
         elapsed_time += time_step;
-        accumlated_time -= time_step;
+        loop_time_tracker -= time_step;
 
         system_table.systemContextUpdate(&system_context, &.{
+            .tick = tick,
             .delta_time = time_step,
             .elapsed_time = elapsed_time,
             .world = &world,

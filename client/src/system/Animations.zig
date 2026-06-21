@@ -28,12 +28,16 @@ pub fn update(
     for (info.world.entities.values()) |*entity| {
         const skeleton_animation = skeletons.getPtr(entity.id) orelse continue;
         const model = skeleton_animation.model;
-        if (entity.kind == .enemy) model.active_animation = 0;
-        if (model.animations.items.len == 0) continue;
-        const animation = model.animations.items[model.active_animation];
+        if (model.clips.items.len == 0) continue;
+        const animation = model.clips.items[skeleton_animation.active];
         skeleton_animation.curremt_time += info.delta_time;
 
-        if (skeleton_animation.curremt_time > animation.end) skeleton_animation.curremt_time -= animation.end;
+        if (skeleton_animation.curremt_time > animation.end) {
+            if (skeleton_animation.loop) skeleton_animation.curremt_time -= animation.end else {
+                skeleton_animation.active = skeleton_animation.default;
+                skeleton_animation.curremt_time = 0;
+            }
+        }
         for (animation.channels.items) |*channel| {
             const sampler = animation.samplers.items[channel.sampler_index];
             for (0..sampler.inputs.items.len - 1) |i| {

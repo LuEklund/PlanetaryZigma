@@ -25,6 +25,8 @@ pub fn removeHealth(
     entity: *Entity,
     amount: f32,
 ) bool {
+    if (entity.flags.invinsible) return false;
+    std.log.debug("tried taking dmg {d}, current health {d}", .{ amount, entity.health.current });
     return self.addHealth(entity, -amount);
 }
 

@@ -35,7 +35,7 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 
     const position: [2]f32 = .{ @floatCast(self.mouse_pos[0]), @floatCast(self.mouse_pos[1]) };
-    var buf: [32]u8 = undefined;
+    // var buf: [32]u8 = undefined;
     ui.start(.{
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = self.input_map.mouse_button_left,
@@ -99,7 +99,6 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
         }
         if (ui.isActive("refresh") and network_manager.server_list.refresh == false) {
             network_manager.server_list.refresh = true;
-            std.log.debug("Pressed button, {d}", .{network_manager.server_list.count});
         }
     } else {
         const healthbar_width: f32 = 200 * self.health / 100;
@@ -116,11 +115,11 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
             .color = .new(1, 0, 0, 1),
         });
 
-        const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{self.transform.position[1]});
-        ui.add(
-            null,
-            .{ .name = "display", .size = .{ .fixed = .{ .heigth = 0, .width = 0 } }, .text = s, .position = .center },
-        );
+        // const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{self.transform.position[1]});
+        // ui.add(
+        //     null,
+        //     .{ .name = "display", .size = .{ .fixed = .{ .heigth = 0, .width = 0 } }, .text = s, .position = .center },
+        // );
         // ui.add("display", .{ .position = .{ .fixed = .{ .top = 0, .left = 0 } }, .size = .{ .fixed = .{ .heigth = 100, .width = 100 } }, .name = "d-button" });
         // if (ui.isActive("d-button")) {
         //     self.input_map.forward = true;

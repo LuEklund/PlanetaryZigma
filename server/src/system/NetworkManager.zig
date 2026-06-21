@@ -34,17 +34,18 @@ io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
 pending_add_health: std.ArrayList(struct { id: u32, amount: f32 }) = .empty,
-pending_spawn: std.ArrayList(shared.Entity.Spawn) = .empty,
+pending_spawn: std.ArrayList(struct { kind: shared.Entity.Kind, id: u32 }) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
+pending_state: std.ArrayList(struct { id: u32, state: shared.Entity.State }) = .empty,
 
 pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
-
     self.* = .{
         .gpa = gpa,
         .io = io,
         .steam_server = net,
         .clients = .init(gpa),
         .pending_add_health = try .initCapacity(gpa, 4096),
+        .pending_state = try .initCapacity(gpa, 1024),
     };
 }
 
@@ -52,6 +53,9 @@ pub fn deinit(self: *@This()) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
+    self.pending_state.deinit(self.gpa);
+    self.pending_spawn.deinit(self.gpa);
+    self.pending_despawn.deinit(self.gpa);
 }
 
 pub fn reload(self: *@This(), pre_reload: bool) !void {
@@ -122,7 +126,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .kind = .player,
                         .transform = .{ .position = .{ 0, 0, 100 } },
                         .collider = .{
-                            .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                            .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                             .motion_type = .dynamic,
                         },
                         .health = .{ .current = 100, .max = 100 },
@@ -133,6 +137,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                             .controller = true,
                             .camera = true,
                             .health = true,
+                            .invinsible = true,
                         },
                     });
                     client.entity_id = new_player_entity.id;
@@ -219,6 +224,16 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 },
             }, .reliable);
         }
+        // states
+        for (self.pending_state.items) |entry| {
+            std.log.debug("send id {d} : state {t}", .{ entry.id, entry.state });
+            try client.sendCommand(writer, .{
+                .update_state = .{
+                    .id = @intCast(entry.id),
+                    .state = entry.state,
+                },
+            }, .reliable);
+        }
         // transforms
         for (world.entities.values()) |*entity| {
             if (!entity.flags.transform) continue;
@@ -233,5 +248,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.pending_despawn.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
     self.pending_add_health.clearRetainingCapacity();
+    self.pending_state.clearRetainingCapacity();
     self.steam_server.packet_mutex.unlock(self.io);
 }

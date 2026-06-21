@@ -36,6 +36,7 @@ pub const ServerPacket = union(enum) {
     update_transform: UpdateTransform,
     update_camera_rotation: UpdateCameraRotation,
     add_health: AddHealth,
+    update_state: UpdateState,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -89,6 +90,11 @@ pub const UpdateCameraRotation = struct {
 pub const AddHealth = struct {
     id: u16,
     amount: f16,
+};
+
+pub const UpdateState = struct {
+    id: u16,
+    state: Entity.State,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────

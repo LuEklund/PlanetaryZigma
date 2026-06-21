@@ -6,6 +6,7 @@ const system = @import("../system.zig");
 const Spawner = @import("Spawner.zig");
 const Physics = @import("Physics.zig");
 const HealthManager = @import("HealthManager.zig");
+const NetworkManager = @import("NetworkManager.zig");
 const Info = system.Info;
 
 gpa: std.mem.Allocator,
@@ -39,7 +40,7 @@ pub fn deinit(self: *@This()) !void {
     _ = self;
 }
 
-pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager) !void {
+pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager, network_manager: *NetworkManager) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -87,18 +88,20 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             body_interface.setRotation(body_id, rot.toVec(), .activate);
         }
 
-        if (distance < 4) {
-            if (entity.attack_cooldown >= 1) {
-                entity.attack_cooldown = 0;
-                if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
-            } else {
-                entity.attack_cooldown += info.delta_time;
-            }
-        } else {
+        entity.attack_cooldown += info.delta_time;
+        if (distance < 4 and entity.attack_cooldown >= 1) {
             entity.attack_cooldown = 0;
+            if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
         }
 
-        if (distance < 10) continue;
+        const moving = distance >= 3;
+        const desired: shared.Entity.State =
+            if (distance < 4 and entity.attack_cooldown < 1.0) .attack else if (moving) .walk else .idle;
+        if (entity.attack_cooldown == 0 or desired != entity.state)
+            network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = desired });
+        entity.state = desired;
+
+        if (distance < 3) continue;
         const speed: f32 = 5;
         Physics.moveOnPlanet(body_interface, body_id, planet_up, entity.transform.forward(), speed, 0);
     }
