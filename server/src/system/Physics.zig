@@ -39,13 +39,16 @@ pub const Collider = struct {
     shape: union(enum) { primitive: Primitive, mesh: Mesh },
     body_id: ?zphy.BodyId = null,
     motion_type: zphy.MotionType,
+    object_layer: object_layers,
     // max_angular_velocity: f32 = 1,
 };
 
-const object_layers = struct {
-    const non_moving: zphy.ObjectLayer = 0;
-    const moving: zphy.ObjectLayer = 1;
-    const len: u32 = 2;
+const object_layers = enum(zphy.ObjectLayer) {
+    non_moving,
+    moving,
+    planet_only,
+
+    const len: u32 = @typeInfo(object_layers).@"enum".fields.len;
 };
 
 const broad_phase_layers = struct {
@@ -60,8 +63,9 @@ const BroadPhaseLayerInterface = extern struct {
 
     fn init() BroadPhaseLayerInterface {
         var object_to_broad_phase: [object_layers.len]zphy.BroadPhaseLayer = undefined;
-        object_to_broad_phase[object_layers.non_moving] = broad_phase_layers.non_moving;
-        object_to_broad_phase[object_layers.moving] = broad_phase_layers.moving;
+        object_to_broad_phase[@intFromEnum(object_layers.non_moving)] = broad_phase_layers.non_moving;
+        object_to_broad_phase[@intFromEnum(object_layers.moving)] = broad_phase_layers.moving;
+        object_to_broad_phase[@intFromEnum(object_layers.planet_only)] = broad_phase_layers.moving;
         return .{ .object_to_broad_phase = object_to_broad_phase };
     }
 
@@ -92,10 +96,10 @@ const ObjectVsBroadPhaseLayerFilter = extern struct {
         layer1: zphy.ObjectLayer,
         layer2: zphy.BroadPhaseLayer,
     ) callconv(.c) bool {
-        return switch (layer1) {
-            object_layers.non_moving => layer2 == broad_phase_layers.moving,
-            object_layers.moving => true,
-            else => unreachable,
+        return switch (@as(object_layers, @enumFromInt(layer1))) {
+            .non_moving => layer2 == broad_phase_layers.moving,
+            .moving => true,
+            .planet_only => layer2 == broad_phase_layers.non_moving,
         };
     }
 };
@@ -107,10 +111,11 @@ const ObjectLayerPairFilter = extern struct {
         object1: zphy.ObjectLayer,
         object2: zphy.ObjectLayer,
     ) callconv(.c) bool {
-        return switch (object1) {
-            object_layers.non_moving => object2 == object_layers.moving,
-            object_layers.moving => true,
-            else => unreachable,
+        const other: object_layers = @enumFromInt(object2);
+        return switch (@as(object_layers, @enumFromInt(object1))) {
+            .non_moving => other != .non_moving,
+            .moving => other != .planet_only,
+            .planet_only => other == .non_moving,
         };
     }
 };
@@ -202,32 +207,6 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io) !void {
 
     physics_system.optimizeBroadPhase();
 
-    const planet: shared.Planet(.logical) = try .init(gpa, 10);
-
-    const mesh_shape_setting = try zphy.MeshShapeSettings.create(
-        planet.vertices.ptr,
-        @intCast(planet.vertices.len),
-        @sizeOf([4]f32),
-        planet.indices,
-    );
-    zphy.MeshShapeSettings.sanitize(mesh_shape_setting);
-    defer mesh_shape_setting.asShapeSettings().release();
-    const custom_shape = try mesh_shape_setting.asShapeSettings().createShape();
-
-    const body_interface = physics_system.getBodyInterfaceMut();
-    const body_id = try body_interface.createAndAddBody(.{
-        .position = .{ 0, 0, 0, 1 },
-        .rotation = .{ 0, 0, 0, 1 },
-        .shape = custom_shape,
-        .motion_type = .static,
-        .object_layer = object_layers.moving,
-        // .user_data = @intFromEnum(entry),
-        .angular_velocity = .{ 0.0, 0.0, 0.0, 0 },
-        // .max_angular_velocity = collider.max_angular_velocity,
-        //.allow_sleeping = false,
-    }, .activate);
-    _ = body_id;
-
     self.* = .{
         .global_state_reload = undefined,
         .gpa = gpa,
@@ -310,7 +289,29 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
         if (entity.collider.motion_type != .dynamic) continue;
 
         const distance_from_center = nz.vec.length(entity.transform.position);
-        if (distance_from_center < 0.0001) continue;
+        if (distance_from_center < 4) {
+            const query = self.physics_system.getNarrowPhaseQuery();
+            const rand = info.world.prng.random();
+            const x = rand.float(f32) * 2 - 1;
+            const y = rand.float(f32) * 2 - 1;
+            const z = rand.float(f32) * 2 - 1;
+            const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+            const norm_direction = nz.vec.normalize(vector_direction);
+
+            const origin = nz.vec.scale(norm_direction, 100);
+            const ray: zphy.RRayCast = .{
+                .origin = .{ origin[0], origin[1], origin[2], 1 },
+                .direction = .{ -origin[0], -origin[1], -origin[2], 0 },
+            };
+            var filter: PlanetLayerFilter = .{};
+            const result = query.castRay(ray, .{ .object_layer_filter = &filter.object_layer_filter });
+            if (result.has_hit) {
+                const point = ray.getPointOnRay(result.hit.fraction) + nz.vec.scale(norm_direction, 5);
+                body_interface.setPosition(body_id, point, .activate);
+                body_interface.setLinearVelocity(body_id, .{ 0, 0, 0 });
+            }
+            continue;
+        }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
         if (!self.isGrounded(entity, planet_up)) {
             body_interface.addForce(body_id, nz.vec.scale(-planet_up, body_mass * gravity_accel));
@@ -355,18 +356,11 @@ fn colliderGroundExtent(collider: Collider) f32 {
     };
 }
 
-const ExcludeBodyFilter = extern struct {
-    body_filter: zphy.BodyFilter = .init(@This()),
-    exclude: zphy.BodyId,
+const PlanetLayerFilter = extern struct {
+    object_layer_filter: zphy.ObjectLayerFilter = .init(@This()),
 
-    fn self(filter: *const zphy.BodyFilter) *const ExcludeBodyFilter {
-        return @alignCast(@fieldParentPtr("body_filter", filter));
-    }
-    pub fn shouldCollide(filter: *const zphy.BodyFilter, body_id: *const zphy.BodyId) callconv(.c) bool {
-        return body_id.* != self(filter).exclude;
-    }
-    pub fn shouldCollideLocked(filter: *const zphy.BodyFilter, body: *const zphy.Body) callconv(.c) bool {
-        return body.id != self(filter).exclude;
+    pub fn shouldCollide(_: *const zphy.ObjectLayerFilter, layer: zphy.ObjectLayer) callconv(.c) bool {
+        return @as(object_layers, @enumFromInt(layer)) == .non_moving;
     }
 };
 
@@ -375,11 +369,11 @@ fn isGrounded(self: *@This(), entity: *const system.Entity, planet_up: nz.Vec3(f
     const ground_reach = colliderGroundExtent(entity.collider) + ground_check_skin;
     const position = entity.transform.position;
     const ray_direction = nz.vec.scale(planet_up, -ground_reach);
-    var filter: ExcludeBodyFilter = .{ .exclude = entity.collider.body_id.? };
+    var filter: PlanetLayerFilter = .{};
     const cast_result = self.physics_system.getNarrowPhaseQuery().castRay(.{
         .origin = .{ position[0], position[1], position[2], 1 },
         .direction = .{ ray_direction[0], ray_direction[1], ray_direction[2], 0 },
-    }, .{ .body_filter = &filter.body_filter });
+    }, .{ .object_layer_filter = &filter.object_layer_filter });
     return cast_result.has_hit;
 }
 
@@ -431,7 +425,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
         .rotation = transform.rotation.toVec(),
         .shape = shape,
         .motion_type = collider.motion_type,
-        .object_layer = object_layers.moving,
+        .object_layer = @intFromEnum(collider.object_layer),
         .user_data = entity.id,
         .angular_velocity = .{ 0.0, 0.0, 0.0, 0 },
         .allowed_DOFs = translation_only,

@@ -88,7 +88,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != 0) try spawner.depspawn(client.entity_id);
+                if (client.entity_id != 0) spawner.depspawn(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 std.log.debug("client disconnected: conn={d}", .{conn});
@@ -124,10 +124,11 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                     if (client.name.len == 0) client.name = try self.gpa.dupe(u8, connect.name);
                     const new_player_entity = try spawner.spawn(.{
                         .kind = .player,
-                        .transform = .{ .position = .{ 0, 0, 100 } },
+                        .transform = .{ .position = .{ 0, 100, 0 } },
                         .collider = .{
                             .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                             .motion_type = .dynamic,
+                            .object_layer = .moving,
                         },
                         .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
@@ -141,6 +142,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         },
                     });
                     client.entity_id = new_player_entity.id;
+                    info.world.players.appendAssumeCapacity(client.entity_id);
                     try client.sendCommand(writer, .{ .acknowledge = .{ .id = client.entity_id } }, .reliable);
                     std.log.debug("PLAYER SPAWN entity_id={d} body_id={any}", .{
                         client.entity_id,
@@ -148,7 +150,8 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                     });
                 },
                 .disconnect => {
-                    if (client.entity_id != 0) try spawner.depspawn(client.entity_id);
+                    if (client.entity_id == 0) continue;
+                    spawner.depspawn(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {

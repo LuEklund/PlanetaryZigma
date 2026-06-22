@@ -45,7 +45,7 @@ pub fn update(
 
         bullet.lifetime -= dt;
         if (bullet.lifetime <= 0) {
-            try spawner.depspawn(entity.id);
+            spawner.depspawn(entity.id);
             continue;
         }
 
@@ -71,7 +71,7 @@ pub fn update(
                 if (target_id == entity.owner_id) {
                     continue;
                 }
-                if (health_manager.removeHealth(hit_entity, entity.damage)) try spawner.depspawn(entity.id);
+                if (health_manager.removeHealth(hit_entity, entity.damage)) spawner.depspawn(entity.id);
             }
         }
         entity.transform.position = p0 + segment;

@@ -2,6 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
 const HealthManager = @import("system/HealthManager.zig");
+const ItemManager = @import("system/ItemManager.zig");
 const Spawner = @import("system/Spawner.zig");
 const EnemyManager = @import("system/EnemyManager.zig");
 const tracy = @import("ztracy");
@@ -50,9 +51,12 @@ pub const Entity = struct {
     planet: u32 = 0,
     bullet: BulletData = .{},
     health: HealthManager.Health = .{},
-    attack_cooldown: f32 = 0,
+    attack_speed: f32 = 1,
+    last_attack: f32 = 0,
     damage: f32 = 1,
+    speed: f32 = 10,
     state: shared.Entity.State = .idle,
+    item_amount: f32 = 0,
 
     pub const Flags = packed struct {
         transform: bool = false,
@@ -63,6 +67,7 @@ pub const Entity = struct {
         bullet: bool = false,
         health: bool = false,
         invinsible: bool = false,
+        item: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -82,7 +87,9 @@ pub const World = struct {
     pub const max_entities: usize = 1024;
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
+    players: std.ArrayList(u32),
     next_id: u32 = 1,
+    prng: std.Random.DefaultPrng = .init(0xACE1),
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
         var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
@@ -91,6 +98,7 @@ pub const World = struct {
         return .{
             .gpa = gpa,
             .entities = entities,
+            .players = try .initCapacity(gpa, 16),
         };
     }
     pub fn deinit(self: *@This()) void {
@@ -114,6 +122,9 @@ pub const World = struct {
 
     pub fn despawn(self: *@This(), id: u32) bool {
         if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
+        if (std.mem.indexOfScalar(u32, self.players.items, id)) |i| {
+            _ = self.players.swapRemove(i);
+        }
         return self.entities.swapRemove(id);
     }
 };
@@ -130,6 +141,7 @@ pub const Context = struct {
     camera_controller: CameraController,
     spawner: Spawner,
     enemy_manager: EnemyManager,
+    item_manager: ItemManager,
     bullet: Bullet,
     request_exit: bool = false,
 
@@ -154,15 +166,17 @@ pub const Context = struct {
             .camera_controller = undefined,
             .bullet = undefined,
             .health_manager = undefined,
+            .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
         try self.player_controller.init(&self.physics, &self.spawner);
         try self.camera_controller.init();
         try self.spawner.init(data.gpa, data.world);
         try self.bullet.init(data.gpa, self.world, &self.physics);
-        try self.enemy_manager.init(data.gpa, data.world, &self.spawner);
+        try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
         try self.health_manager.init(&self.network_manager, &self.spawner);
+        try self.item_manager.init();
     }
     pub fn deinit(self: *@This()) !void {
         self.physics.deinit();
@@ -182,6 +196,8 @@ pub const Context = struct {
         try self.bullet.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
+        try self.item_manager.update(info, &self.spawner, &self.health_manager);
+
         // std.log.debug("time : {d}", .{info.elapsed_time});
         // self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;

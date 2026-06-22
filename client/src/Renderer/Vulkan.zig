@@ -37,6 +37,9 @@ pub const c = @import("vulkan");
 pub const Vertex = Mesh.Vertex;
 const max_frames_inflight: usize = 3;
 
+gpa: std.mem.Allocator,
+asset_server: *AssetServer,
+
 instance: Instance,
 debug_messenger: DebugMessenger,
 surface: Surface,
@@ -82,6 +85,8 @@ pub const InitOptions = struct {
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*@This() {
     const self = try gpa.create(@This());
+    self.gpa = gpa;
+    self.asset_server = asset_server;
     self.skelentons = .init(gpa);
 
     {
@@ -161,66 +166,46 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         );
     }
 
-    {
-        self.pipeline_layout = try .init(
-            self.device,
-            Shader.AnimationPushConstant,
-            &.{ self.scene_layout.handle, self.material_layout.handle },
-        );
-
-        self.ui_pipeline_layout = try .init(
-            self.device,
-            Shader.UiPushConstant,
-            &.{self.material_layout.handle},
-        );
-    }
-    {
-        _ = try createModelWithMesh(
-            self,
-            gpa,
-            RenderResources.default_mesh_name,
-            Mesh.box.verticies,
-            Mesh.box.indicies,
-            .unknown,
-        );
-    }
-    {
-        _ = try createModelWithMesh(
-            self,
-            gpa,
-            "bullet",
-            Mesh.box.verticies,
-            Mesh.box.indicies,
-            .bullet,
-        );
-    }
-
-    const player_model: *GltfModel = try .init(
-        gpa,
-        self.vma,
+    self.pipeline_layout = try .init(
         self.device,
-        asset_server,
-        "objects/BenRun.glb",
-        &self.render_resources,
-        .{
-            .position = .{ 0, -1, 0 },
-            .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
-        },
+        Shader.AnimationPushConstant,
+        &.{ self.scene_layout.handle, self.material_layout.handle },
     );
-    self.models.put(.player, player_model);
-    const enemy_model: *GltfModel = try .init(
-        gpa,
-        self.vma,
+
+    self.ui_pipeline_layout = try .init(
         self.device,
-        asset_server,
-        "objects/Skelly.glb",
-        &self.render_resources,
-        .{
-            .position = .{ 0, -0.6, 0 },
-            .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
-        },
+        Shader.UiPushConstant,
+        &.{self.material_layout.handle},
     );
-    self.models.put(.enemy, enemy_model);
+    _ = try createModelWithMesh(
+        self,
+        gpa,
+        RenderResources.default_mesh_name,
+        Mesh.box.verticies,
+        Mesh.box.indicies,
+        .unknown,
+    );
+    _ = try createModelWithMesh(
+        self,
+        gpa,
+        "bullet",
+        Mesh.box.verticies,
+        Mesh.box.indicies,
+        .bullet,
+    );
+
+    try self.createModel("objects/health.glb", .health_item, .{});
+    try self.createModel("objects/speed.glb", .speed_item, .{});
+    try self.createModel("objects/damage.glb", .damage_item, .{});
+    try self.createModel("objects/attack_speed.glb", .attack_speed_item, .{});
+    try self.createModel("objects/BenRun.glb", .player, .{
+        .position = .{ 0, -1, 0 },
+        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
+    });
+    try self.createModel("objects/Skelly.glb", .skelly, .{
+        .position = .{ 0, -0.6, 0 },
+        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
+    });
 
     {
         self.vertex_shader = try .init(
@@ -580,7 +565,10 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     for (info.world.entities.values()) |*entity| {
         if (!entity.flags.transform) continue;
         const model = self.models.get(entity.kind) orelse {
-            if (entity.kind.expectsModel()) std.debug.panic("no model registered for {s}", .{@tagName(entity.kind)});
+            if (entity.kind.expectsModel()) {
+                std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
+                return error.NoModel;
+            }
             continue; // bullet/unknown: intentionally modelless
         };
         var transform = entity.transform;
@@ -817,4 +805,17 @@ fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f3
         0.0,                              0.0,                              -2.0 / (far - near),          0.0,
         -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0,
     });
+}
+
+fn createModel(self: *@This(), path: []const u8, kind: shared.Entity.Kind, offset: nz.Transform3D(f32)) !void {
+    const model: *GltfModel = try .init(
+        self.gpa,
+        self.vma,
+        self.device,
+        self.asset_server,
+        path,
+        &self.render_resources,
+        offset,
+    );
+    self.models.put(kind, model);
 }

@@ -49,7 +49,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             const client_id = entity.id;
             entity.* = .{ .id = client_id, .kind = entity_info.kind, .flags = .{ .transform = true } };
             switch (entity_info.kind) {
-                .enemy, .player => |kind| {
+                .player => |kind| {
                     try system_context.renderer.inner.attachSkeleton(self.gpa, client_id, kind);
                 },
                 .planet => {
@@ -68,7 +68,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 .bullet => {
                     entity.transform.scale = @splat(0.3);
                 },
-                else => {},
+                else => {
+                    if (entity.isEnemy() or entity.isItem()) {
+                        try system_context.renderer.inner.attachSkeleton(self.gpa, client_id, entity.kind);
+                    }
+                },
             }
             try self.world.enitity_mapping.put(self.gpa, entity_info.server_id, client_id);
         }

@@ -53,33 +53,33 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             camera.pitch = std.math.clamp(camera.pitch + delta_pitch, -pitch_limit, pitch_limit);
         }
 
-        player.attack_cooldown += info.delta_time;
-        if (input.mouse_button_left and player.attack_cooldown >= 1.0) {
-            player.attack_cooldown = 0;
+        const player_forward_direction = player.transform.forward();
+        if (input.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
+            player.last_attack = info.elapsed_time;
             const muzzle_speed: f32 = 100;
-            const player_direction = player.transform.forward();
-            const muzzle_velocity = nz.vec.scale(player_direction, muzzle_speed);
+            const muzzle_velocity = nz.vec.scale(player_forward_direction, muzzle_speed);
             _ = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
-                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_direction, 1.5), .rotation = player.transform.rotation },
+                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                     .bullet = .{ .velocity = muzzle_velocity, .lifetime = 5 },
                     .flags = .{ .transform = true, .bullet = true },
-                    .damage = 5,
+                    .damage = player.damage,
                 },
             );
         }
-        if (player.controller.input.k and player.attack_cooldown >= 0.1) {
-            player.attack_cooldown = 0;
+        if (player.controller.input.k and info.elapsed_time - player.last_attack >= 0.1) {
+            player.last_attack = info.elapsed_time;
             _ = try self.spawner.spawn(.{
-                .kind = .enemy,
+                .kind = .skelly,
                 .transform = .{ .position = .{ 0, 100, 0 } },
                 .collider = .{
                     .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                     .motion_type = .dynamic,
+                    .object_layer = .moving,
                 },
-                .health = .{ .current = 5, .max = 5 },
+                .health = .{ .current = 20, .max = 20 },
                 .flags = .{ .transform = true, .collider = true, .health = true },
             });
         }
@@ -112,7 +112,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
 
         // --- Apply to body ---
         if (player.collider.body_id) |id| {
-            const speed: f32 = 10;
             var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
             if (input.forward) dir += move_fwd;
             if (input.backward) dir -= move_fwd;
@@ -120,14 +119,14 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             if (input.left) dir -= move_right;
 
             var vertical: f32 = 0;
-            if (input.up) vertical += speed;
-            if (input.down) vertical -= speed;
+            if (input.up) vertical += player.speed;
+            if (input.down) vertical -= player.speed;
 
-            Physics.moveOnPlanet(body_interface, id, planet_up, dir, speed, vertical);
+            Physics.moveOnPlanet(body_interface, id, planet_up, dir, player.speed, vertical);
             const moving = nz.vec.length(dir) > std.math.floatEps(f32);
             const desired: shared.Entity.State =
-                if (player.attack_cooldown < 1.0) .attack else if (moving) .walk else .idle;
-            if (player.attack_cooldown == 0 or desired != player.state)
+                if (player.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
+            if (player.attack_speed == 0 or desired != player.state)
                 network_manager.pending_state.appendAssumeCapacity(.{ .id = player.id, .state = desired });
             player.state = desired;
 

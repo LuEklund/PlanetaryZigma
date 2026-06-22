@@ -11,17 +11,42 @@ pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
 pub const Entity = struct {
+    pub fn isEnemy(kind: Kind) bool {
+        return switch (kind) {
+            .skelly => true,
+            else => false,
+        };
+    }
+
+    pub fn isItem(kind: Kind) bool {
+        return switch (kind) {
+            .health_item,
+            .speed_item,
+            .damage_item,
+            .attack_speed_item,
+            => true,
+            else => false,
+        };
+    }
+
     pub const Kind = enum(u16) {
         unknown,
         player,
         planet,
-        enemy,
         bullet,
+
+        skelly,
+
+        health_item,
+        speed_item,
+        damage_item,
+        attack_speed_item,
 
         pub fn expectsModel(kind: Kind) bool {
             return switch (kind) {
-                .player, .planet, .enemy => true,
+                .player, .planet => true,
                 .unknown, .bullet => false,
+                else => isEnemy(kind) or isItem(kind),
             };
         }
     };
