@@ -121,6 +121,9 @@ pub const World = struct {
 
     pub fn despawn(self: *@This(), id: u32) bool {
         if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
+        if (std.mem.indexOfScalar(u32, self.players.items, id)) |i| {
+            _ = self.players.swapRemove(i);
+        }
         return self.entities.swapRemove(id);
     }
 };

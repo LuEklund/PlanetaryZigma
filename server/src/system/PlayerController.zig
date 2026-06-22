@@ -53,16 +53,16 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             camera.pitch = std.math.clamp(camera.pitch + delta_pitch, -pitch_limit, pitch_limit);
         }
 
+        const player_forward_direction = player.transform.forward();
         if (input.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
             const muzzle_speed: f32 = 100;
-            const player_direction = player.transform.forward();
-            const muzzle_velocity = nz.vec.scale(player_direction, muzzle_speed);
+            const muzzle_velocity = nz.vec.scale(player_forward_direction, muzzle_speed);
             _ = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
-                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_direction, 1.5), .rotation = player.transform.rotation },
+                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                     .bullet = .{ .velocity = muzzle_velocity, .lifetime = 5 },
                     .flags = .{ .transform = true, .bullet = true },
                     .damage = player.damage,
@@ -71,21 +71,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
         if (player.controller.input.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            _ = try self.spawner.spawn(.{
-                .kind = .speed_item,
-                .transform = .{ .position = .{ 0, 100, 0 } },
-                .collider = .{
-                    .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
-                    .motion_type = .dynamic,
-                    .object_layer = .planet_only,
-                },
-                .flags = .{
-                    .collider = true,
-                    .transform = true,
-                    .item = true,
-                },
-                .item_amount = 10,
-            });
             _ = try self.spawner.spawn(.{
                 .kind = .skelly,
                 .transform = .{ .position = .{ 0, 100, 0 } },

@@ -152,7 +152,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .disconnect => {
                     if (client.entity_id == 0) continue;
                     spawner.depspawn(client.entity_id);
-                    _ = info.world.players.swapRemove(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {

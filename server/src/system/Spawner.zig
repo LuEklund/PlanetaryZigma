@@ -6,8 +6,7 @@ const Physics = @import("Physics.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
-const nz = shared.nz;
-
+const nz = shared.numz;
 const max_despawn_count: u32 = 1000;
 
 gpa: std.mem.Allocator,
@@ -40,7 +39,39 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         },
         .flags = .{ .transform = true, .collider = true, .planet = true },
     });
+
+    var prng: std.Random.DefaultPrng = .init(0xACE1);
+    const rand = prng.random();
+    for (0..20) |i| {
+        const item_kind: shared.Entity.Kind = switch (i) {
+            0...5 => .attack_speed_item,
+            6...10 => .speed_item,
+            11...15 => .damage_item,
+            else => .health_item,
+        };
+
+        const x = rand.float(f32) * 2 - 1;
+        const y = rand.float(f32) * 2 - 1;
+        const z = rand.float(f32) * 2 - 1;
+        const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+        _ = try self.spawn(.{
+            .kind = item_kind,
+            .transform = .{ .position = nz.vec.scale(vector_direction, 100) },
+            .collider = .{
+                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                .motion_type = .dynamic,
+                .object_layer = .planet_only,
+            },
+            .flags = .{
+                .collider = true,
+                .transform = true,
+                .item = true,
+            },
+            .item_amount = @floatFromInt(i + 1),
+        });
+    }
 }
+
 pub fn deinit(self: *@This()) void {
     self.pending_despawn.deinit(self.gpa);
 }
