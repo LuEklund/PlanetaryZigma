@@ -22,6 +22,23 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .world = world,
         .pending_despawn = try .initCapacity(gpa, max_despawn_count),
     };
+    const planet_size: u32 = 100;
+    const planet: shared.Planet(.logical) = try .init(self.gpa, planet_size);
+    _ = try self.spawn(.{
+        .kind = .planet,
+        .planet = planet_size,
+        .transform = .{},
+        .collider = .{
+            .shape = .{
+                .mesh = .{
+                    .indices = planet.indices,
+                    .vertices = planet.vertices,
+                },
+            },
+            .motion_type = .static,
+        },
+        .flags = .{ .transform = true, .collider = true, .planet = true },
+    });
 }
 pub fn deinit(self: *@This()) void {
     self.pending_despawn.deinit(self.gpa);

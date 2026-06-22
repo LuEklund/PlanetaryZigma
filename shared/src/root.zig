@@ -16,11 +16,12 @@ pub const Entity = struct {
         player,
         planet,
         enemy,
+        item,
         bullet,
 
         pub fn expectsModel(kind: Kind) bool {
             return switch (kind) {
-                .player, .planet, .enemy => true,
+                .player, .planet, .enemy, .item => true,
                 .unknown, .bullet => false,
             };
         }

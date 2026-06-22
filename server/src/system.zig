@@ -37,6 +37,17 @@ pub const BulletData = struct {
     lifetime: f32 = 5,
 };
 
+pub const Item = struct {
+    amount: f32,
+    kind: Kind,
+    const Kind = enum {
+        speed,
+        attack_speed,
+        damage,
+        heal,
+    };
+};
+
 pub const Entity = struct {
     id: u32 = 0,
     flags: Flags = .{},
@@ -53,6 +64,7 @@ pub const Entity = struct {
     attack_cooldown: f32 = 0,
     damage: f32 = 1,
     state: shared.Entity.State = .idle,
+    item: Item = .{ .kind = .heal, .amount = 0 },
 
     pub const Flags = packed struct {
         transform: bool = false,
@@ -160,7 +172,7 @@ pub const Context = struct {
         try self.camera_controller.init();
         try self.spawner.init(data.gpa, data.world);
         try self.bullet.init(data.gpa, self.world, &self.physics);
-        try self.enemy_manager.init(data.gpa, data.world, &self.spawner);
+        try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
         try self.health_manager.init(&self.network_manager, &self.spawner);
     }

@@ -154,6 +154,7 @@ fn handleCommand(
                 .bullet => {
                     self.spawner.spawn(.{ .kind = .bullet, .server_id = server_id });
                 },
+                .item => {},
                 .unknown => @panic("unknown entity type... wtf"),
             }
 

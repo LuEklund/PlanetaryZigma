@@ -124,7 +124,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                     if (client.name.len == 0) client.name = try self.gpa.dupe(u8, connect.name);
                     const new_player_entity = try spawner.spawn(.{
                         .kind = .player,
-                        .transform = .{ .position = .{ 0, 0, 100 } },
+                        .transform = .{ .position = .{ 0, 100, 0 } },
                         .collider = .{
                             .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                             .motion_type = .dynamic,
