@@ -36,6 +36,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
                 },
             },
             .motion_type = .static,
+            .object_layer = .non_moving,
         },
         .flags = .{ .transform = true, .collider = true, .planet = true },
     });

@@ -39,14 +39,16 @@ pub const Collider = struct {
     shape: union(enum) { primitive: Primitive, mesh: Mesh },
     body_id: ?zphy.BodyId = null,
     motion_type: zphy.MotionType,
+    object_layer: object_layers,
     // max_angular_velocity: f32 = 1,
 };
 
-const object_layers = struct {
-    const non_moving: zphy.ObjectLayer = 0;
-    const moving: zphy.ObjectLayer = 1;
-    const planet_only: zphy.ObjectLayer = 2;
-    const len: u32 = 3;
+const object_layers = enum(zphy.ObjectLayer) {
+    non_moving,
+    moving,
+    planet_only,
+
+    const len: u32 = @typeInfo(object_layers).@"enum".fields.len;
 };
 
 const broad_phase_layers = struct {
@@ -61,9 +63,9 @@ const BroadPhaseLayerInterface = extern struct {
 
     fn init() BroadPhaseLayerInterface {
         var object_to_broad_phase: [object_layers.len]zphy.BroadPhaseLayer = undefined;
-        object_to_broad_phase[object_layers.non_moving] = broad_phase_layers.non_moving;
-        object_to_broad_phase[object_layers.moving] = broad_phase_layers.moving;
-        object_to_broad_phase[object_layers.planet_only] = broad_phase_layers.moving;
+        object_to_broad_phase[@intFromEnum(object_layers.non_moving)] = broad_phase_layers.non_moving;
+        object_to_broad_phase[@intFromEnum(object_layers.moving)] = broad_phase_layers.moving;
+        object_to_broad_phase[@intFromEnum(object_layers.planet_only)] = broad_phase_layers.moving;
         return .{ .object_to_broad_phase = object_to_broad_phase };
     }
 
@@ -94,11 +96,10 @@ const ObjectVsBroadPhaseLayerFilter = extern struct {
         layer1: zphy.ObjectLayer,
         layer2: zphy.BroadPhaseLayer,
     ) callconv(.c) bool {
-        return switch (layer1) {
-            object_layers.non_moving => layer2 == broad_phase_layers.moving,
-            object_layers.moving => true,
-            object_layers.planet_only => layer2 == broad_phase_layers.non_moving,
-            else => unreachable,
+        return switch (@as(object_layers, @enumFromInt(layer1))) {
+            .non_moving => layer2 == broad_phase_layers.moving,
+            .moving => true,
+            .planet_only => layer2 == broad_phase_layers.non_moving,
         };
     }
 };
@@ -110,11 +111,11 @@ const ObjectLayerPairFilter = extern struct {
         object1: zphy.ObjectLayer,
         object2: zphy.ObjectLayer,
     ) callconv(.c) bool {
-        return switch (object1) {
-            object_layers.non_moving => object2 != object_layers.non_moving,
-            object_layers.moving => object2 != object_layers.planet_only,
-            object_layers.planet_only => object2 == object_layers.non_moving,
-            else => unreachable,
+        const other: object_layers = @enumFromInt(object2);
+        return switch (@as(object_layers, @enumFromInt(object1))) {
+            .non_moving => other != .non_moving,
+            .moving => other != .planet_only,
+            .planet_only => other == .non_moving,
         };
     }
 };
@@ -337,7 +338,7 @@ const PlanetLayerFilter = extern struct {
     object_layer_filter: zphy.ObjectLayerFilter = .init(@This()),
 
     pub fn shouldCollide(_: *const zphy.ObjectLayerFilter, layer: zphy.ObjectLayer) callconv(.c) bool {
-        return layer == object_layers.non_moving;
+        return @as(object_layers, @enumFromInt(layer)) == .non_moving;
     }
 };
 
@@ -402,11 +403,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
         .rotation = transform.rotation.toVec(),
         .shape = shape,
         .motion_type = collider.motion_type,
-        .object_layer = switch (entity.kind) {
-            .item => object_layers.planet_only,
-            .planet => object_layers.non_moving,
-            else => object_layers.moving,
-        },
+        .object_layer = @intFromEnum(collider.object_layer),
         .user_data = entity.id,
         .angular_velocity = .{ 0.0, 0.0, 0.0, 0 },
         .allowed_DOFs = translation_only,

@@ -182,18 +182,21 @@ fn handleCommand(
             entity.state = state_command.state;
             const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
             skeleton_animation.active, skeleton_animation.loop = switch (entity.kind) {
-                .enemy => switch (entity.state) {
-                    .idle => .{ 0, true },
-                    .walk => .{ 1, true },
-                    .attack => .{ 2, false },
-                },
                 .player => switch (entity.state) {
                     .idle => .{ 0, true },
                     .walk => .{ 1, true },
                     .attack => .{ 2, false },
                 },
-                else => .{ skeleton_animation.default, true },
+                else => if (shared.Entity.isEnemy(entity.kind))
+                    switch (entity.state) {
+                        .idle => .{ 0, true },
+                        .walk => .{ 1, true },
+                        .attack => .{ 2, false },
+                    }
+                else
+                    .{ skeleton_animation.default, true },
             };
+
             if (skeleton_animation.loop == false) {
                 skeleton_animation.curremt_time = 0;
             }

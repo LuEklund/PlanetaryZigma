@@ -128,6 +128,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .collider = .{
                             .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
                             .motion_type = .dynamic,
+                            .object_layer = .moving,
                         },
                         .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },

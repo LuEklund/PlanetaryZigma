@@ -38,17 +38,6 @@ pub const BulletData = struct {
     lifetime: f32 = 5,
 };
 
-pub const Item = struct {
-    amount: f32,
-    kind: Kind,
-    const Kind = enum {
-        speed,
-        attack_speed,
-        damage,
-        heal,
-    };
-};
-
 pub const Entity = struct {
     id: u32 = 0,
     flags: Flags = .{},
@@ -62,10 +51,12 @@ pub const Entity = struct {
     planet: u32 = 0,
     bullet: BulletData = .{},
     health: HealthManager.Health = .{},
-    attack_cooldown: f32 = 0,
+    attack_speed: f32 = 1,
+    last_attack: f32 = 0,
     damage: f32 = 1,
+    speed: f32 = 10,
     state: shared.Entity.State = .idle,
-    item: Item = .{ .kind = .heal, .amount = 0 },
+    item_amount: f32 = 0,
 
     pub const Flags = packed struct {
         transform: bool = false,

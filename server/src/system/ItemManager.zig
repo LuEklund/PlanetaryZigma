@@ -15,14 +15,22 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner, health_manag
     _ = self;
     for (info.world.entities.values()) |*entity| {
         if (!entity.flags.item) continue;
+        const amount = entity.item_amount;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
             player.flags.invinsible = false;
             const player_position = player.transform.position;
             const item_position = entity.transform.position;
             const length = player_position - item_position;
-            if (nz.vec.length(length) < 1.4) {
-                _ = health_manager.addHealth(player, entity.item.amount);
+
+            if (nz.vec.length(length) < 2) {
+                switch (entity.kind) {
+                    .health_item => _ = health_manager.addHealth(player, amount),
+                    .damage_item => player.damage += amount,
+                    .speed_item => player.speed += amount,
+                    .attack_speed_item => player.attack_speed += amount,
+                    else => {},
+                }
                 spawner.depspawn(entity.id);
             }
         }

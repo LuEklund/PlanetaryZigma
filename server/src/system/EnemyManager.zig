@@ -46,21 +46,21 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             break;
         }
     }
-    for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .enemy) continue;
-        if (!entity.flags.transform or !entity.flags.collider) continue;
-        const body_id = entity.collider.body_id orelse continue;
+    for (info.world.entities.values()) |*enemy| {
+        if (!shared.Entity.isEnemy(enemy.kind)) continue;
+        if (!enemy.flags.transform or !enemy.flags.collider) continue;
+        const body_id = enemy.collider.body_id orelse continue;
 
-        const to_player = player.transform.position - entity.transform.position;
+        const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
         // entity.transform = player.transform;
 
         // Skip entities at (or near) world origin — planet_up is undefined there
         // and `nz.vec.normalize` returns the input unchanged on zero length.
-        const up_len = nz.vec.length(entity.transform.position);
+        const up_len = nz.vec.length(enemy.transform.position);
         if (up_len < 0.0001) continue;
-        const planet_up = nz.vec.scale(entity.transform.position, 1.0 / up_len);
+        const planet_up = nz.vec.scale(enemy.transform.position, 1.0 / up_len);
 
         // Project onto the tangent plane so enemies yaw toward the player but never pitch.
         // Skips when projection is degenerate (player on top of, or along up from, the enemy).
@@ -71,21 +71,19 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             body_interface.setRotation(body_id, rot.toVec(), .activate);
         }
 
-        entity.attack_cooldown += info.delta_time;
-        if (distance < 4 and entity.attack_cooldown >= 1) {
-            entity.attack_cooldown = 0;
-            if (!health_manager.removeHealth(player, entity.damage)) std.log.debug("did not take damage", .{});
+        if (distance < 4 and info.elapsed_time - enemy.last_attack >= enemy.attack_speed) {
+            enemy.last_attack = info.elapsed_time;
+            if (!health_manager.removeHealth(player, enemy.damage)) std.log.debug("did not take damage", .{});
         }
 
         const moving = distance >= 3;
         const desired: shared.Entity.State =
-            if (distance < 4 and entity.attack_cooldown < 1.0) .attack else if (moving) .walk else .idle;
-        if (entity.attack_cooldown == 0 or desired != entity.state)
-            network_manager.pending_state.appendAssumeCapacity(.{ .id = entity.id, .state = desired });
-        entity.state = desired;
+            if (distance < 4 and enemy.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
+        if (enemy.attack_speed == 0 or desired != enemy.state)
+            network_manager.pending_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
+        enemy.state = desired;
 
         if (distance < 3) continue;
-        const speed: f32 = 5;
-        Physics.moveOnPlanet(body_interface, body_id, planet_up, entity.transform.forward(), speed, 0);
+        Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
     }
 }
