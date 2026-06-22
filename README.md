@@ -10,3 +10,10 @@ The new version is being made with the help of Harlad, Ernesto, Giλded, etakari
 1. Must compile.
 2. Run.
 3. Hot Reload.
+
+
+# Dependencies for building.
+```
+sudo pacman -S --needed wayland-protocols
+sudo pacman -S --needed vulkan-validation-layers
+```
