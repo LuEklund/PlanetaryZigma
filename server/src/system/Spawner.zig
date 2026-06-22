@@ -12,6 +12,11 @@ const max_despawn_count: u32 = 1000;
 gpa: std.mem.Allocator,
 world: *system.World,
 
+credits: f32 = 0,
+salary_per_second: f32 = 1,
+last_salary: f32 = 0,
+enemy_cost: f32 = 10,
+
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 
@@ -40,8 +45,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .flags = .{ .transform = true, .collider = true, .planet = true },
     });
 
-    var prng: std.Random.DefaultPrng = .init(0xACE1);
-    const rand = prng.random();
+    const rand = world.prng.random();
     for (0..20) |i| {
         const item_kind: shared.Entity.Kind = switch (i) {
             0...5 => .attack_speed_item,
@@ -99,23 +103,30 @@ pub fn update(
 ) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    // for (info.world.entities.values()) |*entity| {
-    //     if (entity.kind == .enemy) {
-    //         try self.depspawn(entity.id);
-    //     }
-    // }
-    // if (info.world.entities.entries.len < 30) {
-    //     _ = try self.spawn(.{
-    //         .kind = .enemy,
-    //         .transform = .{ .position = .{ 0, 0, 100 } },
-    //         .collider = .{
-    //             .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
-    //             .motion_type = .dynamic,
-    //         },
-    //         .health = .{ .current = 5, .max = 5 },
-    //         .flags = .{ .transform = true, .collider = true, .health = true },
-    //     });
-    // }
+
+    if (info.elapsed_time - self.last_salary >= 1.0) {
+        self.last_salary = info.elapsed_time;
+        self.credits += self.salary_per_second * 10;
+    }
+    const rand = info.world.prng.random();
+    const x = rand.float(f32) * 2 - 1;
+    const y = rand.float(f32) * 2 - 1;
+    const z = rand.float(f32) * 2 - 1;
+    const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+    if (self.credits >= self.enemy_cost) {
+        self.credits -= self.enemy_cost;
+        _ = try self.spawn(.{
+            .kind = .skelly,
+            .transform = .{ .position = vector_direction },
+            .collider = .{
+                .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                .motion_type = .dynamic,
+                .object_layer = .moving,
+            },
+            .health = .{ .current = 10, .max = 10 },
+            .flags = .{ .transform = true, .collider = true, .health = true },
+        });
+    }
 
     for (self.pending_spawn.items) |entity_id| {
         const entity = info.world.entities.getPtr(entity_id) orelse @panic(" this can only happen if we remove enteties from other places than trough spawner,");

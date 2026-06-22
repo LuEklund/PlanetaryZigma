@@ -289,7 +289,29 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
         if (entity.collider.motion_type != .dynamic) continue;
 
         const distance_from_center = nz.vec.length(entity.transform.position);
-        if (distance_from_center < 0.0001) continue;
+        if (distance_from_center < 4) {
+            const query = self.physics_system.getNarrowPhaseQuery();
+            const rand = info.world.prng.random();
+            const x = rand.float(f32) * 2 - 1;
+            const y = rand.float(f32) * 2 - 1;
+            const z = rand.float(f32) * 2 - 1;
+            const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+            const norm_direction = nz.vec.normalize(vector_direction);
+
+            const origin = nz.vec.scale(norm_direction, 100);
+            const ray: zphy.RRayCast = .{
+                .origin = .{ origin[0], origin[1], origin[2], 1 },
+                .direction = .{ -origin[0], -origin[1], -origin[2], 0 },
+            };
+            var filter: PlanetLayerFilter = .{};
+            const result = query.castRay(ray, .{ .object_layer_filter = &filter.object_layer_filter });
+            if (result.has_hit) {
+                const point = ray.getPointOnRay(result.hit.fraction) + nz.vec.scale(norm_direction, 5);
+                body_interface.setPosition(body_id, point, .activate);
+                body_interface.setLinearVelocity(body_id, .{ 0, 0, 0 });
+            }
+            continue;
+        }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
         if (!self.isGrounded(entity, planet_up)) {
             body_interface.addForce(body_id, nz.vec.scale(-planet_up, body_mass * gravity_accel));

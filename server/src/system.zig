@@ -89,6 +89,7 @@ pub const World = struct {
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     players: std.ArrayList(u32),
     next_id: u32 = 1,
+    prng: std.Random.DefaultPrng = .init(0xACE1),
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
         var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
