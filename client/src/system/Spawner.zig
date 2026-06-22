@@ -68,6 +68,9 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 .bullet => {
                     entity.transform.scale = @splat(0.3);
                 },
+                .item => {
+                    entity.transform.scale = @splat(2);
+                },
                 else => {},
             }
             try self.world.enitity_mapping.put(self.gpa, entity_info.server_id, client_id);

@@ -72,13 +72,20 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
         if (player.controller.input.k and player.attack_cooldown >= 0.1) {
             player.attack_cooldown = 0;
-            // _ = try self.spawner.spawn(.{ .kind = .item, .transform = .{ .position = .{ 0, 100, 0 } }, .collider = .{
-            //     .shape = .{ .primitive = .{ .sphere = .{ .size = 1 } } },
-            //     .motion_type = .dynamic,
-            // }, .flags = .{
-            //     .collider = true,
-            //     .transform = true,
-            // } });
+            _ = try self.spawner.spawn(.{
+                .kind = .item,
+                .transform = .{ .position = .{ 0, 100, 0 } },
+                .collider = .{
+                    .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                    .motion_type = .dynamic,
+                },
+                .flags = .{
+                    .collider = true,
+                    .transform = true,
+                    .item = true,
+                },
+                .item = .{ .amount = 10, .kind = .heal },
+            });
             _ = try self.spawner.spawn(.{
                 .kind = .enemy,
                 .transform = .{ .position = .{ 0, 100, 0 } },

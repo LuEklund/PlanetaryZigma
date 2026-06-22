@@ -54,7 +54,7 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     return entity;
 }
 
-pub fn depspawn(self: *@This(), entity_id: u32) !void {
+pub fn depspawn(self: *@This(), entity_id: u32) void {
     // std.log.debug("despawn ID: {d}", .{entity_id});
     self.pending_despawn.appendAssumeCapacity(entity_id);
 }

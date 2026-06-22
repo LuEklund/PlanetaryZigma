@@ -2,6 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
 const HealthManager = @import("system/HealthManager.zig");
+const ItemManager = @import("system/ItemManager.zig");
 const Spawner = @import("system/Spawner.zig");
 const EnemyManager = @import("system/EnemyManager.zig");
 const tracy = @import("ztracy");
@@ -75,6 +76,7 @@ pub const Entity = struct {
         bullet: bool = false,
         health: bool = false,
         invinsible: bool = false,
+        item: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -94,6 +96,7 @@ pub const World = struct {
     pub const max_entities: usize = 1024;
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
+    players: std.ArrayList(u32),
     next_id: u32 = 1,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
@@ -103,6 +106,7 @@ pub const World = struct {
         return .{
             .gpa = gpa,
             .entities = entities,
+            .players = try .initCapacity(gpa, 16),
         };
     }
     pub fn deinit(self: *@This()) void {
@@ -142,6 +146,7 @@ pub const Context = struct {
     camera_controller: CameraController,
     spawner: Spawner,
     enemy_manager: EnemyManager,
+    item_manager: ItemManager,
     bullet: Bullet,
     request_exit: bool = false,
 
@@ -166,6 +171,7 @@ pub const Context = struct {
             .camera_controller = undefined,
             .bullet = undefined,
             .health_manager = undefined,
+            .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
         try self.player_controller.init(&self.physics, &self.spawner);
@@ -175,6 +181,7 @@ pub const Context = struct {
         try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
         try self.health_manager.init(&self.network_manager, &self.spawner);
+        try self.item_manager.init();
     }
     pub fn deinit(self: *@This()) !void {
         self.physics.deinit();
@@ -194,6 +201,8 @@ pub const Context = struct {
         try self.bullet.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
+        try self.item_manager.update(info, &self.spawner, &self.health_manager);
+
         // std.log.debug("time : {d}", .{info.elapsed_time});
         // self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;

@@ -141,23 +141,8 @@ fn handleCommand(
             if (info.world.enitity_mapping.contains(spawn_entity.id)) return;
             const server_id = spawn_entity.id;
 
-            switch (spawn_entity.kind) {
-                .player => {
-                    self.spawner.spawn(.{ .kind = .player, .server_id = server_id });
-                },
-                .planet => {
-                    self.spawner.spawn(.{ .kind = .planet, .server_id = server_id, .data = spawn_entity.data });
-                },
-                .enemy => {
-                    self.spawner.spawn(.{ .kind = .enemy, .server_id = server_id });
-                },
-                .bullet => {
-                    self.spawner.spawn(.{ .kind = .bullet, .server_id = server_id });
-                },
-                .item => {},
-                .unknown => @panic("unknown entity type... wtf"),
-            }
-
+            if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
+            self.spawner.spawn(.{ .kind = spawn_entity.kind, .server_id = server_id, .data = spawn_entity.data });
             // std.log.debug("spawn entities : {d}", .{info.world.next_id});
             // std.log.debug("SPAWNED: MY ID: {d}, server ID: {d} ", .{ new_entity.id, spawn_entity.id });
         },

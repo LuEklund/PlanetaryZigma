@@ -39,7 +39,7 @@ pub fn addHealth(
     const health = &entity.health;
     health.current += amount;
     if (health.current <= 0) {
-        try self.spawner.depspawn(entity.id);
+        self.spawner.depspawn(entity.id);
     }
     std.log.debug("took dmg {d}, current health {d}", .{ amount, entity.health.current });
     self.network_manager.pending_add_health.appendAssumeCapacity(.{ .id = entity.id, .amount = amount });

@@ -161,39 +161,44 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         );
     }
 
-    {
-        self.pipeline_layout = try .init(
-            self.device,
-            Shader.AnimationPushConstant,
-            &.{ self.scene_layout.handle, self.material_layout.handle },
-        );
+    self.pipeline_layout = try .init(
+        self.device,
+        Shader.AnimationPushConstant,
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+    );
 
-        self.ui_pipeline_layout = try .init(
-            self.device,
-            Shader.UiPushConstant,
-            &.{self.material_layout.handle},
-        );
-    }
-    {
-        _ = try createModelWithMesh(
-            self,
-            gpa,
-            RenderResources.default_mesh_name,
-            Mesh.box.verticies,
-            Mesh.box.indicies,
-            .unknown,
-        );
-    }
-    {
-        _ = try createModelWithMesh(
-            self,
-            gpa,
-            "bullet",
-            Mesh.box.verticies,
-            Mesh.box.indicies,
-            .bullet,
-        );
-    }
+    self.ui_pipeline_layout = try .init(
+        self.device,
+        Shader.UiPushConstant,
+        &.{self.material_layout.handle},
+    );
+    _ = try createModelWithMesh(
+        self,
+        gpa,
+        RenderResources.default_mesh_name,
+        Mesh.box.verticies,
+        Mesh.box.indicies,
+        .unknown,
+    );
+    _ = try createModelWithMesh(
+        self,
+        gpa,
+        "bullet",
+        Mesh.box.verticies,
+        Mesh.box.indicies,
+        .bullet,
+    );
+
+    const item_model: *GltfModel = try .init(
+        gpa,
+        self.vma,
+        self.device,
+        asset_server,
+        "objects/health.glb",
+        &self.render_resources,
+        .{},
+    );
+    self.models.put(.item, item_model);
 
     const player_model: *GltfModel = try .init(
         gpa,
@@ -580,7 +585,10 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     for (info.world.entities.values()) |*entity| {
         if (!entity.flags.transform) continue;
         const model = self.models.get(entity.kind) orelse {
-            if (entity.kind.expectsModel()) std.debug.panic("no model registered for {s}", .{@tagName(entity.kind)});
+            if (entity.kind.expectsModel()) {
+                std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
+                return error.NoModel;
+            }
             continue; // bullet/unknown: intentionally modelless
         };
         var transform = entity.transform;
