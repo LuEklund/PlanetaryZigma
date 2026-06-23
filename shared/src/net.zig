@@ -53,6 +53,8 @@ pub const Acknowledge = struct {
 pub const SpawnEntity = struct {
     id: u32,
     kind: Entity.Kind,
+    position: @Vector(3, f32) = @splat(0),
+    velocity: @Vector(3, f32) = @splat(0),
     data: [4]u8 = @splat(0),
 };
 
@@ -76,7 +78,7 @@ pub const Input = struct {
 };
 
 pub const UpdateTransform = struct {
-    id: u16,
+    id: u32,
     position: @Vector(3, f16),
     rotation: @Vector(4, f16),
 };
@@ -88,12 +90,12 @@ pub const UpdateCameraRotation = struct {
 };
 
 pub const AddHealth = struct {
-    id: u16,
+    id: u32,
     amount: f16,
 };
 
 pub const UpdateState = struct {
-    id: u16,
+    id: u32,
     state: Entity.State,
 };
 

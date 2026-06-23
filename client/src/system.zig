@@ -20,6 +20,7 @@ pub const Info = struct {
 pub const Entity = struct {
     pub const Flags = packed struct {
         transform: bool = false,
+        bullet: bool = false,
     };
 
     id: u32 = 0,
@@ -28,6 +29,8 @@ pub const Entity = struct {
     state: shared.Entity.State = .walk,
 
     transform: nz.Transform3D(f32) = .{},
+
+    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
         _ = self;
@@ -46,8 +49,6 @@ pub const World = struct {
     mutex: std.Io.Mutex = .init,
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    next_id: u32 = 1,
-    enitity_mapping: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     camera: Camera = .{},
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
@@ -56,12 +57,9 @@ pub const World = struct {
     pub fn deinit(self: *@This()) void {
         for (self.entities.values()) |*entity| entity.deinit(self.gpa);
         self.entities.deinit(self.gpa);
-        self.enitity_mapping.deinit(self.gpa);
     }
 
-    pub fn spawn(self: *@This()) !*Entity {
-        const id = self.next_id;
-        self.next_id += 1;
+    pub fn spawn(self: *@This(), id: u32) !*Entity {
         try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
         return self.entities.getPtr(id).?;
     }
@@ -73,22 +71,6 @@ pub const World = struct {
     pub fn despawn(self: *@This(), id: u32) bool {
         if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
         return self.entities.swapRemove(id);
-    }
-
-    pub fn getClientId(self: *@This(), server_id: u32) ?u32 {
-        const id = self.enitity_mapping.get(server_id) orelse {
-            std.log.debug("SERVER_ID: {d}, NOT IN MAP", .{server_id});
-            return null;
-        };
-        return id;
-    }
-    pub fn getServerEntityPtr(self: *@This(), server_id: u32) ?*Entity {
-        const client_id = self.getClientId(server_id) orelse return null;
-        const entity = self.getPtr(client_id) orelse {
-            std.log.debug("SERVER_ID: {d}, CLIENT_ID: {d}, Not a Entity  ", .{ server_id, client_id });
-            return null;
-        };
-        return entity;
     }
 };
 
@@ -142,8 +124,17 @@ pub const Context = struct {
         try self.animation.update(info, &self.renderer.inner.skelentons);
         try self.asset_server.update();
         try self.network_manager.update(info, &self.renderer.inner.skelentons);
+        self.stepBullets(info);
         try self.spawner.update(info, self);
         // std.log.debug("time : {d}", .{info.elapsed_time});
+    }
+
+    fn stepBullets(self: *@This(), info: *const Info) void {
+        _ = self;
+        for (info.world.entities.values()) |*entity| {
+            if (!entity.flags.bullet) continue;
+            shared.bullet.step(&entity.transform.position, &entity.velocity, info.delta_time);
+        }
     }
 
     pub fn eventUpdate(self: *@This(), info: *const Info, event: *const yes.Window.Event) !void {

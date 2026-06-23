@@ -56,18 +56,19 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const player_forward_direction = player.transform.forward();
         if (input.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
-            const muzzle_speed: f32 = 100;
-            const muzzle_velocity = nz.vec.scale(player_forward_direction, muzzle_speed);
-            _ = try self.spawner.spawn(
-                .{
-                    .kind = .bullet,
-                    .owner_id = player.id,
-                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
-                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = 5 },
-                    .flags = .{ .transform = true, .bullet = true },
-                    .damage = player.damage,
-                },
-            );
+            const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
+            for (1..10) |i| {
+                _ = try self.spawner.spawn(
+                    .{
+                        .kind = .bullet,
+                        .owner_id = player.id,
+                        .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
+                        .bullet = .{ .velocity = nz.vec.scale(muzzle_velocity, @floatFromInt(i)), .lifetime = shared.bullet.lifetime },
+                        .flags = .{ .transform = true, .bullet = true },
+                        .damage = player.damage,
+                    },
+                );
+            }
         }
         if (player.controller.input.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;

@@ -133,36 +133,27 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            self.spawner.spawn(.{ .kind = .player, .server_id = acknowledge.id });
+            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id });
             self.my_server_id = acknowledge.id;
-            std.log.debug("ack entities: {d}", .{info.world.next_id});
         },
         .spawn_entity => |spawn_entity| {
-            if (info.world.enitity_mapping.contains(spawn_entity.id)) return;
-            const server_id = spawn_entity.id;
-
+            if (info.world.getPtr(spawn_entity.id) != null) return;
             if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
-            self.spawner.spawn(.{ .kind = spawn_entity.kind, .server_id = server_id, .data = spawn_entity.data });
-            // std.log.debug("spawn entities : {d}", .{info.world.next_id});
-            // std.log.debug("SPAWNED: MY ID: {d}, server ID: {d} ", .{ new_entity.id, spawn_entity.id });
+            self.spawner.spawn(.{
+                .kind = spawn_entity.kind,
+                .id = spawn_entity.id,
+                .position = spawn_entity.position,
+                .velocity = spawn_entity.velocity,
+                .data = spawn_entity.data,
+            });
         },
         .despawn_entity => |despawn_entity| {
-            const server_id = despawn_entity.id;
-            const my_id = info.world.enitity_mapping.get(server_id) orelse {
-                std.log.debug("FAILED TO GET- SERVER ID: {d},  ", .{server_id});
-                return;
-            };
-            try self.spawner.depspawn(my_id);
-            // std.log.debug("DESPAWNED: MY ID: {d}, server ID: {d} ", .{ my_id, server_id });
+            // Spawner resolves it after spawns are applied, so a spawn+despawn
+            // arriving in the same batch can't drop the despawn.
+            try self.spawner.depspawn(despawn_entity.id);
         },
         .update_transform => |update_transform_command| {
-            const id = info.world.enitity_mapping.get(update_transform_command.id) orelse return;
-            const entity = info.world.getPtr(id) orelse {
-                std.log.debug("FAILED TO GET- SERVER ID: {d},  ", .{update_transform_command.id});
-                return;
-            };
-
-            // std.log.debug(" - SERVER ID: {d} == 94, MY_ID {d} == 93 ", .{ update_transform_command.id, id });
+            const entity = info.world.getPtr(update_transform_command.id) orelse return;
             entity.transform.position = @floatCast(update_transform_command.position);
             entity.transform.rotation = .fromVec(@floatCast(update_transform_command.rotation));
         },
@@ -178,7 +169,7 @@ fn handleCommand(
             }
         },
         .update_state => |state_command| {
-            const entity = info.world.getServerEntityPtr(state_command.id) orelse return;
+            const entity = info.world.getPtr(state_command.id) orelse return;
             entity.state = state_command.state;
             const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
             skeleton_animation.active, skeleton_animation.loop = switch (entity.kind) {

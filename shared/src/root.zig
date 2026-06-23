@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const numz = @import("numz");
+pub const bullet = @import("bullet.zig");
 pub const net = @import("net.zig");
 pub const PlanetKind = @import("planet.zig").PlanetKind;
 pub const Planet = @import("planet.zig").Planet;

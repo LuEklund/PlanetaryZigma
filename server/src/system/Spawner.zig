@@ -16,6 +16,7 @@ credits: f32 = 0,
 salary_per_second: f32 = 1,
 last_salary: f32 = 0,
 enemy_cost: f32 = 10,
+should_spawm: bool = false,
 
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
@@ -104,28 +105,30 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    if (info.elapsed_time - self.last_salary >= 1.0) {
-        self.last_salary = info.elapsed_time;
-        self.credits += self.salary_per_second * 10;
-    }
-    const rand = info.world.prng.random();
-    const x = rand.float(f32) * 2 - 1;
-    const y = rand.float(f32) * 2 - 1;
-    const z = rand.float(f32) * 2 - 1;
-    const vector_direction: nz.Vec3(f32) = .{ x, y, z };
-    if (self.credits >= self.enemy_cost) {
-        self.credits -= self.enemy_cost;
-        _ = try self.spawn(.{
-            .kind = .skelly,
-            .transform = .{ .position = vector_direction },
-            .collider = .{
-                .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
-                .motion_type = .dynamic,
-                .object_layer = .moving,
-            },
-            .health = .{ .current = 10, .max = 10 },
-            .flags = .{ .transform = true, .collider = true, .health = true },
-        });
+    if (self.should_spawm) {
+        if (info.elapsed_time - self.last_salary >= 1.0) {
+            self.last_salary = info.elapsed_time;
+            self.credits += self.salary_per_second * 10;
+        }
+        const rand = info.world.prng.random();
+        const x = rand.float(f32) * 2 - 1;
+        const y = rand.float(f32) * 2 - 1;
+        const z = rand.float(f32) * 2 - 1;
+        const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+        if (self.credits >= self.enemy_cost) {
+            self.credits -= self.enemy_cost;
+            _ = try self.spawn(.{
+                .kind = .skelly,
+                .transform = .{ .position = vector_direction },
+                .collider = .{
+                    .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                    .motion_type = .dynamic,
+                    .object_layer = .moving,
+                },
+                .health = .{ .current = 10, .max = 10 },
+                .flags = .{ .transform = true, .collider = true, .health = true },
+            });
+        }
     }
 
     for (self.pending_spawn.items) |entity_id| {
@@ -151,4 +154,5 @@ pub fn update(
         }
     }
     self.pending_despawn.clearRetainingCapacity();
+    std.log.debug("tot entites: {d}", .{info.world.entities.values().len});
 }

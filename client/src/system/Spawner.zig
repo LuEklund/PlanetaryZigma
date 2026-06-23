@@ -7,7 +7,9 @@ const nz = shared.nz;
 
 pub const SpawnInfo = struct {
     kind: shared.Entity.Kind,
-    server_id: u32,
+    id: u32,
+    position: @Vector(3, f32) = @splat(0),
+    velocity: @Vector(3, f32) = @splat(0),
     data: [4]u8 = @splat(0),
 };
 
@@ -41,50 +43,53 @@ pub fn depspawn(self: *@This(), entity_id: u32) !void {
 pub fn update(self: *@This(), info: *const system.Info, system_context: *system.Context) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    _ = info;
 
     for (self.pending_spawn.items) |entity_info| {
-        if (self.world.getPtr(entity_info.server_id) == null) {
-            const entity = try self.world.spawn();
-            const client_id = entity.id;
-            entity.* = .{ .id = client_id, .kind = entity_info.kind, .flags = .{ .transform = true } };
-            switch (entity_info.kind) {
-                .player => |kind| {
-                    try system_context.renderer.inner.attachSkeleton(self.gpa, client_id, kind);
-                },
-                .planet => {
-                    const size: u32 = @intCast(entity_info.data[0]);
-                    var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
-                    defer planet.deinit(self.gpa);
-                    try system_context.renderer.inner.createModelWithMesh(
-                        self.gpa,
-                        "planet",
-                        planet.vertices,
-                        planet.indices,
-                        .planet,
-                    );
-                    std.log.debug("SPAWNED: Planet {d}", .{size});
-                },
-                .bullet => {
-                    entity.transform.scale = @splat(0.3);
-                },
-                else => {
-                    if (entity.isEnemy() or entity.isItem()) {
-                        try system_context.renderer.inner.attachSkeleton(self.gpa, client_id, entity.kind);
-                    }
-                },
-            }
-            try self.world.enitity_mapping.put(self.gpa, entity_info.server_id, client_id);
+        if (self.world.getPtr(entity_info.id) != null) continue;
+        const entity = try self.world.spawn(entity_info.id);
+        entity.* = .{ .id = entity_info.id, .kind = entity_info.kind, .flags = .{ .transform = true } };
+        switch (entity_info.kind) {
+            .player => |kind| {
+                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, kind);
+            },
+            .planet => {
+                const size: u32 = @intCast(entity_info.data[0]);
+                var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
+                defer planet.deinit(self.gpa);
+                try system_context.renderer.inner.createModelWithMesh(
+                    self.gpa,
+                    "planet",
+                    planet.vertices,
+                    planet.indices,
+                    .planet,
+                );
+                std.log.debug("SPAWNED: Planet {d}", .{size});
+            },
+            .bullet => {
+                entity.transform.scale = @splat(0.3);
+                entity.transform.position = entity_info.position;
+                entity.velocity = entity_info.velocity;
+                entity.flags.bullet = true;
+            },
+            else => {
+                if (entity.isEnemy() or entity.isItem()) {
+                    try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
+                }
+            },
         }
     }
     self.pending_spawn.clearRetainingCapacity();
 
-    for (self.pending_despawn.items) |entity_id| {
-        if (self.world.getPtr(entity_id)) |entity| {
-            _ = entity;
-            system_context.renderer.inner.removeSkeleton(self.gpa, entity_id);
-            _ = self.world.despawn(entity_id);
-        }
+    for (self.pending_despawn.items) |id| {
+        if (self.world.getPtr(id) == null) continue;
+        system_context.renderer.inner.removeSkeleton(self.gpa, id);
+        _ = self.world.despawn(id);
     }
     self.pending_despawn.clearRetainingCapacity();
+    std.log.debug("tot entites: {d}", .{info.world.entities.values().len});
+    for (info.world.entities.values()) |*entity| {
+        if (entity.isEnemy()) {
+            // std.log.debug("is enemy", .{});
+        }
+    }
 }
