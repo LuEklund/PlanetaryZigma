@@ -186,24 +186,13 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             for (world.entities.values()) |*entity| {
                 if (!entity.flags.transform) continue;
                 std.log.debug("sent id {d}", .{entity.id});
-                var data: [4]u8 = @splat(0);
-                switch (entity.kind) {
-                    .planet => {
-                        data = @bitCast(entity.planet);
-                        std.log.debug("sent planet RELIABLE! size {d}", .{entity.planet});
-                    },
-                    else => {},
-                }
-                try client.sendCommand(writer, .{ .spawn_entity = .{
-                    .id = entity.id,
-                    .kind = entity.kind,
-                    .data = data,
-                } }, .reliable);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(entity) }, .reliable);
             }
             client.needs_full_sync = false;
         } else {
             for (self.pending_spawn.items) |entry| {
-                try client.sendCommand(writer, .{ .spawn_entity = .{ .id = entry.id, .kind = entry.kind } }, .reliable);
+                const entity = world.getPtr(entry.id) orelse continue;
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(entity) }, .reliable);
             }
         }
         // despawns
@@ -240,6 +229,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         // transforms
         for (world.entities.values()) |*entity| {
             if (!entity.flags.transform) continue;
+            if (entity.flags.bullet) continue; // client simulates bullets from spawn pos+vel
             try client.sendCommand(writer, .{ .update_transform = .{
                 .id = @intCast(entity.id),
                 .position = @floatCast(entity.transform.position),
@@ -253,4 +243,21 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.pending_add_health.clearRetainingCapacity();
     self.pending_state.clearRetainingCapacity();
     self.steam_server.packet_mutex.unlock(self.io);
+}
+
+fn spawnPacket(entity: *const system.Entity) shared.net.SpawnEntity {
+    var data: [4]u8 = @splat(0);
+    var velocity: @Vector(3, f32) = @splat(0);
+    switch (entity.kind) {
+        .planet => data = @bitCast(entity.planet),
+        .bullet => velocity = entity.bullet.velocity,
+        else => {},
+    }
+    return .{
+        .id = entity.id,
+        .kind = entity.kind,
+        .position = entity.transform.position,
+        .velocity = velocity,
+        .data = data,
+    };
 }

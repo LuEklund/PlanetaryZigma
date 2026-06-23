@@ -7,8 +7,6 @@ const Spawner = @import("Spawner.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-const gravity_acceleration: f32 = 100;
-
 gpa: std.mem.Allocator,
 physics: *Physics,
 world: *system.World,
@@ -49,31 +47,27 @@ pub fn update(
             continue;
         }
 
-        const up = nz.vec.normalize(entity.transform.position);
-        bullet.velocity += nz.vec.scale(-up, gravity_acceleration * dt);
+        const previous_position = entity.transform.position;
+        shared.bullet.step(&entity.transform.position, &bullet.velocity, dt);
+        const travel = entity.transform.position - previous_position;
 
-        const p0 = entity.transform.position;
-        const segment = nz.vec.scale(bullet.velocity, dt);
-
-        const result = query.castRay(.{
-            .origin = .{ p0[0], p0[1], p0[2], 1 },
-            .direction = .{ segment[0], segment[1], segment[2], 0 },
+        const ray_hit = query.castRay(.{
+            .origin = .{ previous_position[0], previous_position[1], previous_position[2], 1 },
+            .direction = .{ travel[0], travel[1], travel[2], 0 },
         }, .{});
+        if (!ray_hit.has_hit) continue;
 
-        if (result.has_hit) {
-            const lock_interface = self.physics.physics_system.getBodyLockInterface();
-            var read_lock: Physics.zphy.BodyLockRead = .{};
-            read_lock.lock(lock_interface, result.hit.body_id);
-            defer read_lock.unlock();
-            if (read_lock.body) |hit_body| {
-                const target_id: u32 = @intCast(hit_body.user_data);
-                const hit_entity = self.world.getPtr(target_id) orelse continue;
-                if (target_id == entity.owner_id) {
-                    continue;
-                }
-                if (health_manager.removeHealth(hit_entity, entity.damage)) spawner.depspawn(entity.id);
-            }
-        }
-        entity.transform.position = p0 + segment;
+        const lock_interface = self.physics.physics_system.getBodyLockInterface();
+        var hit_body_lock: Physics.zphy.BodyLockRead = .{};
+        hit_body_lock.lock(lock_interface, ray_hit.hit.body_id);
+        defer hit_body_lock.unlock();
+
+        const hit_body = hit_body_lock.body orelse continue;
+        const hit_id: u32 = @intCast(hit_body.user_data);
+        if (hit_id == entity.owner_id) continue;
+
+        const hit_entity = self.world.getPtr(hit_id) orelse continue;
+        _ = health_manager.removeHealth(hit_entity, entity.damage);
+        spawner.depspawn(entity.id);
     }
 }
