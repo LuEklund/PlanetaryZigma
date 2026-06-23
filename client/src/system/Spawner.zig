@@ -17,6 +17,7 @@ gpa: std.mem.Allocator,
 world: *system.World,
 pending_spawn: std.ArrayList(SpawnInfo) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
+pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 
 pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void {
     self.* = .{
@@ -24,15 +25,25 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .world = world,
         .pending_spawn = try .initCapacity(gpa, system.World.max_entities),
         .pending_despawn = try .initCapacity(gpa, system.World.max_entities),
+        .pending_stats = try .initCapacity(gpa, system.World.max_entities),
     };
 }
 pub fn deinit(self: *@This()) void {
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
+    self.pending_stats.deinit(self.gpa);
 }
 
 pub fn spawn(self: *@This(), entity_info: SpawnInfo) void {
     self.pending_spawn.appendAssumeCapacity(entity_info);
+}
+
+pub fn applyStat(entity: *system.Entity, command: shared.net.UpdateStat) void {
+    switch (command.amount) {
+        .set_health => |v| entity.health.current = v,
+        .set_max_health => |v| entity.health.max = v,
+        .add_health => |v| entity.health.current += v,
+    }
 }
 
 pub fn depspawn(self: *@This(), entity_id: u32) !void {
@@ -51,11 +62,6 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         switch (entity_info.kind) {
             .player => |kind| {
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, kind);
-                const heath_data: [2]f16 = @bitCast(entity_info.data);
-                entity.health.current = heath_data[0];
-                entity.health.max = heath_data[1];
-                std.log.debug("health {d}", .{entity.health.current});
-                std.log.debug("max {d}", .{entity.health.max});
             },
             .planet => {
                 const size: u32 = @intCast(entity_info.data[0]);
@@ -81,10 +87,6 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             else => {
                 if (entity.isEnemy()) {
-                    const heath_data: [2]f16 = @bitCast(entity_info.data);
-                    entity.health.current = heath_data[0];
-                    entity.health.max = heath_data[1];
-
                     if (entity.kind == .wizard) entity.transform.scale = @splat(5);
                     try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
                 }
@@ -92,6 +94,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         }
     }
     self.pending_spawn.clearRetainingCapacity();
+
+    for (self.pending_stats.items) |command| {
+        if (self.world.getPtr(command.id)) |entity| applyStat(entity, command);
+    }
+    self.pending_stats.clearRetainingCapacity();
 
     for (self.pending_despawn.items) |id| {
         if (self.world.getPtr(id) == null) continue;
