@@ -11,6 +11,8 @@ pub const DynLib = @import("DynLib.zig").DynLib;
 pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
+pub const portal_reach_distance: f32 = 6;
+
 pub const Entity = struct {
     pub fn isEnemy(kind: Kind) bool {
         return switch (kind) {

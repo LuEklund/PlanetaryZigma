@@ -36,7 +36,8 @@ pub const ServerPacket = union(enum) {
     update_transform: UpdateTransform,
     update_camera_rotation: UpdateCameraRotation,
     add_health: AddHealth,
-    update_state: UpdateState,
+    update_animation_state: UpdateAnimationState,
+    update_event: Event,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -63,16 +64,20 @@ pub const DespawnEntity = struct {
 };
 
 pub const Input = struct {
-    forward: bool = false,
-    backward: bool = false,
-    right: bool = false,
-    left: bool = false,
-    up: bool = false,
-    down: bool = false,
-    r: bool = false,
-    k: bool = false,
-    mouse_button_left: bool = false,
-    mouse_button_right: bool = false,
+    keys: packed struct(u16) {
+        w: bool = false,
+        s: bool = false,
+        d: bool = false,
+        a: bool = false,
+        space: bool = false,
+        l_shift: bool = false,
+        r: bool = false,
+        k: bool = false,
+        e: bool = false,
+        mouse_button_left: bool = false,
+        mouse_button_right: bool = false,
+        _padding: u5 = 0,
+    } = .{},
     mouse_wheel: f64 = 0,
     mouse_delta: [2]f64 = .{ 0, 0 },
 };
@@ -94,9 +99,13 @@ pub const AddHealth = struct {
     amount: f16,
 };
 
-pub const UpdateState = struct {
+pub const UpdateAnimationState = struct {
     id: u32,
     state: Entity.State,
+};
+
+pub const Event = enum {
+    teleport_start,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────

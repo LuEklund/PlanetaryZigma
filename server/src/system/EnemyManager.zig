@@ -80,7 +80,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
         const desired: shared.Entity.State =
             if (distance < 4 and enemy.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
         if (enemy.attack_speed == 0 or desired != enemy.state)
-            network_manager.pending_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
+            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
         enemy.state = desired;
 
         if (distance < 3) continue;
