@@ -90,6 +90,7 @@ pub const World = struct {
     players: std.ArrayList(u32),
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
+    planet_size: u32 = 100,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
         var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
@@ -177,6 +178,11 @@ pub const Context = struct {
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
         try self.health_manager.init(&self.network_manager, &self.spawner);
         try self.item_manager.init();
+
+        //TODO: Move somewhere smarter when know how to move stages.
+        const info: Info = .{ .elapsed_time = 0, .world = self.world, .delta_time = 0, .tick = 0 };
+        try self.spawner.update(&info, &self.physics, &self.network_manager);
+        try self.spawner.spawnStrctures(self.world, &self.physics);
     }
     pub fn deinit(self: *@This()) !void {
         self.physics.deinit();

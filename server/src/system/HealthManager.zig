@@ -26,7 +26,6 @@ pub fn removeHealth(
     amount: f32,
 ) bool {
     if (entity.flags.invinsible) return false;
-    std.log.debug("tried taking dmg {d}, current health {d}", .{ amount, entity.health.current });
     return self.addHealth(entity, -amount);
 }
 
@@ -41,7 +40,6 @@ pub fn addHealth(
     if (health.current <= 0) {
         self.spawner.depspawn(entity.id);
     }
-    std.log.debug("took dmg {d}, current health {d}", .{ amount, entity.health.current });
     self.network_manager.pending_add_health.appendAssumeCapacity(.{ .id = entity.id, .amount = amount });
     return true;
 }

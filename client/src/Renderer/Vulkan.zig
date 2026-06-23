@@ -198,6 +198,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     try self.createModel("objects/speed.glb", .speed_item, .{});
     try self.createModel("objects/damage.glb", .damage_item, .{});
     try self.createModel("objects/attack_speed.glb", .attack_speed_item, .{});
+    try self.createModel("objects/pillar.glb", .teleporter, .{});
     try self.createModel("objects/BenRun.glb", .player, .{
         .position = .{ 0, -1, 0 },
         .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
@@ -771,7 +772,6 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, en
         return; // bullet/unknown: no skeleton
     };
     try self.skelentons.put(entity_id, try .init(gpa, self.vma, self.device, model));
-    std.log.debug("added ID: {d}, kind {t}, capcity: {d}", .{ entity_id, entity_kind, self.skelentons.capacity() });
 }
 
 pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32) void {

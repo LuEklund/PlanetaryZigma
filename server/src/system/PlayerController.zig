@@ -72,6 +72,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
         if (player.controller.input.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
+
             _ = try self.spawner.spawn(.{
                 .kind = .skelly,
                 .transform = .{ .position = .{ 0, 100, 0 } },

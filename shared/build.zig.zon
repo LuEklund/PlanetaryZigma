@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .numz = .{
-            .url = "git+https://github.com/LuEklund/numz.git#a318a83b902a96e0aeb55e0525a381a6cf2773fe",
-            .hash = "numz-0.0.2-V-sGm8bZAAC_DtSAjk12S792Eq7BAGzNtaPL0TJ7zmaV",
+            .url = "git+https://github.com/LuEklund/numz.git#b230c27e927c328a1528713ba782ee302f28317b",
+            .hash = "numz-0.0.2-V-sGm0rfAABDpmxYTHA_A6bc3MFGtn_YJ9VKkhTlDBmH",
         },
         .zig_steamworks = .{
             .url = "git+https://github.com/menduz/zig-steamworks.git#7ef8943e7aa9e47abc057e32bc1e1ad63b8ca86d",

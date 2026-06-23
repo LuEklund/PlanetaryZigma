@@ -86,7 +86,6 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         _ = self.world.despawn(id);
     }
     self.pending_despawn.clearRetainingCapacity();
-    std.log.debug("tot entites: {d}", .{info.world.entities.values().len});
     for (info.world.entities.values()) |*entity| {
         if (entity.isEnemy()) {
             // std.log.debug("is enemy", .{});
