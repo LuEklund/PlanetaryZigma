@@ -21,7 +21,6 @@ spawner: *Spawner,
 /// Active connection to the server (0 = not yet connected). Filled in from
 /// SteamNet.events on the first .connected event.
 server_conn: shared.SteamNet.Conn = 0,
-my_server_id: u32 = 0,
 /// Whether we've sent the "connect" handshake on the current server_conn.
 sent_connect: bool = false,
 server_list: ServerList = .{},
@@ -134,7 +133,7 @@ fn handleCommand(
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
             self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id });
-            self.my_server_id = acknowledge.id;
+            info.world.player_id = acknowledge.id;
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id) != null) return;
@@ -164,7 +163,7 @@ fn handleCommand(
             info.world.camera.transform.position = rotation_command.position;
         },
         .add_health => |health_command| {
-            if (self.my_server_id == health_command.id) {
+            if (info.world.player_id == health_command.id) {
                 info.world.camera.health += health_command.amount;
             }
         },

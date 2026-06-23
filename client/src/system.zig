@@ -50,6 +50,8 @@ pub const World = struct {
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     camera: Camera = .{},
+    teleportal_id: u32 = 0,
+    player_id: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
         return .{ .gpa = gpa };

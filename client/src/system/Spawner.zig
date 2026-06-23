@@ -71,8 +71,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 entity.velocity = entity_info.velocity;
                 entity.flags.bullet = true;
             },
+            .teleporter => {
+                info.world.teleportal_id = entity.id;
+            },
             else => {
-                if (entity.isEnemy() or entity.isItem()) {
+                if (entity.isEnemy()) {
                     try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
                 }
             },
