@@ -71,8 +71,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 entity.velocity = entity_info.velocity;
                 entity.flags.bullet = true;
             },
+            .teleporter => {
+                info.world.teleportal_id = entity.id;
+            },
             else => {
-                if (entity.isEnemy() or entity.isItem()) {
+                if (entity.isEnemy()) {
                     try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
                 }
             },
@@ -86,7 +89,6 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         _ = self.world.despawn(id);
     }
     self.pending_despawn.clearRetainingCapacity();
-    std.log.debug("tot entites: {d}", .{info.world.entities.values().len});
     for (info.world.entities.values()) |*entity| {
         if (entity.isEnemy()) {
             // std.log.debug("is enemy", .{});

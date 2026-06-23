@@ -27,11 +27,13 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .world = world,
         .pending_despawn = try .initCapacity(gpa, max_despawn_count),
     };
-    const planet_size: u32 = 100;
-    const planet: shared.Planet(.logical) = try .init(self.gpa, planet_size);
+
+    const rand = world.prng.random();
+    world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
+    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
     _ = try self.spawn(.{
         .kind = .planet,
-        .planet = planet_size,
+        .planet = world.planet_size,
         .transform = .{},
         .collider = .{
             .shape = .{
@@ -46,7 +48,6 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .flags = .{ .transform = true, .collider = true, .planet = true },
     });
 
-    const rand = world.prng.random();
     for (0..20) |i| {
         const item_kind: shared.Entity.Kind = switch (i) {
             0...5 => .attack_speed_item,
@@ -54,11 +55,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
             11...15 => .damage_item,
             else => .health_item,
         };
-
-        const x = rand.float(f32) * 2 - 1;
-        const y = rand.float(f32) * 2 - 1;
-        const z = rand.float(f32) * 2 - 1;
-        const vector_direction: nz.Vec3(f32) = .{ x, y, z };
+        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
         _ = try self.spawn(.{
             .kind = item_kind,
             .transform = .{ .position = nz.vec.scale(vector_direction, 100) },
@@ -154,5 +151,36 @@ pub fn update(
         }
     }
     self.pending_despawn.clearRetainingCapacity();
-    std.log.debug("tot entites: {d}", .{info.world.entities.values().len});
+}
+
+pub fn spawnStrctures(self: *@This(), world: *system.World, physics: *Physics) !void {
+    var teleport_position: ?nz.Vec3(f32) = null;
+    while (teleport_position == null) {
+        teleport_position = physics.samplePlanetSurfacePoint(world);
+    } else {
+        const teleporter = try self.spawn(.{
+            .kind = .teleporter,
+            .transform = .{ .position = teleport_position.? },
+            .collider = .{
+                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                .motion_type = .static,
+                .object_layer = .non_moving,
+            },
+            .flags = .{
+                .collider = true,
+                .transform = true,
+                .item = true,
+            },
+        });
+        const teleport_planet_up = nz.vec.normalize(teleport_position.?);
+        const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+        const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
+        teleporter.transform.rotation = if (dot < 0.9999) blk: {
+            const axis = if (dot > -0.9999)
+                nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
+            else
+                nz.Vec3(f32){ 1, 0, 0 };
+            break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
+        } else .identity;
+    }
 }

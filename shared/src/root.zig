@@ -36,6 +36,8 @@ pub const Entity = struct {
         planet,
         bullet,
 
+        teleporter,
+
         skelly,
 
         health_item,

@@ -25,7 +25,6 @@ input_map: shared.net.Input = .{},
 transform: nz.Transform3D(f32) = .{},
 
 pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
-    _ = info;
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -115,7 +114,23 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
             .color = .new(1, 0, 0, 1),
         });
 
-        // const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{self.transform.position[1]});
+        if (info.world.getPtr(info.world.teleportal_id)) |teleporter| {
+            if (info.world.getPtr(info.world.player_id)) |player| {
+                if (nz.vec.length(player.transform.position - teleporter.transform.position) < 6) {
+                    // const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{nz.vec.length(player.transform.position - teleporter.transform.position)});
+                    ui.add(
+                        null,
+                        .{
+                            .name = "active_teleport",
+                            .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                            .text = "E",
+                            .position = .center,
+                        },
+                    );
+                }
+            }
+        }
+
         // ui.add(
         //     null,
         //     .{ .name = "display", .size = .{ .fixed = .{ .heigth = 0, .width = 0 } }, .text = s, .position = .center },
