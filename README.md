@@ -11,6 +11,8 @@ The new version is being made with the help of Harlad, Ernesto, Giλded, etakari
 2. Run.
 3. Hot Reload.
 
+# Requiresments
+[Zig 0.16.0](https://ziglang.org/download/)
 
 # Dependencies for building.
 ```
