@@ -88,6 +88,8 @@ pub const World = struct {
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     players: std.ArrayList(u32),
+    portal_active: bool = false,
+    teleportal_id: u32 = 0,
     planet_size: u32 = 100,
 
     next_id: u32 = 1,

@@ -50,6 +50,7 @@ pub const World = struct {
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     camera: Camera = .{},
+    portal_active: bool = false,
     teleportal_id: u32 = 0,
     player_id: u32 = 0,
 

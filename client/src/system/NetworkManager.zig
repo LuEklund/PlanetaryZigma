@@ -167,7 +167,7 @@ fn handleCommand(
                 info.world.camera.health += health_command.amount;
             }
         },
-        .update_state => |state_command| {
+        .update_animation_state => |state_command| {
             const entity = info.world.getPtr(state_command.id) orelse return;
             entity.state = state_command.state;
             const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
@@ -186,9 +186,13 @@ fn handleCommand(
                 else
                     .{ skeleton_animation.default, true },
             };
-
             if (skeleton_animation.loop == false) {
                 skeleton_animation.curremt_time = 0;
+            }
+        },
+        .update_event => |event| {
+            switch (event) {
+                .teleport_start => info.world.portal_active = true,
             }
         },
     }

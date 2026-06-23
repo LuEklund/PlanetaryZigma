@@ -44,7 +44,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const delta_yaw: f32 = @floatCast(-input.mouse_delta[0] * sensitivity * info.delta_time);
         const delta_pitch: f32 = @floatCast(-input.mouse_delta[1] * sensitivity * info.delta_time);
 
-        if (input.mouse_button_right) {
+        if (input.keys.mouse_button_right) {
             // Yaw rotates around the *current* planet-up so looking is always tangent-aligned.
             const yaw_quat = nz.quat.Hamiltonian(f32).angleAxis(delta_yaw, planet_up);
             camera.yaw_rotation = yaw_quat.mul(camera.yaw_rotation).normalize();
@@ -54,7 +54,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
 
         const player_forward_direction = player.transform.forward();
-        if (input.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
+        if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
             for (1..10) |i| {
@@ -70,7 +70,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 );
             }
         }
-        if (player.controller.input.k and info.elapsed_time - player.last_attack >= 0.1) {
+        if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
 
             _ = try self.spawner.spawn(.{
@@ -84,6 +84,15 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 .health = .{ .current = 20, .max = 20 },
                 .flags = .{ .transform = true, .collider = true, .health = true },
             });
+        }
+
+        if (player.controller.input.keys.e and info.world.portal_active == false) {
+            if (info.world.getPtr(info.world.teleportal_id)) |teleporter| {
+                if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.portal_reach_distance) {
+                    info.world.portal_active = true;
+                    network_manager.pending_events.appendAssumeCapacity(.teleport_start);
+                }
+            }
         }
 
         // --- Tangent-plane realign ---
@@ -115,28 +124,28 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         // --- Apply to body ---
         if (player.collider.body_id) |id| {
             var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
-            if (input.forward) dir += move_fwd;
-            if (input.backward) dir -= move_fwd;
-            if (input.right) dir += move_right;
-            if (input.left) dir -= move_right;
+            if (input.keys.w) dir += move_fwd;
+            if (input.keys.s) dir -= move_fwd;
+            if (input.keys.d) dir += move_right;
+            if (input.keys.a) dir -= move_right;
 
             var vertical: f32 = 0;
-            if (input.up) vertical += player.speed;
-            if (input.down) vertical -= player.speed;
+            if (input.keys.space) vertical += player.speed;
+            if (input.keys.l_shift) vertical -= player.speed;
 
             Physics.moveOnPlanet(body_interface, id, planet_up, dir, player.speed, vertical);
             const moving = nz.vec.length(dir) > std.math.floatEps(f32);
             const desired: shared.Entity.State =
                 if (player.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
             if (player.attack_speed == 0 or desired != player.state)
-                network_manager.pending_state.appendAssumeCapacity(.{ .id = player.id, .state = desired });
+                network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player.id, .state = desired });
             player.state = desired;
 
             // Body yaw tracks camera yaw (pitch stays on the camera only).
             body_interface.setRotation(id, camera.yaw_rotation.toVec(), .activate);
 
             // if (input.forward) std.log.debug("new pos {any}", .{body_interface.getPosition(id)});
-            if (input.r) {
+            if (input.keys.r) {
                 camera.* = .{};
                 transform.* = .{};
                 body_interface.setLinearVelocity(id, .{ 0, 0, 0 });

@@ -182,5 +182,6 @@ pub fn spawnStrctures(self: *@This(), world: *system.World, physics: *Physics) !
                 nz.Vec3(f32){ 1, 0, 0 };
             break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
         } else .identity;
+        world.teleportal_id = teleporter.id;
     }
 }
