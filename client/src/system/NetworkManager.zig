@@ -163,11 +163,11 @@ fn handleCommand(
             info.world.camera.transform.position = rotation_command.position;
         },
         .update_stat => |update_stat_command| {
-            const entity = info.world.getPtr(update_stat_command.id) orelse return;
-            switch (update_stat_command.amount) {
-                .set_max_health => entity.health.max = update_stat_command.amount.set_max_health,
-                .add_health => entity.health.current += update_stat_command.amount.add_health,
-            }
+            const entity = info.world.getPtr(update_stat_command.id) orelse {
+                self.spawner.pending_stats.appendAssumeCapacity(update_stat_command);
+                return;
+            };
+            Spawner.applyStat(entity, update_stat_command);
         },
         .update_animation_state => |state_command| {
             const entity = info.world.getPtr(state_command.id) orelse return;

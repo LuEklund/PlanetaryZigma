@@ -137,6 +137,16 @@ pub fn update(
             .id = entity.id,
             .kind = entity.kind,
         });
+        if (entity.flags.health) {
+            network_manager.pending_stats.appendAssumeCapacity(.{
+                .id = entity.id,
+                .amount = .{ .set_max_health = @floatCast(entity.health.max) },
+            });
+            network_manager.pending_stats.appendAssumeCapacity(.{
+                .id = entity.id,
+                .amount = .{ .set_health = @floatCast(entity.health.current) },
+            });
+        }
     }
     self.pending_spawn.clearRetainingCapacity();
 

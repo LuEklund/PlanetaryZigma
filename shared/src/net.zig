@@ -97,6 +97,7 @@ pub const UpdateCameraRotation = struct {
 pub const UpdateStat = struct {
     id: u32,
     amount: union(enum(u16)) {
+        set_health: f16,
         set_max_health: f16,
         add_health: f16,
     },
