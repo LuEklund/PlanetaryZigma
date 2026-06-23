@@ -208,6 +208,11 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
     });
 
+    try self.createModel("objects/Wizard.glb", .wizard, .{
+        .position = .{ 0, -0.6, 0 },
+        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
+    });
+
     {
         self.vertex_shader = try .init(
             gpa,

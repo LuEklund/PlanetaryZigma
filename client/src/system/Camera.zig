@@ -18,8 +18,6 @@ was_rotating: bool = false,
 mouse_pos: [2]f64 = .{ 0, 0 },
 mouse_prev_pos: [2]f64 = .{ 0, 0 },
 
-health: f32 = 100,
-
 input_map: shared.net.Input = .{},
 
 transform: nz.Transform3D(f32) = .{},
@@ -34,7 +32,7 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 
     const position: [2]f32 = .{ @floatCast(self.mouse_pos[0]), @floatCast(self.mouse_pos[1]) };
-    // var buf: [32]u8 = undefined;
+    var buf: [32]u8 = undefined;
     ui.start(.{
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = self.input_map.keys.mouse_button_left,
@@ -100,48 +98,47 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
             network_manager.server_list.refresh = true;
         }
     } else {
-        const healthbar_width: f32 = 200 * self.health / 100;
-        const healthbar_heigth: f32 = 30;
-
-        ui.add(null, .{
-            .position = .{
-                .fixed = .{
-                    .top = ui.screen_heigth - healthbar_heigth - 10,
-                    .left = 10,
-                },
-            },
-            .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
-            .color = .new(1, 0, 0, 1),
-        });
-
-        if (info.world.portal_active == false) {
-            if (info.world.getPtr(info.world.teleportal_id)) |teleporter| {
-                if (info.world.getPtr(info.world.player_id)) |player| {
-                    if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.portal_reach_distance) {
-                        // const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{nz.vec.length(player.transform.position - teleporter.transform.position)});
-                        ui.add(
-                            null,
-                            .{
-                                .name = "active_teleport",
-                                .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                                .text = "E",
-                                .position = .center,
-                            },
-                        );
-                    }
-                }
-            }
-        } else {
+        if (info.world.getPtr(info.world.player_id)) |player| {
+            const healthbar_width: f32 = 200 * player.health.current / player.health.max;
+            const healthbar_heigth: f32 = 30;
             ui.add(null, .{
                 .position = .{
                     .fixed = .{
-                        .top = 10,
-                        .left = ui.screen_width / 2 - healthbar_width / 2,
+                        .top = ui.screen_heigth - healthbar_heigth - 10,
+                        .left = 10,
                     },
                 },
                 .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
                 .color = .new(1, 0, 0, 1),
             });
+
+            if (info.world.portal_active == false) {
+                if (info.world.getPtr(info.world.teleportal_id)) |teleporter| {
+                    if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.portal_reach_distance) {
+                        const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{player.health.current});
+                        ui.add(
+                            null,
+                            .{
+                                .name = "active_teleport",
+                                .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                                .text = s,
+                                .position = .center,
+                            },
+                        );
+                    }
+                }
+            } else {
+                ui.add(null, .{
+                    .position = .{
+                        .fixed = .{
+                            .top = 10,
+                            .left = ui.screen_width / 2 - healthbar_width / 2,
+                        },
+                    },
+                    .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
+                    .color = .new(1, 0, 0, 1),
+                });
+            }
         }
 
         // ui.add(

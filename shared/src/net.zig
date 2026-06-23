@@ -35,7 +35,7 @@ pub const ServerPacket = union(enum) {
     despawn_entity: DespawnEntity,
     update_transform: UpdateTransform,
     update_camera_rotation: UpdateCameraRotation,
-    add_health: AddHealth,
+    update_stat: UpdateStat,
     update_animation_state: UpdateAnimationState,
     update_event: Event,
 };
@@ -94,9 +94,12 @@ pub const UpdateCameraRotation = struct {
     rotation: @Vector(4, f32),
 };
 
-pub const AddHealth = struct {
+pub const UpdateStat = struct {
     id: u32,
-    amount: f16,
+    amount: union(enum(u16)) {
+        set_max_health: f16,
+        add_health: f16,
+    },
 };
 
 pub const UpdateAnimationState = struct {
@@ -163,6 +166,12 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
             .@"packed" => try writer.writeStruct(value, endian),
         },
         .@"enum" => |@"enum"| try writer.writeInt(@"enum".tag_type, @intFromEnum(value), endian),
+        .@"union" => switch (value) {
+            inline else => |payload, tag| {
+                try writer.writeInt(@typeInfo(@TypeOf(tag)).@"enum".tag_type, @intFromEnum(tag), endian);
+                try marshal(writer, payload);
+            },
+        },
         .enum_literal => try writer.writeAll(@tagName(value)),
         else => @compileError("can not serialize type of " ++ @typeName(T) ++ " aka " ++ @tagName(@typeInfo(T))),
     }
@@ -176,7 +185,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
         .@"enum" => try reader.takeEnum(Out, endian),
         .@"struct" => {
-            var out: Out = std.mem.zeroes(Out);
+            var out: Out = undefined;
 
             inline for (@typeInfo(Out).@"struct".fields) |field| @field(out, field.name) = switch (@typeInfo(field.type)) {
                 .bool => try reader.takeByte() == 1,
@@ -231,9 +240,19 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
                     .@"packed" => try reader.takeStruct(field.type, endian),
                 },
+                .@"union" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
                 else => @compileError("can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(@typeInfo(field.type))),
             };
             return out;
+        },
+        .@"union" => |u| {
+            const Tag = u.tag_type orelse @compileError("can only deserialize tagged unions");
+            switch (try reader.takeEnum(Tag, endian)) {
+                inline else => |tag| {
+                    const name = @tagName(tag);
+                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name), deserialize_slices));
+                },
+            }
         },
         else => unreachable,
     };

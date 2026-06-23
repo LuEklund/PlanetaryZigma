@@ -33,7 +33,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
-pending_add_health: std.ArrayList(struct { id: u32, amount: f32 }) = .empty,
+pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_spawn: std.ArrayList(struct { kind: shared.Entity.Kind, id: u32 }) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_animatoin_state: std.ArrayList(struct { id: u32, state: shared.Entity.State }) = .empty,
@@ -45,7 +45,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.Ste
         .io = io,
         .steam_server = net,
         .clients = .init(gpa),
-        .pending_add_health = try .initCapacity(gpa, 4096),
+        .pending_stats = try .initCapacity(gpa, 4096),
         .pending_animatoin_state = try .initCapacity(gpa, 1024),
         .pending_events = try .initCapacity(gpa, 64),
     };
@@ -145,6 +145,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                     });
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
+
                     try client.sendCommand(
                         writer,
                         .{ .acknowledge = .{ .id = client.entity_id } },
@@ -218,16 +219,13 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .reliable,
             );
         }
-        // health
-        for (self.pending_add_health.items) |entry| {
+        // stats
+        for (self.pending_stats.items) |update_stat| {
             try client.sendCommand(writer, .{
-                .add_health = .{
-                    .id = @intCast(entry.id),
-                    .amount = @floatCast(entry.amount),
-                },
+                .update_stat = update_stat,
             }, .reliable);
         }
-        // states
+        // animations states
         for (self.pending_animatoin_state.items) |entry| {
             std.log.debug("send id {d} : state {t}", .{ entry.id, entry.state });
             try client.sendCommand(writer, .{
@@ -257,7 +255,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     // std.log.debug("cmd size {d}", .{self.steam_server.packets.outgoing.items.len});
     self.pending_despawn.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
-    self.pending_add_health.clearRetainingCapacity();
+    self.pending_stats.clearRetainingCapacity();
     self.pending_animatoin_state.clearRetainingCapacity();
     self.pending_events.clearRetainingCapacity();
     self.steam_server.packet_mutex.unlock(self.io);
@@ -269,7 +267,9 @@ fn spawnPacket(entity: *const system.Entity) shared.net.SpawnEntity {
     switch (entity.kind) {
         .planet => data = @bitCast(entity.planet),
         .bullet => velocity = entity.bullet.velocity,
-        else => {},
+        else => {
+            if (entity.flags.health == true) data = @bitCast([2]f16{ @floatCast(entity.health.current), @floatCast(entity.health.max) });
+        },
     }
     return .{
         .id = entity.id,

@@ -91,6 +91,17 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.portal_reach_distance) {
                     info.world.portal_active = true;
                     network_manager.pending_events.appendAssumeCapacity(.teleport_start);
+                    _ = try self.spawner.spawn(.{
+                        .kind = .wizard,
+                        .transform = .{ .position = teleporter.transform.position + nz.vec.scale(nz.vec.normalize(teleporter.transform.position), 10) },
+                        .collider = .{
+                            .shape = .{ .primitive = .{ .capsule = .{ .size = 3 } } },
+                            .motion_type = .dynamic,
+                            .object_layer = .moving,
+                        },
+                        .health = .{ .current = 100, .max = 100 },
+                        .flags = .{ .transform = true, .collider = true, .health = true },
+                    });
                 }
             }
         }

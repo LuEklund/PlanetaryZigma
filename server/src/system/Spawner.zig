@@ -133,7 +133,10 @@ pub fn update(
         if (entity.flags.collider) {
             try physics.createBody(entity);
         }
-        try network_manager.pending_spawn.append(self.gpa, .{ .id = entity.id, .kind = entity.kind });
+        try network_manager.pending_spawn.append(self.gpa, .{
+            .id = entity.id,
+            .kind = entity.kind,
+        });
     }
     self.pending_spawn.clearRetainingCapacity();
 
