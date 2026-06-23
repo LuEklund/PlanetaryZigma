@@ -51,6 +51,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         switch (entity_info.kind) {
             .player => |kind| {
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, kind);
+                const heath_data: [2]f16 = @bitCast(entity_info.data);
+                entity.health.current = heath_data[0];
+                entity.health.max = heath_data[1];
+                std.log.debug("health {d}", .{entity.health.current});
+                std.log.debug("max {d}", .{entity.health.max});
             },
             .planet => {
                 const size: u32 = @intCast(entity_info.data[0]);
@@ -76,6 +81,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             else => {
                 if (entity.isEnemy()) {
+                    const heath_data: [2]f16 = @bitCast(entity_info.data);
+                    entity.health.current = heath_data[0];
+                    entity.health.max = heath_data[1];
+
+                    if (entity.kind == .wizard) entity.transform.scale = @splat(5);
                     try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
                 }
             },

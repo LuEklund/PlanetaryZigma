@@ -18,6 +18,10 @@ pub const Info = struct {
 };
 
 pub const Entity = struct {
+    pub const Health = struct {
+        current: f32 = 0,
+        max: f32 = 1,
+    };
     pub const Flags = packed struct {
         transform: bool = false,
         bullet: bool = false,
@@ -27,6 +31,7 @@ pub const Entity = struct {
     flags: Flags = .{},
     kind: shared.Entity.Kind,
     state: shared.Entity.State = .walk,
+    health: Health = .{},
 
     transform: nz.Transform3D(f32) = .{},
 

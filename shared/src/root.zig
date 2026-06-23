@@ -16,7 +16,7 @@ pub const portal_reach_distance: f32 = 6;
 pub const Entity = struct {
     pub fn isEnemy(kind: Kind) bool {
         return switch (kind) {
-            .skelly => true,
+            .skelly, .wizard => true,
             else => false,
         };
     }
@@ -41,6 +41,7 @@ pub const Entity = struct {
         teleporter,
 
         skelly,
+        wizard,
 
         health_item,
         speed_item,

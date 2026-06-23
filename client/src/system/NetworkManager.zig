@@ -132,7 +132,7 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id });
+            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id, .data = @bitCast([2]f16{ @floatCast(100), @floatCast(100) }) });
             info.world.player_id = acknowledge.id;
         },
         .spawn_entity => |spawn_entity| {
@@ -162,9 +162,11 @@ fn handleCommand(
             info.world.camera.transform.rotation = .fromVec(rotation_command.rotation);
             info.world.camera.transform.position = rotation_command.position;
         },
-        .add_health => |health_command| {
-            if (info.world.player_id == health_command.id) {
-                info.world.camera.health += health_command.amount;
+        .update_stat => |update_stat_command| {
+            const entity = info.world.getPtr(update_stat_command.id) orelse return;
+            switch (update_stat_command.amount) {
+                .set_max_health => entity.health.max = update_stat_command.amount.set_max_health,
+                .add_health => entity.health.current += update_stat_command.amount.add_health,
             }
         },
         .update_animation_state => |state_command| {

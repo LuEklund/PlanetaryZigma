@@ -422,7 +422,7 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                         bin[joint_offset .. joint_offset + joint_accessor.count * @sizeOf([4]u8)],
                     );
 
-                    const weights_accessor_idx = primitive.attributes.map.get("WEIGHTS_0") orelse return error.NoJoints;
+                    const weights_accessor_idx = primitive.attributes.map.get("WEIGHTS_0") orelse return error.NoWeights;
                     const weights_accessor = gltf_loaded.accessors.?[weights_accessor_idx];
                     std.debug.assert(weights_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
                     std.debug.assert(weights_accessor.type == .VEC4);
