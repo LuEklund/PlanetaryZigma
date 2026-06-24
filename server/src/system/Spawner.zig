@@ -33,7 +33,6 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
     const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
     _ = try self.spawn(.{
         .kind = .planet,
-        .planet = world.planet_size,
         .transform = .{},
         .collider = .{
             .shape = .{
@@ -45,7 +44,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
             .motion_type = .static,
             .object_layer = .non_moving,
         },
-        .flags = .{ .transform = true, .collider = true, .planet = true },
+        .flags = .{ .transform = true, .collider = true },
     });
 
     for (0..20) |i| {
@@ -133,20 +132,7 @@ pub fn update(
         if (entity.flags.collider) {
             try physics.createBody(entity);
         }
-        try network_manager.pending_spawn.append(self.gpa, .{
-            .id = entity.id,
-            .kind = entity.kind,
-        });
-        if (entity.flags.health) {
-            network_manager.pending_stats.appendAssumeCapacity(.{
-                .id = entity.id,
-                .amount = .{ .set_max_health = @floatCast(entity.health.max) },
-            });
-            network_manager.pending_stats.appendAssumeCapacity(.{
-                .id = entity.id,
-                .amount = .{ .set_health = @floatCast(entity.health.current) },
-            });
-        }
+        try network_manager.pending_spawn.append(self.gpa, entity.id);
     }
     self.pending_spawn.clearRetainingCapacity();
 

@@ -34,7 +34,7 @@ io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
-pending_spawn: std.ArrayList(struct { kind: shared.Entity.Kind, id: u32 }) = .empty,
+pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_animatoin_state: std.ArrayList(struct { id: u32, state: shared.Entity.State }) = .empty,
 pending_events: std.ArrayList(shared.net.Event) = .empty,
@@ -198,13 +198,13 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             for (world.entities.values()) |*entity| {
                 if (!entity.flags.transform) continue;
                 std.log.debug("sent id {d}", .{entity.id});
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(entity) }, .reliable);
+                try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
             }
             client.needs_full_sync = false;
         } else {
-            for (self.pending_spawn.items) |entry| {
-                const entity = world.getPtr(entry.id) orelse continue;
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(entity) }, .reliable);
+            for (self.pending_spawn.items) |entity_id| {
+                const entity = world.getPtr(entity_id) orelse continue;
+                try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
             }
         }
         // despawns
@@ -261,19 +261,26 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.steam_server.packet_mutex.unlock(self.io);
 }
 
-fn spawnPacket(entity: *const system.Entity) shared.net.SpawnEntity {
-    var data: [4]u8 = @splat(0);
-    var velocity: @Vector(3, f32) = @splat(0);
-    switch (entity.kind) {
-        .planet => data = @bitCast(entity.planet),
-        .bullet => velocity = entity.bullet.velocity,
-        .unknown, .player, .teleporter, .skelly, .wizard, .health_item, .speed_item, .damage_item, .attack_speed_item => {},
+fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+    if (entity.flags.health) {
+        self.pending_stats.appendAssumeCapacity(.{
+            .id = entity.id,
+            .amount = .{ .set_max_health = @floatCast(entity.health.max) },
+        });
+        self.pending_stats.appendAssumeCapacity(.{
+            .id = entity.id,
+            .amount = .{ .set_health = @floatCast(entity.health.current) },
+        });
     }
     return .{
         .id = entity.id,
         .kind = entity.kind,
         .position = entity.transform.position,
-        .velocity = velocity,
-        .data = data,
+        .data = switch (entity.kind) {
+            .planet => .{ .planet_size = info.world.planet_size },
+            .bullet => .{ .bullet_velocity = entity.bullet.velocity },
+            .skelly, .wizard => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
+            .unknown, .player, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .none,
+        },
     };
 }

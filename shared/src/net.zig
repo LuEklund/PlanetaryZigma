@@ -55,8 +55,12 @@ pub const SpawnEntity = struct {
     id: u32,
     kind: Entity.Kind,
     position: @Vector(3, f32) = @splat(0),
-    velocity: @Vector(3, f32) = @splat(0),
-    data: [4]u8 = @splat(0),
+    data: union(enum(u16)) {
+        none: void,
+        bullet_velocity: @Vector(3, f32),
+        planet_size: u32,
+        is_teleporter_boss: void,
+    },
 };
 
 pub const DespawnEntity = struct {
@@ -185,6 +189,11 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         .int => try reader.takeInt(Out, endian),
         .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
         .@"enum" => try reader.takeEnum(Out, endian),
+        .vector => |vector| out: {
+            var val: Out = @splat(0);
+            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);
+            break :out val;
+        },
         .@"struct" => {
             var out: Out = undefined;
 

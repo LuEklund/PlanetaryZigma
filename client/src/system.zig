@@ -54,13 +54,17 @@ pub const World = struct {
     mutex: std.Io.Mutex = .init,
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
+    teleporter_bosses: std.ArrayList(u32) = .empty,
     camera: Camera = .{},
     portal_active: bool = false,
     teleportal_id: u32 = 0,
     player_id: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
-        return .{ .gpa = gpa };
+        return .{
+            .gpa = gpa,
+            .teleporter_bosses = try .initCapacity(gpa, max_entities),
+        };
     }
     pub fn deinit(self: *@This()) void {
         for (self.entities.values()) |*entity| entity.deinit(self.gpa);

@@ -48,7 +48,6 @@ pub const Entity = struct {
     collider: Physics.Collider = undefined,
     controller: Controller = .{},
     camera: Camera = .{},
-    planet: u32 = 0,
     bullet: BulletData = .{},
     health: HealthManager.Health = .{},
     attack_speed: f32 = 1,
@@ -63,11 +62,11 @@ pub const Entity = struct {
         collider: bool = false,
         controller: bool = false,
         camera: bool = false,
-        planet: bool = false,
         bullet: bool = false,
         health: bool = false,
         invinsible: bool = false,
         item: bool = false,
+        is_teleporter_boss: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {

@@ -29,23 +29,12 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
     _ = self;
 
     // std.log.debug("\n\neneties: {d}\n\n", .{info.world.entities.entries.len});
-    var player: *system.Entity = undefined;
-    for (info.world.entities.values()) |*entity| {
-        if (entity.kind == .player) {
-            player = entity;
-            break;
-        }
-    } else return;
+
+    if (info.world.players.items.len == 0) return;
+    const player = info.world.getPtr(info.world.players.getLast()) orelse return;
 
     const body_interface = physics.physics_system.getBodyInterfaceMut();
 
-    var planet_size: f32 = 0;
-    for (info.world.entities.values()) |*entity| {
-        if (entity.flags.planet == true) {
-            planet_size = @floatFromInt(entity.planet);
-            break;
-        }
-    }
     for (info.world.entities.values()) |*enemy| {
         if (!shared.Entity.isEnemy(enemy.kind)) continue;
         if (!enemy.flags.transform or !enemy.flags.collider) continue;

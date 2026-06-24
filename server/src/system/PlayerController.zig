@@ -100,7 +100,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .object_layer = .moving,
                         },
                         .health = .{ .current = 100, .max = 100 },
-                        .flags = .{ .transform = true, .collider = true, .health = true },
+                        .flags = .{ .transform = true, .collider = true, .health = true, .is_teleporter_boss = true },
                     });
                 }
             }
