@@ -46,18 +46,13 @@ void main() {
   float y = v.position.y;
   float z = v.position.z;
 
-  if (v.joint_indices.x != -1) {
-    mat4 skin_mat =
-      v.joint_weights.x * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.x)] +
-        v.joint_weights.y * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.y)] +
-        v.joint_weights.z * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.z)] +
-        v.joint_weights.w * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.w)];
+  mat4 skin_mat =
+    v.joint_weights.x * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.x)] +
+      v.joint_weights.y * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.y)] +
+      v.joint_weights.z * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.z)] +
+      v.joint_weights.w * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.w)];
 
-    gl_Position = scene_data.proj_view * push_constant.model_matrix * skin_mat * vec4(x, y, z, 1.0);
-  } else {
-    gl_Position = scene_data.proj_view * push_constant.model_matrix * vec4(x, y, z, 1.0);
-  }
-
+  gl_Position = scene_data.proj_view * push_constant.model_matrix * skin_mat * vec4(x, y, z, 1.0);
   // gl_Position = scene_data.proj_view * vec4(x, y, z, 1.0);
 
   // vec3 uv = vec3(v.uv_x, v.uv_y, v.uv_x);

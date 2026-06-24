@@ -12,7 +12,9 @@ const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
 const Node = @import("Vulkan/Node.zig");
 const Material = @import("Vulkan/Material.zig");
-const GltfModel = @import("Vulkan/GltfModel.zig");
+const SkeletalMesh = @import("Vulkan/SkeletalMesh.zig");
+const StaticMesh = @import("Vulkan/StaticMesh.zig");
+const gltf = @import("Vulkan/gltf.zig");
 const SkeletonAnimation = @import("Vulkan/SkeletonAnimation.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -37,6 +39,11 @@ pub const c = @import("vulkan");
 pub const Vertex = Mesh.Vertex;
 const max_frames_inflight: usize = 3;
 
+pub const Renderable = union(enum) {
+    static: *StaticMesh,
+    skeletal: *SkeletalMesh,
+};
+
 gpa: std.mem.Allocator,
 asset_server: *AssetServer,
 
@@ -48,7 +55,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 render_resources: RenderResources,
-models: std.EnumMap(shared.Entity.Kind, *GltfModel),
+renderables: std.EnumMap(shared.Entity.Kind, Renderable),
 skelentons: std.AutoHashMap(u32, SkeletonAnimation),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
@@ -56,6 +63,7 @@ ui: Ui,
 
 //Temporary
 vertex_shader: *Shader,
+static_vertex_shader: *Shader,
 fragment_shader: *Shader,
 ui_vertex_shader: *Shader,
 ui_fragment_shader: *Shader,
@@ -177,41 +185,32 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         Shader.UiPushConstant,
         &.{self.material_layout.handle},
     );
-    _ = try createModelWithMesh(
-        self,
-        gpa,
-        RenderResources.default_mesh_name,
-        Mesh.box.verticies,
-        Mesh.box.indicies,
-        .unknown,
-    );
-    _ = try createModelWithMesh(
-        self,
-        gpa,
-        "bullet",
-        Mesh.box.verticies,
-        Mesh.box.indicies,
-        .bullet,
-    );
-
-    try self.createModel("objects/health.glb", .health_item, .{});
-    try self.createModel("objects/speed.glb", .speed_item, .{});
-    try self.createModel("objects/damage.glb", .damage_item, .{});
-    try self.createModel("objects/attack_speed.glb", .attack_speed_item, .{});
-    try self.createModel("objects/pillar.glb", .teleporter, .{});
-    try self.createModel("objects/BenRun.glb", .player, .{
-        .position = .{ 0, -1, 0 },
-        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
+    self.renderables = .{};
+    const Spec = struct { path: ?[]const u8, offset: nz.Transform3D(f32), skinned: bool };
+    const specs = std.EnumArray(shared.Entity.Kind, Spec).init(.{
+        .planet = .{ .path = null, .offset = .{}, .skinned = false }, //comes from server
+        .unknown = .{ .path = null, .offset = .{}, .skinned = false },
+        .bullet = .{ .path = null, .offset = .{}, .skinned = false },
+        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
+        .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .health_item = .{ .path = "objects/health.glb", .offset = .{}, .skinned = false },
+        .speed_item = .{ .path = "objects/speed.glb", .offset = .{}, .skinned = false },
+        .damage_item = .{ .path = "objects/damage.glb", .offset = .{}, .skinned = false },
+        .attack_speed_item = .{ .path = "objects/attack_speed.glb", .offset = .{}, .skinned = false },
     });
-    try self.createModel("objects/Skelly.glb", .skelly, .{
-        .position = .{ 0, -0.6, 0 },
-        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
-    });
-
-    try self.createModel("objects/Wizard.glb", .wizard, .{
-        .position = .{ 0, -0.6, 0 },
-        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
-    });
+    for (std.enums.values(shared.Entity.Kind)) |kind| {
+        const spec = specs.get(kind);
+        const path = spec.path orelse continue;
+        const renderable: Renderable = if (spec.skinned)
+            .{ .skeletal = try gltf.loadSkeletal(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) }
+        else
+            .{ .static = try gltf.loadStatic(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) };
+        self.renderables.put(kind, renderable);
+    }
+    try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
+    try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
 
     {
         self.vertex_shader = try .init(
@@ -229,6 +228,25 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
             &.{ self.scene_layout.handle, self.material_layout.handle },
             "shaders/vertex.vert",
+            Shader.AnimationPushConstant,
+        );
+    }
+    {
+        self.static_vertex_shader = try .init(
+            gpa,
+            self.device,
+            asset_server,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+                .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+                .pushConstantRangeCount = 1,
+                .pName = "main",
+            },
+
+            &.{ self.scene_layout.handle, self.material_layout.handle },
+            "shaders/static.vert",
             Shader.AnimationPushConstant,
         );
     }
@@ -293,10 +311,11 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
 
     self.render_resources.deinit(gpa, self.vma, self.device);
 
-    var model_it = self.models.iterator();
-    while (model_it.next()) |model| {
-        model.value.*.deinit(gpa);
-    }
+    var model_it = self.renderables.iterator();
+    while (model_it.next()) |entry| switch (entry.value.*) {
+        .static => |model| model.deinit(gpa),
+        .skeletal => |model| model.deinit(gpa),
+    };
     var it = self.skelentons.valueIterator();
     while (it.next()) |skeleton| {
         skeleton.deinit(gpa, self.vma);
@@ -308,6 +327,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.pipeline_layout.deinit(self.device);
     self.ui_pipeline_layout.deinit(self.device);
     self.vertex_shader.deinit(gpa);
+    self.static_vertex_shader.deinit(gpa);
     self.fragment_shader.deinit(gpa);
     self.ui_fragment_shader.deinit(gpa);
     self.ui_vertex_shader.deinit(gpa);
@@ -568,30 +588,37 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
+
+    bindVertexShader(cmd, self.static_vertex_shader);
     for (info.world.entities.values()) |*entity| {
         if (!entity.flags.transform) continue;
-        const model = self.models.get(entity.kind) orelse {
+        const renderable = self.renderables.get(entity.kind) orelse {
             if (entity.kind.expectsModel()) {
                 std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
                 return error.NoModel;
             }
             continue; // bullet/unknown: intentionally modelless
         };
-        var transform = entity.transform;
+        const model = switch (renderable) {
+            .static => |static_model| static_model,
+            .skeletal => continue,
+        };
+        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        try drawStatic(self, cmd, model, current_frame, base_matrix);
+    }
 
-        // if (entity.flags.screen_space) {
-        //     transform.scale = @splat(width / 2);
-        //     transform.position[0] = width / 2;
-        //     transform.position[1] = height / 2;
-        // }
-        // var new_rot = entity.transform.rotation;
-        // new_rot.w = @sin(info.elapsed_time);
-        // entity.transform.rotation = new_rot;
-        // std.log.debug("modelID: {d}", .{model_id});
-        // std.log.debug("position: {any}", .{entity.transform.position});
-
-        for (model.top_nodes.items) |top_node| {
-            try draw(self, cmd, entity, current_frame, model, top_node, transform.toMat4x4().mul(model.offset.toMat4x4()));
+    bindVertexShader(cmd, self.vertex_shader);
+    for (info.world.entities.values()) |*entity| {
+        if (!entity.flags.transform) continue;
+        const renderable = self.renderables.get(entity.kind) orelse continue;
+        const model = switch (renderable) {
+            .skeletal => |skeletal_model| skeletal_model,
+            .static => continue,
+        };
+        const skeleton = self.skelentons.getPtr(entity.id) orelse continue;
+        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        for (model.top_nodes.items) |top_node_id| {
+            try drawSkeletal(self, cmd, skeleton, current_frame, top_node_id, base_matrix);
         }
     }
 
@@ -647,85 +674,93 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     draw_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT);
 }
 
-pub fn draw(
+fn drawStatic(
     self: *@This(),
     cmd: c.VkCommandBuffer,
-    entity: *system.Entity,
+    model: *const StaticMesh,
     current_frame: *const FrameData,
-    model: *const GltfModel,
+    top_matrix: nz.Mat4x4(f32),
+) !void {
+    for (model.surfaces.items) |surface| {
+        const mesh = try self.render_resources.getMeshPtr(surface.mesh_id);
+        const surface_matrix = top_matrix.mul(surface.local_matrix);
+        var push: Shader.StaticPushConstant = .{
+            .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+            .model_matrix = surface_matrix.d,
+        };
+        try emitNode(self, cmd, current_frame, mesh, &push);
+    }
+}
+
+fn drawSkeletal(
+    self: *@This(),
+    cmd: c.VkCommandBuffer,
+    skeleton: *const SkeletonAnimation,
+    current_frame: *const FrameData,
     node_id: usize,
     top_matrix: nz.Mat4x4(f32),
 ) !void {
-    // const node_transform: nz.Transform3D(f32) = .fromMat4x4(top_transform.toMat4x4().mul(node.world_transform.toMat4x4()));
-    // TODO: World tansform incorrect?
-    const skeleton = self.skelentons.get(entity.id);
-    const node = if (skeleton) |skel| skel.nodes[node_id] else model.nodes.items[node_id];
+    const node = skeleton.nodes[node_id];
     const node_matrix = top_matrix.mul(node.world_matrix);
-    // std.log.debug("skelentons {d}", .{self.skelentons.capacity()});
-    // const node_matrix = top_matrix;
-    // std.log.debug("top_pos: {any}", .{top_transform});
-    // std.log.debug("\nworld: {any}", .{node.world_matrix});
-    // std.log.debug("\nNODE matrix : {any}", .{node_matrix});
-
-    // if (true) return;
-    // std.log.debug("quat: {any}", .{nz.quat.Hamiltonian(f32).fromMat4x4(node_matrix)});
-    // std.log.debug("pos: {any}", .{node_matrix.vecPosition()});
-    // std.log.debug("scale: {any}", .{node_matrix.vecScale()});
-
-    // if (true) @panic("LOLXD")
 
     if (node.mesh_id) |mesh_id| {
         const mesh = try self.render_resources.getMeshPtr(mesh_id);
-
         var push: Shader.AnimationPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
             .model_matrix = node_matrix.d,
-            .inverse_bind_matrices_addess = undefined,
+            .inverse_bind_matrices_addess = if (node.skin_id >= 0)
+                skeleton.buffers[@intCast(node.skin_id)].getGPUAddress()
+            else
+                0,
         };
-        if (node.skin_id > -1) {
-            if (skeleton) |skel| {
-                push.inverse_bind_matrices_addess = skel.buffers[@intCast(node.skin_id)].getGPUAddress();
-            } else {
-                push.inverse_bind_matrices_addess = model.skins.items[@intCast(node.skin_id)].buffer.?.getGPUAddress();
-            }
-        }
-        // if (node.skin_id > -1) std.log.debug("address  {d}", .{model.skins.items[@intCast(node.skin_id)].buffer.?.device_address});
-
-        c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-        c.vkCmdPushConstants(cmd, self.pipeline_layout.handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(Shader.AnimationPushConstant), &push);
-        for (mesh.surfaces.items) |surface| {
-            // std.log.debug("MATERIAL NAME {s}", .{surface.material_name});
-            // std.log.debug("MATERIAs {d}", .{self.render_resources.materials.entries.len});
-            const material = try self.render_resources.getMaterialPtr(surface.material_name);
-            // std.log.debug("GOT NAME  {s}, address: {d}\n\n", .{ material.name, material.buffer.device_address });
-            const surface_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
-                .{
-                    .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-                    .address = current_frame.gpu_scene.getGPUAddress(),
-                    .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
-                },
-                .{
-                    .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-                    .address = material.buffer.getGPUAddress(),
-                    .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-                        c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
-                },
-            };
-            ext.vkCmdBindDescriptorBuffersEXT(cmd, surface_bindings.len, &surface_bindings[0]);
-
-            const buf_idx_0: u32 = 0;
-            const off_0: c.VkDeviceSize = 0;
-            ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
-            const buf_idx_1: u32 = 1;
-            const off_1: c.VkDeviceSize = 0;
-            ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 1, 1, &buf_idx_1, &off_1);
-
-            c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
-        }
+        try emitNode(self, cmd, current_frame, mesh, &push);
     }
 
     for (node.children.items) |child_id| {
-        try draw(self, cmd, entity, current_frame, model, child_id, node_matrix);
+        try drawSkeletal(self, cmd, skeleton, current_frame, child_id, node_matrix);
+    }
+}
+
+fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
+    const handle = [_]c.VkShaderEXT{shader.handle};
+    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
+}
+
+fn emitNode(
+    self: *@This(),
+    cmd: c.VkCommandBuffer,
+    current_frame: *const FrameData,
+    mesh: *Mesh,
+    push: anytype,
+) !void {
+    c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
+    c.vkCmdPushConstants(cmd, self.pipeline_layout.handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(@typeInfo(@TypeOf(push)).pointer.child), push);
+    for (mesh.surfaces.items) |surface| {
+        const material = try self.render_resources.getMaterialPtr(surface.material_name);
+        const surface_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+                .address = current_frame.gpu_scene.getGPUAddress(),
+                .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
+            },
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+                .address = material.buffer.getGPUAddress(),
+                .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                    c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
+            },
+        };
+        ext.vkCmdBindDescriptorBuffersEXT(cmd, surface_bindings.len, &surface_bindings[0]);
+
+        const buf_idx_0: u32 = 0;
+        const off_0: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
+        const buf_idx_1: u32 = 1;
+        const off_1: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 1, 1, &buf_idx_1, &off_1);
+
+        c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
 }
 
@@ -743,38 +778,19 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn createModelWithMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, verices: []const Mesh.Vertex, indices: []const u32, kind: shared.Entity.Kind) !void {
-    const mesh = try Mesh.init(
-        gpa,
-        self.vma,
-        name,
-        self.device,
-        Mesh.Vertex,
-        verices,
-        indices,
-        &.{.{
-            .index_start = 0,
-            .index_count = @intCast(indices.len),
-            .material_name = null,
-        }},
-    );
-    try self.render_resources.createMesh(gpa, mesh);
-    const model: *GltfModel = try gpa.create(GltfModel);
-    model.* = .{
-        .device = self.device,
-        .render_resources = &self.render_resources,
-        .vma = self.vma,
-        .model_name = try gpa.dupe(u8, name),
-    };
-    try model.nodes.append(gpa, .{ .mesh_id = mesh.name, .index = 0, .world_matrix = nz.Mat4x4(f32).identity });
-    try model.top_nodes.append(gpa, 0);
-    self.models.put(kind, model);
+pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.Vertex, indices: []const u32, kind: shared.Entity.Kind) !void {
+    const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, &self.render_resources, name, vertices, indices, .{});
+    self.renderables.put(kind, .{ .static = mesh });
 }
 
 pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
-    const model = self.models.get(entity_kind) orelse {
+    const renderable = self.renderables.get(entity_kind) orelse {
         if (entity_kind.expectsModel()) std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
         return; // bullet/unknown: no skeleton
+    };
+    const model = switch (renderable) {
+        .skeletal => |skeletal| skeletal,
+        .static => return,
     };
     try self.skelentons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
@@ -810,17 +826,4 @@ fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f3
         0.0,                              0.0,                              -2.0 / (far - near),          0.0,
         -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0,
     });
-}
-
-fn createModel(self: *@This(), path: []const u8, kind: shared.Entity.Kind, offset: nz.Transform3D(f32)) !void {
-    const model: *GltfModel = try .init(
-        self.gpa,
-        self.vma,
-        self.device,
-        self.asset_server,
-        path,
-        &self.render_resources,
-        offset,
-    );
-    self.models.put(kind, model);
 }

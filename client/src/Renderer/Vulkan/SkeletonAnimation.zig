@@ -3,19 +3,19 @@ const c = @import("vulkan");
 const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
-const Model = @import("GltfModel.zig");
+const SkeletalMesh = @import("SkeletalMesh.zig");
 const Node = @import("Node.zig");
 const Buffer = @import("Buffer.zig");
 
 nodes: []Node,
 buffers: []Buffer,
-model: *Model,
+model: *SkeletalMesh,
 curremt_time: f32 = 0,
 active: usize = 0,
 default: usize = 0,
 loop: bool = true,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *SkeletalMesh) !@This() {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
     for (model.nodes.items, nodes) |src, *dst| {
         dst.* = src;

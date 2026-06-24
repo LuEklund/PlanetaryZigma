@@ -4,7 +4,7 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
-const Model = @import("../Renderer/Vulkan/GltfModel.zig");
+const SkeletalMesh = @import("../Renderer/Vulkan/SkeletalMesh.zig");
 const Renderer = @import("../Renderer/Vulkan.zig");
 const Node = @import("../Renderer/Vulkan/Node.zig");
 const SkeletonAnimation = @import("../Renderer/Vulkan/SkeletonAnimation.zig");
@@ -90,7 +90,7 @@ pub fn update(
     }
 }
 
-fn updateJoints(node_index: usize, skeleton_animation: *SkeletonAnimation, model: *Model) void {
+fn updateJoints(node_index: usize, skeleton_animation: *SkeletonAnimation, model: *SkeletalMesh) void {
     const node = &skeleton_animation.nodes[node_index];
     if (node.skin_id > -1) {
         const skin = &model.skins.items[@intCast(node.skin_id)];
