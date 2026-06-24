@@ -56,7 +56,6 @@ pub const World = struct {
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     teleporter_bosses: std.ArrayList(u32) = .empty,
     camera: Camera = .{},
-    portal_active: bool = false,
     teleportal: shared.Teleporter = .{},
     player_id: u32 = 0,
 

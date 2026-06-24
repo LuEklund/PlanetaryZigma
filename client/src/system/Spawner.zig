@@ -59,6 +59,10 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 const size: u32 = entity_info.data.planet_size;
                 var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
                 defer planet.deinit(self.gpa);
+                if (system_context.renderer.inner.render_resources.meshes.getPtr("planet")) |planet_mesh| {
+                    planet_mesh.deinit(self.gpa, system_context.renderer.inner.vma);
+                    _ = system_context.renderer.inner.render_resources.meshes.swapRemove("planet");
+                }
                 try system_context.renderer.inner.createStaticMesh(
                     self.gpa,
                     "planet",

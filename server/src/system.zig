@@ -171,19 +171,17 @@ pub const Context = struct {
             .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
-        try self.player_controller.init(&self.physics, &self.spawner);
         try self.camera_controller.init();
-        try self.spawner.init(data.gpa, data.world);
         try self.bullet.init(data.gpa, self.world, &self.physics);
         try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
+        try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
+        try self.player_controller.init(&self.physics, &self.spawner);
         try self.health_manager.init(&self.network_manager, &self.spawner);
         try self.item_manager.init();
 
         //TODO: Move somewhere smarter when know how to move stages.
-        const info: Info = .{ .elapsed_time = 0, .world = self.world, .delta_time = 0, .tick = 0 };
-        try self.spawner.update(&info, &self.physics, &self.network_manager);
-        try self.spawner.spawnStrctures(self.world, &self.physics);
+        try self.spawner.startStage(self.world, &self.physics);
     }
     pub fn deinit(self: *@This()) !void {
         self.physics.deinit();
@@ -209,7 +207,7 @@ pub const Context = struct {
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
             if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
-                self.world.teleportal.charged += info.delta_time + 100;
+                self.world.teleportal.charged += info.delta_time * 4;
                 self.world.teleportal.charged = @min(self.world.teleportal.charged, self.world.teleportal.max_charge);
             }
         }

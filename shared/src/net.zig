@@ -115,6 +115,7 @@ pub const UpdateAnimationState = struct {
 pub const Event = union(enum(u16)) {
     teleport_start: void,
     teleporter_charge: f16,
+    new_stage: void,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────

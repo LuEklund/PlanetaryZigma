@@ -108,7 +108,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             for (info.world.entities.values()) |entry| {
                                 if (!entry.flags.player) self.spawner.depspawn(entry.id);
                             }
-                            try self.spawner.spawnStrctures(info.world, self.physics);
+                            try self.spawner.startStage(info.world, self.physics);
                         }
                     }
                 }

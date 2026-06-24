@@ -186,8 +186,9 @@ fn handleCommand(
         },
         .update_event => |event| {
             switch (event) {
-                .teleport_start => info.world.portal_active = true,
+                .teleport_start => info.world.teleportal.active = true,
                 .teleporter_charge => |charged| info.world.teleportal.charged = charged,
+                .new_stage => info.world.teleportal = .{},
             }
         },
     }

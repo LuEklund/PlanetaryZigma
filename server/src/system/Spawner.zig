@@ -11,6 +11,8 @@ const max_despawn_count: u32 = 1000;
 
 gpa: std.mem.Allocator,
 world: *system.World,
+physics: *Physics,
+network_manager: *NetworkManager,
 
 credits: f32 = 0,
 salary_per_second: f32 = 1,
@@ -21,56 +23,20 @@ should_spawm: bool = false,
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void {
+pub fn init(
+    self: *@This(),
+    gpa: std.mem.Allocator,
+    world: *system.World,
+    physics: *Physics,
+    network_manager: *NetworkManager,
+) !void {
     self.* = .{
         .gpa = gpa,
         .world = world,
         .pending_despawn = try .initCapacity(gpa, max_despawn_count),
+        .network_manager = network_manager,
+        .physics = physics,
     };
-
-    const rand = world.prng.random();
-    world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
-    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
-    _ = try self.spawn(.{
-        .kind = .planet,
-        .transform = .{},
-        .collider = .{
-            .shape = .{
-                .mesh = .{
-                    .indices = planet.indices,
-                    .vertices = planet.vertices,
-                },
-            },
-            .motion_type = .static,
-            .object_layer = .non_moving,
-        },
-        .flags = .{ .transform = true, .collider = true },
-    });
-
-    for (0..20) |i| {
-        const item_kind: shared.Entity.Kind = switch (i) {
-            0...5 => .attack_speed_item,
-            6...10 => .speed_item,
-            11...15 => .damage_item,
-            else => .health_item,
-        };
-        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
-        _ = try self.spawn(.{
-            .kind = item_kind,
-            .transform = .{ .position = nz.vec.scale(vector_direction, 100) },
-            .collider = .{
-                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
-                .motion_type = .dynamic,
-                .object_layer = .planet_only,
-            },
-            .flags = .{
-                .collider = true,
-                .transform = true,
-                .item = true,
-            },
-            .item_amount = @floatFromInt(i + 1),
-        });
-    }
 }
 
 pub fn deinit(self: *@This()) void {
@@ -85,6 +51,10 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     entity.id = id;
     try self.pending_spawn.append(self.gpa, id);
     if (entity.flags.is_teleporter_boss) self.world.teleport_bosses.appendAssumeCapacity(entity.id);
+    try self.network_manager.pending_spawn.append(self.gpa, entity.id);
+    if (entity.flags.collider) {
+        try self.physics.createBody(entity);
+    }
     return entity;
 }
 
@@ -128,14 +98,12 @@ pub fn update(
         }
     }
 
-    for (self.pending_spawn.items) |entity_id| {
-        const entity = info.world.entities.getPtr(entity_id) orelse @panic(" this can only happen if we remove enteties from other places than trough spawner,");
-        if (entity.flags.collider) {
-            try physics.createBody(entity);
-        }
-        try network_manager.pending_spawn.append(self.gpa, entity.id);
-    }
-    self.pending_spawn.clearRetainingCapacity();
+    // for (self.pending_spawn.items) |entity_id| {
+    //     const entity = info.world.entities.getPtr(entity_id) orelse @panic(" this can only happen if we remove enteties from other places than trough spawner,");
+    //
+    //
+    // }
+    // self.pending_spawn.clearRetainingCapacity();
 
     std.debug.assert(self.pending_despawn.items.len < max_despawn_count);
     for (self.pending_despawn.items) |entity_id| {
@@ -156,7 +124,53 @@ pub fn update(
     self.pending_despawn.clearRetainingCapacity();
 }
 
-pub fn spawnStrctures(self: *@This(), world: *system.World, physics: *Physics) !void {
+pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
+    const rand = world.prng.random();
+    world.teleportal = .{};
+    self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
+    world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
+    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
+    _ = try self.spawn(.{
+        .kind = .planet,
+        .transform = .{},
+        .collider = .{
+            .shape = .{
+                .mesh = .{
+                    .indices = planet.indices,
+                    .vertices = planet.vertices,
+                },
+            },
+            .motion_type = .static,
+            .object_layer = .non_moving,
+        },
+        .flags = .{ .transform = true, .collider = true },
+    });
+
+    for (0..20) |i| {
+        const item_kind: shared.Entity.Kind = switch (i) {
+            0...5 => .attack_speed_item,
+            6...10 => .speed_item,
+            11...15 => .damage_item,
+            else => .health_item,
+        };
+        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
+        _ = try self.spawn(.{
+            .kind = item_kind,
+            .transform = .{ .position = nz.vec.scale(vector_direction, 100) },
+            .collider = .{
+                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                .motion_type = .dynamic,
+                .object_layer = .planet_only,
+            },
+            .flags = .{
+                .collider = true,
+                .transform = true,
+                .item = true,
+            },
+            .item_amount = @floatFromInt(i + 1),
+        });
+    }
+
     var teleport_position: ?nz.Vec3(f32) = null;
     while (teleport_position == null) {
         teleport_position = physics.getSurfacePoint(world, .{ 0, 100, 0 });

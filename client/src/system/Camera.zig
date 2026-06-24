@@ -114,7 +114,7 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
             });
 
             const portal = info.world.getPtr(info.world.teleportal.id);
-            if (info.world.portal_active == false) {
+            if (info.world.teleportal.active == false) {
                 if (portal) |teleporter| {
                     if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
                         ui.add(
