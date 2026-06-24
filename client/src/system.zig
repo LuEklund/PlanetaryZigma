@@ -22,13 +22,7 @@ pub const Entity = struct {
         current: f32 = 0,
         max: f32 = 1,
     };
-    pub const Flags = packed struct {
-        transform: bool = false,
-        bullet: bool = false,
-    };
-
     id: u32 = 0,
-    flags: Flags = .{},
     kind: shared.Entity.Kind,
     state: shared.Entity.State = .walk,
     health: Health = .{},
@@ -144,7 +138,7 @@ pub const Context = struct {
     fn stepBullets(self: *@This(), info: *const Info) void {
         _ = self;
         for (info.world.entities.values()) |*entity| {
-            if (!entity.flags.bullet) continue;
+            if (entity.kind != .bullet) continue;
             shared.bullet.step(&entity.transform.position, &entity.velocity, info.delta_time);
         }
     }

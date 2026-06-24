@@ -25,7 +25,7 @@ pub fn removeHealth(
     entity: *Entity,
     amount: f32,
 ) bool {
-    if (!entity.flags.health) return false;
+    if (!shared.Entity.hasHealth(entity.kind)) return false;
     if (entity.flags.invinsible) return false;
     return self.addHealth(entity, -amount);
 }
@@ -35,7 +35,7 @@ pub fn addHealth(
     entity: *Entity,
     amount: f32,
 ) bool {
-    if (!entity.flags.health) return false;
+    if (!shared.Entity.hasHealth(entity.kind)) return false;
     const health = &entity.health;
     health.current += amount;
     if (health.current <= 0) {

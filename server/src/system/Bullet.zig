@@ -38,7 +38,7 @@ pub fn update(
     self.to_despawn.clearRetainingCapacity();
 
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.bullet or !entity.flags.transform) continue;
+        if (entity.kind != .bullet) continue;
         const bullet = &entity.bullet;
 
         bullet.lifetime -= dt;

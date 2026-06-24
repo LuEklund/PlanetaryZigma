@@ -37,7 +37,6 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
 
     for (info.world.entities.values()) |*enemy| {
         if (!shared.Entity.isEnemy(enemy.kind)) continue;
-        if (!enemy.flags.transform or !enemy.flags.collider) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
         const to_player = player.transform.position - enemy.transform.position;
@@ -92,7 +91,6 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                                 .object_layer = .moving,
                             },
                             .health = .{ .current = 20, .max = 20 },
-                            .flags = .{ .transform = true, .collider = true, .health = true },
                         });
                         if (enemy.state != .attack) {
                             enemy.state = .attack;

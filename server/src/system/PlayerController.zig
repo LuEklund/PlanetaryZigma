@@ -24,8 +24,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
     const body_interface = self.physics.physics_system.getBodyInterfaceMut();
 
     for (info.world.entities.values()) |*player| {
-        const f = player.flags;
-        if (!f.player or !f.transform or !f.collider) continue;
+        if (player.kind != .player) continue;
 
         const camera = &player.camera;
         const transform = &player.transform;
@@ -64,7 +63,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                         .owner_id = player.id,
                         .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                         .bullet = .{ .velocity = nz.vec.scale(muzzle_velocity, @floatFromInt(i)), .lifetime = shared.bullet.lifetime },
-                        .flags = .{ .transform = true, .bullet = true },
                         .damage = player.damage,
                     },
                 );
@@ -82,7 +80,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     .object_layer = .moving,
                 },
                 .health = .{ .current = 20, .max = 20 },
-                .flags = .{ .transform = true, .collider = true, .health = true },
             });
         }
 
@@ -102,12 +99,12 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             },
                             .attack_speed = 0.25,
                             .health = .{ .current = 100, .max = 100 },
-                            .flags = .{ .transform = true, .collider = true, .health = true, .is_teleporter_boss = true },
+                            .flags = .{ .is_teleporter_boss = true },
                         });
                     } else {
                         if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleport_bosses.items.len == 0) {
                             for (info.world.entities.values()) |entry| {
-                                if (!entry.flags.player) self.spawner.depspawn(entry.id);
+                                if (entry.kind != .player) self.spawner.depspawn(entry.id);
                             }
                             try self.spawner.startStage(info.world, self.physics);
                         }

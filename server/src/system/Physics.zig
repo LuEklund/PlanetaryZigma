@@ -271,7 +271,7 @@ pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
         ) catch unreachable;
         self.physics_system.setGravity(.{ 0, 0, 0 });
         for (world.entities.values()) |*entity| {
-            if (!entity.flags.collider or !entity.flags.transform) continue;
+            if (!shared.Entity.hasCollider(entity.kind)) continue;
             entity.collider.body_id = null;
             try self.createBody(entity);
         }
@@ -285,7 +285,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 
     // 1. Planet pull per dynamic body: gravity down + keep upright.
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.collider or !entity.flags.transform) continue;
+        if (!shared.Entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
         if (entity.collider.motion_type != .dynamic) continue;
 
@@ -322,7 +322,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
     self.physics_system.update(info.delta_time, .{}) catch unreachable;
 
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.collider or !entity.flags.transform) continue;
+        if (!shared.Entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
 
         const pos = body_interface.getPosition(body_id);

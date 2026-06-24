@@ -50,7 +50,14 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
     for (self.pending_spawn.items) |entity_info| {
         if (self.world.getPtr(entity_info.id) != null) continue;
         const entity = try self.world.spawn(entity_info.id);
-        entity.* = .{ .id = entity_info.id, .kind = entity_info.kind, .flags = .{ .transform = true } };
+        entity.* = .{
+            .id = entity_info.id,
+            .kind = entity_info.kind,
+            .transform = .{
+                .position = entity_info.position,
+                .rotation = .fromVec(entity_info.rotation),
+            },
+        };
         switch (entity_info.kind) {
             .player => {
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
@@ -70,9 +77,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             .bullet => {
                 entity.transform.scale = @splat(0.3);
-                entity.transform.position = entity_info.position;
                 entity.velocity = entity_info.data.bullet_velocity;
-                entity.flags.bullet = true;
             },
             .teleporter => {
                 info.world.teleportal.id = entity.id;

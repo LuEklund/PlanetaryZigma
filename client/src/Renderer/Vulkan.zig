@@ -571,7 +571,6 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     bindVertexShader(cmd, self.static_vertex_shader);
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.transform) continue;
         const renderable = self.renderables.get(entity.kind) orelse {
             if (entity.kind.expectsModel()) {
                 std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
@@ -589,7 +588,6 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     bindVertexShader(cmd, self.vertex_shader);
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.transform) continue;
         const renderable = self.renderables.get(entity.kind) orelse continue;
         const model = switch (renderable) {
             .skeletal => |skeletal_model| skeletal_model,
