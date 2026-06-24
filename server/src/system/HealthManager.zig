@@ -25,6 +25,7 @@ pub fn removeHealth(
     entity: *Entity,
     amount: f32,
 ) bool {
+    if (!entity.flags.health) return false;
     if (entity.flags.invinsible) return false;
     return self.addHealth(entity, -amount);
 }

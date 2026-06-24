@@ -207,14 +207,14 @@ pub const Context = struct {
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
             if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
-                self.world.teleportal.charged += info.delta_time * 4;
+                self.world.teleportal.charged += info.delta_time + 100;
                 self.world.teleportal.charged = @min(self.world.teleportal.charged, self.world.teleportal.max_charge);
             }
         }
         self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(self.world.teleportal.charged) });
 
         // std.log.debug("time : {d}", .{info.elapsed_time});
-        // self.request_exit = true;
+        self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;
     }
     fn reload(self: *@This(), pre_reload: bool) !void {

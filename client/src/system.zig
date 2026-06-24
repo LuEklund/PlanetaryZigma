@@ -68,6 +68,7 @@ pub const World = struct {
     pub fn deinit(self: *@This()) void {
         for (self.entities.values()) |*entity| entity.deinit(self.gpa);
         self.entities.deinit(self.gpa);
+        self.teleporter_bosses.deinit(self.gpa);
     }
 
     pub fn spawn(self: *@This(), id: u32) !*Entity {
