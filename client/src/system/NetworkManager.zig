@@ -179,14 +179,12 @@ fn handleCommand(
                     .walk => .{ 1, true },
                     .attack => .{ 2, false },
                 },
-                else => if (shared.Entity.isEnemy(entity.kind))
-                    switch (entity.state) {
-                        .idle => .{ 0, true },
-                        .walk => .{ 1, true },
-                        .attack => .{ 2, false },
-                    }
-                else
-                    .{ skeleton_animation.default, true },
+                .skelly, .wizard => switch (entity.state) {
+                    .idle => .{ 0, true },
+                    .walk => .{ 1, true },
+                    .attack => .{ 2, false },
+                },
+                .unknown, .planet, .bullet, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .{ skeleton_animation.default, true },
             };
             if (skeleton_animation.loop == false) {
                 skeleton_animation.curremt_time = 0;

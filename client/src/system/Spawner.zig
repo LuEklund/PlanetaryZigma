@@ -60,8 +60,8 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         const entity = try self.world.spawn(entity_info.id);
         entity.* = .{ .id = entity_info.id, .kind = entity_info.kind, .flags = .{ .transform = true } };
         switch (entity_info.kind) {
-            .player => |kind| {
-                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, kind);
+            .player => {
+                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
             .planet => {
                 const size: u32 = @intCast(entity_info.data[0]);
@@ -85,12 +85,11 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             .teleporter => {
                 info.world.teleportal_id = entity.id;
             },
-            else => {
-                if (entity.isEnemy()) {
-                    if (entity.kind == .wizard) entity.transform.scale = @splat(5);
-                    try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity.kind);
-                }
+            .skelly, .wizard => {
+                if (entity_info.kind == .wizard) entity.transform.scale = @splat(5);
+                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
+            .unknown, .health_item, .speed_item, .damage_item, .attack_speed_item => {},
         }
     }
     self.pending_spawn.clearRetainingCapacity();
