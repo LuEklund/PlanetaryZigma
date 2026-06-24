@@ -23,7 +23,7 @@ pub fn deinit(self: *@This()) !void {
     _ = self;
 }
 
-pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager, network_manager: *NetworkManager) !void {
+pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager, network_manager: *NetworkManager, spawner: *Spawner) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -65,14 +65,51 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
             if (!health_manager.removeHealth(player, enemy.damage)) std.log.debug("did not take damage", .{});
         }
 
-        const moving = distance >= 3;
-        const desired: shared.Entity.State =
-            if (distance < 4 and enemy.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
-        if (enemy.attack_speed == 0 or desired != enemy.state)
-            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
-        enemy.state = desired;
-
-        if (distance < 3) continue;
-        Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
+        switch (enemy.kind) {
+            .skelly => {
+                const moving = distance >= 3;
+                const desired: shared.Entity.State =
+                    if (distance < 4 and enemy.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
+                if (enemy.attack_speed == 0 or desired != enemy.state)
+                    network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
+                enemy.state = desired;
+                if (distance < 3) continue;
+                Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
+            },
+            .wizard => {
+                // std.log.debug("elapsed_time {d}, cooldown {d}, attack_spped {d}", .{ info.elapsed_time, info.elapsed_time - enemy.last_attack, enemy.attack_speed });
+                const desired: shared.Entity.State = if (distance < 40) .attack else .walk;
+                // std.log.debug("desired {t}", .{desired});
+                if (desired == .attack and info.elapsed_time - enemy.last_attack > 1 / enemy.attack_speed) {
+                    if (desired == .attack) {
+                        enemy.last_attack = info.elapsed_time;
+                        _ = try spawner.spawn(.{
+                            .kind = .skelly,
+                            .transform = .{ .position = player.transform.position },
+                            .collider = .{
+                                .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                                .motion_type = .dynamic,
+                                .object_layer = .moving,
+                            },
+                            .health = .{ .current = 20, .max = 20 },
+                            .flags = .{ .transform = true, .collider = true, .health = true },
+                        });
+                        if (enemy.state != .attack) {
+                            enemy.state = .attack;
+                        }
+                        enemy.last_attack = info.elapsed_time;
+                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .attack });
+                    } else {
+                        if (distance < 40) continue;
+                        if (enemy.state != .walk) {
+                            enemy.state = .walk;
+                            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
+                        }
+                        Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
+                    }
+                }
+            },
+            else => unreachable,
+        }
     }
 }
