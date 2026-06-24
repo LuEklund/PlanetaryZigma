@@ -3,7 +3,8 @@ Making a 3D game inspired by risk of rain 2 but on planets!
 using Zig, Vulkan, Jolt, Steamworks SDK.
 the planets will be Procedualy generated. 
 
-These are people who have helped mutiple times, and deserves a shoutout. (dm if I forgot anyone)
+
+# These are people who have helped multiple times, and deserves a shoutout. (dm if I forgot anyone)
 
 Harlad & Etakarinaee: Keeping Zig cod up-to-date.
 
