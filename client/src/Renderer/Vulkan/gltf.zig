@@ -563,18 +563,18 @@ pub fn parseScene(
                 }
             }
 
-            if (mesh.name) |name| {
+            if (mesh.name != null and !render_resources.meshes.contains(mesh.name.?)) {
                 const new_mesh: Mesh = try .init(
                     gpa,
                     vma,
-                    name,
+                    mesh.name.?,
                     device,
                     V,
                     vertices.items,
                     indices.items,
                     surfaces.items,
                 );
-                try render_resources.putMesh(gpa, vma, device, new_mesh);
+                try render_resources.createMesh(gpa, new_mesh);
             }
         };
     }

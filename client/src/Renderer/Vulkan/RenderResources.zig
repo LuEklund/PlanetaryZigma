@@ -115,15 +115,6 @@ pub fn createMesh(self: *@This(), gpa: std.mem.Allocator, mesh: Mesh) !void {
     std.debug.assert(!self.meshes.contains(mesh.name));
     try self.meshes.put(gpa, mesh.name, mesh);
 }
-
-pub fn putMesh(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device, mesh: Mesh) !void {
-    if (self.meshes.fetchSwapRemove(mesh.name)) |old| {
-        check(c.vkDeviceWaitIdle(device.handle)) catch {};
-        var existing = old.value;
-        existing.deinit(gpa, vma);
-    }
-    try self.meshes.put(gpa, mesh.name, mesh);
-}
 pub fn createMaterial(self: *@This(), gpa: std.mem.Allocator, material: Material) !void {
     try self.materials.put(gpa, material.name, material);
 }
