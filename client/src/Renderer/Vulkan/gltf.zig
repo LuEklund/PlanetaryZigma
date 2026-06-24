@@ -11,9 +11,6 @@ const Node = @import("Node.zig");
 const Material = @import("Material.zig");
 const Buffer = @import("Buffer.zig");
 const RenderResources = @import("RenderResources.zig");
-const AssetServer = @import("shared").AssetServer;
-const SkeletalMesh = @import("SkeletalMesh.zig");
-const StaticMesh = @import("StaticMesh.zig");
 const check = @import("utils.zig").check;
 
 const DecodeError = error{
@@ -98,180 +95,29 @@ fn decodeImageTask(task: *ImageDecodeTask) void {
     task.result.nr_channel = nr_channel;
 }
 
-pub fn loadSkeletal(
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    asset_server: *AssetServer,
-    render_resources: *RenderResources,
-    path: []const u8,
-    offset: nz.Transform3D(f32),
-) !*SkeletalMesh {
-    const self = try SkeletalMesh.init(gpa, vma, device, path, render_resources, offset);
-    try asset_server.loadAsset(SkeletalMesh, self, path, loadSkeletalAsset);
-    return self;
-}
+pub const Glb = struct {
+    content: []u8,
+    loaded: zgltf.LoadedGlb,
+    gltf: zgltf.Gltf,
+    bin: []const u8,
 
-fn loadSkeletalAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-
-    const self: *SkeletalMesh = @ptrCast(@alignCast(user_data));
-
-    if (self.has_loaded) {
-        for (self.nodes.items) |*node| node.deinit(gpa);
-        self.nodes.clearAndFree(gpa);
-        for (self.clips.items) |*animation| animation.deinit(gpa);
-        self.clips.clearAndFree(gpa);
-        for (self.skins.items) |*skin| skin.deinit(gpa);
-        self.skins.clearAndFree(gpa);
-        self.top_nodes.clearAndFree(gpa);
-    } else {
-        self.has_loaded = true;
+    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+        self.loaded.deinit();
+        gpa.free(self.content);
     }
+};
 
-    const content = blk: {
-        var read_buffer: [4096]u8 = undefined;
-        var reader = file.reader(io, &read_buffer);
-        break :blk try reader.interface.allocRemaining(gpa, .unlimited);
-    };
-    defer gpa.free(content);
+pub fn readGlb(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
+    var read_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buffer);
+    const content = try reader.interface.allocRemaining(gpa, .unlimited);
+    errdefer gpa.free(content);
 
     var loaded = try zgltf.parseGlbSlice(gpa, content);
-    defer loaded.deinit();
-    const gltf_loaded = loaded.parsed.value;
+    errdefer loaded.deinit();
     const bin = loaded.bin orelse return error.MissingBin;
 
-    try parseScene(Mesh.SkinnedVertex, gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &self.nodes, &self.top_nodes);
-
-    if (gltf_loaded.skins) |skins| {
-        const model_skins = try self.skins.addManyAsSlice(gpa, skins.len);
-        for (skins, model_skins) |skin, *model_skin| {
-            const joints = try gpa.alloc(usize, skin.joints.len);
-            for (skin.joints, 0..) |node_index, joint_index| {
-                joints[joint_index] = node_index;
-            }
-            var matrices: ?[]nz.Mat4x4(f32) = null;
-            if (skin.inverseBindMatrices.? > -1) {
-                const accessor = gltf_loaded.accessors.?[skin.inverseBindMatrices.?];
-                const mat_buffer_view = gltf_loaded.bufferViews.?[@intCast(accessor.bufferView.?)];
-                const matrix_data = bin[accessor.byteOffset + mat_buffer_view.byteOffset .. accessor.byteOffset + mat_buffer_view.byteOffset + mat_buffer_view.byteLength];
-                matrices = try gpa.alloc(nz.Mat4x4(f32), accessor.count);
-                @memcpy(std.mem.sliceAsBytes(matrices.?), matrix_data);
-            }
-            model_skin.* = try .init(
-                gpa,
-                skin.name orelse "skin",
-                matrices,
-                joints,
-            );
-        }
-    }
-
-    if (gltf_loaded.animations) |animations| {
-        const model_animations = try self.clips.addManyAsSlice(gpa, animations.len);
-        for (animations, model_animations) |gltf_animation, *model_animation| {
-            model_animation.* = try .init(
-                gpa,
-                gltf_animation.name orelse "animation",
-                gltf_animation.samplers.len,
-                gltf_animation.channels.len,
-            );
-            for (gltf_animation.samplers) |sampler| {
-                const in_sampler_accessor = gltf_loaded.accessors.?[sampler.input];
-                const out_sampler_accessor = gltf_loaded.accessors.?[sampler.output];
-
-                const model_sampler = model_animation.samplers.addOneAssumeCapacity();
-                model_sampler.* = try .init(gpa, sampler.interpolation, in_sampler_accessor.count, out_sampler_accessor.count);
-
-                const in_sampler_buffer_view = gltf_loaded.bufferViews.?[@intCast(in_sampler_accessor.bufferView.?)];
-                const in_sampler_offset = in_sampler_accessor.byteOffset + in_sampler_buffer_view.byteOffset;
-                const in_sampler_input_data = bin[in_sampler_offset .. in_sampler_offset + in_sampler_buffer_view.byteLength];
-                for (0..in_sampler_accessor.count) |i| {
-                    const value: f32 = @bitCast(in_sampler_input_data[i * 4 ..][0..4].*);
-                    model_sampler.inputs.appendAssumeCapacity(value);
-                }
-                for (model_sampler.inputs.items) |input| {
-                    if (input < model_animation.start) model_animation.start = input;
-                    if (input > model_animation.end) model_animation.end = input;
-                }
-
-                const out_sampler_buffer_view = gltf_loaded.bufferViews.?[@intCast(out_sampler_accessor.bufferView.?)];
-                const offset = out_sampler_accessor.byteOffset + out_sampler_buffer_view.byteOffset;
-                const out_sampler_input_data = bin[offset .. offset + out_sampler_buffer_view.byteLength];
-                switch (out_sampler_accessor.type) {
-                    .VEC3 => {
-                        for (0..out_sampler_accessor.count) |i| {
-                            const value: [3]f32 = @bitCast(out_sampler_input_data[i * 12 ..][0..12].*);
-                            model_sampler.outputs.appendAssumeCapacity(.{ value[0], value[1], value[2], 0 });
-                        }
-                    },
-                    .VEC4 => {
-                        for (0..out_sampler_accessor.count) |i| {
-                            const value: [4]f32 = @bitCast(out_sampler_input_data[i * 16 ..][0..16].*);
-                            model_sampler.outputs.appendAssumeCapacity(value);
-                        }
-                    },
-                    else => {},
-                }
-            }
-            for (gltf_animation.channels) |channel| {
-                const model_channel = model_animation.channels.addOneAssumeCapacity();
-                model_channel.* = .{
-                    .path = channel.target.coreKind() orelse return error.AnimationTargetPath,
-                    .node = if (channel.target.node) |node_index| node_index else null,
-                    .sampler_index = channel.sampler,
-                };
-            }
-        }
-    }
-}
-
-pub fn loadStatic(
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    asset_server: *AssetServer,
-    render_resources: *RenderResources,
-    path: []const u8,
-    offset: nz.Transform3D(f32),
-) !*StaticMesh {
-    const self = try StaticMesh.init(gpa, vma, device, render_resources, offset);
-    try asset_server.loadAsset(StaticMesh, self, path, loadStaticAsset);
-    return self;
-}
-
-fn loadStaticAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-
-    const self: *StaticMesh = @ptrCast(@alignCast(user_data));
-    self.surfaces.clearRetainingCapacity();
-
-    const content = blk: {
-        var read_buffer: [4096]u8 = undefined;
-        var reader = file.reader(io, &read_buffer);
-        break :blk try reader.interface.allocRemaining(gpa, .unlimited);
-    };
-    defer gpa.free(content);
-
-    var loaded = try zgltf.parseGlbSlice(gpa, content);
-    defer loaded.deinit();
-    const gltf_loaded = loaded.parsed.value;
-    const bin = loaded.bin orelse return error.MissingBin;
-
-    var nodes: std.ArrayList(Node) = .empty;
-    var top_nodes: std.ArrayList(usize) = .empty;
-    defer {
-        for (nodes.items) |*node| node.deinit(gpa);
-        nodes.deinit(gpa);
-        top_nodes.deinit(gpa);
-    }
-
-    try parseScene(Mesh.StaticVertex, gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &nodes, &top_nodes);
-
-    for (nodes.items) |node| {
-        const mesh_id = node.mesh_id orelse continue;
-        try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .local_matrix = node.world_matrix });
-    }
+    return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
 }
 
 pub fn parseScene(

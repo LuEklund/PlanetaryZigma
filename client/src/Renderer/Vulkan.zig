@@ -14,7 +14,6 @@ const Node = @import("Vulkan/Node.zig");
 const Material = @import("Vulkan/Material.zig");
 const SkeletalMesh = @import("Vulkan/SkeletalMesh.zig");
 const StaticMesh = @import("Vulkan/StaticMesh.zig");
-const gltf = @import("Vulkan/gltf.zig");
 const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -96,38 +95,31 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     self.asset_server = asset_server;
     self.skeletons = .init(gpa);
 
-    {
-        self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
-        procs.instance.load(self.instance.handle, null);
-        self.debug_messenger = try .init(self.instance, .{
-            .severities = if (try std.process.Environ.contains(.empty, gpa, "RENDERDOC_CAPFILE")) .{} else .{
-                .warning = true,
-                .verbose = true,
-                .@"error" = true,
-                .info = true,
-            },
-        });
-        self.surface = if (options.surface.init != null and options.surface.data != null) .{
-            .handle = @ptrCast(try options.surface.init.?(self.instance.handle, options.surface.data.?)),
-        } else return error.configSurface;
-    }
-    {
-        self.physical_device = try .pick(self.instance, self.surface.handle);
-        self.device = try .init(self.physical_device, options.device.extensions);
-        procs.device.load(self.device.handle, null);
-    }
-    {
-        self.vma = try .init(self.instance, self.physical_device, self.device);
-    }
+    self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
+    procs.instance.load(self.instance.handle, null);
+    self.debug_messenger = try .init(self.instance, .{
+        .severities = if (try std.process.Environ.contains(.empty, gpa, "RENDERDOC_CAPFILE")) .{} else .{
+            .warning = true,
+            .verbose = true,
+            .@"error" = true,
+            .info = true,
+        },
+    });
+    self.surface = if (options.surface.init != null and options.surface.data != null) .{
+        .handle = @ptrCast(try options.surface.init.?(self.instance.handle, options.surface.data.?)),
+    } else return error.configSurface;
 
-    {
-        self.swapchain = try .init(gpa, self.vma, self.physical_device, self.device, self.surface, options.swapchain.width, options.swapchain.heigth);
-    }
-    {
-        for (&self.frames) |*frame| {
-            frame.* = try .init(self.vma, self.device);
-            // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
-        }
+    self.physical_device = try .pick(self.instance, self.surface.handle);
+    self.device = try .init(self.physical_device, options.device.extensions);
+    procs.device.load(self.device.handle, null);
+
+    self.vma = try .init(self.instance, self.physical_device, self.device);
+
+    self.swapchain = try .init(gpa, self.vma, self.physical_device, self.device, self.surface, options.swapchain.width, options.swapchain.heigth);
+
+    for (&self.frames) |*frame| {
+        frame.* = try .init(self.vma, self.device);
+        // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
     self.scene_layout = try .init(self.device, &.{
@@ -148,30 +140,25 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         },
     }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
 
-    {
-        self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_layout);
-    }
+    self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_layout);
 
-    {
-        self.font = try .init(
-            gpa,
-            self.vma,
-            self.device,
-            "fonts/Roboto-Regular.ttf",
-            asset_server,
-            &self.render_resources,
-        );
-    }
-    {
-        self.ui = try .init(
-            gpa,
-            self.vma,
-            self.device,
-            self.swapchain.extent.width,
-            self.swapchain.extent.height,
-            self.font,
-        );
-    }
+    self.font = try .init(
+        gpa,
+        self.vma,
+        self.device,
+        "fonts/Roboto-Regular.ttf",
+        asset_server,
+        &self.render_resources,
+    );
+
+    self.ui = try .init(
+        gpa,
+        self.vma,
+        self.device,
+        self.swapchain.extent.width,
+        self.swapchain.extent.height,
+        self.font,
+    );
 
     self.pipeline_layout = try .init(
         self.device,
@@ -203,104 +190,98 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         const spec = specs.get(kind);
         const path = spec.path orelse continue;
         const renderable: Renderable = if (spec.skinned)
-            .{ .skeletal = try gltf.loadSkeletal(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) }
+            .{ .skeletal = try SkeletalMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) }
         else
-            .{ .static = try gltf.loadStatic(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) };
+            .{ .static = try StaticMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) };
         self.renderables.put(kind, renderable);
     }
     try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
     try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
 
-    {
-        self.vertex_shader = try .init(
-            gpa,
-            self.device,
-            asset_server,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-                .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-                .pushConstantRangeCount = 1,
-                .pName = "main",
-            },
+    self.vertex_shader = try .init(
+        gpa,
+        self.device,
+        asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pushConstantRangeCount = 1,
+            .pName = "main",
+        },
 
-            &.{ self.scene_layout.handle, self.material_layout.handle },
-            "shaders/animation.vert",
-            Shader.AnimationPushConstant,
-        );
-    }
-    {
-        self.static_vertex_shader = try .init(
-            gpa,
-            self.device,
-            asset_server,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-                .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-                .pushConstantRangeCount = 1,
-                .pName = "main",
-            },
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+        "shaders/animation.vert",
+        Shader.AnimationPushConstant,
+    );
 
-            &.{ self.scene_layout.handle, self.material_layout.handle },
-            "shaders/static.vert",
-            Shader.AnimationPushConstant,
-        );
-    }
-    {
-        self.fragment_shader = try .init(
-            gpa,
-            self.device,
-            asset_server,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-                .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-                .pushConstantRangeCount = 1,
-                .pName = "main",
-            },
-            &.{ self.scene_layout.handle, self.material_layout.handle },
-            "shaders/fragment.frag",
-            Shader.AnimationPushConstant,
-        );
-    }
-    {
-        self.ui_vertex_shader = try .init(
-            gpa,
-            self.device,
-            asset_server,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-                .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-                .pushConstantRangeCount = 1,
-                .pName = "main",
-            },
-            &.{self.material_layout.handle},
-            "shaders/ui.vert",
-            Shader.UiPushConstant,
-        );
-    }
-    {
-        self.ui_fragment_shader = try .init(
-            gpa,
-            self.device,
-            asset_server,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-                .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-                .pushConstantRangeCount = 1,
-                .pName = "main",
-            },
-            &.{self.material_layout.handle},
-            "shaders/ui.frag",
-            Shader.UiPushConstant,
-        );
-    }
+    self.static_vertex_shader = try .init(
+        gpa,
+        self.device,
+        asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pushConstantRangeCount = 1,
+            .pName = "main",
+        },
+
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+        "shaders/static.vert",
+        Shader.AnimationPushConstant,
+    );
+
+    self.fragment_shader = try .init(
+        gpa,
+        self.device,
+        asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pushConstantRangeCount = 1,
+            .pName = "main",
+        },
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+        "shaders/fragment.frag",
+        Shader.AnimationPushConstant,
+    );
+
+    self.ui_vertex_shader = try .init(
+        gpa,
+        self.device,
+        asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pushConstantRangeCount = 1,
+            .pName = "main",
+        },
+        &.{self.material_layout.handle},
+        "shaders/ui.vert",
+        Shader.UiPushConstant,
+    );
+
+    self.ui_fragment_shader = try .init(
+        gpa,
+        self.device,
+        asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pushConstantRangeCount = 1,
+            .pName = "main",
+        },
+        &.{self.material_layout.handle},
+        "shaders/ui.frag",
+        Shader.UiPushConstant,
+    );
 
     return self;
 }

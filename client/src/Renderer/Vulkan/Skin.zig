@@ -8,12 +8,12 @@ joints: []usize,
 pub fn init(
     gpa: std.mem.Allocator,
     name: []const u8,
-    inversse_bind_matrices: ?[]nz.Mat4x4(f32),
+    inverse_bind_matrices: ?[]nz.Mat4x4(f32),
     joints: []usize,
 ) !@This() {
     return .{
         .name = try gpa.dupe(u8, name),
-        .inverse_bind_matrices = if (inversse_bind_matrices) |matrices| .fromOwnedSlice(matrices) else null,
+        .inverse_bind_matrices = if (inverse_bind_matrices) |matrices| .fromOwnedSlice(matrices) else null,
         .joints = joints,
     };
 }
