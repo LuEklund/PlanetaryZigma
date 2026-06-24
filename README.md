@@ -4,10 +4,15 @@ using Zig, Vulkan, Jolt, Steamworks SDK.
 the planets will be Procedualy generated. 
 
 These are people who have helped mutiple times, and deserves a shoutout. (dm if I forgot anyone)
+
 Harlad & Etakarinaee: Keeping Zig cod up-to-date.
+
 Dunnewortel(HTRMC): Optimizng Code, and amazing ideas.
+
 ttchef & Webbe: brainstorming ideas.
+
 audiotrope & damon: blender, assets.
+
 Enty, Foo, Webbe: backers <3
 
 
