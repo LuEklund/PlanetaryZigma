@@ -149,7 +149,7 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
                     .color = .new(1, 0, 0, 1),
                 });
                 if (portal) |teleporter| {
-                    if (info.world.teleportal.charged == info.world.teleportal.max_charge) {
+                    if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleporter_bosses.items.len == 0) {
                         if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
                             ui.add(
                                 null,

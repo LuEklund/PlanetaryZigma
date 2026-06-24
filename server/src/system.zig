@@ -60,8 +60,7 @@ pub const Entity = struct {
     pub const Flags = packed struct {
         transform: bool = false,
         collider: bool = false,
-        controller: bool = false,
-        camera: bool = false,
+        player: bool = false,
         bullet: bool = false,
         health: bool = false,
         invinsible: bool = false,
@@ -86,7 +85,8 @@ pub const World = struct {
     pub const max_entities: usize = 1024;
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    players: std.ArrayList(u32),
+    players: std.ArrayList(u32) = .empty,
+    teleport_bosses: std.ArrayList(u32) = .empty,
     teleportal: shared.Teleporter = .{},
     planet_size: u32 = 100,
     next_id: u32 = 1,
@@ -100,6 +100,7 @@ pub const World = struct {
             .gpa = gpa,
             .entities = entities,
             .players = try .initCapacity(gpa, 16),
+            .teleport_bosses = try .initCapacity(gpa, max_entities),
         };
     }
     pub fn deinit(self: *@This()) void {

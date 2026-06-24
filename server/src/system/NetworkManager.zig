@@ -137,8 +137,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .flags = .{
                             .transform = true,
                             .collider = true,
-                            .controller = true,
-                            .camera = true,
+                            .player = true,
                             .health = true,
                             .invinsible = true,
                         },

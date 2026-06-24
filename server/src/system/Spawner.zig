@@ -84,6 +84,7 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     entity.* = entity_info;
     entity.id = id;
     try self.pending_spawn.append(self.gpa, id);
+    if (entity.flags.is_teleporter_boss) self.world.teleport_bosses.appendAssumeCapacity(entity.id);
     return entity;
 }
 
@@ -144,6 +145,9 @@ pub fn update(
                 std.log.debug("DESTROYED body_id={any} for entity id={d} kind={s}", .{
                     entity.collider.body_id, entity.id, @tagName(entity.kind),
                 });
+            }
+            if (std.mem.indexOfScalar(u32, info.world.teleport_bosses.items, entity_id)) |index_of_boss| {
+                _ = info.world.teleport_bosses.swapRemove(index_of_boss);
             }
             if (!self.world.despawn(entity_id)) @panic("fack");
             try network_manager.pending_despawn.append(self.gpa, entity_id);

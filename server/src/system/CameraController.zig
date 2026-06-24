@@ -23,7 +23,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
     _ = self;
 
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.camera or !entity.flags.transform) continue;
+        if (!entity.flags.player or !entity.flags.transform) continue;
         const camera = &entity.camera;
 
         switch (camera.mode) {

@@ -25,7 +25,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
 
     for (info.world.entities.values()) |*player| {
         const f = player.flags;
-        if (!f.controller or !f.camera or !f.transform or !f.collider) continue;
+        if (!f.player or !f.transform or !f.collider) continue;
 
         const camera = &player.camera;
         const transform = &player.transform;
@@ -89,7 +89,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         if (player.controller.input.keys.e) {
             if (info.world.getPtr(info.world.teleportal.id)) |teleporter| {
                 if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
-                    if (info.world.teleportal.active == false) {
+                    if (!info.world.teleportal.active) {
                         info.world.teleportal.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
                         _ = try self.spawner.spawn(.{
@@ -104,10 +104,11 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .flags = .{ .transform = true, .collider = true, .health = true, .is_teleporter_boss = true },
                         });
                     } else {
-                        if (info.world.teleportal.charged == info.world.teleportal.max_charge) {
+                        if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleport_bosses.items.len == 0) {
                             for (info.world.entities.values()) |entry| {
-                                self.spawner.depspawn(entry.id);
+                                if (!entry.flags.player) self.spawner.depspawn(entry.id);
                             }
+                            try self.spawner.spawnStrctures(info.world, self.physics);
                         }
                     }
                 }
