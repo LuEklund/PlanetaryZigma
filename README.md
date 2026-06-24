@@ -12,6 +12,8 @@ Dunnewortel(HTRMC): Optimizng Code, and amazing ideas.
 
 ttchef & Webbe: brainstorming ideas.
 
+Hans: inspired me to do my own engine.
+
 audiotrope & damon: blender, assets.
 
 Enty, Foo, Webbe: backers <3
