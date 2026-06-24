@@ -58,18 +58,12 @@ pub const Entity = struct {
     item_amount: f32 = 0,
 
     pub const Flags = packed struct {
-        transform: bool = false,
-        collider: bool = false,
-        player: bool = false,
-        bullet: bool = false,
-        health: bool = false,
         invinsible: bool = false,
-        item: bool = false,
         is_teleporter_boss: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (self.flags.collider) {
+        if (shared.Entity.hasCollider(self.kind)) {
             switch (self.collider.shape) {
                 .mesh => |*mesh| {
                     gpa.free(mesh.indices);

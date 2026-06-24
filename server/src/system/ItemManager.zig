@@ -14,7 +14,7 @@ pub fn init(self: *@This()) !void {
 pub fn update(self: *@This(), info: *const Info, spawner: *Spawner, health_manager: *HealthManager) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {
-        if (!entity.flags.item) continue;
+        if (!shared.Entity.isItem(entity.kind)) continue;
         const amount = entity.item_amount;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;

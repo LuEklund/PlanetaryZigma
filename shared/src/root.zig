@@ -42,6 +42,17 @@ pub const Entity = struct {
         };
     }
 
+    pub fn hasCollider(kind: Kind) bool {
+        return switch (kind) {
+            .unknown, .bullet => false,
+            else => true,
+        };
+    }
+
+    pub fn hasHealth(kind: Kind) bool {
+        return kind == .player or isEnemy(kind);
+    }
+
     pub const Kind = enum(u16) {
         unknown,
         player,

@@ -52,7 +52,7 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     try self.pending_spawn.append(self.gpa, id);
     if (entity.flags.is_teleporter_boss) self.world.teleport_bosses.appendAssumeCapacity(entity.id);
     try self.network_manager.pending_spawn.append(self.gpa, entity.id);
-    if (entity.flags.collider) {
+    if (shared.Entity.hasCollider(entity.kind)) {
         try self.physics.createBody(entity);
     }
     return entity;
@@ -93,7 +93,6 @@ pub fn update(
                     .object_layer = .moving,
                 },
                 .health = .{ .current = 10, .max = 10 },
-                .flags = .{ .transform = true, .collider = true, .health = true },
             });
         }
     }
@@ -108,7 +107,7 @@ pub fn update(
     std.debug.assert(self.pending_despawn.items.len < max_despawn_count);
     for (self.pending_despawn.items) |entity_id| {
         if (self.world.getPtr(entity_id)) |entity| {
-            if (entity.flags.collider) {
+            if (shared.Entity.hasCollider(entity.kind)) {
                 if (entity.collider.body_id) |body_id| physics.destroyBody(body_id);
                 std.log.debug("DESTROYED body_id={any} for entity id={d} kind={s}", .{
                     entity.collider.body_id, entity.id, @tagName(entity.kind),
@@ -143,7 +142,6 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             .motion_type = .static,
             .object_layer = .non_moving,
         },
-        .flags = .{ .transform = true, .collider = true },
     });
 
     for (0..20) |i| {
@@ -162,11 +160,6 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
                 .motion_type = .dynamic,
                 .object_layer = .planet_only,
             },
-            .flags = .{
-                .collider = true,
-                .transform = true,
-                .item = true,
-            },
             .item_amount = @floatFromInt(i + 1),
         });
     }
@@ -182,11 +175,6 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
                 .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
                 .motion_type = .static,
                 .object_layer = .non_moving,
-            },
-            .flags = .{
-                .collider = true,
-                .transform = true,
-                .item = true,
             },
         });
         const teleport_planet_up = nz.vec.normalize(teleport_position.?);

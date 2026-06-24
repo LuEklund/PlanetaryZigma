@@ -134,13 +134,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         },
                         .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                        .flags = .{
-                            .transform = true,
-                            .collider = true,
-                            .player = true,
-                            .health = true,
-                            .invinsible = true,
-                        },
+                        .flags = .{ .invinsible = true },
                     });
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
@@ -195,7 +189,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         if (client.needs_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
-                if (!entity.flags.transform) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
             }
@@ -241,8 +234,8 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         }
         // transforms
         for (world.entities.values()) |*entity| {
-            if (!entity.flags.transform) continue;
-            if (entity.flags.bullet) continue; // client simulates bullets from spawn pos+vel
+            if (entity.kind == .bullet) continue; // client simulates bullets from spawn pos+vel
+            if (entity.collider.motion_type == .static) continue; // static bodies never move; sent once at spawn
             try client.sendCommand(writer, .{ .update_transform = .{
                 .id = @intCast(entity.id),
                 .position = @floatCast(entity.transform.position),
@@ -260,7 +253,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
 }
 
 fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
-    if (entity.flags.health) {
+    if (shared.Entity.hasHealth(entity.kind)) {
         self.pending_stats.appendAssumeCapacity(.{
             .id = entity.id,
             .amount = .{ .set_max_health = @floatCast(entity.health.max) },
@@ -274,6 +267,7 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
         .id = entity.id,
         .kind = entity.kind,
         .position = entity.transform.position,
+        .rotation = entity.transform.rotation.toVec(),
         .data = switch (entity.kind) {
             .planet => .{ .planet_size = info.world.planet_size },
             .bullet => .{ .bullet_velocity = entity.bullet.velocity },
