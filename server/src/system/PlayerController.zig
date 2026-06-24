@@ -96,10 +96,11 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .kind = .wizard,
                             .transform = .{ .position = teleporter.transform.position + nz.vec.scale(nz.vec.normalize(teleporter.transform.position), 10) },
                             .collider = .{
-                                .shape = .{ .primitive = .{ .capsule = .{ .size = 3 } } },
+                                .shape = .{ .primitive = .{ .capsule = .{ .size = 5 } } },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
+                            .attack_speed = 0.25,
                             .health = .{ .current = 100, .max = 100 },
                             .flags = .{ .transform = true, .collider = true, .health = true, .is_teleporter_boss = true },
                         });
