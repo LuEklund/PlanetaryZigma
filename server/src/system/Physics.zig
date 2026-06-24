@@ -291,7 +291,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
-            const result = self.samplePlanetSurfacePoint(info.world);
+            const result = self.samplePlanetRandomSurfacePoint(info.world);
             if (result) |const_point| {
                 var point = const_point;
                 point += nz.vec.scale(nz.vec.normalize(point), 5);
@@ -452,10 +452,33 @@ pub fn moveOnPlanet(
     body_interface.setLinearVelocity(body_id, radial + walk);
 }
 
-pub fn samplePlanetSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
+pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
     const random = world.prng.random();
     const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
     const origin = nz.vec.scale(direction, @floatFromInt(world.planet_size));
+
+    const ray_direction = nz.vec.scale(origin, -2.0);
+
+    const ray: zphy.RRayCast = .{
+        .origin = .{ origin[0], origin[1], origin[2], 1.0 },
+        .direction = .{ ray_direction[0], ray_direction[1], ray_direction[2], 0.0 },
+    };
+
+    var layer_filter: PlanetLayerFilter = .{};
+
+    const result = self.physics_system
+        .getNarrowPhaseQuery()
+        .castRay(ray, .{
+        .object_layer_filter = &layer_filter.object_layer_filter,
+    });
+
+    if (!result.has_hit) return null;
+
+    return ray.getPointOnRay(result.hit.fraction);
+}
+
+pub fn getSurfacePoint(self: *@This(), world: *system.World, from_point: nz.Vec3(f32)) ?nz.Vec3(f32) {
+    const origin = nz.vec.scale(nz.vec.normalize(from_point), @floatFromInt(world.planet_size));
 
     const ray_direction = nz.vec.scale(origin, -2.0);
 

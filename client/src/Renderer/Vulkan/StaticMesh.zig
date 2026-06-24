@@ -107,7 +107,8 @@ pub fn fromMesh(
             .material_name = null,
         }},
     );
-    try render_resources.createMesh(gpa, mesh);
+
+    try render_resources.meshes.put(gpa, mesh.name, mesh);
     const self = try init(gpa, vma, device, render_resources, offset);
     try self.surfaces.append(gpa, .{ .mesh_id = mesh.name, .local_matrix = nz.Mat4x4(f32).identity });
     return self;

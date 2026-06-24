@@ -318,7 +318,7 @@ pub fn parseScene(
                                         sampler,
                                         image_view,
                                     );
-                                    try render_resources.createMaterial(gpa, new_material);
+                                    try render_resources.materials.put(gpa, new_material.name, new_material);
                                     material_name = new_material.name;
                                 }
                             }
@@ -420,7 +420,7 @@ pub fn parseScene(
                     indices.items,
                     surfaces.items,
                 );
-                try render_resources.createMesh(gpa, new_mesh);
+                try render_resources.meshes.put(gpa, new_mesh.name, new_mesh);
             }
         };
     }

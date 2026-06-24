@@ -136,6 +136,38 @@ pub fn deinit(self: *@This()) void {
     self.packets.deinit(self.gpa);
 }
 
+fn endReasonName(reason: i32) []const u8 {
+    return switch (reason) {
+        3001 => "Local_OfflineMode",
+        3002 => "Local_ManyRelayConnectivity",
+        3003 => "Local_HostedServerPrimaryRelay",
+        3004 => "Local_NetworkConfig",
+        3005 => "Local_Rights",
+        3006 => "Local_P2P_ICE_NoPublicAddresses",
+        4001 => "Remote_Timeout",
+        4002 => "Remote_BadCrypt",
+        4003 => "Remote_BadCert",
+        4006 => "Remote_BadProtocolVersion",
+        4007 => "Remote_P2P_ICE_NoPublicAddresses",
+        5001 => "Misc_Generic",
+        5002 => "Misc_InternalError",
+        5003 => "Misc_Timeout",
+        5005 => "Misc_SteamConnectivity",
+        5006 => "Misc_NoRelaySessionsToClient",
+        5008 => "Misc_P2P_Rendezvous",
+        5009 => "Misc_P2P_NAT_Firewall",
+        5010 => "Misc_PeerSentNoConnection",
+        else => switch (reason) {
+            1000...1999 => "App (game-defined close)",
+            2000...2999 => "AppException (game-defined crash)",
+            3000...3999 => "Local (your side gave up: timeout/config)",
+            4000...4999 => "Remote (server closed/timed out)",
+            5000...5999 => "Misc (relay/internal)",
+            else => "Unknown/Invalid",
+        },
+    };
+}
+
 pub fn handlePackets(self: *@This()) !void {
     while (true) {
         try self.io.checkCancel();
@@ -178,6 +210,12 @@ fn steamPump(self: *@This()) !void {
                     .k_ESteamNetworkingConnectionState_ClosedByPeer,
                     .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
                     => {
+                        std.log.warn("client disconnect: state={s} end_reason={d} ({s}) debug=\"{s}\"", .{
+                            @tagName(status_changed.m_info.m_eState),
+                            status_changed.m_info.m_eEndReason,
+                            endReasonName(status_changed.m_info.m_eEndReason),
+                            std.mem.sliceTo(&status_changed.m_info.m_szEndDebug, 0),
+                        });
                         _ = steam.SteamNetworkingSockets_SteamAPI().CloseConnection(status_changed.m_hConn, 0, "client-close", false);
                         if (self.server_conn == status_changed.m_hConn) self.server_conn = 0;
                         try self.packets.pushEvent(self.gpa, .{ .disconnected = status_changed.m_hConn });

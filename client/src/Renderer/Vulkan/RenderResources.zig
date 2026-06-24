@@ -102,21 +102,10 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     }
     self.samplers.deinit(gpa);
 
-    {
-        var it = self.meshes.iterator();
-        while (it.next()) |pair| {
-            pair.value_ptr.deinit(gpa, vma);
-        }
-        self.meshes.deinit(gpa);
+    for (self.meshes.values()) |*mesh| {
+        mesh.deinit(gpa, vma);
     }
-}
-
-pub fn createMesh(self: *@This(), gpa: std.mem.Allocator, mesh: Mesh) !void {
-    std.debug.assert(!self.meshes.contains(mesh.name));
-    try self.meshes.put(gpa, mesh.name, mesh);
-}
-pub fn createMaterial(self: *@This(), gpa: std.mem.Allocator, material: Material) !void {
-    try self.materials.put(gpa, material.name, material);
+    self.meshes.deinit(gpa);
 }
 
 pub fn getMeshPtr(self: *@This(), name_id: ?[]const u8) !*Mesh {

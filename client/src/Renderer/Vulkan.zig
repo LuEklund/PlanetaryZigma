@@ -759,7 +759,17 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
 }
 
 pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, kind: shared.Entity.Kind) !void {
+    if (self.render_resources.meshes.fetchSwapRemove(name)) |kv| {
+        try check(c.vkDeviceWaitIdle(self.device.handle));
+        var old_mesh = kv.value;
+        old_mesh.deinit(self.gpa, self.vma);
+        std.log.warn("swap removed excsisting mesh", .{});
+    }
     const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, &self.render_resources, name, vertices, indices, .{});
+    if (self.renderables.get(kind)) |old| switch (old) {
+        .static => |static| static.deinit(gpa),
+        .skeletal => |skeletal| skeletal.deinit(gpa),
+    };
     self.renderables.put(kind, .{ .static = mesh });
 }
 

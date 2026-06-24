@@ -5,17 +5,9 @@ const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.nz;
 
-pub const SpawnInfo = struct {
-    kind: shared.Entity.Kind,
-    id: u32,
-    position: @Vector(3, f32) = @splat(0),
-    velocity: @Vector(3, f32) = @splat(0),
-    data: [4]u8 = @splat(0),
-};
-
 gpa: std.mem.Allocator,
 world: *system.World,
-pending_spawn: std.ArrayList(SpawnInfo) = .empty,
+pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 
@@ -34,7 +26,7 @@ pub fn deinit(self: *@This()) void {
     self.pending_stats.deinit(self.gpa);
 }
 
-pub fn spawn(self: *@This(), entity_info: SpawnInfo) void {
+pub fn spawn(self: *@This(), entity_info: shared.net.SpawnEntity) void {
     self.pending_spawn.appendAssumeCapacity(entity_info);
 }
 
@@ -64,7 +56,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
             .planet => {
-                const size: u32 = @intCast(entity_info.data[0]);
+                const size: u32 = entity_info.data.planet_size;
                 var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
                 defer planet.deinit(self.gpa);
                 try system_context.renderer.inner.createStaticMesh(
@@ -79,14 +71,17 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             .bullet => {
                 entity.transform.scale = @splat(0.3);
                 entity.transform.position = entity_info.position;
-                entity.velocity = entity_info.velocity;
+                entity.velocity = entity_info.data.bullet_velocity;
                 entity.flags.bullet = true;
             },
             .teleporter => {
-                info.world.teleportal_id = entity.id;
+                info.world.teleportal.id = entity.id;
             },
             .skelly, .wizard => {
-                if (entity_info.kind == .wizard) entity.transform.scale = @splat(5);
+                if (entity_info.data == .is_teleporter_boss) {
+                    entity.transform.scale = @splat(5);
+                    info.world.teleporter_bosses.appendAssumeCapacity(entity.id);
+                }
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
             .unknown, .health_item, .speed_item, .damage_item, .attack_speed_item => {},
@@ -102,6 +97,9 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
     for (self.pending_despawn.items) |id| {
         if (self.world.getPtr(id) == null) continue;
         system_context.renderer.inner.removeSkeleton(self.gpa, id);
+        if (std.mem.indexOfScalar(u32, info.world.teleporter_bosses.items, id)) |index_of_boss| {
+            _ = info.world.teleporter_bosses.swapRemove(index_of_boss);
+        }
         _ = self.world.despawn(id);
     }
     self.pending_despawn.clearRetainingCapacity();

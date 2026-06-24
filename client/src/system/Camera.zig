@@ -19,6 +19,8 @@ mouse_pos: [2]f64 = .{ 0, 0 },
 mouse_prev_pos: [2]f64 = .{ 0, 0 },
 
 input_map: shared.net.Input = .{},
+teleport_charge_text: [32]u8 = undefined,
+buf: [32]u8 = undefined,
 
 transform: nz.Transform3D(f32) = .{},
 
@@ -32,7 +34,6 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 
     const position: [2]f32 = .{ @floatCast(self.mouse_pos[0]), @floatCast(self.mouse_pos[1]) };
-    var buf: [32]u8 = undefined;
     ui.start(.{
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = self.input_map.keys.mouse_button_left,
@@ -112,43 +113,68 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
                 .color = .new(1, 0, 0, 1),
             });
 
-            if (info.world.portal_active == false) {
-                if (info.world.getPtr(info.world.teleportal_id)) |teleporter| {
-                    if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.portal_reach_distance) {
-                        const s = try std.fmt.bufPrint(&buf, "{d:.2}", .{player.health.current});
+            const portal = info.world.getPtr(info.world.teleportal.id);
+            if (info.world.teleportal.active == false) {
+                if (portal) |teleporter| {
+                    if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
                         ui.add(
                             null,
                             .{
                                 .name = "active_teleport",
                                 .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                                .text = s,
+                                .text = "E",
                                 .position = .center,
                             },
                         );
                     }
                 }
             } else {
+                var total_boss_health: f32 = 0;
+                var total_boss_max_health: f32 = 0;
+                for (info.world.teleporter_bosses.items) |boss_id| {
+                    const boss = info.world.getPtr(boss_id) orelse continue;
+                    total_boss_health += boss.health.current;
+                    total_boss_max_health += boss.health.max;
+                }
+                const boss_healthbar_width: f32 = (ui.screen_width * 0.9) * (total_boss_health / total_boss_max_health);
+                const boss_healthbar_heigth: f32 = 30;
                 ui.add(null, .{
                     .position = .{
                         .fixed = .{
-                            .top = 10,
-                            .left = ui.screen_width / 2 - healthbar_width / 2,
+                            .top = 20,
+                            .left = ui.screen_width / 2 - boss_healthbar_width / 2,
                         },
                     },
-                    .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
+                    .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
                     .color = .new(1, 0, 0, 1),
                 });
+                if (portal) |teleporter| {
+                    if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleporter_bosses.items.len == 0) {
+                        if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
+                            ui.add(
+                                null,
+                                .{
+                                    .name = "active_teleport",
+                                    .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                                    .text = "E",
+                                    .position = .center,
+                                },
+                            );
+                        }
+                    } else {
+                        const teleporter_text = try std.fmt.bufPrint(&self.teleport_charge_text, "Teleport Charge: {d:.2}", .{info.world.teleportal.charged});
+                        ui.add(
+                            null,
+                            .{
+                                .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                                .text = teleporter_text,
+                                .position = .{ .fixed = .{ .top = ui.screen_heigth / 10, .left = ui.screen_width * 0.05 } },
+                            },
+                        );
+                    }
+                }
             }
         }
-
-        // ui.add(
-        //     null,
-        //     .{ .name = "display", .size = .{ .fixed = .{ .heigth = 0, .width = 0 } }, .text = s, .position = .center },
-        // );
-        // ui.add("display", .{ .position = .{ .fixed = .{ .top = 0, .left = 0 } }, .size = .{ .fixed = .{ .heigth = 100, .width = 100 } }, .name = "d-button" });
-        // if (ui.isActive("d-button")) {
-        //     self.input_map.forward = true;
-        // }
     }
 
     ui.end();

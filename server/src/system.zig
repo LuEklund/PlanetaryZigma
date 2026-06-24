@@ -48,7 +48,6 @@ pub const Entity = struct {
     collider: Physics.Collider = undefined,
     controller: Controller = .{},
     camera: Camera = .{},
-    planet: u32 = 0,
     bullet: BulletData = .{},
     health: HealthManager.Health = .{},
     attack_speed: f32 = 1,
@@ -61,13 +60,12 @@ pub const Entity = struct {
     pub const Flags = packed struct {
         transform: bool = false,
         collider: bool = false,
-        controller: bool = false,
-        camera: bool = false,
-        planet: bool = false,
+        player: bool = false,
         bullet: bool = false,
         health: bool = false,
         invinsible: bool = false,
         item: bool = false,
+        is_teleporter_boss: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -87,11 +85,10 @@ pub const World = struct {
     pub const max_entities: usize = 1024;
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    players: std.ArrayList(u32),
-    portal_active: bool = false,
-    teleportal_id: u32 = 0,
+    players: std.ArrayList(u32) = .empty,
+    teleport_bosses: std.ArrayList(u32) = .empty,
+    teleportal: shared.Teleporter = .{},
     planet_size: u32 = 100,
-
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
 
@@ -103,6 +100,7 @@ pub const World = struct {
             .gpa = gpa,
             .entities = entities,
             .players = try .initCapacity(gpa, 16),
+            .teleport_bosses = try .initCapacity(gpa, max_entities),
         };
     }
     pub fn deinit(self: *@This()) void {
@@ -173,19 +171,17 @@ pub const Context = struct {
             .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
-        try self.player_controller.init(&self.physics, &self.spawner);
         try self.camera_controller.init();
-        try self.spawner.init(data.gpa, data.world);
         try self.bullet.init(data.gpa, self.world, &self.physics);
         try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
+        try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
+        try self.player_controller.init(&self.physics, &self.spawner);
         try self.health_manager.init(&self.network_manager, &self.spawner);
         try self.item_manager.init();
 
         //TODO: Move somewhere smarter when know how to move stages.
-        const info: Info = .{ .elapsed_time = 0, .world = self.world, .delta_time = 0, .tick = 0 };
-        try self.spawner.update(&info, &self.physics, &self.network_manager);
-        try self.spawner.spawnStrctures(self.world, &self.physics);
+        try self.spawner.startStage(self.world, &self.physics);
     }
     pub fn deinit(self: *@This()) !void {
         self.physics.deinit();
@@ -207,8 +203,18 @@ pub const Context = struct {
         try self.spawner.update(info, &self.physics, &self.network_manager);
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
 
+        const teleporter = self.world.getPtr(self.world.teleportal.id) orelse return;
+        for (self.world.players.items) |player_id| {
+            const player = self.world.getPtr(player_id) orelse continue;
+            if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
+                self.world.teleportal.charged += info.delta_time + 100;
+                self.world.teleportal.charged = @min(self.world.teleportal.charged, self.world.teleportal.max_charge);
+            }
+        }
+        self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(self.world.teleportal.charged) });
+
         // std.log.debug("time : {d}", .{info.elapsed_time});
-        // self.request_exit = true;
+        self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;
     }
     fn reload(self: *@This(), pre_reload: bool) !void {

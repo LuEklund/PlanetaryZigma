@@ -132,19 +132,13 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id, .data = @bitCast([2]f16{ @floatCast(100), @floatCast(100) }) });
+            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id) != null) return;
             if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
-            self.spawner.spawn(.{
-                .kind = spawn_entity.kind,
-                .id = spawn_entity.id,
-                .position = spawn_entity.position,
-                .velocity = spawn_entity.velocity,
-                .data = spawn_entity.data,
-            });
+            self.spawner.spawn(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             // Spawner resolves it after spawns are applied, so a spawn+despawn
@@ -192,7 +186,9 @@ fn handleCommand(
         },
         .update_event => |event| {
             switch (event) {
-                .teleport_start => info.world.portal_active = true,
+                .teleport_start => info.world.teleportal.active = true,
+                .teleporter_charge => |charged| info.world.teleportal.charged = charged,
+                .new_stage => info.world.teleportal = .{},
             }
         },
     }
