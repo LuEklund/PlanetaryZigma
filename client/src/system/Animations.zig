@@ -7,7 +7,7 @@ const nz = shared.numz;
 const SkeletalMesh = @import("../Renderer/Vulkan/SkeletalMesh.zig");
 const Renderer = @import("../Renderer/Vulkan.zig");
 const Node = @import("../Renderer/Vulkan/Node.zig");
-const SkeletonAnimation = @import("../Renderer/Vulkan/SkeletonAnimation.zig");
+const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
 
 gpa: std.mem.Allocator,
 
@@ -18,7 +18,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
 pub fn update(
     self: *@This(),
     info: *const Info,
-    skeletons: *std.AutoHashMap(u32, SkeletonAnimation),
+    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
 ) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -29,13 +29,13 @@ pub fn update(
         const skeleton_animation = skeletons.getPtr(entity.id) orelse continue;
         const model = skeleton_animation.model;
         if (model.clips.items.len == 0) continue;
-        const animation = model.clips.items[skeleton_animation.active];
-        skeleton_animation.curremt_time += info.delta_time;
+        const animation = model.clips.items[skeleton_animation.player.active];
+        skeleton_animation.player.current_time += info.delta_time;
 
-        if (skeleton_animation.curremt_time > animation.end) {
-            if (skeleton_animation.loop) skeleton_animation.curremt_time -= animation.end else {
-                skeleton_animation.active = skeleton_animation.default;
-                skeleton_animation.curremt_time = 0;
+        if (skeleton_animation.player.current_time > animation.end) {
+            if (skeleton_animation.player.loop) skeleton_animation.player.current_time -= animation.end else {
+                skeleton_animation.player.active = skeleton_animation.player.default;
+                skeleton_animation.player.current_time = 0;
             }
         }
         for (animation.channels.items) |*channel| {
@@ -43,8 +43,8 @@ pub fn update(
             for (0..sampler.inputs.items.len - 1) |i| {
                 const sampler_in = sampler.inputs.items[i];
                 const sampler_in_next = sampler.inputs.items[i + 1];
-                if (skeleton_animation.curremt_time >= sampler_in and skeleton_animation.curremt_time <= sampler_in_next) {
-                    const interpolate_value: f32 = (skeleton_animation.curremt_time - sampler_in) / (sampler_in_next - sampler_in);
+                if (skeleton_animation.player.current_time >= sampler_in and skeleton_animation.player.current_time <= sampler_in_next) {
+                    const interpolate_value: f32 = (skeleton_animation.player.current_time - sampler_in) / (sampler_in_next - sampler_in);
                     const node_id = channel.node orelse return error.NoNode;
                     const node = &skeleton_animation.nodes[node_id];
                     const sampler_out = sampler.outputs.items[i];
@@ -90,7 +90,7 @@ pub fn update(
     }
 }
 
-fn updateJoints(node_index: usize, skeleton_animation: *SkeletonAnimation, model: *SkeletalMesh) void {
+fn updateJoints(node_index: usize, skeleton_animation: *SkeletonInstance, model: *SkeletalMesh) void {
     const node = &skeleton_animation.nodes[node_index];
     if (node.skin_id > -1) {
         const skin = &model.skins.items[@intCast(node.skin_id)];

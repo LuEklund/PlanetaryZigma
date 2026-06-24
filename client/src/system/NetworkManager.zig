@@ -7,7 +7,7 @@ const World = system.World;
 const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
-const SkeletonAnimation = @import("../Renderer/Vulkan/SkeletonAnimation.zig");
+const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
@@ -62,7 +62,7 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
 pub fn update(
     self: *@This(),
     info: *const Info,
-    skeletons: *std.AutoHashMap(u32, SkeletonAnimation),
+    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
 ) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -127,7 +127,7 @@ fn handleCommand(
     self: *@This(),
     info: *const Info,
     command: shared.net.ServerPacket,
-    skeletons: *std.AutoHashMap(u32, SkeletonAnimation),
+    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
 ) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
@@ -173,7 +173,7 @@ fn handleCommand(
             const entity = info.world.getPtr(state_command.id) orelse return;
             entity.state = state_command.state;
             const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
-            skeleton_animation.active, skeleton_animation.loop = switch (entity.kind) {
+            skeleton_animation.player.active, skeleton_animation.player.loop = switch (entity.kind) {
                 .player => switch (entity.state) {
                     .idle => .{ 0, true },
                     .walk => .{ 1, true },
@@ -184,10 +184,10 @@ fn handleCommand(
                     .walk => .{ 1, true },
                     .attack => .{ 2, false },
                 },
-                .unknown, .planet, .bullet, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .{ skeleton_animation.default, true },
+                .unknown, .planet, .bullet, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .{ skeleton_animation.player.default, true },
             };
-            if (skeleton_animation.loop == false) {
-                skeleton_animation.curremt_time = 0;
+            if (skeleton_animation.player.loop == false) {
+                skeleton_animation.player.current_time = 0;
             }
         },
         .update_event => |event| {

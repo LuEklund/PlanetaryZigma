@@ -129,9 +129,9 @@ pub const Context = struct {
         // tracy.frameMark();
         try info.world.camera.update(info, &self.network_manager, &self.renderer.inner.ui);
         try self.renderer.update(info);
-        try self.animation.update(info, &self.renderer.inner.skelentons);
+        try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();
-        try self.network_manager.update(info, &self.renderer.inner.skelentons);
+        try self.network_manager.update(info, &self.renderer.inner.skeletons);
         self.stepBullets(info);
         try self.spawner.update(info, self);
         // std.log.debug("time : {d}", .{info.elapsed_time});

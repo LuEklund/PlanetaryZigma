@@ -13,7 +13,8 @@ index_buffer: Buffer,
 vertex_buffer: Buffer,
 name: []const u8,
 
-pub const Vertex = shared.Planet(.renderable).Vertex;
+pub const StaticVertex = shared.StaticVertex;
+pub const SkinnedVertex = shared.SkinnedVertex;
 
 pub const GeoSurface = struct {
     index_start: u32,

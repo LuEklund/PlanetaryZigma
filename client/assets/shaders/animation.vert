@@ -37,7 +37,6 @@ layout(push_constant, std430) uniform pc {
 layout(location = 0) out vec4 out_frag_color;
 layout(location = 1) out vec2 out_uv;
 layout(location = 2) out vec3 out_normal;
-layout(location = 3) out vec4 out_joints;
 
 void main() {
   Vertex v = push_constant.vertex_buffer.vertices[gl_VertexIndex];
@@ -61,12 +60,6 @@ void main() {
 
   // float red = (y > 0) ? 1 : 0;
   // vec3 col = vec3(red, 0, 0);
-
-  // out_joints.x = int(v.joint_indices.x);
-  // out_joints.y = int(v.joint_indices.y);
-  // out_joints.z = int(v.joint_indices.z);
-  // out_joints.w = int(v.joint_indices.w);
-  out_joints = v.joint_weights;
 
   // out_frag_color = v.joint_indices.x == -1 ? vec4(v.color) : vec4(col, 1);
   // out_frag_color = vec4(col, 1);

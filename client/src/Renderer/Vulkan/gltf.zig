@@ -117,16 +117,16 @@ fn loadSkeletalAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, 
 
     const self: *SkeletalMesh = @ptrCast(@alignCast(user_data));
 
-    if (self.READY_RELOAD_DELETE_THIS) {
+    if (self.has_loaded) {
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
         for (self.clips.items) |*animation| animation.deinit(gpa);
         self.clips.clearAndFree(gpa);
-        for (self.skins.items) |*skin| skin.deinit(gpa, self.vma);
+        for (self.skins.items) |*skin| skin.deinit(gpa);
         self.skins.clearAndFree(gpa);
         self.top_nodes.clearAndFree(gpa);
     } else {
-        self.READY_RELOAD_DELETE_THIS = true;
+        self.has_loaded = true;
     }
 
     const content = blk: {
@@ -141,7 +141,7 @@ fn loadSkeletalAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, 
     const gltf_loaded = loaded.parsed.value;
     const bin = loaded.bin orelse return error.MissingBin;
 
-    try parseScene(gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &self.nodes, &self.top_nodes);
+    try parseScene(Mesh.SkinnedVertex, gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &self.nodes, &self.top_nodes);
 
     if (gltf_loaded.skins) |skins| {
         const model_skins = try self.skins.addManyAsSlice(gpa, skins.len);
@@ -160,11 +160,8 @@ fn loadSkeletalAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, 
             }
             model_skin.* = try .init(
                 gpa,
-                self.vma,
-                self.device,
                 skin.name orelse "skin",
                 matrices,
-                if (skin.skeleton) |root_id| &self.nodes.items[root_id] else null,
                 joints,
             );
         }
@@ -269,7 +266,7 @@ fn loadStaticAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, fi
         top_nodes.deinit(gpa);
     }
 
-    try parseScene(gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &nodes, &top_nodes);
+    try parseScene(Mesh.StaticVertex, gpa, self.vma, self.device, self.render_resources, gltf_loaded, bin, &nodes, &top_nodes);
 
     for (nodes.items) |node| {
         const mesh_id = node.mesh_id orelse continue;
@@ -278,6 +275,7 @@ fn loadStaticAsset(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, fi
 }
 
 pub fn parseScene(
+    comptime V: type,
     gpa: std.mem.Allocator,
     vma: Vma,
     device: Device,
@@ -287,7 +285,6 @@ pub fn parseScene(
     out_nodes: *std.ArrayList(Node),
     out_top_nodes: *std.ArrayList(usize),
 ) !void {
-    std.debug.print("MODEL- Reload 1\n", .{});
     const original_sample_count = render_resources.samplers.items.len;
     {
         if (gltf.samplers) |samplers| {
@@ -325,7 +322,6 @@ pub fn parseScene(
         }
     }
 
-    std.debug.print("MODEL- Reload 2\n", .{});
     const original_image_count = render_resources.images.items.len;
     {
         if (gltf.images) |images| {
@@ -360,12 +356,10 @@ pub fn parseScene(
                 }
             }
 
-            std.debug.print("MODEL- Reload 3\n", .{});
             {
                 try decodeImages(gpa, decode_tasks);
             }
 
-            std.debug.print("MODEL- Reload 4\n", .{});
             var upload_buffers: std.ArrayList(Buffer) = .empty;
             defer {
                 for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
@@ -396,12 +390,11 @@ pub fn parseScene(
         }
     }
 
-    std.debug.print("MODEL- Reload 5\n", .{});
     {
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
             var surfaces: std.ArrayList(Mesh.GeoSurface) = try .initCapacity(gpa, mesh.primitives.len);
             defer surfaces.deinit(gpa);
-            var vertices: std.ArrayList(Mesh.Vertex) = .empty;
+            var vertices: std.ArrayList(V) = .empty;
             defer vertices.deinit(gpa);
             var indices: std.ArrayList(u32) = .empty;
             defer indices.deinit(gpa);
@@ -514,7 +507,7 @@ pub fn parseScene(
                     bin[normal_offset .. normal_offset + normal_accessor.count * @sizeOf([3]f32)],
                 );
 
-                if (gltf.animations != null) {
+                if (comptime @hasField(V, "joint_indices")) {
                     const joint_accessor_idx = primitive.attributes.map.get("JOINTS_0") orelse return error.NoJoints;
                     const joint_accessor = gltf.accessors.?[joint_accessor_idx];
                     std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
@@ -570,23 +563,22 @@ pub fn parseScene(
                 }
             }
 
-            if (mesh.name != null and !render_resources.meshes.contains(mesh.name.?)) {
+            if (mesh.name) |name| {
                 const new_mesh: Mesh = try .init(
                     gpa,
                     vma,
-                    mesh.name.?,
+                    name,
                     device,
-                    Mesh.Vertex,
+                    V,
                     vertices.items,
                     indices.items,
                     surfaces.items,
                 );
-                try render_resources.createMesh(gpa, new_mesh);
+                try render_resources.putMesh(gpa, vma, device, new_mesh);
             }
         };
     }
 
-    std.debug.print("MODEL- Reload 6\n", .{});
     if (gltf.nodes) |gltf_nodes| {
         _ = try out_nodes.addManyAsSlice(gpa, gltf_nodes.len);
         for (gltf_nodes, out_nodes.items, 0..) |gltf_node, *scene_node, scene_node_id| {
@@ -615,7 +607,6 @@ pub fn parseScene(
             }
         }
     }
-    std.debug.print("MODEL- Reload 7\n", .{});
     for (out_nodes.items, 0..) |*node, i| {
         if (node.parent == null) {
             try out_top_nodes.append(gpa, i);

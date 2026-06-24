@@ -1,4 +1,4 @@
-const Vertex = @import("../Mesh.zig").Vertex;
+const Vertex = @import("../Mesh.zig").StaticVertex;
 
 pub const verticies: []const Vertex = &.{
     // Back (+Z)

@@ -15,7 +15,7 @@ const Material = @import("Vulkan/Material.zig");
 const SkeletalMesh = @import("Vulkan/SkeletalMesh.zig");
 const StaticMesh = @import("Vulkan/StaticMesh.zig");
 const gltf = @import("Vulkan/gltf.zig");
-const SkeletonAnimation = @import("Vulkan/SkeletonAnimation.zig");
+const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
@@ -36,7 +36,6 @@ const check = @import("Vulkan/utils.zig").check;
 
 pub const Info = system.Info;
 pub const c = @import("vulkan");
-pub const Vertex = Mesh.Vertex;
 const max_frames_inflight: usize = 3;
 
 pub const Renderable = union(enum) {
@@ -56,7 +55,7 @@ vma: Vma,
 swapchain: Swapchain,
 render_resources: RenderResources,
 renderables: std.EnumMap(shared.Entity.Kind, Renderable),
-skelentons: std.AutoHashMap(u32, SkeletonAnimation),
+skeletons: std.AutoHashMap(u32, SkeletonInstance),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
@@ -95,7 +94,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     const self = try gpa.create(@This());
     self.gpa = gpa;
     self.asset_server = asset_server;
-    self.skelentons = .init(gpa);
+    self.skeletons = .init(gpa);
 
     {
         self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
@@ -227,7 +226,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
             },
 
             &.{ self.scene_layout.handle, self.material_layout.handle },
-            "shaders/vertex.vert",
+            "shaders/animation.vert",
             Shader.AnimationPushConstant,
         );
     }
@@ -316,11 +315,11 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
         .static => |model| model.deinit(gpa),
         .skeletal => |model| model.deinit(gpa),
     };
-    var it = self.skelentons.valueIterator();
+    var it = self.skeletons.valueIterator();
     while (it.next()) |skeleton| {
         skeleton.deinit(gpa, self.vma);
     }
-    self.skelentons.deinit();
+    self.skeletons.deinit();
 
     self.material_layout.deinit(self.device);
     self.scene_layout.deinit(self.device);
@@ -615,7 +614,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             .skeletal => |skeletal_model| skeletal_model,
             .static => continue,
         };
-        const skeleton = self.skelentons.getPtr(entity.id) orelse continue;
+        const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         for (model.top_nodes.items) |top_node_id| {
             try drawSkeletal(self, cmd, skeleton, current_frame, top_node_id, base_matrix);
@@ -695,7 +694,7 @@ fn drawStatic(
 fn drawSkeletal(
     self: *@This(),
     cmd: c.VkCommandBuffer,
-    skeleton: *const SkeletonAnimation,
+    skeleton: *const SkeletonInstance,
     current_frame: *const FrameData,
     node_id: usize,
     top_matrix: nz.Mat4x4(f32),
@@ -778,7 +777,7 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.Vertex, indices: []const u32, kind: shared.Entity.Kind) !void {
+pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, kind: shared.Entity.Kind) !void {
     const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, &self.render_resources, name, vertices, indices, .{});
     self.renderables.put(kind, .{ .static = mesh });
 }
@@ -792,11 +791,11 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, en
         .skeletal => |skeletal| skeletal,
         .static => return,
     };
-    try self.skelentons.put(entity_id, try .init(gpa, self.vma, self.device, model));
+    try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
 pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32) void {
-    if (self.skelentons.fetchRemove(entity_id)) |kv| {
+    if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
     }

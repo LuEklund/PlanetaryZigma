@@ -9,7 +9,6 @@ const AssetServer = shared.AssetServer;
 inner: Inner,
 
 const Vulkan = @import("Renderer/Vulkan.zig");
-pub const Vertex = Vulkan.Vertex;
 
 pub const Inner = *Vulkan;
 

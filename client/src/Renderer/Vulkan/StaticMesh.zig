@@ -45,7 +45,7 @@ pub fn fromMesh(
     device: Device,
     render_resources: *RenderResources,
     name: []const u8,
-    vertices: []const Mesh.Vertex,
+    vertices: []const Mesh.StaticVertex,
     indices: []const u32,
     offset: nz.Transform3D(f32),
 ) !*@This() {
@@ -54,7 +54,7 @@ pub fn fromMesh(
         vma,
         name,
         device,
-        Mesh.Vertex,
+        Mesh.StaticVertex,
         vertices,
         indices,
         &.{.{

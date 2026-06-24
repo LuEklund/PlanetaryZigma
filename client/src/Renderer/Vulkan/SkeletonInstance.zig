@@ -7,13 +7,17 @@ const SkeletalMesh = @import("SkeletalMesh.zig");
 const Node = @import("Node.zig");
 const Buffer = @import("Buffer.zig");
 
+pub const AnimationPlayer = struct {
+    current_time: f32 = 0,
+    active: usize = 0,
+    default: usize = 0,
+    loop: bool = true,
+};
+
 nodes: []Node,
 buffers: []Buffer,
 model: *SkeletalMesh,
-curremt_time: f32 = 0,
-active: usize = 0,
-default: usize = 0,
-loop: bool = true,
+player: AnimationPlayer = .{},
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *SkeletalMesh) !@This() {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
