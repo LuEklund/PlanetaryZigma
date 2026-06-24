@@ -5,7 +5,6 @@ const Mesh = @import("Mesh.zig");
 const Material = @import("Material.zig");
 
 parent: ?usize = null,
-index: u32 = 0,
 children: std.ArrayList(usize) = .empty,
 mesh_id: ?[]const u8 = null,
 translation: nz.Vec3(f32) = @splat(0),

@@ -267,9 +267,7 @@ fn spawnPacket(entity: *const system.Entity) shared.net.SpawnEntity {
     switch (entity.kind) {
         .planet => data = @bitCast(entity.planet),
         .bullet => velocity = entity.bullet.velocity,
-        else => {
-            if (entity.flags.health == true) data = @bitCast([2]f16{ @floatCast(entity.health.current), @floatCast(entity.health.max) });
-        },
+        .unknown, .player, .teleporter, .skelly, .wizard, .health_item, .speed_item, .damage_item, .attack_speed_item => {},
     }
     return .{
         .id = entity.id,

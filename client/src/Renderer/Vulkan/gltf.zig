@@ -4,18 +4,14 @@ const nz = @import("shared").numz;
 const zgltf = @import("zgltf");
 const stb_image = @import("stb_image");
 const Vma = @import("Vma.zig");
-const AssetServer = @import("shared").AssetServer;
 const Device = @import("device.zig").Logical;
 const Image = @import("Image.zig");
 const Mesh = @import("Mesh.zig");
 const Node = @import("Node.zig");
 const Material = @import("Material.zig");
-const Skin = @import("Skin.zig");
-const Animation = @import("Animation.zig");
 const Buffer = @import("Buffer.zig");
 const RenderResources = @import("RenderResources.zig");
 const check = @import("utils.zig").check;
-const Info = @import("../Vulkan.zig").Info;
 
 const DecodeError = error{
     DataNotSupported,
@@ -99,93 +95,45 @@ fn decodeImageTask(task: *ImageDecodeTask) void {
     task.result.nr_channel = nr_channel;
 }
 
-device: Device,
-vma: Vma,
-model_name: []const u8,
-render_resources: *RenderResources,
-nodes: std.ArrayList(Node) = .empty,
-top_nodes: std.ArrayList(usize) = .empty,
-clips: std.ArrayList(Animation) = .empty,
-skins: std.ArrayList(Skin) = .empty,
-offset: nz.Transform3D(f32) = .{},
-READY_RELOAD_DELETE_THIS: bool = false,
+pub const Glb = struct {
+    content: []u8,
+    loaded: zgltf.LoadedGlb,
+    gltf: zgltf.Gltf,
+    bin: []const u8,
 
-pub fn init(
+    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+        self.loaded.deinit();
+        gpa.free(self.content);
+    }
+};
+
+pub fn readGlb(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
+    var read_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buffer);
+    const content = try reader.interface.allocRemaining(gpa, .unlimited);
+    errdefer gpa.free(content);
+
+    var loaded = try zgltf.parseGlbSlice(gpa, content);
+    errdefer loaded.deinit();
+    const bin = loaded.bin orelse return error.MissingBin;
+
+    return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
+}
+
+pub fn parseScene(
+    comptime V: type,
     gpa: std.mem.Allocator,
     vma: Vma,
     device: Device,
-    asset_server: *AssetServer,
-    model_name: []const u8,
     render_resources: *RenderResources,
-    offset: nz.Transform3D(f32),
-) !*@This() {
-    const self = try gpa.create(@This());
-    self.* = .{
-        .vma = vma,
-        .device = device,
-        .model_name = try gpa.dupe(u8, model_name),
-        .render_resources = render_resources,
-        .nodes = .empty,
-        .top_nodes = .empty,
-        .clips = .empty,
-        .skins = .empty,
-        .offset = offset,
-    };
-    try asset_server.loadAsset(@This(), self, model_name, loadModel);
-    return self;
-}
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
-    for (self.nodes.items) |*node| node.deinit(gpa);
-    self.nodes.deinit(gpa);
-    for (self.clips.items) |*animation| animation.deinit(gpa);
-    self.clips.deinit(gpa);
-    for (self.skins.items) |*skin| skin.deinit(gpa, self.vma);
-    self.skins.deinit(gpa);
-    self.top_nodes.deinit(gpa);
-    gpa.free(self.model_name);
-    self.* = undefined;
-    gpa.destroy(self);
-}
-
-fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-
-    const self: *@This() = @ptrCast(@alignCast(user_data));
-
-    if (self.READY_RELOAD_DELETE_THIS) {
-        for (self.nodes.items) |*node| node.deinit(gpa);
-        self.nodes.clearAndFree(gpa);
-        for (self.clips.items) |*animation| animation.deinit(gpa);
-        self.clips.clearAndFree(gpa);
-        for (self.skins.items) |*skin| skin.deinit(gpa, self.vma);
-        self.skins.clearAndFree(gpa);
-        self.top_nodes.clearAndFree(gpa);
-    } else {
-        self.READY_RELOAD_DELETE_THIS = true;
-    }
-
-    const content = blk: {
-        var read_buffer: [4096]u8 = undefined;
-        var reader = file.reader(io, &read_buffer);
-        break :blk try reader.interface.allocRemaining(gpa, .unlimited);
-    };
-    defer gpa.free(content);
-    std.debug.print("size:  {d}\n", .{content.len});
-
-    std.debug.print("MODEL- Reload 0\n", .{});
-    var loaded = blk: {
-        break :blk try zgltf.parseGlbSlice(gpa, content);
-    };
-    defer loaded.deinit();
-    const gltf_loaded = loaded.parsed.value;
-    const bin = loaded.bin orelse return error.MissingBin;
-
-    // self.clear(gpa);
-
-    std.debug.print("MODEL- Reload 1\n", .{});
-    const original_sample_count = self.render_resources.samplers.items.len;
+    gltf: zgltf.Gltf,
+    bin: []const u8,
+    out_nodes: *std.ArrayList(Node),
+    out_top_nodes: *std.ArrayList(usize),
+) !void {
+    const original_sample_count = render_resources.samplers.items.len;
     {
-        if (gltf_loaded.samplers) |samplers| {
+        if (gltf.samplers) |samplers| {
             std.log.info("Sampler count was {d}", .{samplers.len});
             for (samplers) |sampler| {
                 const sampler_info: c.VkSamplerCreateInfo = .{
@@ -212,19 +160,17 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                     .compareOp = c.VK_COMPARE_OP_ALWAYS,
                 };
                 var new_sampler: c.VkSampler = undefined;
-                try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &new_sampler));
-                //TODO: map sampler when getting more meshes.
-                try self.render_resources.samplers.append(gpa, new_sampler);
+                try check(c.vkCreateSampler(device.handle, &sampler_info, null, &new_sampler));
+                try render_resources.samplers.append(gpa, new_sampler);
             }
         } else {
             std.log.info("Sampler count was 0", .{});
         }
     }
 
-    std.debug.print("MODEL- Reload 2\n", .{});
-    const original_image_count = self.render_resources.images.items.len;
+    const original_image_count = render_resources.images.items.len;
     {
-        if (gltf_loaded.images) |images| {
+        if (gltf.images) |images| {
             std.log.info("image count was {d}", .{images.len});
             var decoded_images = try gpa.alloc(DecodedImage, images.len);
             defer {
@@ -248,7 +194,7 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                     if (std.mem.startsWith(u8, uri, "data:")) return error.DataNotSupported;
                     decode_tasks[image_index].uri = try gpa.dupeSentinel(u8, uri, 0);
                 } else if (image.bufferView) |buffer_view_index| {
-                    const buffer_views = gltf_loaded.bufferViews orelse return error.MissingBufferViews;
+                    const buffer_views = gltf.bufferViews orelse return error.MissingBufferViews;
                     const buffer_view = buffer_views[buffer_view_index];
                     const bytes_offset = buffer_view.byteOffset;
                     const byte_len = buffer_view.byteLength;
@@ -256,24 +202,22 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 }
             }
 
-            std.debug.print("MODEL- Reload 3\n", .{});
             {
                 try decodeImages(gpa, decode_tasks);
             }
 
-            std.debug.print("MODEL- Reload 4\n", .{});
             var upload_buffers: std.ArrayList(Buffer) = .empty;
             defer {
-                for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(self.vma);
+                for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
                 upload_buffers.deinit(gpa);
             }
-            const upload_cmd = try self.device.beginImmediateCommand();
+            const upload_cmd = try device.beginImmediateCommand();
             for (decoded_images) |*decoded_image| {
                 if (decoded_image.err) |err| return err;
                 try if (decoded_image.pixels == null) error.LoadingStbi;
                 var new_image: Image = try .init(
-                    self.vma,
-                    self.device,
+                    vma,
+                    device,
                     c.VK_FORMAT_R8G8B8A8_UNORM,
                     .{ .width = @intCast(decoded_image.width), .height = @intCast(decoded_image.height), .depth = 1 },
                     c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
@@ -281,23 +225,22 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                     true,
                 );
                 {
-                    try new_image.recordUploadDataToImage(gpa, self.vma, self.device, upload_cmd, decoded_image.pixels, 4, &upload_buffers);
+                    try new_image.recordUploadDataToImage(gpa, vma, device, upload_cmd, decoded_image.pixels, 4, &upload_buffers);
                 }
                 decoded_image.deinit();
-                try self.render_resources.images.append(gpa, new_image);
+                try render_resources.images.append(gpa, new_image);
             }
-            try self.device.endImmediateCommand(upload_cmd);
+            try device.endImmediateCommand(upload_cmd);
         } else {
             std.log.info("image count was 0", .{});
         }
     }
 
-    std.debug.print("MODEL- Reload 5\n", .{});
     {
-        if (gltf_loaded.meshes) |meshes| for (meshes) |mesh| {
+        if (gltf.meshes) |meshes| for (meshes) |mesh| {
             var surfaces: std.ArrayList(Mesh.GeoSurface) = try .initCapacity(gpa, mesh.primitives.len);
             defer surfaces.deinit(gpa);
-            var vertices: std.ArrayList(Mesh.Vertex) = .empty;
+            var vertices: std.ArrayList(V) = .empty;
             defer vertices.deinit(gpa);
             var indices: std.ArrayList(u32) = .empty;
             defer indices.deinit(gpa);
@@ -310,8 +253,8 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                     indices_start = @intCast(indices.items.len);
 
                     const acc_idx = primitive.indices.?;
-                    var acc = gltf_loaded.accessors.?[acc_idx];
-                    const bv = gltf_loaded.bufferViews.?[acc.bufferView.?];
+                    var acc = gltf.accessors.?[acc_idx];
+                    const bv = gltf.bufferViews.?[acc.bufferView.?];
                     const index_offset = bv.byteOffset + acc.byteOffset;
 
                     const element_size = try acc.elementSize();
@@ -333,8 +276,8 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 }
 
                 const pos_accessor_idx = primitive.attributes.map.get("POSITION") orelse return error.NoPosition;
-                const pos_accessor = gltf_loaded.accessors.?[pos_accessor_idx];
-                const pos_buffer_view = gltf_loaded.bufferViews.?[pos_accessor.bufferView.?];
+                const pos_accessor = gltf.accessors.?[pos_accessor_idx];
+                const pos_buffer_view = gltf.bufferViews.?[pos_accessor.bufferView.?];
                 const pos_offset = (pos_accessor.byteOffset + pos_buffer_view.byteOffset);
                 std.debug.assert(pos_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
                 const positions = std.mem.bytesAsSlice(
@@ -345,38 +288,37 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 var base_color: [4]f32 = .{ 1, 0, 0, 1 };
                 var material_name: ?[]const u8 = null;
                 if (primitive.material) |material_index| {
-                    if (gltf_loaded.materials) |materials| {
+                    if (gltf.materials) |materials| {
                         const material = materials[material_index];
-                        // std.log.debug("MATERIAL : {any}", .{material});
                         if (material.pbrMetallicRoughness) |matallic_roughness| {
                             base_color = matallic_roughness.baseColorFactor;
                             if (matallic_roughness.baseColorTexture) |base_texture| {
-                                if (material.name != null and self.render_resources.materials.contains(material.name.?)) {
-                                    material_name = (try self.render_resources.getMaterialPtr(material.name.?)).name;
+                                if (material.name != null and render_resources.materials.contains(material.name.?)) {
+                                    material_name = (try render_resources.getMaterialPtr(material.name.?)).name;
                                 } else if (material.name) |name| {
                                     const texture_index = base_texture.index;
 
-                                    const texture_info = gltf_loaded.textures.?[texture_index];
+                                    const texture_info = gltf.textures.?[texture_index];
                                     const sampler = if (texture_info.sampler) |sampler_index|
-                                        self.render_resources.samplers.items[original_sample_count + sampler_index]
+                                        render_resources.samplers.items[original_sample_count + sampler_index]
                                     else
-                                        self.render_resources.samplers.items[0];
+                                        render_resources.samplers.items[0];
                                     const image_view = if (texture_info.source) |image_index|
-                                        self.render_resources.images.items[original_image_count + image_index].vk_imageview
+                                        render_resources.images.items[original_image_count + image_index].vk_imageview
                                     else
-                                        self.render_resources.images.items[0].vk_imageview;
+                                        render_resources.images.items[0].vk_imageview;
 
                                     const new_material: Material = try .init(
                                         gpa,
                                         name,
-                                        self.device,
-                                        self.vma,
-                                        self.render_resources.set_size,
-                                        self.render_resources.combined_image_sampler_descriptor_size,
+                                        device,
+                                        vma,
+                                        render_resources.set_size,
+                                        render_resources.combined_image_sampler_descriptor_size,
                                         sampler,
                                         image_view,
                                     );
-                                    try self.render_resources.createMaterial(gpa, new_material);
+                                    try render_resources.createMaterial(gpa, new_material);
                                     material_name = new_material.name;
                                 }
                             }
@@ -391,9 +333,9 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
-                    const uv_accessor = gltf_loaded.accessors.?[uv_accessor_idx];
+                    const uv_accessor = gltf.accessors.?[uv_accessor_idx];
                     std.debug.assert(uv_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
-                    const uv_buffer_view = gltf_loaded.bufferViews.?[uv_accessor.bufferView.?];
+                    const uv_buffer_view = gltf.bufferViews.?[uv_accessor.bufferView.?];
                     const uv_offset = (uv_accessor.byteOffset + uv_buffer_view.byteOffset);
                     break :blk std.mem.bytesAsSlice(
                         [2]f32,
@@ -402,20 +344,20 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 } else null;
 
                 const normal_accessor_idx = primitive.attributes.map.get("NORMAL") orelse return error.NoNormal;
-                const normal_accessor = gltf_loaded.accessors.?[normal_accessor_idx];
+                const normal_accessor = gltf.accessors.?[normal_accessor_idx];
                 std.debug.assert(normal_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
-                const normal_buffer_view = gltf_loaded.bufferViews.?[normal_accessor.bufferView.?];
+                const normal_buffer_view = gltf.bufferViews.?[normal_accessor.bufferView.?];
                 const normal_offset = (normal_accessor.byteOffset + normal_buffer_view.byteOffset);
                 const normals = std.mem.bytesAsSlice(
                     [3]f32,
                     bin[normal_offset .. normal_offset + normal_accessor.count * @sizeOf([3]f32)],
                 );
 
-                if (gltf_loaded.animations != null) {
+                if (comptime @hasField(V, "joint_indices")) {
                     const joint_accessor_idx = primitive.attributes.map.get("JOINTS_0") orelse return error.NoJoints;
-                    const joint_accessor = gltf_loaded.accessors.?[joint_accessor_idx];
+                    const joint_accessor = gltf.accessors.?[joint_accessor_idx];
                     std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
-                    const joint_buffer_view = gltf_loaded.bufferViews.?[joint_accessor.bufferView.?];
+                    const joint_buffer_view = gltf.bufferViews.?[joint_accessor.bufferView.?];
                     const joint_offset = (joint_accessor.byteOffset + joint_buffer_view.byteOffset);
                     const joints = std.mem.bytesAsSlice(
                         [4]u8,
@@ -423,10 +365,10 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                     );
 
                     const weights_accessor_idx = primitive.attributes.map.get("WEIGHTS_0") orelse return error.NoWeights;
-                    const weights_accessor = gltf_loaded.accessors.?[weights_accessor_idx];
+                    const weights_accessor = gltf.accessors.?[weights_accessor_idx];
                     std.debug.assert(weights_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
                     std.debug.assert(weights_accessor.type == .VEC4);
-                    const weights_buffer_view = gltf_loaded.bufferViews.?[weights_accessor.bufferView.?];
+                    const weights_buffer_view = gltf.bufferViews.?[weights_accessor.bufferView.?];
                     const weights_offset = (weights_accessor.byteOffset + weights_buffer_view.byteOffset);
                     const weights = std.mem.bytesAsSlice(
                         [4]f32,
@@ -467,30 +409,29 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
                 }
             }
 
-            if (mesh.name != null and !self.render_resources.meshes.contains(mesh.name.?)) {
+            if (mesh.name != null and !render_resources.meshes.contains(mesh.name.?)) {
                 const new_mesh: Mesh = try .init(
                     gpa,
-                    self.vma,
+                    vma,
                     mesh.name.?,
-                    self.device,
-                    Mesh.Vertex,
+                    device,
+                    V,
                     vertices.items,
                     indices.items,
                     surfaces.items,
                 );
-                try self.render_resources.createMesh(gpa, new_mesh);
+                try render_resources.createMesh(gpa, new_mesh);
             }
         };
     }
 
-    std.debug.print("MODEL- Reload 6\n", .{});
-    if (gltf_loaded.nodes) |nodes| {
-        _ = try self.nodes.addManyAsSlice(gpa, nodes.len);
-        for (nodes, self.nodes.items, 0..) |gltf_node, *scene_node, scene_node_id| {
+    if (gltf.nodes) |gltf_nodes| {
+        _ = try out_nodes.addManyAsSlice(gpa, gltf_nodes.len);
+        for (gltf_nodes, out_nodes.items, 0..) |gltf_node, *scene_node, scene_node_id| {
             scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| @intCast(skin_id) else -1 };
             if (gltf_node.mesh) |mesh_id| {
-                const gltf_mesh = gltf_loaded.meshes.?[mesh_id];
-                const mesh = try self.render_resources.getMeshPtr(gltf_mesh.name);
+                const gltf_mesh = gltf.meshes.?[mesh_id];
+                const mesh = try render_resources.getMeshPtr(gltf_mesh.name);
                 scene_node.mesh_id = mesh.name;
             }
 
@@ -507,106 +448,16 @@ fn loadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: st
             if (gltf_node.children) |children| {
                 for (children) |child_id| {
                     try scene_node.children.append(gpa, child_id);
-                    self.nodes.items[child_id].parent = scene_node_id;
+                    out_nodes.items[child_id].parent = scene_node_id;
                 }
             }
         }
     }
-    std.debug.print("MODEL- Reload 7\n", .{});
-    for (self.nodes.items, 0..) |*node, i| {
+    for (out_nodes.items, 0..) |*node, i| {
         if (node.parent == null) {
-            try self.top_nodes.append(gpa, i);
+            try out_top_nodes.append(gpa, i);
             var top_matrix: nz.Mat4x4(f32) = .identity;
-            node.refreshMatrices(self.nodes.items, &top_matrix);
+            node.refreshMatrices(out_nodes.items, &top_matrix);
         }
     }
-
-    std.debug.print("MODEL- Reload 8\n", .{});
-    if (gltf_loaded.skins) |skins| {
-        const model_skins = try self.skins.addManyAsSlice(gpa, skins.len);
-        for (skins, model_skins) |skin, *model_skin| {
-            const joints = try gpa.alloc(usize, skin.joints.len);
-            for (skin.joints, 0..) |node_index, joint_index| {
-                joints[joint_index] = node_index;
-            }
-            var matrices: ?[]nz.Mat4x4(f32) = null;
-            if (skin.inverseBindMatrices.? > -1) {
-                const accessor = gltf_loaded.accessors.?[skin.inverseBindMatrices.?];
-                const mat_buffer_view = gltf_loaded.bufferViews.?[@intCast(accessor.bufferView.?)];
-                const matrix_data = bin[accessor.byteOffset + mat_buffer_view.byteOffset .. accessor.byteOffset + mat_buffer_view.byteOffset + mat_buffer_view.byteLength];
-                matrices = try gpa.alloc(nz.Mat4x4(f32), accessor.count);
-                @memcpy(std.mem.sliceAsBytes(matrices.?), matrix_data);
-            }
-            model_skin.* = try .init(
-                gpa,
-                self.vma,
-                self.device,
-                skin.name orelse "skin",
-                matrices,
-                if (skin.skeleton) |root_id| &self.nodes.items[root_id] else null,
-                joints,
-            );
-        }
-    }
-
-    std.debug.print("MODEL- Reload 9\n", .{});
-    if (gltf_loaded.animations) |animations| {
-        const model_animations = try self.clips.addManyAsSlice(gpa, animations.len);
-        for (animations, model_animations) |gltf_animation, *model_animation| {
-            model_animation.* = try .init(
-                gpa,
-                gltf_animation.name orelse "animation",
-                gltf_animation.samplers.len,
-                gltf_animation.channels.len,
-            );
-            for (gltf_animation.samplers) |sampler| {
-                const in_sampler_accessor = gltf_loaded.accessors.?[sampler.input];
-                const out_sampler_accessor = gltf_loaded.accessors.?[sampler.output];
-
-                const model_sampler = model_animation.samplers.addOneAssumeCapacity();
-                model_sampler.* = try .init(gpa, sampler.interpolation, in_sampler_accessor.count, out_sampler_accessor.count);
-
-                const in_sampler_buffer_view = gltf_loaded.bufferViews.?[@intCast(in_sampler_accessor.bufferView.?)];
-                const in_sampler_offset = in_sampler_accessor.byteOffset + in_sampler_buffer_view.byteOffset;
-                const in_sampler_input_data = bin[in_sampler_offset .. in_sampler_offset + in_sampler_buffer_view.byteLength];
-                for (0..in_sampler_accessor.count) |i| {
-                    const value: f32 = @bitCast(in_sampler_input_data[i * 4 ..][0..4].*);
-                    model_sampler.inputs.appendAssumeCapacity(value);
-                }
-                for (model_sampler.inputs.items) |input| {
-                    if (input < model_animation.start) model_animation.start = input;
-                    if (input > model_animation.end) model_animation.end = input;
-                }
-
-                const out_sampler_buffer_view = gltf_loaded.bufferViews.?[@intCast(out_sampler_accessor.bufferView.?)];
-                const offset = out_sampler_accessor.byteOffset + out_sampler_buffer_view.byteOffset;
-                const out_sampler_input_data = bin[offset .. offset + out_sampler_buffer_view.byteLength];
-                switch (out_sampler_accessor.type) {
-                    .VEC3 => {
-                        for (0..out_sampler_accessor.count) |i| {
-                            const value: [3]f32 = @bitCast(out_sampler_input_data[i * 12 ..][0..12].*);
-                            model_sampler.outputs.appendAssumeCapacity(.{ value[0], value[1], value[2], 0 });
-                        }
-                    },
-                    .VEC4 => {
-                        for (0..out_sampler_accessor.count) |i| {
-                            const value: [4]f32 = @bitCast(out_sampler_input_data[i * 16 ..][0..16].*);
-                            model_sampler.outputs.appendAssumeCapacity(value);
-                        }
-                    },
-                    else => {},
-                }
-            }
-            for (gltf_animation.channels) |channel| {
-                const model_channel = model_animation.channels.addOneAssumeCapacity();
-                model_channel.* = .{
-                    .path = channel.target.coreKind() orelse return error.AnimationTargetPath,
-                    .node = if (channel.target.node) |node_index| node_index else null,
-                    .sampler_index = channel.sampler,
-                };
-            }
-        }
-    }
-
-    std.debug.print("MODEL- Reload 10\n", .{});
 }

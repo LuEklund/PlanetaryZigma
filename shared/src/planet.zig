@@ -7,23 +7,13 @@ pub const PlanetKind = enum {
 };
 
 pub fn Planet(kind: PlanetKind) type {
-    if (!@inComptime()) {
-    }
     return struct {
         vertices: []Vertex,
         indices: []u32,
 
         pub const Vertex = switch (kind) {
             .logical => [4]f32,
-            .renderable => extern struct {
-                position: [3]f32 = @splat(0),
-                uv_x: f32 = 0,
-                normal: [3]f32 = @splat(0),
-                uv_y: f32 = 0,
-                color: [4]f32 = @splat(0),
-                joint_indices: [4]i32 = @splat(-1),
-                joint_weights: [4]f32 = @splat(-1),
-            },
+            .renderable => @import("vertex.zig").StaticVertex,
         };
 
         pub fn init(gpa: std.mem.Allocator, size: u32) !@This() {
@@ -153,7 +143,6 @@ pub fn Planet(kind: PlanetKind) type {
                                 .color = .{ if (postion[1] < 0) 0 else 1, if (postion[0] < 0) 0 else 1, if (postion[2] < 0) 0 else 1, 1 },
                                 .uv_x = @floor(@mod(tri_edge_indices[i], 3)),
                                 .uv_y = @ceil(@mod(tri_edge_indices[i] + 2, 3)),
-                                .joint_indices = @splat(-1),
                             });
                             try gen_indices.append(gpa, @intCast(gen_vertices.items.len - 1));
                         }
