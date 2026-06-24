@@ -155,7 +155,7 @@ pub fn update(
 pub fn spawnStrctures(self: *@This(), world: *system.World, physics: *Physics) !void {
     var teleport_position: ?nz.Vec3(f32) = null;
     while (teleport_position == null) {
-        teleport_position = physics.samplePlanetSurfacePoint(world);
+        teleport_position = physics.getSurfacePoint(world, .{ 0, 100, 0 });
     } else {
         const teleporter = try self.spawn(.{
             .kind = .teleporter,
@@ -181,6 +181,6 @@ pub fn spawnStrctures(self: *@This(), world: *system.World, physics: *Physics) !
                 nz.Vec3(f32){ 1, 0, 0 };
             break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
         } else .identity;
-        world.teleportal_id = teleporter.id;
+        world.teleportal.id = teleporter.id;
     }
 }

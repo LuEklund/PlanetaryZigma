@@ -57,7 +57,7 @@ pub const World = struct {
     teleporter_bosses: std.ArrayList(u32) = .empty,
     camera: Camera = .{},
     portal_active: bool = false,
-    teleportal_id: u32 = 0,
+    teleportal: shared.Teleporter = .{},
     player_id: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {

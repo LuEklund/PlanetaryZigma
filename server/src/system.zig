@@ -87,10 +87,8 @@ pub const World = struct {
     gpa: std.mem.Allocator,
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     players: std.ArrayList(u32),
-    portal_active: bool = false,
-    teleportal_id: u32 = 0,
+    teleportal: shared.Teleporter = .{},
     planet_size: u32 = 100,
-
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
 
@@ -205,6 +203,16 @@ pub const Context = struct {
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
+
+        const teleporter = self.world.getPtr(self.world.teleportal.id) orelse return;
+        for (self.world.players.items) |player_id| {
+            const player = self.world.getPtr(player_id) orelse continue;
+            if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
+                self.world.teleportal.charged += info.delta_time + 100;
+                self.world.teleportal.charged = @min(self.world.teleportal.charged, self.world.teleportal.max_charge);
+            }
+        }
+        self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(self.world.teleportal.charged) });
 
         // std.log.debug("time : {d}", .{info.elapsed_time});
         // self.request_exit = true;

@@ -13,7 +13,15 @@ pub const DynLib = @import("DynLib.zig").DynLib;
 pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
-pub const portal_reach_distance: f32 = 6;
+pub const Teleporter = struct {
+    pub const intertact_distance: f32 = 6;
+    pub const charge_distance: f32 = 12;
+
+    id: u32 = 0,
+    active: bool = false,
+    charged: f32 = 0,
+    max_charge: f32 = 100,
+};
 
 pub const Entity = struct {
     pub fn isEnemy(kind: Kind) bool {

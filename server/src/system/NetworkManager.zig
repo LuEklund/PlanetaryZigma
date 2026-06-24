@@ -151,7 +151,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .{ .acknowledge = .{ .id = client.entity_id } },
                         .reliable,
                     );
-                    if (info.world.portal_active) {
+                    if (info.world.teleportal.active) {
                         try client.sendCommand(writer, .{
                             .update_event = .teleport_start,
                         }, .reliable);
@@ -227,7 +227,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         }
         // animations states
         for (self.pending_animatoin_state.items) |entry| {
-            std.log.debug("send id {d} : state {t}", .{ entry.id, entry.state });
             try client.sendCommand(writer, .{
                 .update_animation_state = .{
                     .id = @intCast(entry.id),

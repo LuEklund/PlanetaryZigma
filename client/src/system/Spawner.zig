@@ -75,7 +75,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 entity.flags.bullet = true;
             },
             .teleporter => {
-                info.world.teleportal_id = entity.id;
+                info.world.teleportal.id = entity.id;
             },
             .skelly, .wizard => {
                 if (entity_info.data == .is_teleporter_boss) {

@@ -112,8 +112,9 @@ pub const UpdateAnimationState = struct {
     state: Entity.State,
 };
 
-pub const Event = enum {
-    teleport_start,
+pub const Event = union(enum(u16)) {
+    teleport_start: void,
+    teleporter_charge: f16,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────
