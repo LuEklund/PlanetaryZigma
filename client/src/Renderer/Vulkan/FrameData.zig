@@ -15,8 +15,10 @@ ui_vertex_buffer: Buffer,
 
 pub const GPUScene = extern struct {
     view_proj: [16]f32,
+    inverse_view_proj: [16]f32,
     global_light_direction: [3]f32,
     time: f32,
+    camera_position: [3]f32,
 };
 
 pub fn init(vma: Vma, device: Device) !@This() {

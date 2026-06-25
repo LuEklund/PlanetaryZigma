@@ -57,6 +57,7 @@ pub fn init(
         device,
         c.VK_FORMAT_R16G16B16A16_SFLOAT,
         extent_3d,
+        .@"2d",
         c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
             c.VK_IMAGE_USAGE_TRANSFER_DST_BIT |
             c.VK_IMAGE_USAGE_STORAGE_BIT |
@@ -69,6 +70,7 @@ pub fn init(
         device,
         c.VK_FORMAT_D32_SFLOAT,
         extent_3d,
+        .@"2d",
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
@@ -173,6 +175,7 @@ pub fn recreate(
         device,
         c.VK_FORMAT_R16G16B16A16_SFLOAT,
         self.extent,
+        .@"2d",
         c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
             c.VK_IMAGE_USAGE_TRANSFER_DST_BIT |
             c.VK_IMAGE_USAGE_STORAGE_BIT |
@@ -186,6 +189,7 @@ pub fn recreate(
         device,
         c.VK_FORMAT_D32_SFLOAT,
         self.extent,
+        .@"2d",
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,

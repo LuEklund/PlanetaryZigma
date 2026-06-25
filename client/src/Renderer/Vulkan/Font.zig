@@ -70,11 +70,12 @@ fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std
         self.device,
         c.VK_FORMAT_R8_UNORM,
         .{ .width = @intCast(atlas_w), .height = @intCast(atlas_h), .depth = 1 },
+        .@"2d",
         c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         c.VK_IMAGE_ASPECT_COLOR_BIT,
         false,
     );
-    try self.image.uploadDataToImage(self.vma, self.device, coverage.ptr, 1);
+    try self.image.uploadDataToImage(self.vma, self.device, coverage.ptr, 1, 0);
 
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
