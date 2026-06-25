@@ -39,9 +39,18 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     c.vkGetPhysicalDeviceProperties2(physical_device.handle, &prop2);
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, layout.handle, &set_size);
 
-    var default_texture: Image = try .init(vma, device, c.VK_FORMAT_R8G8B8A8_UNORM, .{ .width = 1, .height = 1, .depth = 1 }, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT, false);
+    var default_texture: Image = try .init(
+        vma,
+        device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 1, .height = 1, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
     var green_color: nz.color.Rgba(u8) = .{ .r = 155, .g = 255, .b = 0, .a = 255 };
-    try default_texture.uploadDataToImage(vma, device, &green_color, 4);
+    try default_texture.uploadDataToImage(vma, device, &green_color, 4, 0);
     try images.append(gpa, default_texture);
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,

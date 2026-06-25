@@ -14,6 +14,7 @@ const Node = @import("Vulkan/Node.zig");
 const Material = @import("Vulkan/Material.zig");
 const SkeletalMesh = @import("Vulkan/SkeletalMesh.zig");
 const StaticMesh = @import("Vulkan/StaticMesh.zig");
+const gltf = @import("Vulkan/gltf.zig");
 const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -65,11 +66,15 @@ static_vertex_shader: *Shader,
 fragment_shader: *Shader,
 ui_vertex_shader: *Shader,
 ui_fragment_shader: *Shader,
-ui_pipeline_layout: pipeline.Layout,
+sky_fragment_shader: *Shader,
+sky_vertex_shader: *Shader,
 scene_layout: descriptor.Layout,
 material_layout: descriptor.Layout,
+ui_pipeline_layout: pipeline.Layout,
 pipeline_layout: pipeline.Layout,
 font: *Font,
+skybox: Image,
+sky_material: Material,
 
 pub const InitOptions = struct {
     instance: struct {
@@ -198,89 +203,125 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
     try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
 
-    self.vertex_shader = try .init(
-        gpa,
-        self.device,
-        asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pushConstantRangeCount = 1,
-            .pName = "main",
-        },
-
-        &.{ self.scene_layout.handle, self.material_layout.handle },
+    self.vertex_shader = try self.createShader(
         "shaders/animation.vert",
         Shader.AnimationPushConstant,
-    );
-
-    self.static_vertex_shader = try .init(
-        gpa,
-        self.device,
-        asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pushConstantRangeCount = 1,
-            .pName = "main",
-        },
-
+        c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
+    );
+    self.static_vertex_shader = try self.createShader(
         "shaders/static.vert",
         Shader.AnimationPushConstant,
-    );
-
-    self.fragment_shader = try .init(
-        gpa,
-        self.device,
-        asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pushConstantRangeCount = 1,
-            .pName = "main",
-        },
+        c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
+    );
+    self.fragment_shader = try self.createShader(
         "shaders/fragment.frag",
         Shader.AnimationPushConstant,
+        c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        &.{ self.scene_layout.handle, self.material_layout.handle },
     );
-
-    self.ui_vertex_shader = try .init(
-        gpa,
-        self.device,
-        asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-            .nextStage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pushConstantRangeCount = 1,
-            .pName = "main",
-        },
-        &.{self.material_layout.handle},
+    self.ui_vertex_shader = try self.createShader(
         "shaders/ui.vert",
         Shader.UiPushConstant,
-    );
-
-    self.ui_fragment_shader = try .init(
-        gpa,
-        self.device,
-        asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pushConstantRangeCount = 1,
-            .pName = "main",
-        },
+        c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{self.material_layout.handle},
+    );
+    self.ui_fragment_shader = try self.createShader(
         "shaders/ui.frag",
         Shader.UiPushConstant,
+        c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        &.{self.material_layout.handle},
+    );
+    self.sky_fragment_shader = try self.createShader(
+        "shaders/sky.frag",
+        void,
+        c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+    );
+    self.sky_vertex_shader = try self.createShader(
+        "shaders/sky.vert",
+        void,
+        c.VK_SHADER_STAGE_VERTEX_BIT,
+        &.{ self.scene_layout.handle, self.material_layout.handle },
+    );
+
+    var decoded_images = try gpa.alloc(gltf.DecodedImage, 1);
+    defer {
+        for (decoded_images) |*decoded_image| decoded_image.deinit();
+        gpa.free(decoded_images);
+    }
+    @memset(decoded_images, .{});
+
+    var decode_tasks = try gpa.alloc(gltf.ImageDecodeTask, 1);
+    defer {
+        gpa.free(decode_tasks);
+    }
+
+    decode_tasks[0] = .{ .result = &decoded_images[0] };
+    decode_tasks[0].uri = "assets/textures/skybox_cubemap.png";
+
+    try gltf.decodeImages(gpa, decode_tasks);
+
+    const width: u32 = @intCast(decoded_images[0].width);
+    const face_size: u32 = @divTrunc(width, 4);
+    std.log.debug("res: {d}, face. {d}", .{ decoded_images[0].width, face_size });
+
+    self.skybox = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{
+            .width = face_size,
+            .height = face_size,
+            .depth = 1,
+        },
+        .cube_map,
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    const channels: u32 = @intCast(decoded_images[0].nr_channel);
+    const row_bytes = face_size * channels;
+    const data = try gpa.alloc(u8, face_size * face_size * channels);
+    defer gpa.free(data);
+    for (0..6) |i| {
+        var x_start: u32, var y_start: u32 = switch (i) {
+            0 => .{ 2, 1 },
+            1 => .{ 0, 1 },
+            2 => .{ 1, 0 },
+            3 => .{ 1, 2 },
+            4 => .{ 1, 1 },
+            5 => .{ 3, 1 },
+            else => unreachable,
+        };
+        x_start *= face_size;
+        y_start *= face_size;
+
+        for (0..face_size) |y| {
+            const dst = y * row_bytes;
+            const src = ((y_start + y) * width + x_start) * channels;
+            @memcpy(data[dst..][0..row_bytes], decoded_images[0].pixels[src..][0..row_bytes]);
+        }
+
+        try self.skybox.uploadDataToImage(
+            self.vma,
+            self.device,
+            data,
+            channels,
+            @intCast(i),
+        );
+        // std.log.debug("sizes x: {d}, y: {d}", .{ x, y });
+    }
+    self.sky_material = try .init(
+        gpa,
+        "skybox",
+        self.device,
+        self.vma,
+        self.render_resources.set_size,
+        self.render_resources.combined_image_sampler_descriptor_size,
+        self.render_resources.samplers.items[0],
+        self.skybox.vk_imageview,
     );
 
     return self;
@@ -310,6 +351,10 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.static_vertex_shader.deinit(gpa);
     self.fragment_shader.deinit(gpa);
     self.ui_fragment_shader.deinit(gpa);
+    self.sky_fragment_shader.deinit(gpa);
+    self.sky_vertex_shader.deinit(gpa);
+    self.skybox.deinit(self.vma, self.device);
+    self.sky_material.deinit(self.gpa, self.vma);
     self.ui_vertex_shader.deinit(gpa);
     self.ui.deinit(gpa, self.vma);
     self.font.deinit(gpa, self.vma, self.device);
@@ -464,16 +509,18 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             },
         },
     };
+    {
+        const stages = [_]c.VkShaderStageFlagBits{
+            c.VK_SHADER_STAGE_VERTEX_BIT,
+            c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            c.VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+            c.VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            c.VK_SHADER_STAGE_GEOMETRY_BIT,
+        };
 
-    const stages = [_]c.VkShaderStageFlagBits{
-        c.VK_SHADER_STAGE_VERTEX_BIT,
-        c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        c.VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
-        c.VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
-        c.VK_SHADER_STAGE_GEOMETRY_BIT,
-    };
-
-    const bound = [_]c.VkShaderEXT{ self.vertex_shader.handle, self.fragment_shader.handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.vertex_shader.handle, self.fragment_shader.handle, null, null, null };
+        ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
+    }
 
     const viewport: c.VkViewport = .{
         .width = @floatFromInt(self.swapchain.draw_image.extent.width),
@@ -486,7 +533,6 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             .height = self.swapchain.draw_image.extent.height,
         },
     };
-    ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
 
     ext.vkCmdSetViewportWithCountEXT(cmd, 1, &viewport);
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);
@@ -562,8 +608,10 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
+        .inverse_view_proj = proj_view.inverse().d,
         .global_light_direction = .{ @cos(info.elapsed_time), @sin(info.elapsed_time), 0 },
         .time = elapsed_time,
+        .camera_position = camera.transform.position,
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 
@@ -600,6 +648,39 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         }
     }
 
+    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
+    ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_TRUE);
+    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
+    {
+        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
+        const handle = [_]c.VkShaderEXT{ self.sky_vertex_shader.handle, self.sky_fragment_shader.handle };
+        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
+    }
+    const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+            .address = current_frame.gpu_scene.getGPUAddress(),
+            .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
+        },
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+            .address = self.sky_material.buffer.getGPUAddress(),
+            .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
+        },
+    };
+    ext.vkCmdBindDescriptorBuffersEXT(cmd, sky_bindings.len, &sky_bindings[0]);
+    {
+        const buf_idx_0: u32 = 0;
+        const off_0: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
+        const buf_idx_1: u32 = 1;
+        const off_1: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 1, 1, &buf_idx_1, &off_1);
+    }
+    c.vkCmdDraw(cmd, 3, 1, 0, 0);
+
     current_frame.ui_vertex_buffer.copy(Ui.Quad, self.ui.quads.items);
     var stages_ui = [_]c.VkShaderStageFlagBits{
         c.VK_SHADER_STAGE_VERTEX_BIT,
@@ -612,9 +693,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
-    ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_FALSE);
-    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
-    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
+
     color_blend_enables = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     const blend_eq: c.VkColorBlendEquationEXT = .{
@@ -769,6 +848,30 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
         .skeletal => |skeletal| skeletal.deinit(gpa),
     };
     self.renderables.put(kind, .{ .static = mesh });
+}
+
+fn createShader(
+    self: *@This(),
+    name: []const u8,
+    push_constant_type: type,
+    stage_bit: c.VkShaderStageFlagBits,
+    layouts_handles: []const c.VkDescriptorSetLayout,
+) !*Shader {
+    return Shader.init(
+        self.gpa,
+        self.device,
+        self.asset_server,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+            .stage = stage_bit,
+            .nextStage = if (stage_bit == c.VK_SHADER_STAGE_VERTEX_BIT) c.VK_SHADER_STAGE_FRAGMENT_BIT else 0,
+            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+            .pName = "main",
+        },
+        layouts_handles,
+        name,
+        push_constant_type,
+    );
 }
 
 pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {

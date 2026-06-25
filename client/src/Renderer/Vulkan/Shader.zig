@@ -71,23 +71,12 @@ fn loadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: s
 
     const compiler = shaderc.shaderc_compiler_initialize();
     defer shaderc.shaderc_compiler_release(compiler);
-    const ranges: c.VkPushConstantRange = .{
-        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = self.push_constant_size,
-    };
     const shader_kind: c_uint = switch (self.shader_create_info.stage) {
         c.VK_SHADER_STAGE_VERTEX_BIT => shaderc.shaderc_glsl_vertex_shader,
         c.VK_SHADER_STAGE_FRAGMENT_BIT => shaderc.shaderc_glsl_fragment_shader,
         else => unreachable,
     };
 
-    //TODO: Trim the name out of the path instead.
-    // const shader_name: []const u8 = switch (self.shader_create_info.stage) {
-    //     c.VK_SHADER_STAGE_VERTEX_BIT => "vertex.vert",
-    //     c.VK_SHADER_STAGE_FRAGMENT_BIT => "fragment.frag",
-    //     else => unreachable,
-    // };
     const result = shaderc.shaderc_compile_into_spv(
         compiler,
         content.ptr,
@@ -109,7 +98,17 @@ fn loadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: s
     // std.debug.print("size:  {d}\n", .{len});
     // std.debug.print("data:  {s}\n", .{data});
 
-    self.shader_create_info.pPushConstantRanges = &ranges;
+    const ranges: c.VkPushConstantRange = .{
+        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = self.push_constant_size,
+    };
+    if (self.push_constant_size != 0) {
+        self.shader_create_info.pPushConstantRanges = &ranges;
+        self.shader_create_info.pushConstantRangeCount = 1;
+    } else {
+        self.shader_create_info.pushConstantRangeCount = 0;
+    }
     self.shader_create_info.codeSize = len;
     self.shader_create_info.pCode = data;
     if (self.handle != null) ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);

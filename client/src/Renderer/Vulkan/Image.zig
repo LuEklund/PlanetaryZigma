@@ -12,26 +12,38 @@ extent: c.VkExtent3D = undefined,
 format: c.VkFormat = undefined,
 mip_mapped: bool = undefined,
 
+const Kind = enum(u8) {
+    @"2d" = 0,
+    @"3d" = 1,
+    cube_map = 2,
+};
+
 pub fn init(
     vma: Vma,
     device: Device,
     format: c.VkFormat,
     extent: c.VkExtent3D,
-    image_usages_flags: c.VkImageUsageFlags,
-    image_view_mask: c.VkImageAspectFlags,
+    kind: Kind,
+    usages_flags: c.VkImageUsageFlags,
+    view_mask: c.VkImageAspectFlags,
     mip_mapped: bool,
 ) !@This() {
     var image_info: c.VkImageCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = null,
-        .imageType = c.VK_IMAGE_TYPE_2D,
-        .format = format,
         .extent = extent,
+        .format = format,
         .mipLevels = 1,
-        .arrayLayers = 1,
+        .imageType = switch (kind) {
+            .@"2d" => c.VK_IMAGE_TYPE_2D,
+            .@"3d" => c.VK_IMAGE_TYPE_3D,
+            .cube_map => c.VK_IMAGE_TYPE_2D,
+        },
+        .arrayLayers = if (kind == .cube_map) 6 else 1,
         .samples = c.VK_SAMPLE_COUNT_1_BIT,
         .tiling = c.VK_IMAGE_TILING_OPTIMAL,
-        .usage = image_usages_flags,
+        .usage = usages_flags,
+        .flags = if (kind == .cube_map) c.VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT else 0,
     };
 
     const max: f32 = @floatFromInt(@max(extent.width, extent.height));
@@ -57,15 +69,19 @@ pub fn init(
 
     var image_view_info: c.VkImageViewCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = switch (kind) {
+            .@"2d" => c.VK_IMAGE_VIEW_TYPE_2D,
+            .@"3d" => c.VK_IMAGE_VIEW_TYPE_3D,
+            .cube_map => c.VK_IMAGE_VIEW_TYPE_CUBE,
+        },
         .image = image,
         .format = format,
         .subresourceRange = .{
             .baseMipLevel = 0,
             .levelCount = image_info.mipLevels,
             .baseArrayLayer = 0,
-            .layerCount = 1,
-            .aspectMask = image_view_mask,
+            .layerCount = if (kind == .cube_map) 6 else 1,
+            .aspectMask = view_mask,
         },
     };
 
@@ -87,7 +103,7 @@ pub fn deinit(self: *@This(), vulkan_mem_alloc: Vma, device: Device) void {
     Vma.c.vmaDestroyImage(vulkan_mem_alloc.handle, @ptrCast(self.vk_image), self.vma_allocation);
 }
 
-pub fn uploadDataToImage(self: *@This(), vma: Vma, device: Device, data: anytype, bytes_per_pixel: u32) !void {
+pub fn uploadDataToImage(self: *@This(), vma: Vma, device: Device, data: anytype, bytes_per_pixel: u32, layer: u32) !void {
     var upload_buffers: std.ArrayList(Buffer) = .empty;
     defer {
         for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
@@ -95,7 +111,16 @@ pub fn uploadDataToImage(self: *@This(), vma: Vma, device: Device, data: anytype
     }
 
     const cmd = try device.beginImmediateCommand();
-    try self.recordUploadDataToImage(std.heap.page_allocator, vma, device, cmd, data, bytes_per_pixel, &upload_buffers);
+    try self.recordUploadDataToImage(
+        std.heap.page_allocator,
+        vma,
+        device,
+        cmd,
+        data,
+        layer,
+        bytes_per_pixel,
+        &upload_buffers,
+    );
     try device.endImmediateCommand(cmd);
 }
 
@@ -106,6 +131,7 @@ pub fn recordUploadDataToImage(
     device: Device,
     cmd: c.VkCommandBuffer,
     data: anytype,
+    layer: u32,
     bytes_per_pixel: u32,
     upload_buffers: *std.ArrayList(Buffer),
 ) !void {
@@ -130,6 +156,7 @@ pub fn recordUploadDataToImage(
     );
 
     var image_barrier: Barrier = .init(cmd, self.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    image_barrier.base_array_layer = layer;
     image_barrier.transition(
         c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         c.VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -143,7 +170,7 @@ pub fn recordUploadDataToImage(
         .imageSubresource = .{
             .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
             .mipLevel = 0,
-            .baseArrayLayer = 0,
+            .baseArrayLayer = layer,
             .layerCount = 1,
         },
         .imageExtent = self.extent,
@@ -316,6 +343,8 @@ pub const Barrier = struct {
     src_stage: c.VkPipelineStageFlags = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
     src_access: c.VkAccessFlags = 0,
 
+    base_array_layer: u32 = 0,
+
     pub fn init(
         cmd: c.VkCommandBuffer,
         image: c.VkImage,
@@ -344,7 +373,7 @@ pub const Barrier = struct {
                 .aspectMask = self.aspect_mask,
                 .baseMipLevel = 0,
                 .levelCount = 1,
-                .baseArrayLayer = 0,
+                .baseArrayLayer = self.base_array_layer,
                 .layerCount = 1,
             },
         };

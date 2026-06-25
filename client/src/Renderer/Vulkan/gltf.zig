@@ -20,26 +20,26 @@ const DecodeError = error{
     MissingBufferViews,
 };
 
-const DecodedImage = struct {
+pub const DecodedImage = struct {
     pixels: [*c]stb_image.stbi_uc = null,
     width: i32 = 0,
     height: i32 = 0,
     nr_channel: i32 = 0,
     err: ?DecodeError = null,
 
-    fn deinit(self: *@This()) void {
+    pub fn deinit(self: *@This()) void {
         if (self.pixels != null) stb_image.stbi_image_free(self.pixels);
         self.* = .{};
     }
 };
 
-const ImageDecodeTask = struct {
+pub const ImageDecodeTask = struct {
     bytes: ?[]const u8 = null,
     uri: ?[:0]const u8 = null,
     result: *DecodedImage,
 };
 
-fn decodeImages(gpa: std.mem.Allocator, tasks: []ImageDecodeTask) !void {
+pub fn decodeImages(gpa: std.mem.Allocator, tasks: []ImageDecodeTask) !void {
     if (tasks.len == 0) return;
 
     const cpu_count = std.Thread.getCpuCount() catch 1;
@@ -220,12 +220,22 @@ pub fn parseScene(
                     device,
                     c.VK_FORMAT_R8G8B8A8_UNORM,
                     .{ .width = @intCast(decoded_image.width), .height = @intCast(decoded_image.height), .depth = 1 },
+                    .@"2d",
                     c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                     c.VK_IMAGE_ASPECT_COLOR_BIT,
                     true,
                 );
                 {
-                    try new_image.recordUploadDataToImage(gpa, vma, device, upload_cmd, decoded_image.pixels, 4, &upload_buffers);
+                    try new_image.recordUploadDataToImage(
+                        gpa,
+                        vma,
+                        device,
+                        upload_cmd,
+                        decoded_image.pixels,
+                        0,
+                        4,
+                        &upload_buffers,
+                    );
                 }
                 decoded_image.deinit();
                 try render_resources.images.append(gpa, new_image);
