@@ -6,7 +6,8 @@ layout(set = 0, binding = 0) uniform sceneData {
   mat4 inverse_proj_view;
   vec3 global_light_direction;
   float time;
-  vec3 camera_position;
+  vec4 camera_position;
+  vec4 light_color;
 } scene_data;
 
 layout(location = 0) out vec2 out_ndc;

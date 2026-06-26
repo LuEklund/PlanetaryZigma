@@ -13,12 +13,13 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec3 global_light_direction;
   float time;
   vec4 camera_position;
+  vec4 light_color;
 } scene_data;
 
 layout(set = 1, binding = 0) uniform sampler2D texSampler;
 
 void main() {
   float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.4);
-  out_frag_color = vec4(texture(texSampler, in_uv).xyz * diff, 1);
+  out_frag_color = vec4((texture(texSampler, in_uv).xyz * diff) * scene_data.light_color.xyz, 1);
   // out_frag_color = in_color;
 }
