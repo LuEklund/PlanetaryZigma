@@ -19,6 +19,8 @@ pub const GPUScene = extern struct {
     global_light_direction: [3]f32,
     time: f32,
     camera_position: [3]f32,
+    _: f32 = 0,
+    light_color: [4]f32,
 };
 
 pub fn init(vma: Vma, device: Device) !@This() {

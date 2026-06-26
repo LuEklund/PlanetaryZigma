@@ -7,6 +7,7 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec3 global_light_direction;
   float time;
   vec4 camera_position;
+  vec4 light_color;
 } scene_data;
 
 layout(set = 1, binding = 0) uniform sampler2D texSampler;

@@ -612,6 +612,9 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         .global_light_direction = .{ @cos(info.elapsed_time), @sin(info.elapsed_time), 0 },
         .time = elapsed_time,
         .camera_position = camera.transform.position,
+        .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
+            1, 0.5, 0.5, 1,
+        },
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 
