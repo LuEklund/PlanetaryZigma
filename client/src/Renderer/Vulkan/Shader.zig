@@ -1,6 +1,5 @@
 const std = @import("std");
 const c = @import("vulkan");
-const shaderc = @import("shaderc");
 const AssetServer = @import("shared").AssetServer;
 const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
@@ -65,38 +64,10 @@ fn loadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: s
     const self: *@This() = @ptrCast(@alignCast(user_data));
     var buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &buffer);
-    const content = try reader.interface.allocRemaining(gpa, .unlimited);
-    defer gpa.free(content);
-    std.debug.print("size:  {d}\n", .{content.len});
-
-    const compiler = shaderc.shaderc_compiler_initialize();
-    defer shaderc.shaderc_compiler_release(compiler);
-    const shader_kind: c_uint = switch (self.shader_create_info.stage) {
-        c.VK_SHADER_STAGE_VERTEX_BIT => shaderc.shaderc_glsl_vertex_shader,
-        c.VK_SHADER_STAGE_FRAGMENT_BIT => shaderc.shaderc_glsl_fragment_shader,
-        else => unreachable,
-    };
-
-    const result = shaderc.shaderc_compile_into_spv(
-        compiler,
-        content.ptr,
-        content.len,
-        shader_kind,
-        self.shader_name.ptr,
-        "main",
-        null,
-    );
-    defer shaderc.shaderc_result_release(result);
-    const status = shaderc.shaderc_result_get_compilation_status(result);
-    std.debug.print("result code {d}\n", .{status});
-    if (status != shaderc.shaderc_compilation_status_success) {
-        std.debug.print("err message {s}\n", .{shaderc.shaderc_result_get_error_message(result)});
-        return error.LoadShader;
-    }
-    const data = shaderc.shaderc_result_get_bytes(result);
-    const len = shaderc.shaderc_result_get_length(result);
-    // std.debug.print("size:  {d}\n", .{len});
-    // std.debug.print("data:  {s}\n", .{data});
+    const len: usize = @intCast((try file.stat(io)).size);
+    const data = try gpa.alignedAlloc(u8, .@"4", len);
+    defer gpa.free(data);
+    try reader.interface.readSliceAll(data);
 
     const ranges: c.VkPushConstantRange = .{
         .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -110,7 +81,7 @@ fn loadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: s
         self.shader_create_info.pushConstantRangeCount = 0;
     }
     self.shader_create_info.codeSize = len;
-    self.shader_create_info.pCode = data;
+    self.shader_create_info.pCode = data.ptr;
     if (self.handle != null) ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
     try check(ext.vkCreateShadersEXT(self.device.handle, 1, &self.shader_create_info, null, &self.handle));
 }

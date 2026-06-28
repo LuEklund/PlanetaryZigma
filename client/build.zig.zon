@@ -7,10 +7,6 @@
         .shared = .{
             .path = "../shared/",
         },
-        .shaderc = .{ // TODO: Update to v2026.2
-            .url = "git+https://github.com/google/shaderc?ref=v2026.1#301b4ede53d59b68bf55f95bb26412d9233c8187",
-            .hash = "N-V-__8AAAh4EgD_1vyfeRQed3y6urhGewfbgX0yP6g04hGv",
-        },
         .yes = .{
             .url = "git+https://github.com/HaraldWik/yes#7abf38a92230c8806dd9d17f57ba18b3d43896a7",
             .hash = "yes-0.0.0-pN7MXVqJAwC0PdncUm39kOpNe3LaVK4g_Od6qaweqbKu",
