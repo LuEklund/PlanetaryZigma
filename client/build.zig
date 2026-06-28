@@ -109,14 +109,7 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-std=c++17"},
     });
 
-    const shaderc_dep = b.dependency("shaderc", .{});
-    const shaderc = b.addTranslateC(.{
-        .root_source_file = shaderc_dep.path("libshaderc/include/shaderc/shaderc.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    shaderc.addIncludePath(shaderc_dep.path("libshaderc/include"));
-    system.root_module.addImport("shaderc", shaderc.createModule());
+    compileShaders(b);
 
     system.root_module.addImport("vulkan", vulkan);
 
@@ -126,15 +119,12 @@ pub fn build(b: *std.Build) void {
             system.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
             exe.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
         } else {
-            std.log.warn("VULKAN_SDK not set; vulkan-1/shaderc_shared may not be found at link time", .{});
+            std.log.warn("VULKAN_SDK not set; vulkan-1 may not be found at link time", .{});
         }
         system.root_module.linkSystemLibrary("vulkan-1", .{});
-        system.root_module.linkSystemLibrary("shaderc_shared", .{});
         exe.root_module.linkSystemLibrary("vulkan-1", .{});
-        exe.root_module.linkSystemLibrary("shaderc_shared", .{});
     } else {
         exe.root_module.linkSystemLibrary("vulkan", .{});
-        exe.root_module.linkSystemLibrary("shaderc", .{});
     }
     exe.root_module.link_libcpp = true;
 
@@ -154,4 +144,22 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
+}
+
+fn compileShaders(b: *std.Build) void {
+    const io = b.graph.io;
+    var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
+    defer dir.close(io);
+    const usf = b.addUpdateSourceFiles();
+    var it = dir.iterate();
+    while (it.next(io) catch @panic("iterate assets/shaders")) |entry| {
+        if (entry.kind != .file) continue;
+        if (std.mem.endsWith(u8, entry.name, ".spv")) continue;
+        const cmd = b.addSystemCommand(&.{"glslc"});
+        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.name})));
+        cmd.addArg("-o");
+        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.name}));
+        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.name}));
+    }
+    b.getInstallStep().dependOn(&usf.step);
 }

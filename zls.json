@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/zigtools/zls/refs/heads/master/schema.json",
+  "enable_build_on_save": true,
   "build_options": {
     "build_file": "client/build.zig"
   }

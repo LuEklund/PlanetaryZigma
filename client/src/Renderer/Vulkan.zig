@@ -204,43 +204,43 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
 
     self.vertex_shader = try self.createShader(
-        "shaders/animation.vert",
+        "shaders/animation.vert.spv",
         Shader.AnimationPushConstant,
         c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
     );
     self.static_vertex_shader = try self.createShader(
-        "shaders/static.vert",
+        "shaders/static.vert.spv",
         Shader.AnimationPushConstant,
         c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
     );
     self.fragment_shader = try self.createShader(
-        "shaders/fragment.frag",
+        "shaders/fragment.frag.spv",
         Shader.AnimationPushConstant,
         c.VK_SHADER_STAGE_FRAGMENT_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
     );
     self.ui_vertex_shader = try self.createShader(
-        "shaders/ui.vert",
+        "shaders/ui.vert.spv",
         Shader.UiPushConstant,
         c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{self.material_layout.handle},
     );
     self.ui_fragment_shader = try self.createShader(
-        "shaders/ui.frag",
+        "shaders/ui.frag.spv",
         Shader.UiPushConstant,
         c.VK_SHADER_STAGE_FRAGMENT_BIT,
         &.{self.material_layout.handle},
     );
     self.sky_fragment_shader = try self.createShader(
-        "shaders/sky.frag",
+        "shaders/sky.frag.spv",
         void,
         c.VK_SHADER_STAGE_FRAGMENT_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },
     );
     self.sky_vertex_shader = try self.createShader(
-        "shaders/sky.vert",
+        "shaders/sky.vert.spv",
         void,
         c.VK_SHADER_STAGE_VERTEX_BIT,
         &.{ self.scene_layout.handle, self.material_layout.handle },

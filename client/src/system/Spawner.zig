@@ -64,7 +64,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             .planet => {
                 const size: u32 = entity_info.data.planet_size;
-                var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
+                var planet: shared.Planet2(.renderable) = try .init(self.gpa, size);
                 defer planet.deinit(self.gpa);
                 try system_context.renderer.inner.createStaticMesh(
                     self.gpa,
