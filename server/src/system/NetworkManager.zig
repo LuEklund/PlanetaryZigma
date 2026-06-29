@@ -134,7 +134,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         },
                         .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                        .flags = .{ .invinsible = false },
+                        .flags = .{ .invinsible = true },
                     });
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);

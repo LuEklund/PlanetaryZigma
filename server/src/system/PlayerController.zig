@@ -68,20 +68,20 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            for (info.world.entities.values()) |entry| {
-                if (entry.kind != .player) self.spawner.depspawn(entry.id);
-            }
-            try self.spawner.startStage(info.world, self.physics);
-            // _ = try self.spawner.spawn(.{
-            //     .kind = .skelly,
-            //     .transform = .{ .position = .{ 0, 100, 0 } },
-            //     .collider = .{
-            //         .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
-            //         .motion_type = .dynamic,
-            //         .object_layer = .moving,
-            //     },
-            //     .health = .{ .current = 20, .max = 20 },
-            // });
+            // for (info.world.entities.values()) |entry| {
+            //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
+            // }
+            // try self.spawner.startStage(info.world, self.physics);
+            _ = try self.spawner.spawn(.{
+                .kind = .skelly,
+                .transform = .{ .position = .{ 0, 100, 0 } },
+                .collider = .{
+                    .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
+                    .motion_type = .dynamic,
+                    .object_layer = .moving,
+                },
+                .health = .{ .current = 20, .max = 20 },
+            });
         }
 
         if (player.controller.input.keys.e) {
