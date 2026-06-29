@@ -86,7 +86,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                             .kind = .skelly,
                             .transform = .{ .position = player.transform.position },
                             .collider = .{
-                                .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                                .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
@@ -97,14 +97,14 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                         }
                         enemy.last_attack = info.elapsed_time;
                         network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .attack });
-                    } else {
-                        if (distance < 40) continue;
-                        if (enemy.state != .walk) {
-                            enemy.state = .walk;
-                            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
-                        }
-                        Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
                     }
+                } else {
+                    if (distance < 40) continue;
+                    if (enemy.state != .walk) {
+                        enemy.state = .walk;
+                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
+                    }
+                    Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), enemy.speed, 0);
                 }
             },
             else => unreachable,

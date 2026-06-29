@@ -88,7 +88,7 @@ pub fn update(
                 .kind = .skelly,
                 .transform = .{ .position = vector_direction },
                 .collider = .{
-                    .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                    .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
@@ -127,9 +127,9 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     const rand = world.prng.random();
     world.teleportal = .{};
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
-    // world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
-    world.planet_size = 50;
-    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
+    world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
+    // world.planet_size = 50;
+    const planet: shared.Planet2(.logical) = try .init(self.gpa, world.planet_size);
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},

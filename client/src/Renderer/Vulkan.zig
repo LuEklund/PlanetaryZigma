@@ -176,7 +176,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .planet = .{ .path = null, .offset = .{}, .skinned = false }, //comes from server
         .unknown = .{ .path = null, .offset = .{}, .skinned = false },
         .bullet = .{ .path = null, .offset = .{}, .skinned = false },
-        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
         .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },

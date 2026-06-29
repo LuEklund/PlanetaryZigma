@@ -17,7 +17,6 @@ pub fn Planet(kind: PlanetKind) type {
         };
 
         pub fn init(gpa: std.mem.Allocator, size: u32) !@This() {
-            if (kind == .logical) @panic("logical planet: build navmesh nodes from node_map (reuse the cells + neighbours), don't generate triangles like renderable");
             const clamped_size: f32 = if (size < 4) 4.0 else @floatFromInt(size);
             const radius: f32 = @divTrunc(clamped_size, 2);
             // var points = try gpa.alloc(u32[3], clamped_size);
@@ -72,6 +71,11 @@ pub fn Planet(kind: PlanetKind) type {
                 .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
             };
 
+            if (kind == .logical) {
+                for (node_map.values()) |centroid|
+                    try vertices.append(gpa, .{ centroid[0], centroid[1], centroid[2], 1 });
+            }
+
             for (node_map.keys()) |cell| {
                 const corner_a: nz.Vec3(f32) = @floatFromInt(cell);
                 for (quad_axes) |quad_axis| {
@@ -80,21 +84,36 @@ pub fn Planet(kind: PlanetKind) type {
                     const corner_b_solid = sdf(corner_b, radius) < 0;
                     if (corner_a_solid == corner_b_solid) continue;
 
-                    const c1 = node_map.get(cell) orelse continue;
-                    const c2 = node_map.get(cell - quad_axis.perp_b) orelse continue;
-                    const c3 = node_map.get(cell - quad_axis.perp_c) orelse continue;
-                    const c4 = node_map.get(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue;
+                    switch (kind) {
+                        .renderable => {
+                            const c1 = node_map.get(cell) orelse continue;
+                            const c2 = node_map.get(cell - quad_axis.perp_b) orelse continue;
+                            const c3 = node_map.get(cell - quad_axis.perp_c) orelse continue;
+                            const c4 = node_map.get(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue;
 
-                    const base: u32 = @intCast(vertices.items.len);
-                    try vertices.append(gpa, makeVertex(c1, .{ 0, 0 }, radius));
-                    try vertices.append(gpa, makeVertex(c2, .{ 1, 0 }, radius));
-                    try vertices.append(gpa, makeVertex(c3, .{ 0, 1 }, radius));
-                    try vertices.append(gpa, makeVertex(c4, .{ 1, 1 }, radius));
+                            const base: u32 = @intCast(vertices.items.len);
+                            try vertices.append(gpa, makeVertex(c1, .{ 0, 0 }, radius));
+                            try vertices.append(gpa, makeVertex(c2, .{ 1, 0 }, radius));
+                            try vertices.append(gpa, makeVertex(c3, .{ 0, 1 }, radius));
+                            try vertices.append(gpa, makeVertex(c4, .{ 1, 1 }, radius));
 
-                    if (corner_a_solid) {
-                        try indices.appendSlice(gpa, &.{ base + 0, base + 1, base + 3, base + 0, base + 3, base + 2 });
-                    } else {
-                        try indices.appendSlice(gpa, &.{ base + 0, base + 3, base + 1, base + 0, base + 2, base + 3 });
+                            if (corner_a_solid) {
+                                try indices.appendSlice(gpa, &.{ base + 0, base + 1, base + 3, base + 0, base + 3, base + 2 });
+                            } else {
+                                try indices.appendSlice(gpa, &.{ base + 0, base + 3, base + 1, base + 0, base + 2, base + 3 });
+                            }
+                        },
+                        .logical => {
+                            const i_1: u32 = @intCast(node_map.getIndex(cell) orelse continue);
+                            const i_2: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b) orelse continue);
+                            const i_3: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_c) orelse continue);
+                            const i_4: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue);
+
+                            if (corner_a_solid)
+                                try indices.appendSlice(gpa, &.{ i_1, i_2, i_4, i_1, i_4, i_3 })
+                            else
+                                try indices.appendSlice(gpa, &.{ i_1, i_4, i_2, i_1, i_3, i_4 });
+                        },
                     }
                 }
             }
@@ -110,6 +129,7 @@ pub fn Planet(kind: PlanetKind) type {
             gpa.free(self.indices);
         }
         fn makeVertex(position: nz.Vec3(f32), uv: [2]f32, radius: f32) Vertex {
+            //logical planet: build navmesh nodes from node_map (reuse the cells + neighbours), don't generate triangles like renderable
             return switch (kind) {
                 .logical => .{ position[0], position[1], position[2], 1 },
                 .renderable => blk: {

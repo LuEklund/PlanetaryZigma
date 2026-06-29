@@ -128,13 +128,13 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .kind = .player,
                         .transform = .{ .position = .{ 0, 100, 0 } },
                         .collider = .{
-                            .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
+                            .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } } },
                             .motion_type = .dynamic,
                             .object_layer = .moving,
                         },
                         .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                        .flags = .{ .invinsible = true },
+                        .flags = .{ .invinsible = false },
                     });
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);

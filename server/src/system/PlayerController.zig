@@ -96,7 +96,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .kind = .wizard,
                             .transform = .{ .position = teleporter.transform.position + nz.vec.scale(nz.vec.normalize(teleporter.transform.position), 10) },
                             .collider = .{
-                                .shape = .{ .primitive = .{ .capsule = .{ .size = 5 } } },
+                                .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } } },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
