@@ -128,7 +128,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     world.teleportal = .{};
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
     // world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
-    world.planet_size = 80;
+    world.planet_size = 50;
     const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
     _ = try self.spawn(.{
         .kind = .planet,

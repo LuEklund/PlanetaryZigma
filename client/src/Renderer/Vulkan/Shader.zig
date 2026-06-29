@@ -5,6 +5,17 @@ const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
 pub const check = @import("utils.zig").check;
 
+pub const Kind = enum(u16) {
+    vert_skinned,
+    vert_static,
+    vert_ui,
+    vert_sky,
+    frag_ui,
+    frag_sky,
+    frag_mesh,
+    frag_planet,
+};
+
 handle: c.VkShaderEXT = null,
 device: Device,
 shader_create_info: c.VkShaderCreateInfoEXT,
