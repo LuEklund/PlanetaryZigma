@@ -18,7 +18,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner, health_manag
         const amount = entity.item_amount;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
-            player.flags.invinsible = true;
             const player_position = player.transform.position;
             const item_position = entity.transform.position;
             const length = player_position - item_position;

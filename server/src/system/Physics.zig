@@ -25,7 +25,8 @@ pub const Collider = struct {
             size: f32,
         },
         capsule: struct {
-            size: f32,
+            half_heigth: f32,
+            radius: f32,
         },
         sphere: struct {
             size: f32,
@@ -383,8 +384,8 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
                 defer settings.asShapeSettings().release();
                 break :shape try settings.asShapeSettings().createShape();
             },
-            .capsule => shape: {
-                const settings = try zphy.CapsuleShapeSettings.create(1, 1);
+            .capsule => |capsule| shape: {
+                const settings = try zphy.CapsuleShapeSettings.create(capsule.half_heigth, capsule.radius);
                 defer settings.asShapeSettings().release();
                 break :shape try settings.asShapeSettings().createShape();
             },

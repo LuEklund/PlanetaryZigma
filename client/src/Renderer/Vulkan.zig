@@ -55,19 +55,13 @@ vma: Vma,
 swapchain: Swapchain,
 render_resources: RenderResources,
 renderables: std.EnumMap(shared.Entity.Kind, Renderable),
+shaders: std.EnumMap(Shader.Kind, *Shader),
 skeletons: std.AutoHashMap(u32, SkeletonInstance),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
 
 //Temporary
-vertex_shader: *Shader,
-static_vertex_shader: *Shader,
-fragment_shader: *Shader,
-ui_vertex_shader: *Shader,
-ui_fragment_shader: *Shader,
-sky_fragment_shader: *Shader,
-sky_vertex_shader: *Shader,
 scene_layout: descriptor.Layout,
 material_layout: descriptor.Layout,
 ui_pipeline_layout: pipeline.Layout,
@@ -182,7 +176,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .planet = .{ .path = null, .offset = .{}, .skinned = false }, //comes from server
         .unknown = .{ .path = null, .offset = .{}, .skinned = false },
         .bullet = .{ .path = null, .offset = .{}, .skinned = false },
-        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
         .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
@@ -203,48 +197,31 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
     try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
 
-    self.vertex_shader = try self.createShader(
-        "shaders/animation.vert.spv",
-        Shader.AnimationPushConstant,
-        c.VK_SHADER_STAGE_VERTEX_BIT,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
-    );
-    self.static_vertex_shader = try self.createShader(
-        "shaders/static.vert.spv",
-        Shader.AnimationPushConstant,
-        c.VK_SHADER_STAGE_VERTEX_BIT,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
-    );
-    self.fragment_shader = try self.createShader(
-        "shaders/fragment.frag.spv",
-        Shader.AnimationPushConstant,
-        c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
-    );
-    self.ui_vertex_shader = try self.createShader(
-        "shaders/ui.vert.spv",
-        Shader.UiPushConstant,
-        c.VK_SHADER_STAGE_VERTEX_BIT,
-        &.{self.material_layout.handle},
-    );
-    self.ui_fragment_shader = try self.createShader(
-        "shaders/ui.frag.spv",
-        Shader.UiPushConstant,
-        c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        &.{self.material_layout.handle},
-    );
-    self.sky_fragment_shader = try self.createShader(
-        "shaders/sky.frag.spv",
-        void,
-        c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
-    );
-    self.sky_vertex_shader = try self.createShader(
-        "shaders/sky.vert.spv",
-        void,
-        c.VK_SHADER_STAGE_VERTEX_BIT,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
-    );
+    self.shaders = .{};
+    const ShaderSpec = struct {
+        path: []const u8,
+        push_constant_type: type,
+        stage_bit: c.VkShaderStageFlagBits,
+        layout: enum { scene_material, material },
+    };
+    const shader_specs = std.EnumArray(Shader.Kind, ShaderSpec).init(.{
+        .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+        .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+        .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .material },
+        .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+        .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .material },
+        .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+        .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+        .frag_planet = .{ .path = "shaders/planet.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+    });
+    inline for (comptime std.enums.values(Shader.Kind)) |kind| {
+        const spec = shader_specs.get(kind);
+        const layouts: []const c.VkDescriptorSetLayout = switch (spec.layout) {
+            .scene_material => &.{ self.scene_layout.handle, self.material_layout.handle },
+            .material => &.{self.material_layout.handle},
+        };
+        self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
+    }
 
     var decoded_images = try gpa.alloc(gltf.DecodedImage, 1);
     defer {
@@ -347,15 +324,10 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.scene_layout.deinit(self.device);
     self.pipeline_layout.deinit(self.device);
     self.ui_pipeline_layout.deinit(self.device);
-    self.vertex_shader.deinit(gpa);
-    self.static_vertex_shader.deinit(gpa);
-    self.fragment_shader.deinit(gpa);
-    self.ui_fragment_shader.deinit(gpa);
-    self.sky_fragment_shader.deinit(gpa);
-    self.sky_vertex_shader.deinit(gpa);
+    var shader_it = self.shaders.iterator();
+    while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
     self.skybox.deinit(self.vma, self.device);
     self.sky_material.deinit(self.gpa, self.vma);
-    self.ui_vertex_shader.deinit(gpa);
     self.ui.deinit(gpa, self.vma);
     self.font.deinit(gpa, self.vma, self.device);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
@@ -518,7 +490,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             c.VK_SHADER_STAGE_GEOMETRY_BIT,
         };
 
-        const bound = [_]c.VkShaderEXT{ self.vertex_shader.handle, self.fragment_shader.handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.shaders.get(.vert_skinned).?.handle, self.shaders.get(.frag_mesh).?.handle, null, null, null };
         ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
     }
 
@@ -620,7 +592,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     ext.vkCmdBeginRendering(cmd, &render_info);
 
-    bindVertexShader(cmd, self.static_vertex_shader);
+    bindVertexShader(cmd, self.shaders.get(.vert_static).?);
     for (info.world.entities.values()) |*entity| {
         const renderable = self.renderables.get(entity.kind) orelse {
             if (entity.kind.expectsModel()) {
@@ -633,11 +605,14 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             .static => |static_model| static_model,
             .skeletal => continue,
         };
+        const frag = self.shaders.get(if (entity.kind == .planet) .frag_planet else .frag_mesh).?;
+        bindFragmentShader(cmd, frag);
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawStatic(self, cmd, model, current_frame, base_matrix);
     }
 
-    bindVertexShader(cmd, self.vertex_shader);
+    bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);
+    bindVertexShader(cmd, self.shaders.get(.vert_skinned).?);
     for (info.world.entities.values()) |*entity| {
         const renderable = self.renderables.get(entity.kind) orelse continue;
         const model = switch (renderable) {
@@ -657,7 +632,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handle = [_]c.VkShaderEXT{ self.sky_vertex_shader.handle, self.sky_fragment_shader.handle };
+        const handle = [_]c.VkShaderEXT{ self.shaders.get(.vert_sky).?.handle, self.shaders.get(.frag_sky).?.handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
     }
     const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -691,8 +666,8 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     };
 
     const bounds_ui = [_]c.VkShaderEXT{
-        self.ui_vertex_shader.handle,
-        self.ui_fragment_shader.handle,
+        self.shaders.get(.vert_ui).?.handle,
+        self.shaders.get(.frag_ui).?.handle,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
@@ -783,6 +758,11 @@ fn drawSkeletal(
 
 fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
     const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
+    const handle = [_]c.VkShaderEXT{shader.handle};
+    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
+}
+fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_FRAGMENT_BIT};
     const handle = [_]c.VkShaderEXT{shader.handle};
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
