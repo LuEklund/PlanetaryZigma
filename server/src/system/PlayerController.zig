@@ -56,17 +56,15 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
-            for (1..10) |i| {
-                _ = try self.spawner.spawn(
-                    .{
-                        .kind = .bullet,
-                        .owner_id = player.id,
-                        .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
-                        .bullet = .{ .velocity = nz.vec.scale(muzzle_velocity, @floatFromInt(i)), .lifetime = shared.bullet.lifetime },
-                        .damage = player.damage,
-                    },
-                );
-            }
+            _ = try self.spawner.spawn(
+                .{
+                    .kind = .bullet,
+                    .owner_id = player.id,
+                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
+                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = shared.bullet.lifetime },
+                    .damage = player.damage,
+                },
+            );
         }
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;

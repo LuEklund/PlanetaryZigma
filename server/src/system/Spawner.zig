@@ -72,7 +72,7 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    if (self.should_spawm) {
+    if (self.should_spawm and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
             self.last_salary = info.elapsed_time;
             self.credits += self.salary_per_second * 10;
@@ -126,10 +126,11 @@ pub fn update(
 pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
     const rand = world.prng.random();
     world.teleportal = .{};
+    self.should_spawm = true;
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
     world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
     // world.planet_size = 50;
-    const planet: shared.Planet2(.logical) = try .init(self.gpa, world.planet_size);
+    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},

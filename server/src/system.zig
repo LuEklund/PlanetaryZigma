@@ -198,6 +198,10 @@ pub const Context = struct {
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
 
         const teleporter = self.world.getPtr(self.world.teleportal.id) orelse return;
+        if (self.world.teleportal.charged == self.world.teleportal.max_charge) {
+            self.spawner.should_spawm = false;
+            return;
+        }
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
             if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
