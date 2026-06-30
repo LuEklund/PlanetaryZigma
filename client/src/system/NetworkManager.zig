@@ -107,7 +107,7 @@ pub fn update(
     }
     // 3. Send our input.
     if (self.server_conn != 0) {
-        try self.sendCommand(.{ .input = info.world.controller.input_map }, .reliable);
+        try self.sendCommand(.{ .input = info.world.controller.input_map }, .unreliable_no_delay);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
         info.world.controller.input_map.mouse_wheel = 0;
     }
@@ -157,8 +157,10 @@ fn handleCommand(
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
-            self.server_tick_latest = @max(self.server_tick_latest, update_motion_command.tick);
             entity.update_motion = update_motion_command;
+        },
+        .server_tick => |tick| {
+            self.server_tick_latest = @max(self.server_tick_latest, tick);
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {

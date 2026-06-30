@@ -132,6 +132,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
 
             // Body yaw tracks camera yaw (pitch stays on the camera only).
             body_interface.setRotation(id, camera.yaw_rotation.toVec(), .activate);
+            transform.rotation = camera.yaw_rotation;
 
             // if (input.forward) std.log.debug("new pos {any}", .{body_interface.getPosition(id)});
             if (input.keys.r) {
