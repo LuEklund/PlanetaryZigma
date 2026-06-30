@@ -45,6 +45,7 @@ pub const Entity = struct {
     owner_id: u32 = 0,
 
     transform: nz.Transform3D(f32) = .{},
+    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
     collider: Physics.Collider = undefined,
     controller: Controller = .{},
     camera: Camera = .{},

@@ -61,6 +61,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     .kind = .bullet,
                     .owner_id = player.id,
                     .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
+                    .velocity = muzzle_velocity,
                     .bullet = .{ .velocity = muzzle_velocity, .lifetime = shared.bullet.lifetime },
                     .damage = player.damage,
                 },
