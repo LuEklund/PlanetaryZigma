@@ -34,6 +34,7 @@ pub const ServerPacket = union(enum) {
     spawn_entity: SpawnEntity,
     despawn_entity: DespawnEntity,
     update_motion: UpdateMotion,
+    server_tick: u32,
     update_stat: UpdateStat,
     update_animation_state: UpdateAnimationState,
     update_event: Event,

@@ -205,8 +205,9 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         const predicted = last_motion.position + nz.vec.scale(last_motion.velocity, elapsed);
         const position_drift = nz.vec.length(position - predicted);
         const rotation_drift = 1.0 - @abs(nz.vec.dot(rotation, last_motion.rotation));
+        const velocity_drift = nz.vec.length(entity.velocity - last_motion.velocity);
 
-        if (position_drift > 0.25 or rotation_drift > 0.01) {
+        if (position_drift > 0.25 or rotation_drift > 0.01 or velocity_drift > 1.0) {
             last_motion.* = .{
                 .id = entity.id,
                 .position = position,
@@ -220,6 +221,8 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
+
+        try client.sendCommand(writer, .{ .server_tick = info.tick }, .unreliable_no_delay);
 
         if (world.getPtr(client.entity_id)) |player_entity| {
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.r;
