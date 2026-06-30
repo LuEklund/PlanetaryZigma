@@ -331,6 +331,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
             @floatCast(pos[0]), @floatCast(pos[1]), @floatCast(pos[2]),
         };
         entity.transform.rotation = .fromVec(body_interface.getRotation(body_id));
+        entity.velocity = body_interface.getLinearVelocity(body_id);
     }
 }
 

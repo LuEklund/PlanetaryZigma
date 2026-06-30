@@ -5,7 +5,6 @@ pub const bullet = @import("bullet.zig");
 pub const net = @import("net.zig");
 pub const PlanetKind = @import("planet.zig").PlanetKind;
 pub const Planet = @import("planet.zig").Planet;
-pub const Planet2 = @import("Planet2.zig").Planet;
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 

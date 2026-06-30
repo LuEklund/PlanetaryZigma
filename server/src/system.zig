@@ -45,6 +45,7 @@ pub const Entity = struct {
     owner_id: u32 = 0,
 
     transform: nz.Transform3D(f32) = .{},
+    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
     collider: Physics.Collider = undefined,
     controller: Controller = .{},
     camera: Camera = .{},
@@ -198,6 +199,10 @@ pub const Context = struct {
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
 
         const teleporter = self.world.getPtr(self.world.teleportal.id) orelse return;
+        if (self.world.teleportal.charged == self.world.teleportal.max_charge) {
+            self.spawner.should_spawm = false;
+            return;
+        }
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
             if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {

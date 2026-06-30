@@ -49,6 +49,7 @@ pub fn update(
 
         const previous_position = entity.transform.position;
         shared.bullet.step(&entity.transform.position, &bullet.velocity, dt);
+        entity.velocity = bullet.velocity;
         const travel = entity.transform.position - previous_position;
 
         const ray_hit = query.castRay(.{

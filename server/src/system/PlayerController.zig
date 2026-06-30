@@ -56,34 +56,33 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
-            for (1..10) |i| {
-                _ = try self.spawner.spawn(
-                    .{
-                        .kind = .bullet,
-                        .owner_id = player.id,
-                        .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
-                        .bullet = .{ .velocity = nz.vec.scale(muzzle_velocity, @floatFromInt(i)), .lifetime = shared.bullet.lifetime },
-                        .damage = player.damage,
-                    },
-                );
-            }
+            _ = try self.spawner.spawn(
+                .{
+                    .kind = .bullet,
+                    .owner_id = player.id,
+                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
+                    .velocity = muzzle_velocity,
+                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = shared.bullet.lifetime },
+                    .damage = player.damage,
+                },
+            );
         }
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            for (info.world.entities.values()) |entry| {
-                if (entry.kind != .player) self.spawner.depspawn(entry.id);
-            }
-            try self.spawner.startStage(info.world, self.physics);
-            // _ = try self.spawner.spawn(.{
-            //     .kind = .skelly,
-            //     .transform = .{ .position = .{ 0, 100, 0 } },
-            //     .collider = .{
-            //         .shape = .{ .primitive = .{ .capsule = .{ .size = 1 } } },
-            //         .motion_type = .dynamic,
-            //         .object_layer = .moving,
-            //     },
-            //     .health = .{ .current = 20, .max = 20 },
-            // });
+            // for (info.world.entities.values()) |entry| {
+            //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
+            // }
+            // try self.spawner.startStage(info.world, self.physics);
+            _ = try self.spawner.spawn(.{
+                .kind = .skelly,
+                .transform = .{ .position = .{ 0, 100, 0 } },
+                .collider = .{
+                    .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
+                    .motion_type = .dynamic,
+                    .object_layer = .moving,
+                },
+                .health = .{ .current = 20, .max = 20 },
+            });
         }
 
         if (player.controller.input.keys.e) {
