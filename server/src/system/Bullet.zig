@@ -7,6 +7,16 @@ const Spawner = @import("Spawner.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
+pub const muzzle_speed: f32 = 100;
+pub const gravity_acceleration: f32 = 100;
+pub const lifetime: f32 = 5;
+
+fn step(position: *nz.Vec3(f32), velocity: *nz.Vec3(f32), dt: f32) void {
+    const up = nz.vec.normalize(position.*);
+    velocity.* += nz.vec.scale(-up, gravity_acceleration * dt);
+    position.* += nz.vec.scale(velocity.*, dt);
+}
+
 gpa: std.mem.Allocator,
 physics: *Physics,
 world: *system.World,
@@ -48,7 +58,7 @@ pub fn update(
         }
 
         const previous_position = entity.transform.position;
-        shared.bullet.step(&entity.transform.position, &bullet.velocity, dt);
+        step(&entity.transform.position, &bullet.velocity, dt);
         entity.velocity = bullet.velocity;
         const travel = entity.transform.position - previous_position;
 

@@ -3,6 +3,7 @@ const shared = @import("shared");
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
 const Spawner = @import("Spawner.zig");
+const Bullet = @import("Bullet.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
@@ -40,14 +41,14 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const player_forward_direction = player.transform.forward();
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
-            const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
+            const muzzle_velocity = nz.vec.scale(player_forward_direction, Bullet.muzzle_speed);
             _ = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
                     .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                     .velocity = muzzle_velocity,
-                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = shared.bullet.lifetime },
+                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = Bullet.lifetime },
                     .damage = player.damage,
                 },
             );

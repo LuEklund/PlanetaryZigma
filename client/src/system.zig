@@ -134,7 +134,6 @@ pub const Context = struct {
         try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();
         try self.network_manager.update(info, &self.renderer.inner.skeletons);
-        self.stepBullets(info);
         try self.spawner.update(info, self);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
@@ -163,14 +162,6 @@ pub const Context = struct {
             info.world.camera.applyPose(player.transform.position);
         }
         // std.log.debug("time : {d}", .{info.elapsed_time});
-    }
-
-    fn stepBullets(self: *@This(), info: *const Info) void {
-        _ = self;
-        for (info.world.entities.values()) |*entity| {
-            if (entity.kind != .bullet) continue;
-            shared.bullet.step(&entity.transform.position, &entity.velocity, info.delta_time);
-        }
     }
 
     pub fn eventUpdate(self: *@This(), info: *const Info, event: *const yes.Window.Event) !void {

@@ -182,8 +182,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     // 4. Push outbound state to every active client.
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (entity.kind == .bullet) continue;
-        if (entity.collider.motion_type == .static) continue;
+        if (shared.Entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();
