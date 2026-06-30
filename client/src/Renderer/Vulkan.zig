@@ -578,10 +578,11 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     var proj = perspective(camera.fov_rad, aspect, 0.01, 1000);
     const proj_view = proj.mul(view);
 
+    const light_time = info.elapsed_time * 0.01;
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_view_proj = proj_view.inverse().d,
-        .global_light_direction = .{ @cos(info.elapsed_time), @sin(info.elapsed_time), 0 },
+        .global_light_direction = .{ @cos(light_time), @sin(light_time), 0 },
         .time = elapsed_time,
         .camera_position = camera.transform.position,
         .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{

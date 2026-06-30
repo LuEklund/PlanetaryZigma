@@ -80,7 +80,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 entity.velocity = entity_info.data.bullet_velocity;
             },
             .teleporter => {
-                info.world.teleportal.id = entity.id;
+                info.world.teleporter_id = entity.id;
             },
             .skelly, .wizard => {
                 if (entity_info.data == .is_teleporter_boss) {

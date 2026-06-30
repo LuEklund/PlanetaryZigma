@@ -41,8 +41,8 @@ pub fn main(init: std.process.Init) !void {
 
     var loop_time_tracker: f32 = 0;
     var elapsed_time: f32 = 0;
-    var tick: u64 = 0;
-    const time_step: f32 = 0.0167;
+    var tick: u32 = 0;
+    const time_step: f32 = shared.tick_seconds;
     while (true) {
         if (system_context.request_exit) break;
         loop_time_tracker += getDeltaTime(io);

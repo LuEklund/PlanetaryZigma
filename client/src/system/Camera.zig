@@ -24,6 +24,10 @@ buf: [32]u8 = undefined,
 
 transform: nz.Transform3D(f32) = .{},
 
+yaw_rotation: nz.quat.Hamiltonian(f32) = .identity,
+pitch: f32 = 0,
+boom_offset: nz.Vec3(f32) = .{ 0, 0, 0 },
+
 pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -32,6 +36,14 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
     self.input_map.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
     self.mouse_prev_pos[0] = self.mouse_pos[0];
     self.mouse_prev_pos[1] = self.mouse_pos[1];
+
+    if (info.world.getPtr(info.world.player_id)) |player| {
+        if (nz.vec.length(player.transform.position) > 0.001) {
+            const planet_up = nz.vec.normalize(player.transform.position);
+            shared.camera.look(&self.yaw_rotation, &self.pitch, &self.boom_offset, self.input_map, planet_up, info.delta_time);
+        }
+    }
+    self.input_map.camera_yaw_rotation = self.yaw_rotation.toVec();
 
     const position: [2]f32 = .{ @floatCast(self.mouse_pos[0]), @floatCast(self.mouse_pos[1]) };
     ui.start(.{
@@ -113,10 +125,11 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
                 .color = .new(1, 0, 0, 1),
             });
 
-            const portal = info.world.getPtr(info.world.teleportal.id);
-            if (info.world.teleportal.active == false) {
-                if (portal) |teleporter| {
-                    if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
+            const portal = info.world.getPtr(info.world.teleporter_id);
+            const teleporter_active = if (portal) |entity| entity.teleporter.active else false;
+            if (teleporter_active == false) {
+                if (portal) |entity| {
+                    if (nz.vec.length(player.transform.position - entity.transform.position) < shared.Teleporter.intertact_distance) {
                         ui.add(
                             null,
                             .{
@@ -148,9 +161,10 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
                     .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
                     .color = .new(1, 0, 0, 1),
                 });
-                if (portal) |teleporter| {
-                    if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleporter_bosses.items.len == 0) {
-                        if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
+                if (portal) |entity| {
+                    const teleporter = entity.teleporter;
+                    if (teleporter.charged == teleporter.max_charge and info.world.teleporter_bosses.items.len == 0) {
+                        if (nz.vec.length(player.transform.position - entity.transform.position) < shared.Teleporter.intertact_distance) {
                             ui.add(
                                 null,
                                 .{
@@ -162,7 +176,7 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
                             );
                         }
                     } else {
-                        const teleporter_text = try std.fmt.bufPrint(&self.teleport_charge_text, "Teleport Charge: {d:.2}", .{info.world.teleportal.charged});
+                        const teleporter_text = try std.fmt.bufPrint(&self.teleport_charge_text, "Teleport Charge: {d:.2}", .{teleporter.charged});
                         ui.add(
                             null,
                             .{
@@ -178,6 +192,12 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
     }
 
     ui.end();
+}
+
+pub fn applyPose(self: *@This(), player_position: nz.Vec3(f32)) void {
+    const pose = shared.camera.boomTransform(self.yaw_rotation, self.pitch, self.boom_offset, player_position);
+    self.transform.position = pose.position;
+    self.transform.rotation = pose.rotation;
 }
 
 pub fn eventUpdate(self: *@This(), info: *const Info, event: *const yes.Window.Event) !void {

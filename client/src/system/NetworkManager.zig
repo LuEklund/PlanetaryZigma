@@ -22,6 +22,9 @@ spawner: *Spawner,
 /// SteamNet.events on the first .connected event.
 server_conn: shared.SteamNet.Conn = 0,
 /// Whether we've sent the "connect" handshake on the current server_conn.
+server_tick_estimate: f32 = 0,
+server_tick_latest: u32 = 0,
+render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
 server_list: ServerList = .{},
 
@@ -120,6 +123,11 @@ pub fn update(
         try self.handleCommand(info, parsed, skeletons);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
+
+    self.server_tick_estimate += info.delta_time / shared.tick_seconds;
+    const target = @as(f32, @floatFromInt(self.server_tick_latest)) - self.render_delay_ticks;
+    self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
+
     self.steam_client.packet_mutex.unlock(self.io);
 }
 
@@ -134,6 +142,8 @@ fn handleCommand(
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
             self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
+            self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
+            self.server_tick_latest = acknowledge.tick;
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id) != null) return;
@@ -145,16 +155,10 @@ fn handleCommand(
             // arriving in the same batch can't drop the despawn.
             try self.spawner.depspawn(despawn_entity.id);
         },
-        .update_transform => |update_transform_command| {
-            const entity = info.world.getPtr(update_transform_command.id) orelse return;
-            entity.transform.position = @floatCast(update_transform_command.position);
-            entity.transform.rotation = .fromVec(@floatCast(update_transform_command.rotation));
-        },
-        .update_camera_rotation => |rotation_command| {
-            // const id = info.world.enitity_mapping.get(rotation_command.id) orelse return;
-            // const entity = info.world.getPtr(id) orelse return;
-            info.world.camera.transform.rotation = .fromVec(rotation_command.rotation);
-            info.world.camera.transform.position = rotation_command.position;
+        .update_motion => |update_motion_command| {
+            const entity = info.world.getPtr(update_motion_command.id) orelse return;
+            self.server_tick_latest = @max(self.server_tick_latest, update_motion_command.tick);
+            entity.update_motion = update_motion_command;
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {
@@ -193,9 +197,13 @@ fn handleCommand(
         },
         .update_event => |event| {
             switch (event) {
-                .teleport_start => info.world.teleportal.active = true,
-                .teleporter_charge => |charged| info.world.teleportal.charged = charged,
-                .new_stage => info.world.teleportal = .{},
+                .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                    entity.teleporter.active = true;
+                },
+                .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                    entity.teleporter.charged = charged;
+                },
+                .new_stage => info.world.teleporter_id = 0,
             }
         },
     }

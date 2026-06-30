@@ -13,7 +13,7 @@ const CameraController = @import("system/CameraController.zig");
 const Bullet = @import("system/Bullet.zig");
 
 pub const Info = struct {
-    tick: u64,
+    tick: u32,
     delta_time: f32,
     elapsed_time: f32,
     world: *World,
@@ -57,6 +57,7 @@ pub const Entity = struct {
     speed: f32 = 10,
     state: shared.Entity.State = .idle,
     item_amount: f32 = 0,
+    teleporter: shared.TeleporterState = .{},
 
     pub const Flags = packed struct {
         invinsible: bool = false,
@@ -82,7 +83,7 @@ pub const World = struct {
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     players: std.ArrayList(u32) = .empty,
     teleport_bosses: std.ArrayList(u32) = .empty,
-    teleportal: shared.Teleporter = .{},
+    teleporter_id: u32 = 0,
     planet_size: u32 = 100,
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
@@ -198,19 +199,20 @@ pub const Context = struct {
         try self.spawner.update(info, &self.physics, &self.network_manager);
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
 
-        const teleporter = self.world.getPtr(self.world.teleportal.id) orelse return;
-        if (self.world.teleportal.charged == self.world.teleportal.max_charge) {
+        const entity = self.world.getPtr(self.world.teleporter_id) orelse return;
+        const teleporter = &entity.teleporter;
+        if (teleporter.charged == teleporter.max_charge) {
             self.spawner.should_spawm = false;
             return;
         }
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
-            if (self.world.teleportal.active and nz.vec.distance(player.transform.position, teleporter.transform.position) < shared.Teleporter.charge_distance) {
-                self.world.teleportal.charged += info.delta_time + 100;
-                self.world.teleportal.charged = @min(self.world.teleportal.charged, self.world.teleportal.max_charge);
+            if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.Teleporter.charge_distance) {
+                teleporter.charged += info.delta_time + 100;
+                teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
             }
         }
-        self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(self.world.teleportal.charged) });
+        self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(teleporter.charged) });
 
         // std.log.debug("time : {d}", .{info.elapsed_time});
         // self.request_exit = true;

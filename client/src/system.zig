@@ -26,9 +26,13 @@ pub const Entity = struct {
     kind: shared.Entity.Kind,
     state: shared.Entity.State = .walk,
     health: Health = .{},
+    teleporter: shared.TeleporterState = .{},
+
+    update_motion: ?shared.net.UpdateMotion = null,
+    smoothed_moiton_tick: u32 = 0,
+    position_error: nz.Vec3(f32) = @splat(0),
 
     transform: nz.Transform3D(f32) = .{},
-
     velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -50,7 +54,7 @@ pub const World = struct {
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     teleporter_bosses: std.ArrayList(u32) = .empty,
     camera: Camera = .{},
-    teleportal: shared.Teleporter = .{},
+    teleporter_id: u32 = 0,
     player_id: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
@@ -132,6 +136,32 @@ pub const Context = struct {
         try self.network_manager.update(info, &self.renderer.inner.skeletons);
         self.stepBullets(info);
         try self.spawner.update(info, self);
+
+        const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
+        for (info.world.entities.values()) |*entity| {
+            const motion = entity.update_motion orelse continue;
+            const motion_time = @as(f32, @floatFromInt(motion.tick)) * shared.tick_seconds;
+            const age = server_time - motion_time;
+            const target = motion.position + nz.vec.scale(motion.velocity, age);
+
+            if (motion.tick != entity.smoothed_moiton_tick) {
+                entity.position_error = entity.transform.position - target;
+                entity.smoothed_moiton_tick = motion.tick;
+            }
+
+            const error_decay = std.math.pow(f32, 1e-5, info.delta_time);
+            entity.position_error = nz.vec.scale(entity.position_error, error_decay);
+            entity.transform.position = target + entity.position_error;
+
+            const target_rotation = nz.Quat(f32).fromVec(motion.rotation);
+            const rotation_decay = std.math.pow(f32, 1e-5, info.delta_time);
+            entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
+            // entity.transform.rotation = nz.Quat(f32).fromVec(motion.rotation);
+        }
+
+        if (info.world.getPtr(info.world.player_id)) |player| {
+            info.world.camera.applyPose(player.transform.position);
+        }
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
 
