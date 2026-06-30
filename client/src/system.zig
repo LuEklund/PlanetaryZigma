@@ -10,6 +10,8 @@ const Animation = @import("system/Animations.zig");
 pub const Renderer = @import("Renderer.zig");
 
 pub const Camera = @import("system/Camera.zig");
+pub const Controller = @import("system/Controller.zig");
+pub const Hud = @import("system/Hud.zig");
 
 pub const Info = struct {
     delta_time: f32,
@@ -54,6 +56,8 @@ pub const World = struct {
     entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
     teleporter_bosses: std.ArrayList(u32) = .empty,
     camera: Camera = .{},
+    controller: Controller = .{},
+    hud: Hud = .{},
     teleporter_id: u32 = 0,
     player_id: u32 = 0,
 
@@ -129,7 +133,9 @@ pub const Context = struct {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         // tracy.frameMark();
-        try info.world.camera.update(info, &self.network_manager, &self.renderer.inner.ui);
+        info.world.controller.update();
+        info.world.camera.update(info, &info.world.controller.input_map);
+        try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
         try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();
@@ -168,7 +174,7 @@ pub const Context = struct {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         _ = self;
-        try info.world.camera.eventUpdate(info, event);
+        info.world.controller.eventUpdate(event);
     }
     fn reload(self: *@This(), pre_reload: bool) !void {
         if (pre_reload) {

@@ -107,9 +107,9 @@ pub fn update(
     }
     // 3. Send our input.
     if (self.server_conn != 0) {
-        try self.sendCommand(.{ .input = info.world.camera.input_map }, .reliable);
+        try self.sendCommand(.{ .input = info.world.controller.input_map }, .reliable);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
-        info.world.camera.input_map.mouse_wheel = 0;
+        info.world.controller.input_map.mouse_wheel = 0;
     }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     // 4. Drain inbound commands.
