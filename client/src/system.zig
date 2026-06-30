@@ -161,7 +161,6 @@ pub const Context = struct {
             const target_rotation = nz.Quat(f32).fromVec(motion.rotation);
             const rotation_decay = std.math.pow(f32, 1e-5, info.delta_time);
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
-            // entity.transform.rotation = nz.Quat(f32).fromVec(motion.rotation);
         }
 
         if (info.world.getPtr(info.world.player_id)) |player| {
