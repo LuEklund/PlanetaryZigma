@@ -125,7 +125,7 @@ pub fn update(
 
 pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
     const rand = world.prng.random();
-    world.teleportal = .{};
+    world.teleporter_id = 0;
     self.should_spawm = true;
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
     world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
@@ -189,6 +189,6 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
                 nz.Vec3(f32){ 1, 0, 0 };
             break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
         } else .identity;
-        world.teleportal.id = teleporter.id;
+        world.teleporter_id = teleporter.id;
     }
 }

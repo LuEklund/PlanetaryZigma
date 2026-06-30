@@ -1,5 +1,10 @@
 # Dead reckoning for PlanetaryZigma — draft
 
+- [] sync clock
+-  [] smoothness update wrong? always udpating even with same position?
+ - []null moiton udpate on enetity
+ - client side predictions camera + movement
+
 Working notes on moving PlanetaryZigma's entity replication from per-tick snapshots to **dead reckoning**: send "position + velocity" occasionally, let the client extrapolate the rest. Rough, will be refined as it gets implemented.
 
 

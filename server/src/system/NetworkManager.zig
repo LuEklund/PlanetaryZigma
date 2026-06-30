@@ -4,6 +4,7 @@ const system = @import("../system.zig");
 const Spawner = @import("Spawner.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
+const nz = shared.numz;
 
 pub const Client = struct {
     gpa: std.mem.Allocator,
@@ -33,6 +34,8 @@ gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
+last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion),
+pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
@@ -40,6 +43,8 @@ pending_animatoin_state: std.ArrayList(struct { id: u32, state: shared.Entity.St
 pending_events: std.ArrayList(shared.net.Event) = .empty,
 
 pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
+    var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
+    try last_motions.ensureTotalCapacity(system.World.max_entities);
     self.* = .{
         .gpa = gpa,
         .io = io,
@@ -48,6 +53,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.Ste
         .pending_stats = try .initCapacity(gpa, 4096),
         .pending_animatoin_state = try .initCapacity(gpa, 1024),
         .pending_events = try .initCapacity(gpa, 64),
+        .last_motions = last_motions,
     };
 }
 
@@ -58,6 +64,8 @@ pub fn deinit(self: *@This()) !void {
     self.pending_animatoin_state.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
+    self.pending_motions.deinit(self.gpa);
+    self.last_motions.deinit();
 }
 
 pub fn reload(self: *@This(), pre_reload: bool) !void {
@@ -141,13 +149,15 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
 
                     try client.sendCommand(
                         writer,
-                        .{ .acknowledge = .{ .id = client.entity_id } },
+                        .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
                         .reliable,
                     );
-                    if (info.world.teleportal.active) {
-                        try client.sendCommand(writer, .{
-                            .update_event = .teleport_start,
-                        }, .reliable);
+                    if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                        if (entity.teleporter.active) {
+                            try client.sendCommand(writer, .{
+                                .update_event = .teleport_start,
+                            }, .reliable);
+                        }
                     }
                     std.log.debug("PLAYER SPAWN entity_id={d} body_id={any}", .{
                         client.entity_id,
@@ -170,19 +180,49 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     }
 
     // 4. Push outbound state to every active client.
+    self.pending_motions.clearRetainingCapacity();
+    for (world.entities.values()) |*entity| {
+        if (shared.Entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+
+        const position = entity.transform.position;
+        const rotation = entity.transform.rotation.toVec();
+
+        const entry = try self.last_motions.getOrPut(entity.id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{
+                .id = entity.id,
+                .position = position,
+                .velocity = entity.velocity,
+                .rotation = rotation,
+                .tick = info.tick,
+            };
+            try self.pending_motions.append(self.gpa, entry.value_ptr.*);
+            continue;
+        }
+
+        const last_motion = entry.value_ptr;
+        const elapsed = @as(f32, @floatFromInt(info.tick - last_motion.tick)) * shared.tick_seconds;
+        const predicted = last_motion.position + nz.vec.scale(last_motion.velocity, elapsed);
+        const position_drift = nz.vec.length(position - predicted);
+        const rotation_drift = 1.0 - @abs(nz.vec.dot(rotation, last_motion.rotation));
+
+        if (position_drift > 0.25 or rotation_drift > 0.01) {
+            last_motion.* = .{
+                .id = entity.id,
+                .position = position,
+                .velocity = entity.velocity,
+                .rotation = rotation,
+                .tick = info.tick,
+            };
+            try self.pending_motions.append(self.gpa, last_motion.*);
+        }
+    }
     it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
 
-        // camera
         if (world.getPtr(client.entity_id)) |player_entity| {
-            const camera = player_entity.camera;
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.r;
-            try client.sendCommand(writer, .{ .update_camera_rotation = .{
-                .position = camera.transform.position,
-                .rotation = camera.transform.rotation.toVec(),
-                .id = client.entity_id,
-            } }, .unreliable_no_delay);
         }
 
         // spawns
@@ -192,11 +232,18 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
             }
+            var motion_it = self.last_motions.valueIterator();
+            while (motion_it.next()) |motion| {
+                try client.sendCommand(writer, .{ .update_motion = motion.* }, .reliable);
+            }
             client.needs_full_sync = false;
         } else {
             for (self.pending_spawn.items) |entity_id| {
                 const entity = world.getPtr(entity_id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
+            }
+            for (self.pending_motions.items) |motion| {
+                try client.sendCommand(writer, .{ .update_motion = motion }, .unreliable_no_delay);
             }
         }
         // despawns
@@ -232,18 +279,9 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .update_event = event,
             }, .reliable);
         }
-        // transforms
-        for (world.entities.values()) |*entity| {
-            if (entity.kind == .bullet) continue; // client simulates bullets from spawn pos+vel
-            if (entity.collider.motion_type == .static) continue; // static bodies never move; sent once at spawn
-            try client.sendCommand(writer, .{ .update_transform = .{
-                .id = @intCast(entity.id),
-                .position = @floatCast(entity.transform.position),
-                .rotation = @floatCast(entity.transform.rotation.toVec()),
-            } }, .unreliable_no_delay);
-        }
     }
     // std.log.debug("cmd size {d}", .{self.steam_server.packets.outgoing.items.len});
+    for (self.pending_despawn.items) |id| _ = self.last_motions.remove(id);
     self.pending_despawn.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();

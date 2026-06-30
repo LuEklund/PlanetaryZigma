@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
 
     var elapsed_time: f32 = 0;
     var accumlated_time: f32 = 0;
-    const time_step: f32 = 0.0167;
+    const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
     main_loop: while (true) {
         tracy.frameMark();

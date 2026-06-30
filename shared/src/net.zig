@@ -33,8 +33,7 @@ pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
     despawn_entity: DespawnEntity,
-    update_transform: UpdateTransform,
-    update_camera_rotation: UpdateCameraRotation,
+    update_motion: UpdateMotion,
     update_stat: UpdateStat,
     update_animation_state: UpdateAnimationState,
     update_event: Event,
@@ -49,6 +48,7 @@ pub const Connect = struct {
 
 pub const Acknowledge = struct {
     id: u32,
+    tick: u32,
 };
 
 pub const SpawnEntity = struct {
@@ -85,18 +85,21 @@ pub const Input = struct {
     } = .{},
     mouse_wheel: f64 = 0,
     mouse_delta: [2]f64 = .{ 0, 0 },
+    camera_yaw_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
+};
+
+pub const UpdateMotion = struct {
+    id: u32,
+    position: @Vector(3, f32),
+    velocity: @Vector(3, f32),
+    rotation: @Vector(4, f32),
+    tick: u32,
 };
 
 pub const UpdateTransform = struct {
     id: u32,
     position: @Vector(3, f16),
     rotation: @Vector(4, f16),
-};
-
-pub const UpdateCameraRotation = struct {
-    id: u32,
-    position: @Vector(3, f32),
-    rotation: @Vector(4, f32),
 };
 
 pub const UpdateStat = struct {

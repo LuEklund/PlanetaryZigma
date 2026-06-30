@@ -3,6 +3,7 @@ const shared = @import("shared");
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
 const Spawner = @import("Spawner.zig");
+const BulletManager = @import("BulletManager.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
@@ -34,35 +35,20 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         // std.log.debug("handle input for: {d}", .{player.id});
         // std.log.debug("pos {any}", .{transform.position});
 
-        camera.boom_offset[2] += @floatCast(-input.mouse_wheel);
-        camera.boom_offset[2] = std.math.clamp(camera.boom_offset[2], 0, 1000);
-
         const planet_up = nz.vec.normalize(transform.position);
-
-        const sensitivity: f32 = 1;
-        const delta_yaw: f32 = @floatCast(-input.mouse_delta[0] * sensitivity * info.delta_time);
-        const delta_pitch: f32 = @floatCast(-input.mouse_delta[1] * sensitivity * info.delta_time);
-
-        if (input.keys.mouse_button_right) {
-            // Yaw rotates around the *current* planet-up so looking is always tangent-aligned.
-            const yaw_quat = nz.quat.Hamiltonian(f32).angleAxis(delta_yaw, planet_up);
-            camera.yaw_rotation = yaw_quat.mul(camera.yaw_rotation).normalize();
-            // Pitch stays as a scalar and is composed on top of yaw at render time.
-            const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
-            camera.pitch = std.math.clamp(camera.pitch + delta_pitch, -pitch_limit, pitch_limit);
-        }
+        camera.yaw_rotation = .fromVec(input.camera_yaw_rotation);
 
         const player_forward_direction = player.transform.forward();
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
             player.last_attack = info.elapsed_time;
-            const muzzle_velocity = nz.vec.scale(player_forward_direction, shared.bullet.muzzle_speed);
+            const muzzle_velocity = nz.vec.scale(player_forward_direction, BulletManager.muzzle_speed);
             _ = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
                     .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                     .velocity = muzzle_velocity,
-                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = shared.bullet.lifetime },
+                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = BulletManager.lifetime },
                     .damage = player.damage,
                 },
             );
@@ -86,14 +72,15 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
 
         if (player.controller.input.keys.e) {
-            if (info.world.getPtr(info.world.teleportal.id)) |teleporter| {
-                if (nz.vec.length(player.transform.position - teleporter.transform.position) < shared.Teleporter.intertact_distance) {
-                    if (!info.world.teleportal.active) {
-                        info.world.teleportal.active = true;
+            if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                const teleporter = &entity.teleporter;
+                if (nz.vec.length(player.transform.position - entity.transform.position) < shared.Teleporter.intertact_distance) {
+                    if (!teleporter.active) {
+                        teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
                         _ = try self.spawner.spawn(.{
                             .kind = .wizard,
-                            .transform = .{ .position = teleporter.transform.position + nz.vec.scale(nz.vec.normalize(teleporter.transform.position), 10) },
+                            .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
                                 .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } } },
                                 .motion_type = .dynamic,
@@ -104,7 +91,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .flags = .{ .is_teleporter_boss = true },
                         });
                     } else {
-                        if (info.world.teleportal.charged == info.world.teleportal.max_charge and info.world.teleport_bosses.items.len == 0) {
+                        if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
                             for (info.world.entities.values()) |entry| {
                                 if (entry.kind != .player) self.spawner.depspawn(entry.id);
                             }
@@ -115,24 +102,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             }
         }
 
-        // --- Tangent-plane realign ---
-        // The player walks around a sphere, so planet_up drifts over time. Re-project the yaw
-        // rotation so its local up matches the new planet_up (preserves facing direction).
-        const cam_up = nz.vec.normalize(camera.yaw_rotation.rotateVec(.{ 0, 1, 0 }));
-        const d = std.math.clamp(nz.vec.dot(cam_up, planet_up), -1.0, 1.0);
-        if (d < 0.9999) {
-            const cam_fwd_raw = nz.vec.normalize(camera.yaw_rotation.rotateVec(.{ 0, 0, -1 }));
-            const axis: nz.Vec3(f32) = if (d > -0.9999)
-                nz.vec.normalize(nz.vec.cross(cam_up, planet_up))
-            else
-                nz.vec.normalize(nz.vec.cross(cam_up, cam_fwd_raw));
-            const angle = std.math.acos(d);
-            const align_quat: nz.quat.Hamiltonian(f32) = .angleAxis(angle, axis);
-            camera.yaw_rotation = align_quat.mul(camera.yaw_rotation).normalize();
-        }
-
-        // --- Planet-tangent movement basis ---
-        // Projected camera forward: strips out any up-component so WASD moves over the surface.
         const cam_fwd = nz.vec.normalize(camera.yaw_rotation.rotateVec(.{ 0, 0, -1 }));
         const fwd_proj = cam_fwd - nz.vec.scale(planet_up, nz.vec.dot(cam_fwd, planet_up));
         const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
