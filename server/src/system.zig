@@ -10,7 +10,7 @@ const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const CameraController = @import("system/CameraController.zig");
-const Bullet = @import("system/Bullet.zig");
+const BulletManager = @import("system/BulletManager.zig");
 
 pub const Info = struct {
     tick: u32,
@@ -140,7 +140,7 @@ pub const Context = struct {
     spawner: Spawner,
     enemy_manager: EnemyManager,
     item_manager: ItemManager,
-    bullet: Bullet,
+    bullet_manager: BulletManager,
     request_exit: bool = false,
 
     pub const Data = struct {
@@ -162,13 +162,13 @@ pub const Context = struct {
             .physics = undefined,
             .player_controller = undefined,
             .camera_controller = undefined,
-            .bullet = undefined,
+            .bullet_manager = undefined,
             .health_manager = undefined,
             .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
         try self.camera_controller.init();
-        try self.bullet.init(data.gpa, self.world, &self.physics);
+        try self.bullet_manager.init(data.gpa, self.world, &self.physics);
         try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
         try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
@@ -183,7 +183,7 @@ pub const Context = struct {
         self.physics.deinit();
         try self.network_manager.deinit();
         try self.enemy_manager.deinit();
-        self.bullet.deinit();
+        self.bullet_manager.deinit();
         self.spawner.deinit();
     }
 
@@ -194,7 +194,7 @@ pub const Context = struct {
         try self.player_controller.update(info, &self.network_manager);
         try self.enemy_manager.update(info, &self.physics, &self.health_manager, &self.network_manager, &self.spawner);
         try self.physics.update(info);
-        try self.bullet.update(info, &self.health_manager, &self.spawner);
+        try self.bullet_manager.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
         try self.item_manager.update(info, &self.spawner, &self.health_manager);
