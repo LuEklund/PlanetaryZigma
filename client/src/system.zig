@@ -20,15 +20,11 @@ pub const Info = struct {
 };
 
 pub const Entity = struct {
-    pub const Health = struct {
-        current: f32 = 0,
-        max: f32 = 1,
-    };
     id: u32 = 0,
     kind: shared.Entity.Kind,
     state: shared.Entity.State = .walk,
-    health: Health = .{},
     teleporter: shared.TeleporterState = .{},
+    inventory: shared.Entity.Inventory = .{},
 
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,

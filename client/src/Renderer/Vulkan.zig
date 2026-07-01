@@ -595,6 +595,8 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     bindVertexShader(cmd, self.shaders.get(.vert_static).?);
     for (info.world.entities.values()) |*entity| {
+        // const spawns: usize = if (entity.kind == .planet) 3 else 1;
+        // for (0..spawns) |i| {
         const renderable = self.renderables.get(entity.kind) orelse {
             if (entity.kind.expectsModel()) {
                 std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
@@ -608,8 +610,11 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         };
         const frag = self.shaders.get(if (entity.kind == .planet) .frag_planet else .frag_mesh).?;
         bindFragmentShader(cmd, frag);
-        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        const transform = entity.transform;
+        // transform.position += nz.vec.scale(transform.position + nz.Vec3(f32){ 0, 100, 0 }, @floatFromInt(i));
+        const base_matrix = transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawStatic(self, cmd, model, current_frame, base_matrix);
+        // }
     }
 
     bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);

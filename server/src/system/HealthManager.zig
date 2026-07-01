@@ -5,11 +5,6 @@ const Spawner = @import("Spawner.zig");
 const Entity = @import("../system.zig").Entity;
 const nz = shared.numz;
 
-pub const Health = struct {
-    current: f32 = 0,
-    max: f32 = 0,
-};
-
 network_manager: *NetworkManager,
 spawner: *Spawner,
 
@@ -36,11 +31,10 @@ pub fn addHealth(
     amount: f32,
 ) bool {
     if (!shared.Entity.hasHealth(entity.kind)) return false;
-    const health = &entity.health;
-    health.current += amount;
-    if (health.current <= 0) {
+    const current = entity.inventory.addCurrent(.health, amount);
+    if (current <= 0) {
         self.spawner.depspawn(entity.id);
     }
-    self.network_manager.pending_stats.appendAssumeCapacity(.{ .id = entity.id, .amount = .{ .add_health = @floatCast(amount) } });
+    self.network_manager.pending_stats.appendAssumeCapacity(.{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } });
     return true;
 }

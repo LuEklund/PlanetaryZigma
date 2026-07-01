@@ -39,19 +39,19 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         camera.yaw_rotation = .fromVec(input.camera_yaw_rotation);
 
         const player_forward_direction = player.transform.forward();
-        if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= 1 / player.attack_speed) {
+        if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.inventory.getAttackSpeed()) {
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, BulletManager.muzzle_speed);
-            _ = try self.spawner.spawn(
+            const bullet = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
                     .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
                     .velocity = muzzle_velocity,
                     .bullet = .{ .velocity = muzzle_velocity, .lifetime = BulletManager.lifetime },
-                    .damage = player.damage,
                 },
             );
+            bullet.inventory.setCurrent(.damage, player.inventory.getStat(.damage).current);
         }
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
@@ -59,7 +59,16 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
             // }
             // try self.spawner.startStage(info.world, self.physics);
-            _ = try self.spawner.spawn(.{
+            // _ = try self.spawner.spawn(.{
+            //     .kind = .attack_speed_item,
+            //     .transform = .{ .position = player.transform.position },
+            //     .collider = .{
+            //         .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+            //         .motion_type = .dynamic,
+            //         .object_layer = .planet_only,
+            //     },
+            // });
+            const skelly = try self.spawner.spawn(.{
                 .kind = .skelly,
                 .transform = .{ .position = .{ 0, 100, 0 } },
                 .collider = .{
@@ -67,8 +76,8 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
-                .health = .{ .current = 20, .max = 20 },
             });
+            skelly.inventory.initCombat(20, 10, 1, 1);
         }
 
         if (player.controller.input.keys.e) {
@@ -78,7 +87,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     if (!teleporter.active) {
                         teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
-                        _ = try self.spawner.spawn(.{
+                        const wizard = try self.spawner.spawn(.{
                             .kind = .wizard,
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
@@ -86,10 +95,9 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
-                            .attack_speed = 0.25,
-                            .health = .{ .current = 100, .max = 100 },
                             .flags = .{ .is_teleporter_boss = true },
                         });
+                        wizard.inventory.initCombat(100, 10, 1, 0.25);
                     } else {
                         if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
                             for (info.world.entities.values()) |entry| {
@@ -118,15 +126,17 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             if (input.keys.d) dir += move_right;
             if (input.keys.a) dir -= move_right;
 
+            const speed = player.inventory.getStat(.speed).current;
+            const attack_speed = player.inventory.getStat(.attack_speed).current;
             var vertical: f32 = 0;
-            if (input.keys.space) vertical += player.speed;
-            if (input.keys.l_shift) vertical -= player.speed;
+            if (input.keys.space) vertical += speed;
+            if (input.keys.l_shift) vertical -= speed;
 
-            Physics.moveOnPlanet(body_interface, id, planet_up, dir, player.speed, vertical);
+            Physics.moveOnPlanet(body_interface, id, planet_up, dir, speed, vertical);
             const moving = nz.vec.length(dir) > std.math.floatEps(f32);
             const desired: shared.Entity.State =
-                if (player.attack_speed < 1.0) .attack else if (moving) .walk else .idle;
-            if (player.attack_speed == 0 or desired != player.state)
+                if (attack_speed < 1.0) .attack else if (moving) .walk else .idle;
+            if (attack_speed == 0 or desired != player.state)
                 network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player.id, .state = desired });
             player.state = desired;
 

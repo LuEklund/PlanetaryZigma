@@ -38,6 +38,7 @@ pub const ServerPacket = union(enum) {
     update_stat: UpdateStat,
     update_animation_state: UpdateAnimationState,
     update_event: Event,
+    update_inventory: UpdateInventory,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -105,11 +106,17 @@ pub const UpdateTransform = struct {
 
 pub const UpdateStat = struct {
     id: u32,
+    stat_kind: Entity.Stat.Kind,
     amount: union(enum(u16)) {
-        set_health: f16,
-        set_max_health: f16,
-        add_health: f16,
+        set_current: f16,
+        set_max: f16,
     },
+};
+
+pub const UpdateInventory = struct {
+    id: u32,
+    stat_kind: Entity.Stat.Kind,
+    set: u8,
 };
 
 pub const UpdateAnimationState = struct {

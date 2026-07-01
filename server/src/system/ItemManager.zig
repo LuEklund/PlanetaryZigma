@@ -11,27 +11,33 @@ pub fn init(self: *@This()) !void {
     return;
 }
 
-pub fn update(self: *@This(), info: *const Info, spawner: *Spawner, health_manager: *HealthManager) !void {
+pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {
-        if (!shared.Entity.isItem(entity.kind)) continue;
-        const amount = entity.item_amount;
+        const stat_kind = entity.kind.toStat() orelse continue;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
             const player_position = player.transform.position;
             const item_position = entity.transform.position;
             const length = player_position - item_position;
+            if (nz.vec.length(length) >= 2) continue;
 
-            if (nz.vec.length(length) < 2) {
-                switch (entity.kind) {
-                    .health_item => _ = health_manager.addHealth(player, amount),
-                    .damage_item => player.damage += amount,
-                    .speed_item => player.speed += amount,
-                    .attack_speed_item => player.attack_speed += amount,
-                    else => {},
-                }
-                spawner.depspawn(entity.id);
-            }
+            const quantity: u32 = 1;
+            const item_count = player.inventory.addItem(stat_kind, quantity);
+            ctx.network_manager.pending_inventory.appendAssumeCapacity(.{
+                .id = player_id,
+                .stat_kind = stat_kind,
+                .set = item_count,
+            });
+            // if (stat_kind == .health) {
+            // addItem already healed (current += value) and raised max; mirror both to the client.
+            const stat = player.inventory.getStat(stat_kind);
+            ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } });
+            ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } });
+            // }
+
+            ctx.spawner.depspawn(entity.id);
+            std.log.debug("item {t}, count: {d}", .{ stat_kind, item_count });
         }
     }
 }

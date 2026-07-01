@@ -32,9 +32,8 @@ pub fn spawn(self: *@This(), entity_info: shared.net.SpawnEntity) void {
 
 pub fn applyStat(entity: *system.Entity, command: shared.net.UpdateStat) void {
     switch (command.amount) {
-        .set_health => |v| entity.health.current = v,
-        .set_max_health => |v| entity.health.max = v,
-        .add_health => |v| entity.health.current += v,
+        .set_current => |v| entity.inventory.setCurrent(command.stat_kind, v),
+        .set_max => |v| entity.inventory.setMax(command.stat_kind, v),
     }
 }
 

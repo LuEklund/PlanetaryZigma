@@ -23,16 +23,15 @@ const Position2D = struct {
     left: f32,
     top: f32,
 };
+const Size2D = struct {
+    width: f32,
+    heigth: f32,
+};
 
 const MouseState = struct {
     position: Position2D = .{ .left = 0, .top = 0 },
     left_click: bool = false,
     right_click: bool = false,
-};
-
-const Size2D = struct {
-    width: f32,
-    heigth: f32,
 };
 
 const Rect = struct {
@@ -47,6 +46,7 @@ pub const Layout = struct {
     pub const Position = union(enum) {
         fixed: Position2D,
         center: void,
+        // percent: Position2D,
     };
     pub const Size = union(enum) {
         fixed: Size2D,
@@ -72,7 +72,10 @@ const Node = struct {
     offset: f32,
 };
 
+writter_buffer: [256]u8 = undefined,
 index_buffer: Buffer,
+text_buffer: [8192]u8 = undefined,
+text_len: usize = 0,
 quads: std.ArrayList(Quad) = .empty,
 nodes: std.ArrayList(Node) = .empty,
 names: std.StringArrayHashMapUnmanaged(u32) = .empty,
@@ -134,11 +137,17 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
 pub fn start(self: *@This(), mouse_state: MouseState) void {
     self.hotUpdate();
     // self.activeUpdate();
+    self.text_len = 0;
     self.left_click_prev = mouse_state.left_click;
     self.nodes.clearRetainingCapacity();
     self.quads.clearRetainingCapacity();
     self.names.clearRetainingCapacity();
     self.mouse_state = mouse_state;
+}
+
+pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
+    const text = std.fmt.bufPrint(&self.writter_buffer, fmt, args) catch unreachable;
+    return text;
 }
 
 pub fn add(self: *@This(), parent: ?[]const u8, layout: Layout) void {
@@ -156,6 +165,13 @@ fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
         .rect = .{ .left = 0, .top = 0, .width = 0, .heigth = 0 },
         .offset = 0,
     });
+
+    if (self.nodes.items[handle].layout.text) |*text| {
+        @memcpy(self.text_buffer[self.text_len .. self.text_len + text.len], text.*[0..]);
+        text.* = self.text_buffer[self.text_len .. self.text_len + text.len];
+        self.text_len += text.len;
+    }
+
     if (layout.name) |add_name| self.names.putAssumeCapacity(add_name, handle);
     for (layout.children) |child| self.addNode(handle, child);
 }

@@ -72,6 +72,8 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
+    // self.should_spawm = true;
+
     if (self.should_spawm and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
             self.last_salary = info.elapsed_time;
@@ -84,7 +86,7 @@ pub fn update(
         const vector_direction: nz.Vec3(f32) = .{ x, y, z };
         if (self.credits >= self.enemy_cost) {
             self.credits -= self.enemy_cost;
-            _ = try self.spawn(.{
+            const spawned = try self.spawn(.{
                 .kind = .skelly,
                 .transform = .{ .position = vector_direction },
                 .collider = .{
@@ -92,8 +94,8 @@ pub fn update(
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
-                .health = .{ .current = 10, .max = 10 },
             });
+            spawned.inventory.initCombat(10, 10, 1, 1);
         }
     }
 
@@ -162,7 +164,6 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
                 .motion_type = .dynamic,
                 .object_layer = .planet_only,
             },
-            .item_amount = @floatFromInt(i + 1),
         });
     }
 

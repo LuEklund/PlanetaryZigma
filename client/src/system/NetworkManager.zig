@@ -208,5 +208,9 @@ fn handleCommand(
                 .new_stage => info.world.teleporter_id = 0,
             }
         },
+        .update_inventory => |inventory| {
+            const entity = info.world.getPtr(inventory.id) orelse return;
+            entity.inventory.setItem(inventory.stat_kind, inventory.set);
+        },
     }
 }
