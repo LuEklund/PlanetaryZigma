@@ -20,16 +20,17 @@ pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
-            const item_count = player.inventory.addItem(item_kind, 1);
+            const item_count = player.inventory.add(item_kind, 1);
+            player.stats.gain(item_kind, 1);
+            player.stats.refresh(player.inventory);
             ctx.network_manager.pending_inventory.appendAssumeCapacity(.{
                 .id = player_id,
                 .item_kind = item_kind,
                 .set = item_count,
             });
-            // One item can touch several stats — mirror each one it moved (addItem already applied them).
-            for (std.enums.values(shared.StatKind)) |stat_kind| {
-                if (item_kind.stats().get(stat_kind) == 0) continue;
-                const stat = player.inventory.getStat(stat_kind);
+            for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
+                if (shared.Item.getAttributeValues(item_kind).get(stat_kind) == 0) continue;
+                const stat = player.stats.get(stat_kind);
                 ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } });
                 ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } });
             }

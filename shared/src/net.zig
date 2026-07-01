@@ -107,7 +107,7 @@ pub const UpdateTransform = struct {
 
 pub const UpdateStat = struct {
     id: u32,
-    stat_kind: root.StatKind,
+    stat_kind: root.Stat.Kind,
     amount: union(enum(u16)) {
         set_current: f16,
         set_max: f16,
@@ -116,7 +116,7 @@ pub const UpdateStat = struct {
 
 pub const UpdateInventory = struct {
     id: u32,
-    item_kind: root.ItemKind,
+    item_kind: root.Item.Kind,
     set: u8,
 };
 

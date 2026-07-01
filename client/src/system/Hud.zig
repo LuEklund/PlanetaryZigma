@@ -91,7 +91,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
 
 fn inGame(info: *const Info, ui: *Ui) !void {
     if (info.world.getPtr(info.world.player_id)) |player| {
-        const health = player.inventory.getStat(.health);
+        const health = player.stats.get(.health);
         const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 30;
         ui.add(null, .{
@@ -123,8 +123,8 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .axis_align = .horizontal,
             .gap = 10,
         });
-        for (std.enums.values(shared.ItemKind)) |item_kind| {
-            const amount = player.inventory.getItem(item_kind);
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+            const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             ui.add("inventory", .{
                 .text = ui.print("{t} : {d}", .{ item_kind, amount }),
@@ -143,8 +143,8 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .axis_align = .verical,
             .gap = 10,
         });
-        for (std.enums.values(shared.StatKind)) |stat_kind| {
-            const stat = player.inventory.getStat(stat_kind);
+        for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
+            const stat = player.stats.get(stat_kind);
             ui.add("stats", .{
                 .text = ui.print("{t} : {d}", .{ stat_kind, stat.current }),
                 .position = .{ .fixed = .{ .left = 0, .top = 0 } },
@@ -159,7 +159,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         const teleporter_active = if (portal) |entity| entity.teleporter.active else false;
         if (teleporter_active == false) {
             if (portal) |entity| {
-                if (nz.vec.length(player.transform.position - entity.transform.position) < shared.Teleporter.intertact_distance) {
+                if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
                     ui.add(
                         null,
                         .{
@@ -176,7 +176,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             var total_boss_max_health: f32 = 0;
             for (info.world.teleporter_bosses.items) |boss_id| {
                 const boss = info.world.getPtr(boss_id) orelse continue;
-                const boss_health = boss.inventory.getStat(.health);
+                const boss_health = boss.stats.get(.health);
                 total_boss_health += boss_health.current;
                 total_boss_max_health += boss_health.max;
             }
@@ -195,7 +195,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             if (portal) |entity| {
                 const teleporter = entity.teleporter;
                 if (teleporter.charged == teleporter.max_charge and info.world.teleporter_bosses.items.len == 0) {
-                    if (nz.vec.length(player.transform.position - entity.transform.position) < shared.Teleporter.intertact_distance) {
+                    if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
                         ui.add(
                             null,
                             .{

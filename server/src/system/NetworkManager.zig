@@ -146,7 +146,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         .flags = .{ .invinsible = true },
                     });
-                    new_player_entity.inventory.initCombat(100, 10, 1, 1);
+                    new_player_entity.stats.init(100, 10, 1, 1);
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
 
@@ -306,12 +306,10 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.steam_server.packet_mutex.unlock(self.io);
 }
 
-// Sync one entity's full stat state to a client — sent right after its spawn packet so the
-// client (which has no base_max and derives nothing) mirrors current/max verbatim.
 fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (!shared.Entity.hasHealth(entity.kind)) return;
-    for (std.enums.values(shared.StatKind)) |stat_kind| {
-        const stat = entity.inventory.getStat(stat_kind);
+    for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
+        const stat = entity.stats.get(stat_kind);
         try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } }, .reliable);
         try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } }, .reliable);
     }

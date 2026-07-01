@@ -210,7 +210,7 @@ fn handleCommand(
         },
         .update_inventory => |inventory| {
             const entity = info.world.getPtr(inventory.id) orelse return;
-            entity.inventory.setItem(inventory.item_kind, inventory.set);
+            entity.inventory.set(inventory.item_kind, inventory.set);
         },
     }
 }

@@ -51,8 +51,9 @@ pub const Entity = struct {
     camera: Camera = .{},
     bullet: BulletData = .{},
     state: shared.Entity.State = .idle,
-    teleporter: shared.TeleporterState = .{},
+    teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
+    stats: shared.Stats = .{},
 
     last_attack: f32 = 0,
 
@@ -204,7 +205,7 @@ pub const Context = struct {
         }
         for (self.world.players.items) |player_id| {
             const player = self.world.getPtr(player_id) orelse continue;
-            if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.Teleporter.charge_distance) {
+            if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
                 teleporter.charged += info.delta_time + 100;
                 teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
             }
