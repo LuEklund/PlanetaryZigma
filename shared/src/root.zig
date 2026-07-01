@@ -82,7 +82,6 @@ pub const Entity = struct {
 
         pub fn setItem(self: *@This(), stat_kind: Stat.Kind, count: u8) void {
             self.getPtrItem(stat_kind).* = count;
-            self.updateStatMax(stat_kind);
         }
 
         pub fn addCurrent(self: *@This(), stat_kind: Stat.Kind, delta: f32) f32 {
@@ -103,6 +102,7 @@ pub const Entity = struct {
             const items = self.getPtrItem(stat_kind);
             const stat = self.getPtrStat(stat_kind);
             const amount = getItemValue(stat_kind);
+            std.log.debug("base: {d}", .{stat.base_max});
             stat.*.max = stat.*.base_max + amount * items.*;
         }
 

@@ -35,6 +35,6 @@ pub fn addHealth(
     if (current <= 0) {
         self.spawner.depspawn(entity.id);
     }
-    self.network_manager.pending_stats.appendAssumeCapacity(.{ .id = entity.id, .amount = .{ .set_health = @floatCast(current) } });
+    self.network_manager.pending_stats.appendAssumeCapacity(.{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } });
     return true;
 }

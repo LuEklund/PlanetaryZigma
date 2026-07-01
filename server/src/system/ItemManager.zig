@@ -29,6 +29,12 @@ pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
                 .stat_kind = stat_kind,
                 .set = item_count,
             });
+            // if (stat_kind == .health) {
+            // addItem already healed (current += value) and raised max; mirror both to the client.
+            const stat = player.inventory.getStat(stat_kind);
+            ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } });
+            ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } });
+            // }
 
             ctx.spawner.depspawn(entity.id);
             std.log.debug("item {t}, count: {d}", .{ stat_kind, item_count });

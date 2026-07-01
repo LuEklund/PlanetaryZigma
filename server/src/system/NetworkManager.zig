@@ -308,13 +308,15 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
     if (shared.Entity.hasHealth(entity.kind)) {
         self.pending_stats.appendAssumeCapacity(.{
             .id = entity.id,
+            .stat_kind = .health,
             .amount = .{
-                .set_max_health = @floatCast(entity.inventory.getStat(.health).max),
+                .set_max = @floatCast(entity.inventory.getStat(.health).max),
             },
         });
         self.pending_stats.appendAssumeCapacity(.{
             .id = entity.id,
-            .amount = .{ .set_health = @floatCast(entity.inventory.getStat(.health).current) },
+            .stat_kind = .health,
+            .amount = .{ .set_current = @floatCast(entity.inventory.getStat(.health).current) },
         });
     }
     return .{

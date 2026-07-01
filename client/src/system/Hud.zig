@@ -135,6 +135,25 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 } },
             });
         }
+        ui.add(null, .{
+            .name = "stats",
+            .position = .{ .fixed = .{ .top = ui.screen_heigth * 0.8, .left = ui.screen_width * 0.8 } },
+            .size = .{ .fixed = .{ .width = 200, .heigth = 200 } },
+            .color = .new(0.5, 0.5, 0.5, 0.7),
+            .axis_align = .verical,
+            .gap = 10,
+        });
+        for (std.enums.values(shared.Entity.Stat.Kind)) |stat_kind| {
+            const stat = player.inventory.getStat(stat_kind);
+            ui.add("stats", .{
+                .text = ui.print("{t} : {d}", .{ stat_kind, stat.current }),
+                .position = .{ .fixed = .{ .left = 0, .top = 0 } },
+                .size = .{ .percent = .{
+                    .heigth = 0.2,
+                    .width = 1,
+                } },
+            });
+        }
 
         const portal = info.world.getPtr(info.world.teleporter_id);
         const teleporter_active = if (portal) |entity| entity.teleporter.active else false;

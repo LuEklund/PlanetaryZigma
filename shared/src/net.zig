@@ -106,9 +106,10 @@ pub const UpdateTransform = struct {
 
 pub const UpdateStat = struct {
     id: u32,
+    stat_kind: Entity.Stat.Kind,
     amount: union(enum(u16)) {
-        set_health: f16,
-        set_max_health: f16,
+        set_current: f16,
+        set_max: f16,
     },
 };
 
