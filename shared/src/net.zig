@@ -1,5 +1,6 @@
 const std = @import("std");
-const Entity = @import("root.zig").Entity;
+const root = @import("root.zig");
+const Entity = root.Entity;
 
 pub const endian: std.builtin.Endian = .little;
 
@@ -106,7 +107,7 @@ pub const UpdateTransform = struct {
 
 pub const UpdateStat = struct {
     id: u32,
-    stat_kind: Entity.Stat.Kind,
+    stat_kind: root.StatKind,
     amount: union(enum(u16)) {
         set_current: f16,
         set_max: f16,
@@ -115,7 +116,7 @@ pub const UpdateStat = struct {
 
 pub const UpdateInventory = struct {
     id: u32,
-    stat_kind: Entity.Stat.Kind,
+    item_kind: root.ItemKind,
     set: u8,
 };
 

@@ -123,11 +123,11 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .axis_align = .horizontal,
             .gap = 10,
         });
-        for (std.enums.values(shared.Entity.Stat.Kind)) |stat_kind| {
-            const amount = player.inventory.getItem(stat_kind);
+        for (std.enums.values(shared.ItemKind)) |item_kind| {
+            const amount = player.inventory.getItem(item_kind);
             if (amount == 0) continue;
             ui.add("inventory", .{
-                .text = ui.print("{t} : {d}", .{ stat_kind, amount }),
+                .text = ui.print("{t} : {d}", .{ item_kind, amount }),
                 .position = .{ .fixed = .{ .left = 0, .top = 0 } },
                 .size = .{ .percent = .{
                     .heigth = 1,
@@ -143,7 +143,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .axis_align = .verical,
             .gap = 10,
         });
-        for (std.enums.values(shared.Entity.Stat.Kind)) |stat_kind| {
+        for (std.enums.values(shared.StatKind)) |stat_kind| {
             const stat = player.inventory.getStat(stat_kind);
             ui.add("stats", .{
                 .text = ui.print("{t} : {d}", .{ stat_kind, stat.current }),

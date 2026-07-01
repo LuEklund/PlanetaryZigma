@@ -52,7 +52,7 @@ pub const Entity = struct {
     bullet: BulletData = .{},
     state: shared.Entity.State = .idle,
     teleporter: shared.TeleporterState = .{},
-    inventory: shared.Entity.Inventory = .{},
+    inventory: shared.Inventory = .{},
 
     last_attack: f32 = 0,
 

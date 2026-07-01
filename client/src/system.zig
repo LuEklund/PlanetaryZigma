@@ -24,7 +24,7 @@ pub const Entity = struct {
     kind: shared.Entity.Kind,
     state: shared.Entity.State = .walk,
     teleporter: shared.TeleporterState = .{},
-    inventory: shared.Entity.Inventory = .{},
+    inventory: shared.Inventory = .{},
 
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,

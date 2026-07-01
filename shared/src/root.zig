@@ -26,103 +26,127 @@ pub const TeleporterState = struct {
     max_charge: f32 = 100,
 };
 
-pub const Entity = struct {
-    pub const Stat = struct {
-        pub const Kind = enum(u16) {
-            health,
-            speed,
-            damage,
-            attack_speed,
-        };
-        current: f32 = 0,
-        base_max: f32 = 0,
-        max: f32 = 0,
-    };
+pub const StatKind = enum(u16) {
+    health,
+    speed,
+    damage,
+    attack_speed,
+};
 
-    pub const Inventory = struct {
-        internal_stats: std.EnumMap(Stat.Kind, Stat) = .initFull(.{}),
-        internal_items: std.EnumMap(Stat.Kind, u8) = .initFull(0),
+pub const Stat = struct {
+    current: f32 = 0,
+    base_max: f32 = 0,
+    max: f32 = 0,
+};
 
-        fn getPtrItem(self: *@This(), stat_kind: Stat.Kind) *u8 {
-            return self.internal_items.getPtr(stat_kind).?;
-        }
+// A per-stat scalar bundle: one item's contribution can touch several stats at once.
+pub const Stats = struct {
+    health: f32 = 0,
+    speed: f32 = 0,
+    damage: f32 = 0,
+    attack_speed: f32 = 0,
 
-        fn getPtrStat(self: *@This(), stat_kind: Stat.Kind) *Stat {
-            return self.internal_stats.getPtr(stat_kind).?;
-        }
-
-        fn setStat(self: *@This(), stat_kind: Stat.Kind, stat: Stat) void {
-            const stat_ptr = self.getPtrStat(stat_kind);
-            stat_ptr.* = stat;
-        }
-
-        pub fn getAttackSpeed(self: *@This()) f32 {
-            const stat = self.getStat(.attack_speed);
-            return 1 / stat.current;
-        }
-
-        pub fn getStat(self: *const @This(), stat_kind: Stat.Kind) Stat {
-            return self.internal_stats.get(stat_kind).?;
-        }
-
-        pub fn getItem(self: *const @This(), stat_kind: Stat.Kind) u8 {
-            return self.internal_items.get(stat_kind).?;
-        }
-
-        pub fn addItem(self: *@This(), stat_kind: Stat.Kind, delta: u8) u8 {
-            const count = self.getPtrItem(stat_kind);
-            count.* += delta;
-            self.updateStatMax(stat_kind);
-            const stat = self.getPtrStat(stat_kind);
-            const amount = getItemValue(stat_kind);
-            stat.*.current += amount * delta;
-
-            return count.*;
-        }
-
-        pub fn setItem(self: *@This(), stat_kind: Stat.Kind, count: u8) void {
-            self.getPtrItem(stat_kind).* = count;
-        }
-
-        pub fn addCurrent(self: *@This(), stat_kind: Stat.Kind, delta: f32) f32 {
-            const stat = self.getPtrStat(stat_kind);
-            stat.current += delta;
-            return stat.current;
-        }
-
-        pub fn setCurrent(self: *@This(), stat_kind: Stat.Kind, value: f32) void {
-            self.getPtrStat(stat_kind).current = value;
-        }
-
-        pub fn setMax(self: *@This(), stat_kind: Stat.Kind, value: f32) void {
-            self.getPtrStat(stat_kind).max = value;
-        }
-
-        fn updateStatMax(self: *@This(), stat_kind: Stat.Kind) void {
-            const items = self.getPtrItem(stat_kind);
-            const stat = self.getPtrStat(stat_kind);
-            const amount = getItemValue(stat_kind);
-            std.log.debug("base: {d}", .{stat.base_max});
-            stat.*.max = stat.*.base_max + amount * items.*;
-        }
-
-        pub fn initCombat(self: *@This(), health: f32, speed: f32, damage: f32, attack_speed: f32) void {
-            self.setStat(.health, .{ .current = health, .base_max = health, .max = health });
-            self.setStat(.speed, .{ .current = speed, .base_max = speed, .max = speed });
-            self.setStat(.damage, .{ .current = damage, .base_max = damage, .max = damage });
-            self.setStat(.attack_speed, .{ .current = attack_speed, .base_max = attack_speed, .max = attack_speed });
-        }
-    };
-
-    pub fn getItemValue(stat_kind: Stat.Kind) f32 {
+    pub fn get(self: Stats, stat_kind: StatKind) f32 {
         return switch (stat_kind) {
-            .health => 10,
-            .speed => 1,
-            .damage => 1,
-            .attack_speed => 0.2,
+            .health => self.health,
+            .speed => self.speed,
+            .damage => self.damage,
+            .attack_speed => self.attack_speed,
         };
     }
+};
 
+pub const ItemKind = enum(u16) {
+    health_potion,
+    speed_potion,
+    damage_potion,
+    attack_speed_potion,
+
+    // One item can move multiple stats.
+    pub fn stats(self: ItemKind) Stats {
+        return switch (self) {
+            .health_potion => .{ .health = 10 },
+            .speed_potion => .{ .speed = 1 },
+            .damage_potion => .{ .damage = 1 },
+            .attack_speed_potion => .{ .attack_speed = 0.2 },
+        };
+    }
+};
+
+pub const Inventory = struct {
+    stats: std.EnumMap(StatKind, Stat) = .initFull(.{}),
+    items: std.EnumMap(ItemKind, u8) = .initFull(0),
+
+    fn getPtrStat(self: *@This(), stat_kind: StatKind) *Stat {
+        return self.stats.getPtr(stat_kind).?;
+    }
+
+    fn setStat(self: *@This(), stat_kind: StatKind, stat: Stat) void {
+        self.getPtrStat(stat_kind).* = stat;
+    }
+
+    pub fn getStat(self: *const @This(), stat_kind: StatKind) Stat {
+        return self.stats.get(stat_kind).?;
+    }
+
+    pub fn getItem(self: *const @This(), item_kind: ItemKind) u8 {
+        return self.items.get(item_kind).?;
+    }
+
+    pub fn getAttackSpeed(self: *const @This()) f32 {
+        return 1 / self.getStat(.attack_speed).current;
+    }
+
+    // Server: pick up an item — bump its count, apply its (multi-stat) contribution to current, refresh maxes.
+    pub fn addItem(self: *@This(), item_kind: ItemKind, delta: u8) u8 {
+        const count = self.items.getPtr(item_kind).?;
+        count.* += delta;
+        const contribution = item_kind.stats();
+        for (std.enums.values(StatKind)) |stat_kind| {
+            self.getPtrStat(stat_kind).current += contribution.get(stat_kind) * @as(f32, @floatFromInt(delta));
+            self.updateStatMax(stat_kind);
+        }
+        return count.*;
+    }
+
+    // Client: mirror an authoritative item count. No local derivation — base_max is server-only.
+    pub fn setItem(self: *@This(), item_kind: ItemKind, count: u8) void {
+        self.items.getPtr(item_kind).?.* = count;
+    }
+
+    pub fn addCurrent(self: *@This(), stat_kind: StatKind, delta: f32) f32 {
+        const stat = self.getPtrStat(stat_kind);
+        stat.current += delta;
+        return stat.current;
+    }
+
+    pub fn setCurrent(self: *@This(), stat_kind: StatKind, value: f32) void {
+        self.getPtrStat(stat_kind).current = value;
+    }
+
+    pub fn setMax(self: *@This(), stat_kind: StatKind, value: f32) void {
+        self.getPtrStat(stat_kind).max = value;
+    }
+
+    fn updateStatMax(self: *@This(), stat_kind: StatKind) void {
+        var bonus: f32 = 0;
+        for (std.enums.values(ItemKind)) |item_kind| {
+            const count = self.items.get(item_kind).?;
+            bonus += item_kind.stats().get(stat_kind) * @as(f32, @floatFromInt(count));
+        }
+        const stat = self.getPtrStat(stat_kind);
+        stat.max = stat.base_max + bonus;
+    }
+
+    pub fn initCombat(self: *@This(), health: f32, speed: f32, damage: f32, attack_speed: f32) void {
+        self.setStat(.health, .{ .current = health, .base_max = health, .max = health });
+        self.setStat(.speed, .{ .current = speed, .base_max = speed, .max = speed });
+        self.setStat(.damage, .{ .current = damage, .base_max = damage, .max = damage });
+        self.setStat(.attack_speed, .{ .current = attack_speed, .base_max = attack_speed, .max = attack_speed });
+    }
+};
+
+pub const Entity = struct {
     pub fn isEnemy(kind: Kind) bool {
         return switch (kind) {
             .skelly, .wizard => true,
@@ -176,12 +200,12 @@ pub const Entity = struct {
             };
         }
 
-        pub fn toStat(kind: Kind) ?Stat.Kind {
+        pub fn toItem(kind: Kind) ?ItemKind {
             return switch (kind) {
-                .health_item => .health,
-                .speed_item => .speed,
-                .damage_item => .damage,
-                .attack_speed_item => .attack_speed,
+                .health_item => .health_potion,
+                .speed_item => .speed_potion,
+                .damage_item => .damage_potion,
+                .attack_speed_item => .attack_speed_potion,
                 else => null,
             };
         }

@@ -237,6 +237,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
+                try sendStats(client, writer, entity);
             }
             var motion_it = self.last_motions.valueIterator();
             while (motion_it.next()) |motion| {
@@ -247,6 +248,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             for (self.pending_spawn.items) |entity_id| {
                 const entity = world.getPtr(entity_id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
+                try sendStats(client, writer, entity);
             }
             for (self.pending_motions.items) |motion| {
                 try client.sendCommand(writer, .{ .update_motion = motion }, .unreliable_no_delay);
@@ -304,21 +306,19 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.steam_server.packet_mutex.unlock(self.io);
 }
 
-fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
-    if (shared.Entity.hasHealth(entity.kind)) {
-        self.pending_stats.appendAssumeCapacity(.{
-            .id = entity.id,
-            .stat_kind = .health,
-            .amount = .{
-                .set_max = @floatCast(entity.inventory.getStat(.health).max),
-            },
-        });
-        self.pending_stats.appendAssumeCapacity(.{
-            .id = entity.id,
-            .stat_kind = .health,
-            .amount = .{ .set_current = @floatCast(entity.inventory.getStat(.health).current) },
-        });
+// Sync one entity's full stat state to a client — sent right after its spawn packet so the
+// client (which has no base_max and derives nothing) mirrors current/max verbatim.
+fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+    if (!shared.Entity.hasHealth(entity.kind)) return;
+    for (std.enums.values(shared.StatKind)) |stat_kind| {
+        const stat = entity.inventory.getStat(stat_kind);
+        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } }, .reliable);
+        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } }, .reliable);
     }
+}
+
+fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+    _ = self;
     return .{
         .id = entity.id,
         .kind = entity.kind,
