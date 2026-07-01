@@ -31,7 +31,7 @@ pub fn addHealth(
     amount: f32,
 ) bool {
     if (!shared.Entity.hasHealth(entity.kind)) return false;
-    const current = entity.inventory.addCurrent(.health, amount);
+    const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) {
         self.spawner.depspawn(entity.id);
     }

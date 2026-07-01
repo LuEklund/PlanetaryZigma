@@ -95,7 +95,7 @@ pub fn update(
                     .object_layer = .moving,
                 },
             });
-            spawned.inventory.initCombat(10, 10, 1, 1);
+            spawned.stats.init(10, 10, 1, 1);
         }
     }
 

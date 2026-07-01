@@ -78,7 +78,7 @@ pub fn update(
         if (hit_id == entity.owner_id) continue;
 
         const hit_entity = self.world.getPtr(hit_id) orelse continue;
-        _ = health_manager.removeHealth(hit_entity, entity.inventory.getStat(.damage).current);
+        _ = health_manager.removeHealth(hit_entity, entity.stats.get(.damage).current);
         spawner.depspawn(entity.id);
     }
 }

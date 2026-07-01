@@ -39,9 +39,9 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
         if (!shared.Entity.isEnemy(enemy.kind)) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
-        const speed = enemy.inventory.getStat(.speed).current;
-        const damage = enemy.inventory.getStat(.damage).current;
-        const attack_speed = enemy.inventory.getStat(.attack_speed).current;
+        const speed = enemy.stats.get(.speed).current;
+        const damage = enemy.stats.get(.damage).current;
+        const attack_speed = enemy.stats.get(.attack_speed).current;
 
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
@@ -95,7 +95,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                                 .object_layer = .moving,
                             },
                         });
-                        spawned.inventory.initCombat(20, 10, 1, 1);
+                        spawned.stats.init(20, 10, 1, 1);
                         if (enemy.state != .attack) {
                             enemy.state = .attack;
                         }
