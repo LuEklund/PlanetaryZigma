@@ -91,7 +91,8 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
 
 fn inGame(info: *const Info, ui: *Ui) !void {
     if (info.world.getPtr(info.world.player_id)) |player| {
-        const healthbar_width: f32 = 200 * player.health.current / player.health.max;
+        const health = player.inventory.getStat(.health);
+        const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 30;
         ui.add(null, .{
             .name = "health",
@@ -108,7 +109,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         ui.add("health", .{
             .position = .center,
             .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width / 2 } },
-            .text = ui.print("{d} / {d}", .{ player.health.current, player.health.max }),
+            .text = ui.print("{d} / {d}", .{ health.current, health.max }),
             .color = .new(0, 0, 0, 0),
         });
 
@@ -122,13 +123,11 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .axis_align = .horizontal,
             .gap = 10,
         });
-        var iterator = player.inventory.iterator();
-        while (iterator.next()) |entry| {
-            const kind = entry.key;
-            const amount = entry.value.*;
+        for (std.enums.values(shared.Entity.Stat.Kind)) |stat_kind| {
+            const amount = player.inventory.getItem(stat_kind);
             if (amount == 0) continue;
             ui.add("inventory", .{
-                .text = ui.print("{t} : {d}", .{ kind, amount }),
+                .text = ui.print("{t} : {d}", .{ stat_kind, amount }),
                 .position = .{ .fixed = .{ .left = 0, .top = 0 } },
                 .size = .{ .percent = .{
                     .heigth = 1,
@@ -158,8 +157,9 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             var total_boss_max_health: f32 = 0;
             for (info.world.teleporter_bosses.items) |boss_id| {
                 const boss = info.world.getPtr(boss_id) orelse continue;
-                total_boss_health += boss.health.current;
-                total_boss_max_health += boss.health.max;
+                const boss_health = boss.inventory.getStat(.health);
+                total_boss_health += boss_health.current;
+                total_boss_max_health += boss_health.max;
             }
             const boss_healthbar_width: f32 = (ui.screen_width * 0.9) * (total_boss_health / total_boss_max_health);
             const boss_healthbar_heigth: f32 = 30;

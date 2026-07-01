@@ -50,15 +50,11 @@ pub const Entity = struct {
     controller: Controller = .{},
     camera: Camera = .{},
     bullet: BulletData = .{},
-    health: HealthManager.Health = .{},
-    attack_speed: f32 = 1,
-    last_attack: f32 = 0,
-    damage: f32 = 1,
-    speed: f32 = 10,
     state: shared.Entity.State = .idle,
-    item_amount: f32 = 0,
     teleporter: shared.TeleporterState = .{},
-    inventory: std.EnumMap(shared.Entity.Kind, u8) = .initFull(0),
+    inventory: shared.Entity.Inventory = .{},
+
+    last_attack: f32 = 0,
 
     pub const Flags = packed struct {
         invinsible: bool = false,

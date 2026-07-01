@@ -143,10 +143,10 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                             .motion_type = .dynamic,
                             .object_layer = .moving,
                         },
-                        .health = .{ .current = 100, .max = 100 },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         .flags = .{ .invinsible = true },
                     });
+                    new_player_entity.inventory.initCombat(100, 10, 1, 1);
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
 
@@ -270,6 +270,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .update_stat = update_stat,
             }, .reliable);
         }
+        // inventory
         for (self.pending_inventory.items) |update_inventory| {
             try client.sendCommand(writer, .{
                 .update_inventory = update_inventory,
@@ -307,11 +308,13 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
     if (shared.Entity.hasHealth(entity.kind)) {
         self.pending_stats.appendAssumeCapacity(.{
             .id = entity.id,
-            .amount = .{ .set_max_health = @floatCast(entity.health.max) },
+            .amount = .{
+                .set_max_health = @floatCast(entity.inventory.getStat(.health).max),
+            },
         });
         self.pending_stats.appendAssumeCapacity(.{
             .id = entity.id,
-            .amount = .{ .set_health = @floatCast(entity.health.current) },
+            .amount = .{ .set_health = @floatCast(entity.inventory.getStat(.health).current) },
         });
     }
     return .{

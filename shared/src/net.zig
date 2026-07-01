@@ -109,17 +109,13 @@ pub const UpdateStat = struct {
     amount: union(enum(u16)) {
         set_health: f16,
         set_max_health: f16,
-        add_health: f16,
     },
 };
 
 pub const UpdateInventory = struct {
     id: u32,
-    item_kind: Entity.Kind,
-    count: union(enum(u16)) {
-        set: u8,
-        add: u8,
-    },
+    stat_kind: Entity.Stat.Kind,
+    set: u8,
 };
 
 pub const UpdateAnimationState = struct {

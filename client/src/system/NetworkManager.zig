@@ -210,11 +210,7 @@ fn handleCommand(
         },
         .update_inventory => |inventory| {
             const entity = info.world.getPtr(inventory.id) orelse return;
-            const item_count = entity.inventory.getPtr(inventory.item_kind).?;
-            switch (inventory.count) {
-                .add => |amount| item_count.* += amount,
-                .set => |amount| item_count.* = amount,
-            }
+            entity.inventory.setItem(inventory.stat_kind, inventory.set);
         },
     }
 }
