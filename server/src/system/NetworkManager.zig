@@ -37,6 +37,7 @@ clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
 last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
+pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_animatoin_state: std.ArrayList(struct { id: u32, state: shared.Entity.State }) = .empty,
@@ -52,6 +53,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.Ste
         .clients = .init(gpa),
         .pending_stats = try .initCapacity(gpa, 4096),
         .pending_animatoin_state = try .initCapacity(gpa, 1024),
+        .pending_inventory = try .initCapacity(gpa, 1024),
         .pending_events = try .initCapacity(gpa, 64),
         .last_motions = last_motions,
     };
@@ -65,6 +67,7 @@ pub fn deinit(self: *@This()) !void {
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
     self.pending_motions.deinit(self.gpa);
+    self.pending_inventory.deinit(self.gpa);
     self.last_motions.deinit();
 }
 
@@ -267,6 +270,12 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .update_stat = update_stat,
             }, .reliable);
         }
+        for (self.pending_inventory.items) |update_inventory| {
+            try client.sendCommand(writer, .{
+                .update_inventory = update_inventory,
+            }, .reliable);
+        }
+
         // animations states
         for (self.pending_animatoin_state.items) |entry| {
             try client.sendCommand(writer, .{
@@ -290,6 +299,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.pending_stats.clearRetainingCapacity();
     self.pending_animatoin_state.clearRetainingCapacity();
     self.pending_events.clearRetainingCapacity();
+    self.pending_inventory.clearRetainingCapacity();
     self.steam_server.packet_mutex.unlock(self.io);
 }
 

@@ -29,6 +29,7 @@ pub const Entity = struct {
     state: shared.Entity.State = .walk,
     health: Health = .{},
     teleporter: shared.TeleporterState = .{},
+    inventory: std.EnumMap(shared.Entity.Kind, u8) = .initFull(0),
 
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,

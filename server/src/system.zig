@@ -58,6 +58,7 @@ pub const Entity = struct {
     state: shared.Entity.State = .idle,
     item_amount: f32 = 0,
     teleporter: shared.TeleporterState = .{},
+    inventory: std.EnumMap(shared.Entity.Kind, u8) = .initFull(0),
 
     pub const Flags = packed struct {
         invinsible: bool = false,
@@ -197,7 +198,7 @@ pub const Context = struct {
         try self.bullet_manager.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
-        try self.item_manager.update(info, &self.spawner, &self.health_manager);
+        try self.item_manager.update(info, self);
 
         const entity = self.world.getPtr(self.world.teleporter_id) orelse return;
         const teleporter = &entity.teleporter;

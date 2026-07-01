@@ -3,3 +3,5 @@ zig-out
 zig-pkg
 
 scrapDir
+
+implementation_ideas/
