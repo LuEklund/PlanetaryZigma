@@ -5,7 +5,6 @@ const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Font = @import("Font.zig");
-const stbTruetype = @import("stb_truetype");
 
 pub const max_ui_quads: usize = 1024;
 
@@ -44,23 +43,19 @@ const Rect = struct {
 pub const Layout = struct {
     pub const AxisAlign = enum(u8) { horizontal, verical };
     pub const Anchor = enum(u8) { start, center, end };
-    pub const Position = union(enum) {
-        fixed: Position2D,
-        center: void,
-        // percent: Position2D,
-    };
     pub const Size = union(enum) {
         fixed: Size2D,
         percent: Size2D,
     };
 
-    position: Position,
+    offset: Position2D = .{ .left = 0, .top = 0 },
     size: Size,
     color: nz.color.Rgba(f32) = .grey,
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     gap: f32 = 0,
     text: ?[]const u8 = null,
+    text_size: f32 = 32,
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
 };
@@ -185,11 +180,25 @@ pub fn end(self: *@This()) void {
     self.pushQuads();
 }
 
-fn anchorOffset(anchor: Layout.Anchor, container: f32, children_size: f32) f32 {
+const TextMetrics = struct { width: f32, top: f32, bottom: f32 };
+
+fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) TextMetrics {
+    var metrics: TextMetrics = .{ .width = 0, .top = 0, .bottom = 0 };
+    for (text) |char| {
+        const index: usize = @intCast(std.math.clamp(@as(c_int, char) - 32, 0, 95));
+        const glyph = glyphs[index];
+        metrics.width += glyph.xadvance * scale;
+        metrics.top = @min(metrics.top, glyph.yoff * scale); // yoff is negative (above baseline)
+        metrics.bottom = @max(metrics.bottom, (glyph.yoff + glyph.heigth) * scale);
+    }
+    return metrics;
+}
+
+fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
     return switch (anchor) {
         .start => 0,
-        .center => (container - children_size) / 2,
-        .end => container - children_size,
+        .center => (available - request) / 2,
+        .end => available - request,
     };
 }
 
@@ -197,7 +206,8 @@ fn resolveLayout(self: *@This()) void {
     // pass 1: sizes (parent before child, so percent resolves against a known parent)
     for (self.nodes.items) |*node| {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
-        switch (node.layout.size) {
+        const layout: *Layout = &node.layout;
+        switch (layout.size) {
             .fixed => |size| {
                 node.rect.width = size.width;
                 node.rect.heigth = size.heigth;
@@ -209,55 +219,46 @@ fn resolveLayout(self: *@This()) void {
         }
     }
 
-    // pass 2: accumulate flowed children's main-axis extent into each parent (bottom-up)
+    // pass 2: each child adds its main-axis size (+gap) into its parent's children_size (bottom-up)
     var index = self.nodes.items.len;
     while (index > 0) {
         index -= 1;
-        const node = self.nodes.items[index];
-        const parent_id = node.parent_id orelse continue;
-        if (node.layout.position == .center) continue; // out of flow, self-positioned
+        const child = self.nodes.items[index];
+        const parent_id = child.parent_id orelse continue;
         const parent = &self.nodes.items[parent_id];
         parent.children_size += parent.layout.gap + switch (parent.layout.axis_align) {
-            .horizontal => node.rect.width,
-            .verical => node.rect.heigth,
+            .horizontal => child.rect.width,
+            .verical => child.rect.heigth,
         };
     }
 
-    // pass 3: positions (parent before child, so its flow cursor is set before children read it)
+    // pass 3: positions (parent before child, so parent.offset is set before its children read it)
     for (self.nodes.items) |*node| {
         const parent_node = if (node.parent_id) |parent_id| &self.nodes.items[parent_id] else null;
         const origin: Rect = if (parent_node) |parent| parent.rect else self.screenRect();
 
-        switch (node.layout.position) {
-            .center => {
-                node.rect.left = origin.left + (origin.width - node.rect.width) / 2;
-                node.rect.top = origin.top + (origin.heigth - node.rect.heigth) / 2;
-            },
-            .fixed => |position| {
-                node.rect.left = origin.left + position.left;
-                node.rect.top = origin.top + position.top;
-                if (parent_node) |parent| {
-                    const child_anchor = parent.layout.child_anchor;
-                    if (parent.layout.axis_align == .horizontal) {
-                        node.rect.left += parent.offset;
-                        node.rect.top += anchorOffset(child_anchor.y, origin.heigth, node.rect.heigth);
-                    } else {
-                        node.rect.top += parent.offset;
-                        node.rect.left += anchorOffset(child_anchor.x, origin.width, node.rect.width);
-                    }
-                    parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
-                        .horizontal => node.rect.width,
-                        .verical => node.rect.heigth,
-                    };
-                }
-            },
+        node.rect.left = origin.left + node.layout.offset.left;
+        node.rect.top = origin.top + node.layout.offset.top;
+        if (parent_node) |parent| {
+            const child_anchor = parent.layout.child_anchor;
+            if (parent.layout.axis_align == .horizontal) {
+                node.rect.left += parent.offset;
+                node.rect.top += startOffset(child_anchor.y, origin.heigth, node.rect.heigth);
+            } else {
+                node.rect.top += parent.offset;
+                node.rect.left += startOffset(child_anchor.x, origin.width, node.rect.width);
+            }
+            parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
+                .horizontal => node.rect.width,
+                .verical => node.rect.heigth,
+            };
         }
 
-        // start this node's own flow cursor at its main-axis alignment
+        // initialize this node's offset (where its first child starts) from its main-axis anchor
         const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
         node.offset = switch (node.layout.axis_align) {
-            .horizontal => anchorOffset(node.layout.child_anchor.x, node.rect.width, extent),
-            .verical => anchorOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
+            .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent),
+            .verical => startOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
         };
     }
 }
@@ -281,25 +282,30 @@ fn pushQuads(self: *@This()) void {
             const color: nz.color.Rgba(f32) = .new(1, 0, 0, 1);
             const colo = color.toVec();
             const font = self.default_font;
+            const anchor = node.layout.child_anchor;
+            const scale = node.layout.text_size / font.size;
+            const metrics = measureText(&font.glyphs, text, scale);
             var pen: struct {
                 x: f32,
                 y: f32,
             } = .{
-                .x = node.rect.left,
-                .y = node.rect.top + font.size,
+                .x = node.rect.left + startOffset(anchor.x, node.rect.width, metrics.width),
+                .y = node.rect.top + startOffset(anchor.y, node.rect.heigth, metrics.bottom - metrics.top) - metrics.top,
             };
             for (text) |char| {
-                var index: c_int = @as(c_int, char) - 32;
-                if (index > 96 or index < 0) index = 96;
-                var quad: stbTruetype.stbtt_aligned_quad = undefined;
-                stbTruetype.stbtt_packedchar.GetPackedQuad(&font.chars, 512, 512, index, &pen.x, &pen.y, &quad, 0);
-
+                const index: usize = @intCast(std.math.clamp(@as(c_int, char) - 32, 0, 95));
+                const glyph = font.glyphs[index];
+                const x0 = pen.x + glyph.xoff * scale;
+                const y0 = pen.y + glyph.yoff * scale;
+                const x1 = x0 + glyph.width * scale;
+                const y1 = y0 + glyph.heigth * scale;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
-                    .{ .position = .{ quad.x0, quad.y0 }, .color = colo, .uv = .{ quad.s0, quad.t0 } },
-                    .{ .position = .{ quad.x1, quad.y0 }, .color = colo, .uv = .{ quad.s1, quad.t0 } },
-                    .{ .position = .{ quad.x1, quad.y1 }, .color = colo, .uv = .{ quad.s1, quad.t1 } },
-                    .{ .position = .{ quad.x0, quad.y1 }, .color = colo, .uv = .{ quad.s0, quad.t1 } },
+                    .{ .position = .{ x0, y0 }, .color = colo, .uv = .{ glyph.u0, glyph.v0 } },
+                    .{ .position = .{ x1, y0 }, .color = colo, .uv = .{ glyph.u1, glyph.v0 } },
+                    .{ .position = .{ x1, y1 }, .color = colo, .uv = .{ glyph.u1, glyph.v1 } },
+                    .{ .position = .{ x0, y1 }, .color = colo, .uv = .{ glyph.u0, glyph.v1 } },
                 } });
+                pen.x += glyph.xadvance * scale;
             }
         }
     }
