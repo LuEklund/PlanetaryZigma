@@ -9,6 +9,18 @@ const AssetServer = @import("shared").AssetServer;
 const RenderResources = @import("RenderResources.zig");
 const check = @import("utils.zig").check;
 
+pub const Glyph = struct {
+    u0: f32,
+    v0: f32,
+    u1: f32,
+    v1: f32,
+    xoff: f32,
+    yoff: f32,
+    width: f32,
+    heigth: f32,
+    xadvance: f32,
+};
+
 material: Material,
 image: Image,
 sampler: c.VkSampler,
@@ -16,7 +28,7 @@ sampler: c.VkSampler,
 device: Device,
 vma: Vma,
 render_resources: *RenderResources,
-chars: [96]stbTruetype.stbtt_packedchar,
+glyphs: [96]Glyph,
 name: []const u8,
 size: f32,
 
@@ -36,7 +48,7 @@ pub fn init(
         .name = try gpa.dupe(u8, path),
         .image = undefined,
         .sampler = undefined,
-        .chars = undefined,
+        .glyphs = undefined,
         .material = undefined,
         .size = 32,
     };
@@ -53,17 +65,80 @@ fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std
     defer gpa.free(content);
     std.debug.print("size:  {d}\n", .{content.len});
 
-    const atlas_w: c_int = 512;
-    const atlas_h: c_int = 512;
+    const atlas_w: usize = 512;
+    const atlas_h: usize = 512;
 
-    const coverage = try gpa.alloc(u8, @intCast(atlas_w * atlas_h));
+    const coverage = try gpa.alloc(u8, atlas_w * atlas_h);
     defer gpa.free(coverage);
+    @memset(coverage, 0);
 
-    var pack: stbTruetype.stbtt_pack_context = undefined;
-    _ = stbTruetype.stbtt_PackBegin(&pack, coverage.ptr, atlas_w, atlas_h, 0, 1, null);
-    stbTruetype.stbtt_PackSetOversampling(&pack, 2, 2);
-    _ = stbTruetype.stbtt_PackFontRange(&pack, content.ptr, 0, self.size, 32, 96, &self.chars);
-    stbTruetype.stbtt_PackEnd(&pack);
+    const padding: c_int = 5;
+    const on_edge: u8 = 128;
+    const pixel_dist_scale: f32 = @as(f32, on_edge) / @as(f32, padding);
+
+    var info: stbTruetype.stbtt_fontinfo = undefined;
+    _ = stbTruetype.stbtt_InitFont(&info, content.ptr, 0);
+    const scale = stbTruetype.stbtt_ScaleForPixelHeight(&info, self.size);
+
+    var pen_x: usize = 1;
+    var pen_y: usize = 1;
+    var row_heigth: usize = 0;
+    for (&self.glyphs, 0..) |*glyph, i| {
+        const codepoint: c_int = @intCast(32 + i);
+        var advance: c_int = 0;
+        var left_bearing: c_int = 0;
+        stbTruetype.stbtt_GetCodepointHMetrics(&info, codepoint, &advance, &left_bearing);
+
+        var width: c_int = 0;
+        var heigth: c_int = 0;
+        var xoff: c_int = 0;
+        var yoff: c_int = 0;
+        const sdf = stbTruetype.stbtt_GetCodepointSDF(
+            &info,
+            scale,
+            codepoint,
+            padding,
+            on_edge,
+            pixel_dist_scale,
+            &width,
+            &heigth,
+            &xoff,
+            &yoff,
+        );
+        defer if (sdf != null) stbTruetype.stbtt_FreeSDF(sdf, null);
+
+        const glyph_w: usize = @intCast(width);
+        const glyph_h: usize = @intCast(heigth);
+        if (sdf != null and glyph_w > 0) {
+            if (pen_x + glyph_w + 1 > atlas_w) {
+                pen_x = 1;
+                pen_y += row_heigth + 1;
+                row_heigth = 0;
+            }
+            for (0..glyph_h) |row| {
+                const src = sdf[row * glyph_w ..][0..glyph_w];
+                const dst = coverage[(pen_y + row) * atlas_w + pen_x ..][0..glyph_w];
+                @memcpy(dst, src);
+            }
+        }
+
+        glyph.* = .{
+            .u0 = @as(f32, @floatFromInt(pen_x)) / atlas_w,
+            .v0 = @as(f32, @floatFromInt(pen_y)) / atlas_h,
+            .u1 = @as(f32, @floatFromInt(pen_x + glyph_w)) / atlas_w,
+            .v1 = @as(f32, @floatFromInt(pen_y + glyph_h)) / atlas_h,
+            .xoff = @floatFromInt(xoff),
+            .yoff = @floatFromInt(yoff),
+            .width = @floatFromInt(glyph_w),
+            .heigth = @floatFromInt(glyph_h),
+            .xadvance = @as(f32, @floatFromInt(advance)) * scale,
+        };
+
+        if (glyph_w > 0) {
+            pen_x += glyph_w + 1;
+            row_heigth = @max(row_heigth, glyph_h);
+        }
+    }
 
     self.image = try .init(
         self.vma,
