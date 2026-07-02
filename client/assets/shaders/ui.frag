@@ -11,7 +11,6 @@ void main() {
     out_frag_color = in_color;
     return;
   }
-  // SDF atlas: distance is stored around 0.5 (the glyph edge); threshold with screen-space AA.
   float dist = texture(atlas, in_uv).r;
   float width = fwidth(dist);
   float coverage = smoothstep(0.5 - width, 0.5 + width, dist);

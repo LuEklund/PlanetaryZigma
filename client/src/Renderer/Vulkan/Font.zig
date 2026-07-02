@@ -72,16 +72,14 @@ fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std
     defer gpa.free(coverage);
     @memset(coverage, 0);
 
-    // SDF: bake each glyph once at self.size, threshold in the shader to scale to any size.
     const padding: c_int = 5;
-    const onedge: u8 = 128;
-    const pixel_dist_scale: f32 = @as(f32, onedge) / @as(f32, padding);
+    const on_edge: u8 = 128;
+    const pixel_dist_scale: f32 = @as(f32, on_edge) / @as(f32, padding);
 
     var info: stbTruetype.stbtt_fontinfo = undefined;
     _ = stbTruetype.stbtt_InitFont(&info, content.ptr, 0);
     const scale = stbTruetype.stbtt_ScaleForPixelHeight(&info, self.size);
 
-    // shelf packer: fill left-to-right, wrap to a new row when out of width
     var pen_x: usize = 1;
     var pen_y: usize = 1;
     var row_heigth: usize = 0;
@@ -95,7 +93,18 @@ fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std
         var heigth: c_int = 0;
         var xoff: c_int = 0;
         var yoff: c_int = 0;
-        const sdf = stbTruetype.stbtt_GetCodepointSDF(&info, scale, codepoint, padding, onedge, pixel_dist_scale, &width, &heigth, &xoff, &yoff);
+        const sdf = stbTruetype.stbtt_GetCodepointSDF(
+            &info,
+            scale,
+            codepoint,
+            padding,
+            on_edge,
+            pixel_dist_scale,
+            &width,
+            &heigth,
+            &xoff,
+            &yoff,
+        );
         defer if (sdf != null) stbTruetype.stbtt_FreeSDF(sdf, null);
 
         const glyph_w: usize = @intCast(width);

@@ -47,6 +47,11 @@ pub const Layout = struct {
         fixed: Size2D,
         percent: Size2D,
     };
+    pub const Text = struct {
+        data: []const u8,
+        size: f32 = 32,
+        color: nz.color.Rgba(f32) = .new(1, 1, 1, 1),
+    };
 
     offset: Position2D = .{ .left = 0, .top = 0 },
     size: Size,
@@ -54,8 +59,7 @@ pub const Layout = struct {
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     gap: f32 = 0,
-    text: ?[]const u8 = null,
-    text_size: f32 = 32,
+    text: ?Text = null,
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
 };
@@ -166,9 +170,10 @@ fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
     });
 
     if (self.nodes.items[handle].layout.text) |*text| {
-        @memcpy(self.text_buffer[self.text_len .. self.text_len + text.len], text.*[0..]);
-        text.* = self.text_buffer[self.text_len .. self.text_len + text.len];
-        self.text_len += text.len;
+        const data = text.data;
+        @memcpy(self.text_buffer[self.text_len .. self.text_len + data.len], data);
+        text.data = self.text_buffer[self.text_len .. self.text_len + data.len];
+        self.text_len += data.len;
     }
 
     if (layout.name) |add_name| self.names.putAssumeCapacity(add_name, handle);
@@ -279,12 +284,11 @@ fn pushQuads(self: *@This()) void {
             .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ -1, -1 } },
         } });
         if (node.layout.text) |text| {
-            const color: nz.color.Rgba(f32) = .new(1, 0, 0, 1);
-            const colo = color.toVec();
+            const color = text.color.toVec();
             const font = self.default_font;
             const anchor = node.layout.child_anchor;
-            const scale = node.layout.text_size / font.size;
-            const metrics = measureText(&font.glyphs, text, scale);
+            const scale = text.size / font.size;
+            const metrics = measureText(&font.glyphs, text.data, scale);
             var pen: struct {
                 x: f32,
                 y: f32,
@@ -292,7 +296,7 @@ fn pushQuads(self: *@This()) void {
                 .x = node.rect.left + startOffset(anchor.x, node.rect.width, metrics.width),
                 .y = node.rect.top + startOffset(anchor.y, node.rect.heigth, metrics.bottom - metrics.top) - metrics.top,
             };
-            for (text) |char| {
+            for (text.data) |char| {
                 const index: usize = @intCast(std.math.clamp(@as(c_int, char) - 32, 0, 95));
                 const glyph = font.glyphs[index];
                 const x0 = pen.x + glyph.xoff * scale;
@@ -300,10 +304,10 @@ fn pushQuads(self: *@This()) void {
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.heigth * scale;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
-                    .{ .position = .{ x0, y0 }, .color = colo, .uv = .{ glyph.u0, glyph.v0 } },
-                    .{ .position = .{ x1, y0 }, .color = colo, .uv = .{ glyph.u1, glyph.v0 } },
-                    .{ .position = .{ x1, y1 }, .color = colo, .uv = .{ glyph.u1, glyph.v1 } },
-                    .{ .position = .{ x0, y1 }, .color = colo, .uv = .{ glyph.u0, glyph.v1 } },
+                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 } },
+                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 } },
+                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 } },
+                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 } },
                 } });
                 pen.x += glyph.xadvance * scale;
             }

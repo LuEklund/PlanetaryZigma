@@ -60,7 +60,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
                         .heigth = 40,
                         .width = 100,
                     },
-                }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = "Refresh" },
+                }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = .{ .data = "Refresh" } },
             } },
         },
     });
@@ -68,7 +68,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
         const server = &network_manager.server_list.servers[i];
         ui.add("servers", .{
             .name = &server.id_str,
-            .text = &server.id_str,
+            .text = .{ .data = &server.id_str },
             .size = .{ .percent = .{
                 .heigth = 0.2,
                 .width = 1.0,
@@ -99,8 +99,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .child_anchor = .{ .x = .center, .y = .center },
             .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
             .color = .new(0, 1, 0, 1),
-            .text = ui.print("{d} / {d}", .{ health.current, health.max }),
-            .text_size = 40,
+            .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
         const inventory_width: f32 = ui.screen_width * 0.8;
@@ -117,7 +116,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             ui.add("inventory", .{
-                .text = ui.print("{t} : {d}", .{ item_kind, amount }),
+                .text = .{ .data = ui.print("{t} : {d}", .{ item_kind, amount }) },
                 .size = .{ .percent = .{
                     .heigth = 1,
                     .width = 0.1,
@@ -135,7 +134,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
             const stat = player.stats.get(stat_kind);
             ui.add("stats", .{
-                .text = ui.print("{t} : {d:.2}", .{ stat_kind, stat.current }),
+                .text = .{ .data = ui.print("{t} : {d:.2}", .{ stat_kind, stat.current }) },
                 .size = .{ .percent = .{
                     .heigth = 0.2,
                     .width = 1,
@@ -153,7 +152,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                         .{
                             .name = "active_teleport",
                             .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                            .text = "E",
+                            .text = .{ .data = "E" },
                             .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
                         },
                     );
@@ -187,7 +186,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                             .{
                                 .name = "active_teleport",
                                 .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                                .text = "E",
+                                .text = .{ .data = "E" },
                                 .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
                             },
                         );
@@ -197,7 +196,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                         null,
                         .{
                             .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                            .text = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}),
+                            .text = .{ .data = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}) },
                             .offset = .{ .top = ui.screen_heigth / 10, .left = ui.screen_width * 0.05 },
                         },
                     );
