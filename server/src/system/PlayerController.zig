@@ -55,6 +55,8 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
+            // try self.spawner.startStage(info.world, self.physics);
+
             // for (info.world.entities.values()) |entry| {
             //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
             // }

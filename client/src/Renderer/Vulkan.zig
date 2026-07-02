@@ -62,12 +62,17 @@ frames: [max_frames_inflight]FrameData,
 ui: Ui,
 
 //Temporary
-scene_layout: descriptor.Layout,
-material_layout: descriptor.Layout,
+scene_descriptor_layout: descriptor.Layout,
+material_descriptor_layout: descriptor.Layout,
+ui_descriptor_layout: descriptor.Layout,
+
+ui_texture_buffer: Buffer,
+
 ui_pipeline_layout: pipeline.Layout,
 pipeline_layout: pipeline.Layout,
 font: *Font,
 skybox: Image,
+item: Image,
 sky_material: Material,
 
 pub const InitOptions = struct {
@@ -121,7 +126,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
-    self.scene_layout = try .init(self.device, &.{
+    self.scene_descriptor_layout = try .init(self.device, &.{
         .{
             .binding = 0,
             .descriptorCount = @sizeOf(FrameData.GPUScene),
@@ -129,7 +134,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
             .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
         },
     }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
-    self.material_layout = try .init(self.device, &.{
+    self.material_descriptor_layout = try .init(self.device, &.{
         .{
             .binding = 0,
             .descriptorCount = 1,
@@ -139,7 +144,78 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         },
     }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
 
-    self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_layout);
+    self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_descriptor_layout);
+
+    //TODO: TEMPORARY MOVE THINGS!
+
+    {
+        var decoded_images = try gpa.alloc(gltf.DecodedImage, 1);
+        defer {
+            for (decoded_images) |*decoded_image| decoded_image.deinit();
+            gpa.free(decoded_images);
+        }
+        @memset(decoded_images, .{});
+
+        var decode_tasks = try gpa.alloc(gltf.ImageDecodeTask, 1);
+        defer {
+            gpa.free(decode_tasks);
+        }
+
+        decode_tasks[0] = .{ .result = &decoded_images[0] };
+        decode_tasks[0].uri = "assets/textures/damage.png";
+
+        try gltf.decodeImages(gpa, decode_tasks);
+
+        const width: u32 = @intCast(decoded_images[0].width);
+        const height: u32 = @intCast(decoded_images[0].height);
+
+        self.item = try .init(
+            self.vma,
+            self.device,
+            c.VK_FORMAT_R8G8B8A8_UNORM,
+            .{
+                .width = width,
+                .height = height,
+                .depth = 1,
+            },
+            .@"2d",
+            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+            c.VK_IMAGE_ASPECT_COLOR_BIT,
+            false,
+        );
+        try self.item.uploadDataToImage(
+            self.vma,
+            self.device,
+            decoded_images[0].pixels,
+            4,
+            0,
+        );
+    }
+    self.ui_descriptor_layout = try .init(self.device, &.{
+        .{
+            .binding = 0,
+            .descriptorCount = 64,
+            .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImmutableSamplers = null,
+            .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+    }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
+
+    var binding_offset: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(self.device.handle, self.ui_descriptor_layout.handle, 0, &binding_offset);
+
+    var set_size: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutSizeEXT(self.device.handle, self.ui_descriptor_layout.handle, &set_size);
+
+    self.ui_texture_buffer = try .init(
+        self.device,
+        self.vma,
+        u8,
+        set_size * 64,
+        c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+            c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
+    );
 
     self.font = try .init(
         gpa,
@@ -149,6 +225,33 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         asset_server,
         &self.render_resources,
     );
+
+    for (0..64) |i| {
+        const sampler = if (i == 1) self.font.sampler else self.render_resources.samplers.items[0];
+        const image_view = switch (i) {
+            1 => self.font.image.vk_imageview,
+            2 => self.item.vk_imageview,
+            else => self.render_resources.images.items[0].vk_imageview,
+        };
+
+        const img_info: c.VkDescriptorImageInfo = .{
+            .sampler = sampler,
+            .imageView = image_view,
+            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+        const get_info: c.VkDescriptorGetInfoEXT = .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .data = .{ .pCombinedImageSampler = &img_info },
+        };
+        const material_dst: [*]u8 = @ptrCast(self.ui_texture_buffer.info.pMappedData);
+        ext.vkGetDescriptorEXT(
+            self.device.handle,
+            &get_info,
+            self.render_resources.combined_image_sampler_descriptor_size,
+            material_dst + binding_offset + i * self.render_resources.combined_image_sampler_descriptor_size,
+        );
+    }
 
     self.ui = try .init(
         gpa,
@@ -162,13 +265,13 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     self.pipeline_layout = try .init(
         self.device,
         Shader.AnimationPushConstant,
-        &.{ self.scene_layout.handle, self.material_layout.handle },
+        &.{ self.scene_descriptor_layout.handle, self.material_descriptor_layout.handle },
     );
 
     self.ui_pipeline_layout = try .init(
         self.device,
         Shader.UiPushConstant,
-        &.{self.material_layout.handle},
+        &.{self.ui_descriptor_layout.handle},
     );
     self.renderables = .{};
     const Spec = struct { path: ?[]const u8, offset: nz.Transform3D(f32), skinned: bool };
@@ -202,14 +305,14 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         path: []const u8,
         push_constant_type: type,
         stage_bit: c.VkShaderStageFlagBits,
-        layout: enum { scene_material, material },
+        layout: enum { scene_material, material, ui },
     };
     const shader_specs = std.EnumArray(Shader.Kind, ShaderSpec).init(.{
         .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
         .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .material },
+        .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
+        .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
         .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .material },
         .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .frag_planet = .{ .path = "shaders/planet.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
@@ -217,8 +320,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     inline for (comptime std.enums.values(Shader.Kind)) |kind| {
         const spec = shader_specs.get(kind);
         const layouts: []const c.VkDescriptorSetLayout = switch (spec.layout) {
-            .scene_material => &.{ self.scene_layout.handle, self.material_layout.handle },
-            .material => &.{self.material_layout.handle},
+            .scene_material => &.{ self.scene_descriptor_layout.handle, self.material_descriptor_layout.handle },
+            .material => &.{self.material_descriptor_layout.handle},
+            .ui => &.{self.ui_descriptor_layout.handle},
         };
         self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
     }
@@ -320,8 +424,10 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     }
     self.skeletons.deinit();
 
-    self.material_layout.deinit(self.device);
-    self.scene_layout.deinit(self.device);
+    self.material_descriptor_layout.deinit(self.device);
+    self.scene_descriptor_layout.deinit(self.device);
+    self.ui_descriptor_layout.deinit(self.device);
+    self.ui_texture_buffer.deinit(self.vma);
     self.pipeline_layout.deinit(self.device);
     self.ui_pipeline_layout.deinit(self.device);
     var shader_it = self.shaders.iterator();
@@ -692,7 +798,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     const ui_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-            .address = self.font.material.buffer.getGPUAddress(),
+            .address = self.ui_texture_buffer.getGPUAddress(),
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },
