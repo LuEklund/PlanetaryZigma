@@ -43,6 +43,7 @@ const Rect = struct {
 
 pub const Layout = struct {
     pub const AxisAlign = enum(u8) { horizontal, verical };
+    pub const Anchor = enum(u8) { start, center, end };
     pub const Position = union(enum) {
         fixed: Position2D,
         center: void,
@@ -57,6 +58,7 @@ pub const Layout = struct {
     size: Size,
     color: nz.color.Rgba(f32) = .grey,
     axis_align: AxisAlign = .horizontal,
+    child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     gap: f32 = 0,
     text: ?[]const u8 = null,
     name: ?[]const u8 = null,
@@ -70,6 +72,7 @@ const Node = struct {
     parent_id: ?u32,
     rect: Rect,
     offset: f32,
+    children_size: f32,
 };
 
 writter_buffer: [256]u8 = undefined,
@@ -164,6 +167,7 @@ fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
         .parent_id = parent_id,
         .rect = .{ .left = 0, .top = 0, .width = 0, .heigth = 0 },
         .offset = 0,
+        .children_size = 0,
     });
 
     if (self.nodes.items[handle].layout.text) |*text| {
@@ -181,16 +185,18 @@ pub fn end(self: *@This()) void {
     self.pushQuads();
 }
 
-fn resolveLayout(self: *@This()) void {
-    for (self.nodes.items) |*node| {
-        const parent_node = if (node.parent_id) |parent_id| &self.nodes.items[parent_id] else null;
-        const origin: Rect = if (parent_node) |parent| parent.rect else .{
-            .left = 0,
-            .top = 0,
-            .width = self.screen_width,
-            .heigth = self.screen_heigth,
-        };
+fn anchorOffset(anchor: Layout.Anchor, container: f32, children_size: f32) f32 {
+    return switch (anchor) {
+        .start => 0,
+        .center => (container - children_size) / 2,
+        .end => container - children_size,
+    };
+}
 
+fn resolveLayout(self: *@This()) void {
+    // pass 1: sizes (parent before child, so percent resolves against a known parent)
+    for (self.nodes.items) |*node| {
+        const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
         switch (node.layout.size) {
             .fixed => |size| {
                 node.rect.width = size.width;
@@ -201,30 +207,63 @@ fn resolveLayout(self: *@This()) void {
                 node.rect.heigth = percent.heigth * origin.heigth;
             },
         }
-
-        var offset_top: f32 = 0;
-        var offset_left: f32 = 0;
-        if (parent_node) |parent| {
-            if (parent.layout.axis_align == .horizontal) offset_left = parent.offset else offset_top = parent.offset;
-        }
-        switch (node.layout.position) {
-            .fixed => |position| {
-                node.rect.left = origin.left + position.left + offset_left;
-                node.rect.top = origin.top + position.top + offset_top;
-            },
-            .center => {
-                node.rect.left = origin.left + (origin.width - node.rect.width - offset_left) / 2;
-                node.rect.top = origin.top + (origin.heigth - node.rect.heigth - offset_top) / 2;
-            },
-        }
-
-        if (parent_node) |parent| {
-            parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
-                .horizontal => node.rect.width,
-                .verical => node.rect.heigth,
-            };
-        }
     }
+
+    // pass 2: accumulate flowed children's main-axis extent into each parent (bottom-up)
+    var index = self.nodes.items.len;
+    while (index > 0) {
+        index -= 1;
+        const node = self.nodes.items[index];
+        const parent_id = node.parent_id orelse continue;
+        if (node.layout.position == .center) continue; // out of flow, self-positioned
+        const parent = &self.nodes.items[parent_id];
+        parent.children_size += parent.layout.gap + switch (parent.layout.axis_align) {
+            .horizontal => node.rect.width,
+            .verical => node.rect.heigth,
+        };
+    }
+
+    // pass 3: positions (parent before child, so its flow cursor is set before children read it)
+    for (self.nodes.items) |*node| {
+        const parent_node = if (node.parent_id) |parent_id| &self.nodes.items[parent_id] else null;
+        const origin: Rect = if (parent_node) |parent| parent.rect else self.screenRect();
+
+        switch (node.layout.position) {
+            .center => {
+                node.rect.left = origin.left + (origin.width - node.rect.width) / 2;
+                node.rect.top = origin.top + (origin.heigth - node.rect.heigth) / 2;
+            },
+            .fixed => |position| {
+                node.rect.left = origin.left + position.left;
+                node.rect.top = origin.top + position.top;
+                if (parent_node) |parent| {
+                    const child_anchor = parent.layout.child_anchor;
+                    if (parent.layout.axis_align == .horizontal) {
+                        node.rect.left += parent.offset;
+                        node.rect.top += anchorOffset(child_anchor.y, origin.heigth, node.rect.heigth);
+                    } else {
+                        node.rect.top += parent.offset;
+                        node.rect.left += anchorOffset(child_anchor.x, origin.width, node.rect.width);
+                    }
+                    parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
+                        .horizontal => node.rect.width,
+                        .verical => node.rect.heigth,
+                    };
+                }
+            },
+        }
+
+        // start this node's own flow cursor at its main-axis alignment
+        const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
+        node.offset = switch (node.layout.axis_align) {
+            .horizontal => anchorOffset(node.layout.child_anchor.x, node.rect.width, extent),
+            .verical => anchorOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
+        };
+    }
+}
+
+fn screenRect(self: *const @This()) Rect {
+    return .{ .left = 0, .top = 0, .width = self.screen_width, .heigth = self.screen_heigth };
 }
 
 fn pushQuads(self: *@This()) void {

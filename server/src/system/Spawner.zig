@@ -72,7 +72,7 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    // self.should_spawm = true;
+    self.should_spawm = false;
 
     if (self.should_spawm and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
