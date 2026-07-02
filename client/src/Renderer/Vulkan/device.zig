@@ -133,9 +133,15 @@ pub const Logical = struct {
             .inlineUniformBlock = c.VK_TRUE,
         };
 
+        var descriptor_indexing_feature: c.VkPhysicalDeviceDescriptorIndexingFeatures = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+            .pNext = &inline_uniform_block_features,
+            .shaderSampledImageArrayNonUniformIndexing = c.VK_TRUE,
+        };
+
         const device_info = c.VkDeviceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &inline_uniform_block_features,
+            .pNext = &descriptor_indexing_feature,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queue_info,
             .pEnabledFeatures = &features,

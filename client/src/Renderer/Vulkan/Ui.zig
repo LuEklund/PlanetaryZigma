@@ -12,6 +12,9 @@ pub const Vertex = extern struct {
     position: [2]f32,
     uv: [2]f32,
     color: [4]f32,
+    texture_index: u32 = 0,
+    is_sdf: u32 = 0,
+    _: [2]u32 = .{ 0, 0 },
 };
 
 pub const Quad = struct {
@@ -58,6 +61,7 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .grey,
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
+    texture_index: u32 = 0,
     gap: f32 = 0,
     text: ?Text = null,
     name: ?[]const u8 = null,
@@ -278,10 +282,10 @@ fn pushQuads(self: *@This()) void {
         const colors: [4]f32 = node.layout.color.toVec();
         //left_top, right_top, right_bottom, left_bottom
         self.quads.appendAssumeCapacity(.{ .vertices = .{
-            .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ -1, -1 } },
-            .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ -1, -1 } },
-            .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ -1, -1 } },
-            .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ -1, -1 } },
+            .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture_index },
+            .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture_index },
+            .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture_index },
+            .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture_index },
         } });
         if (node.layout.text) |text| {
             const color = text.color.toVec();
@@ -304,10 +308,10 @@ fn pushQuads(self: *@This()) void {
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.heigth * scale;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
-                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 } },
-                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 } },
-                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 } },
-                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 } },
+                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = 1 },
+                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = 1 },
+                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 }, .is_sdf = 1, .texture_index = 1 },
+                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 }, .is_sdf = 1, .texture_index = 1 },
                 } });
                 pen.x += glyph.xadvance * scale;
             }

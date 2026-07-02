@@ -121,8 +121,17 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .heigth = 1,
                     .width = 0.1,
                 } },
+                .color = .new(1, 1, 1, 1),
+                .texture_index = 2,
             });
         }
+        // ui.add(null, .{
+        //     .size = .{ .percent = .{
+        //         .heigth = 1,
+        //         .width = 1,
+        //     } },
+        //     .texture_index = 1,
+        // });
         ui.add(null, .{
             .name = "stats",
             .offset = .{ .top = ui.screen_heigth * 0.8, .left = ui.screen_width * 0.8 },
