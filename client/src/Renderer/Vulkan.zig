@@ -434,6 +434,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
     self.skybox.deinit(self.vma, self.device);
     self.sky_material.deinit(self.gpa, self.vma);
+    self.item.deinit(self.vma, self.device);
     self.ui.deinit(gpa, self.vma);
     self.font.deinit(gpa, self.vma, self.device);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);

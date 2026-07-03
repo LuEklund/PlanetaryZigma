@@ -7,10 +7,6 @@
         .shared = .{
             .path = "../shared/",
         },
-        .zphysics = .{
-            .url = "git+https://github.com/nonya123456/zphysics.git#446db48f8ff0838be9c6625060b9edd5269906a0",
-            .hash = "zphysics-0.2.0-dev-nZDEAG_hQgDB8EPKuM1_q5ki7ty4Hu_n4PrxnNPgyJCo",
-        },
         .zig_steamworks = .{
             .url = "git+https://github.com/menduz/zig-steamworks.git#7ef8943e7aa9e47abc057e32bc1e1ad63b8ca86d",
             .hash = "zig_steamworks-0.0.0-QF-Y-5rWxgB893nUytb-BxR5B8XE8FS4CUA2YoaolUSB",

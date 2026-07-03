@@ -22,7 +22,6 @@ pub fn deinit(self: *@This()) void {
 pub fn update(self: *@This(), info: *const system.Info, network_manager: *NetworkManager) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const body_interface = self.physics.physics_system.getBodyInterfaceMut();
 
     for (info.world.entities.values()) |*player| {
         if (player.kind != .player) continue;
@@ -134,7 +133,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             if (input.keys.space) vertical += speed;
             if (input.keys.l_shift) vertical -= speed;
 
-            Physics.moveOnPlanet(body_interface, id, planet_up, dir, speed, vertical);
+            Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
             const moving = nz.vec.length(dir) > std.math.floatEps(f32);
             const desired: shared.Entity.State =
                 if (attack_speed < 1.0) .attack else if (moving) .walk else .idle;
@@ -143,16 +142,15 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             player.state = desired;
 
             // Body yaw tracks camera yaw (pitch stays on the camera only).
-            body_interface.setRotation(id, camera.yaw_rotation.toVec(), .activate);
+            Physics.setRotation(id, camera.yaw_rotation);
             transform.rotation = camera.yaw_rotation;
 
-            // if (input.forward) std.log.debug("new pos {any}", .{body_interface.getPosition(id)});
             if (input.keys.r) {
                 camera.* = .{};
                 transform.* = .{};
-                body_interface.setLinearVelocity(id, .{ 0, 0, 0 });
-                body_interface.setPosition(id, .{ 0, 0, 0 }, .activate);
-                body_interface.setRotation(id, .{ 0, 0, 0, 1 }, .activate);
+                Physics.setLinearVelocity(id, .{ 0, 0, 0 });
+                Physics.setPosition(id, .{ 0, 0, 0 });
+                Physics.setRotation(id, transform.rotation);
             }
         }
     }
