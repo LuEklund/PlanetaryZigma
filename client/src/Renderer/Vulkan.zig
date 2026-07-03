@@ -145,52 +145,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
 
     self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_descriptor_layout);
-
-    //TODO: TEMPORARY MOVE THINGS!
-
-    {
-        var decoded_images = try gpa.alloc(gltf.DecodedImage, 1);
-        defer {
-            for (decoded_images) |*decoded_image| decoded_image.deinit();
-            gpa.free(decoded_images);
-        }
-        @memset(decoded_images, .{});
-
-        var decode_tasks = try gpa.alloc(gltf.ImageDecodeTask, 1);
-        defer {
-            gpa.free(decode_tasks);
-        }
-
-        decode_tasks[0] = .{ .result = &decoded_images[0] };
-        decode_tasks[0].uri = "assets/textures/damage.png";
-
-        try gltf.decodeImages(gpa, decode_tasks);
-
-        const width: u32 = @intCast(decoded_images[0].width);
-        const height: u32 = @intCast(decoded_images[0].height);
-
-        self.item = try .init(
-            self.vma,
-            self.device,
-            c.VK_FORMAT_R8G8B8A8_UNORM,
-            .{
-                .width = width,
-                .height = height,
-                .depth = 1,
-            },
-            .@"2d",
-            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-            c.VK_IMAGE_ASPECT_COLOR_BIT,
-            false,
-        );
-        try self.item.uploadDataToImage(
-            self.vma,
-            self.device,
-            decoded_images[0].pixels,
-            4,
-            0,
-        );
-    }
+    try self.render_resources.loadUiImages(gpa, self.device, self.vma, &.{ "damage.png", "crosshair.png" });
     self.ui_descriptor_layout = try .init(self.device, &.{
         .{
             .binding = 0,
@@ -229,8 +184,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     for (0..64) |i| {
         const sampler = if (i == 1) self.font.sampler else self.render_resources.samplers.items[0];
         const image_view = switch (i) {
+            0 => self.render_resources.images.items[0].vk_imageview,
             1 => self.font.image.vk_imageview,
-            2 => self.item.vk_imageview,
+            2...3 => self.render_resources.images.items[i - 1].vk_imageview,
             else => self.render_resources.images.items[0].vk_imageview,
         };
 
@@ -327,14 +283,14 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
     }
 
-    var decoded_images = try gpa.alloc(gltf.DecodedImage, 1);
+    var decoded_images = try gpa.alloc(Image.Decoded, 1);
     defer {
         for (decoded_images) |*decoded_image| decoded_image.deinit();
         gpa.free(decoded_images);
     }
     @memset(decoded_images, .{});
 
-    var decode_tasks = try gpa.alloc(gltf.ImageDecodeTask, 1);
+    var decode_tasks = try gpa.alloc(Image.DecodeTask, 1);
     defer {
         gpa.free(decode_tasks);
     }
@@ -342,7 +298,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     decode_tasks[0] = .{ .result = &decoded_images[0] };
     decode_tasks[0].uri = "assets/textures/skybox_cubemap.png";
 
-    try gltf.decodeImages(gpa, decode_tasks);
+    try Image.decodeImages(gpa, decode_tasks);
 
     const width: u32 = @intCast(decoded_images[0].width);
     const face_size: u32 = @divTrunc(width, 4);
