@@ -42,7 +42,6 @@ pub fn update(
 ) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const query = self.physics.physics_system.getNarrowPhaseQuery();
     const dt = info.delta_time;
 
     self.to_despawn.clearRetainingCapacity();
@@ -62,19 +61,16 @@ pub fn update(
         entity.velocity = bullet.velocity;
         const travel = entity.transform.position - previous_position;
 
-        const ray_hit = query.castRay(.{
-            .origin = .{ previous_position[0], previous_position[1], previous_position[2], 1 },
-            .direction = .{ travel[0], travel[1], travel[2], 0 },
-        }, .{});
-        if (!ray_hit.has_hit) continue;
+        const ray_hit = Physics.c.b3World_CastRayClosest(
+            self.physics.world,
+            .{ .x = previous_position[0], .y = previous_position[1], .z = previous_position[2] },
+            .{ .x = travel[0], .y = travel[1], .z = travel[2] },
+            Physics.c.b3DefaultQueryFilter(),
+        );
+        if (!ray_hit.hit) continue;
 
-        const lock_interface = self.physics.physics_system.getBodyLockInterface();
-        var hit_body_lock: Physics.zphy.BodyLockRead = .{};
-        hit_body_lock.lock(lock_interface, ray_hit.hit.body_id);
-        defer hit_body_lock.unlock();
-
-        const hit_body = hit_body_lock.body orelse continue;
-        const hit_id: u32 = @intCast(hit_body.user_data);
+        const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
+        const hit_id: u32 = @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)));
         if (hit_id == entity.owner_id) continue;
 
         const hit_entity = self.world.getPtr(hit_id) orelse continue;

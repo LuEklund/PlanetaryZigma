@@ -1,0 +1,11 @@
+.{
+    .name = .box3d_spike,
+    .version = "0.0.0",
+    .fingerprint = 0xa851cbf8341698bd,
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "main.zig",
+    },
+}

@@ -23,7 +23,7 @@ pub fn deinit(self: *@This()) !void {
     _ = self;
 }
 
-pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health_manager: *HealthManager, network_manager: *NetworkManager, spawner: *Spawner) !void {
+pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager, network_manager: *NetworkManager, spawner: *Spawner) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -32,8 +32,6 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
 
     if (info.world.players.items.len == 0) return;
     const player = info.world.getPtr(info.world.players.getLast()) orelse return;
-
-    const body_interface = physics.physics_system.getBodyInterfaceMut();
 
     for (info.world.entities.values()) |*enemy| {
         if (!shared.Entity.isEnemy(enemy.kind)) continue;
@@ -60,7 +58,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
         if (nz.vec.length(fwd_proj) > 0.0001) {
             const forward = nz.vec.normalize(fwd_proj);
             const rot = nz.quat.Hamiltonian(f32).lookAt(forward, planet_up).normalize();
-            body_interface.setRotation(body_id, rot.toVec(), .activate);
+            Physics.setRotation(body_id, rot);
         }
 
         if (distance < 4 and info.elapsed_time - enemy.last_attack >= attack_speed) {
@@ -77,7 +75,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                     network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
                 enemy.state = desired;
                 if (distance < 3) continue;
-                Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), speed, 0);
+                Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
             },
             .wizard => {
                 // std.log.debug("elapsed_time {d}, cooldown {d}, attack_spped {d}", .{ info.elapsed_time, info.elapsed_time - enemy.last_attack, enemy.attack_speed });
@@ -108,7 +106,7 @@ pub fn update(self: *@This(), info: *const Info, physics: *const Physics, health
                         enemy.state = .walk;
                         network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
                     }
-                    Physics.moveOnPlanet(body_interface, body_id, planet_up, enemy.transform.forward(), speed, 0);
+                    Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
                 }
             },
             else => unreachable,

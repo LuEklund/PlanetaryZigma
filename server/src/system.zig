@@ -190,7 +190,7 @@ pub const Context = struct {
         defer tracy_scope.end();
         try self.network_manager.update(info, &self.spawner);
         try self.player_controller.update(info, &self.network_manager);
-        try self.enemy_manager.update(info, &self.physics, &self.health_manager, &self.network_manager, &self.spawner);
+        try self.enemy_manager.update(info, &self.health_manager, &self.network_manager, &self.spawner);
         try self.physics.update(info);
         try self.bullet_manager.update(info, &self.health_manager, &self.spawner);
         try self.camera_controller.update(info);
