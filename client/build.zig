@@ -144,6 +144,10 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
+
+    // Hot-reload dev loop: rebuild only the .so, skip the 7s exe. Pair with `zig build lib --watch`.
+    const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
+    lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
 }
 
 fn compileShaders(b: *std.Build) void {
