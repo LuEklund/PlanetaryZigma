@@ -161,7 +161,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                         .{
                             .name = "active_teleport",
                             .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                            .text = .{ .data = "E" },
+                            .text = .{ .data = "eE" },
                             .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
                         },
                     );
