@@ -41,6 +41,7 @@ pub fn init(
 
 pub fn deinit(self: *@This()) void {
     self.pending_despawn.deinit(self.gpa);
+    self.pending_spawn.deinit(self.gpa);
 }
 
 pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
@@ -126,6 +127,9 @@ pub fn update(
 }
 
 pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
+    for (world.entities.values()) |entry| {
+        if (entry.kind != .player) self.depspawn(entry.id);
+    }
     const rand = world.prng.random();
     world.teleporter_id = 0;
     self.should_spawm = true;

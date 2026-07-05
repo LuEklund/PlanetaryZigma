@@ -101,9 +101,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                         wizard.stats.init(100, 10, 1, 0.25);
                     } else {
                         if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
-                            for (info.world.entities.values()) |entry| {
-                                if (entry.kind != .player) self.spawner.depspawn(entry.id);
-                            }
                             try self.spawner.startStage(info.world, self.physics);
                         }
                     }

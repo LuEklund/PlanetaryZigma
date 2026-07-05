@@ -6,11 +6,6 @@ const Spawner = @import("Spawner.zig");
 const HealthManager = @import("HealthManager.zig");
 const Info = system.Info;
 
-pub fn init(self: *@This()) !void {
-    _ = self;
-    return;
-}
-
 pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {

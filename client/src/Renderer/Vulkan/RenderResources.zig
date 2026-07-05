@@ -144,12 +144,12 @@ pub fn loadUiImages(self: *@This(), gpa: std.mem.Allocator, device: Device, vma:
     @memset(decoded_images, .{});
 
     var decode_tasks = try gpa.alloc(Image.DecodeTask, paths.len);
-    // defer {
-    // gpa.free(decode_tasks);
-    // for (0..decode_tasks.len) |i| {
-    //     if (decode_tasks[i].uri) |uri| gpa.free(uri);
-    // }
-    // }
+    defer {
+        for (0..decode_tasks.len) |i| {
+            if (decode_tasks[i].uri) |uri| gpa.free(uri);
+        }
+        gpa.free(decode_tasks);
+    }
 
     var buffer: [256]u8 = undefined;
     for (0..paths.len) |i| {

@@ -122,26 +122,38 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .width = 0.1,
                 } },
                 .color = .new(1, 1, 1, 1),
-                .texture_index = 2,
+                .texture = .damage_item,
             });
         }
         ui.add(null, .{
+            .name = "crosshair",
             .size = .{
-                .percent = .{
-                    .heigth = 0.1,
-                    .width = 0.1,
+                .fixed = .{ .heigth = 0, .width = 0 },
+            },
+            .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
+            .child_anchor = .{ .x = .center, .y = .center },
+            .children = &.{
+                .{
+                    .size = .{
+                        .fixed = .{
+                            .heigth = 100,
+                            .width = 100,
+                        },
+                    },
+                    .color = .new(1, 1, 1, 1),
+                    .texture = .crosshair,
                 },
             },
-            .color = .new(1, 1, 1, 1),
-            .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
-            .texture_index = 3,
         });
+        const stats_box_width: u32 = 200;
+        const stats_box_heigth: u32 = 200;
         ui.add(null, .{
             .name = "stats",
-            .offset = .{ .top = ui.screen_heigth * 0.8, .left = ui.screen_width * 0.8 },
-            .size = .{ .fixed = .{ .width = 200, .heigth = 200 } },
+            .offset = .{ .top = ui.screen_heigth - stats_box_heigth, .left = ui.screen_width - stats_box_width },
+            .size = .{ .fixed = .{ .width = stats_box_width, .heigth = stats_box_heigth } },
             .color = .new(0.5, 0.5, 0.5, 0.7),
             .axis_align = .verical,
+            // .child_anchor = .{ .x = .end, .y = .start },
             .gap = 10,
         });
         for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
@@ -165,7 +177,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                         .{
                             .name = "active_teleport",
                             .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                            .text = .{ .data = "eE" },
+                            .text = .{ .data = "E" },
                             .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
                         },
                     );

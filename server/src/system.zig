@@ -102,6 +102,8 @@ pub const World = struct {
             entity.deinit(self.gpa);
         }
         self.entities.deinit(self.gpa);
+        self.players.deinit(self.gpa);
+        self.teleport_bosses.deinit(self.gpa);
     }
 
     pub fn spawn(self: *@This()) !*Entity {
@@ -172,7 +174,6 @@ pub const Context = struct {
         try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
         try self.player_controller.init(&self.physics, &self.spawner);
         try self.health_manager.init(&self.network_manager, &self.spawner);
-        try self.item_manager.init();
 
         //TODO: Move somewhere smarter when know how to move stages.
         try self.spawner.startStage(self.world, &self.physics);

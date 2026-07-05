@@ -72,7 +72,6 @@ ui_pipeline_layout: pipeline.Layout,
 pipeline_layout: pipeline.Layout,
 font: *Font,
 skybox: Image,
-item: Image,
 sky_material: Material,
 
 pub const InitOptions = struct {
@@ -145,7 +144,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
 
     self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_descriptor_layout);
-    try self.render_resources.loadUiImages(gpa, self.device, self.vma, &.{ "damage.png", "crosshair.png" });
     self.ui_descriptor_layout = try .init(self.device, &.{
         .{
             .binding = 0,
@@ -180,6 +178,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         asset_server,
         &self.render_resources,
     );
+    try self.render_resources.loadUiImages(gpa, self.device, self.vma, &.{ "damage.png", "crosshair.png" });
 
     for (0..64) |i| {
         const sampler = if (i == 1) self.font.sampler else self.render_resources.samplers.items[0];
@@ -390,7 +389,6 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
     self.skybox.deinit(self.vma, self.device);
     self.sky_material.deinit(self.gpa, self.vma);
-    self.item.deinit(self.vma, self.device);
     self.ui.deinit(gpa, self.vma);
     self.font.deinit(gpa, self.vma, self.device);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);

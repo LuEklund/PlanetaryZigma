@@ -68,6 +68,8 @@ pub fn deinit(self: *@This()) !void {
     self.pending_despawn.deinit(self.gpa);
     self.pending_motions.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
+    self.pending_events.deinit(self.gpa);
+    self.pending_stats.deinit(self.gpa);
     self.last_motions.deinit();
 }
 
