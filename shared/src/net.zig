@@ -61,7 +61,6 @@ pub const SpawnEntity = struct {
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     data: union(enum(u16)) {
         none: void,
-        bullet_velocity: @Vector(3, f32),
         planet_radius: u32,
         is_teleporter_boss: void,
     },

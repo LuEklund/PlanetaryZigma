@@ -1,6 +1,9 @@
 const std = @import("std");
 const nz = @import("numz");
 
+const noise_frequency = 0.04;
+const noise_amplitude = 2;
+
 pub const PlanetKind = enum {
     logical,
     renderable,
@@ -21,9 +24,9 @@ pub fn Planet(kind: PlanetKind) type {
 
             var vertices: std.ArrayList(Vertex) = .empty;
             var indices: std.ArrayList(u32) = .empty;
-            var node_map: NodeMap = .empty;
+            var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
-            const bound: f32 = radius_float + 7;
+            const bound: f32 = radius_float + noise_amplitude;
             try buildNodeMap(gpa, &node_map, radius_float, bound);
 
             const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
@@ -112,8 +115,6 @@ pub fn Planet(kind: PlanetKind) type {
     };
 }
 
-const NodeMap = std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32));
-
 const CellNode = struct {
     cell: nz.Vec3(i32),
     centroid: nz.Vec3(f32),
@@ -129,7 +130,7 @@ const SlabTask = struct {
     err: ?std.mem.Allocator.Error,
 };
 
-fn buildNodeMap(gpa: std.mem.Allocator, node_map: *NodeMap, radius: f32, bound: f32) !void {
+fn buildNodeMap(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), radius: f32, bound: f32) !void {
     const total_steps: usize = @intFromFloat(@ceil(2 * bound));
     const cpu_count = std.Thread.getCpuCount() catch 1;
     const worker_count = @max(1, @min(total_steps, cpu_count));
@@ -181,9 +182,9 @@ fn buildCellSlab(task: *SlabTask) void {
         while (y < task.bound) : (y += 1) {
             var z = -task.bound;
             while (z < task.bound) : (z += 1) {
-                // narrow band: a cell farther than (noise amplitude 2 + cell half-diagonal ~0.87) from the shell can't straddle it, skip before sampling 8 corners
+                // narrow band: a cell farther than (noise_amplitude + cell half-diagonal ~0.87) from the shell can't straddle it, skip before sampling 8 corners
                 const cell_center: nz.Vec3(f32) = .{ x + 0.5, y + 0.5, z + 0.5 };
-                if (@abs(nz.vec.length(cell_center) - task.radius) > 4) continue;
+                if (@abs(nz.vec.length(cell_center) - task.radius) > noise_amplitude + 1) continue;
                 var checksum: u8 = 0;
                 var corners: [8]nz.Vec3(f32) = undefined;
                 var corner_sdf: [8]f32 = undefined;
@@ -222,9 +223,7 @@ fn buildCellSlab(task: *SlabTask) void {
 }
 
 fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
-    const frequency = 0.04;
-    const amplitude = 2;
-    const noise = simplex3(position[0] * frequency, position[1] * frequency, position[2] * frequency) * amplitude;
+    const noise = simplex3(position[0] * noise_frequency, position[1] * noise_frequency, position[2] * noise_frequency) * noise_amplitude;
     return nz.vec.distance(position, .{ 0, 0, 0 }) - radius + noise;
 }
 

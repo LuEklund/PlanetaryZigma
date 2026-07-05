@@ -76,7 +76,6 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             .bullet => {
                 entity.transform.scale = @splat(0.3);
-                entity.velocity = entity_info.data.bullet_velocity;
             },
             .teleporter => {
                 info.world.teleporter_id = entity.id;

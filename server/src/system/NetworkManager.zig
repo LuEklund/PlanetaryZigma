@@ -324,9 +324,8 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
         .rotation = entity.transform.rotation.toVec(),
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
-            .bullet => .{ .bullet_velocity = entity.bullet.velocity },
             .skelly, .wizard => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .unknown, .player, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .none,
+            .unknown, .bullet, .player, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .none,
         },
     };
 }
