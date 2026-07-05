@@ -71,7 +71,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             // });
             const skelly = try self.spawner.spawn(.{
                 .kind = .skelly,
-                .transform = .{ .position = .{ 0, 100, 0 } },
+                .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                 .collider = .{
                     .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
                     .motion_type = .dynamic,

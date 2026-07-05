@@ -82,7 +82,7 @@ pub const World = struct {
     players: std.ArrayList(u32) = .empty,
     teleport_bosses: std.ArrayList(u32) = .empty,
     teleporter_id: u32 = 0,
-    planet_size: u32 = 100,
+    planet_radius: u32 = 100,
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
 

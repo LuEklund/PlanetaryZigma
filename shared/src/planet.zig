@@ -16,54 +16,15 @@ pub fn Planet(kind: PlanetKind) type {
             .renderable => @import("vertex.zig").StaticVertex,
         };
 
-        pub fn init(gpa: std.mem.Allocator, size: u32) !@This() {
-            const clamped_size: f32 = if (size < 4) 4.0 else @floatFromInt(size);
-            const radius: f32 = @divTrunc(clamped_size, 2);
+        pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
+            const radius_float: f32 = if (radius < 2) 2.0 else @floatFromInt(radius);
 
             var vertices: std.ArrayList(Vertex) = .empty;
             var indices: std.ArrayList(u32) = .empty;
-            var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
+            var node_map: NodeMap = .empty;
             defer node_map.deinit(gpa);
-            const bound: f32 = radius + 7;
-            var x: f32 = -bound;
-            while (x < bound) : (x += 1) {
-                var y: f32 = -bound;
-                while (y < bound) : (y += 1) {
-                    var z: f32 = -bound;
-                    while (z < bound) : (z += 1) {
-                        var checksum: u8 = 0;
-                        var corners: [8]nz.Vec3(f32) = undefined;
-                        var corner_sdf: [8]f32 = undefined;
-                        for (0..8) |i| {
-                            corners[i] = .{
-                                x + cube_corners[i][0],
-                                y + cube_corners[i][1],
-                                z + cube_corners[i][2],
-                            };
-                            corner_sdf[i] = sdf(corners[i], radius);
-                            if (corner_sdf[i] < 0) checksum += 1;
-                        }
-                        if (checksum % 8 == 0) continue;
-
-                        var count: f32 = 0;
-                        var sum: nz.Vec3(f32) = @splat(0);
-                        for (cube_edges) |edge| {
-                            const d1 = corner_sdf[edge[0]];
-                            const d2 = corner_sdf[edge[1]];
-                            if ((d1 < 0.0) != (d2 < 0.0)) {
-                                count += 1;
-                                const interp1: f32 = d1 / (d1 - d2);
-                                const interp2: f32 = 1.0 - interp1;
-
-                                sum += nz.vec.scale(corners[edge[0]], interp2) + nz.vec.scale(corners[edge[1]], interp1);
-                            }
-                        }
-                        const centroid = nz.vec.scale(sum, 1 / count);
-                        const cell: nz.Vec3(i32) = .{ @intFromFloat(x), @intFromFloat(y), @intFromFloat(z) };
-                        try node_map.put(gpa, cell, centroid);
-                    }
-                }
-            }
+            const bound: f32 = radius_float + 7;
+            try buildNodeMap(gpa, &node_map, radius_float, bound);
 
             const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
                 .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
@@ -80,8 +41,8 @@ pub fn Planet(kind: PlanetKind) type {
                 const corner_a: nz.Vec3(f32) = @floatFromInt(cell);
                 for (quad_axes) |quad_axis| {
                     const corner_b: nz.Vec3(f32) = corner_a + @as(nz.Vec3(f32), @floatFromInt(quad_axis.edge_axis));
-                    const corner_a_solid = sdf(corner_a, radius) < 0;
-                    const corner_b_solid = sdf(corner_b, radius) < 0;
+                    const corner_a_solid = sdf(corner_a, radius_float) < 0;
+                    const corner_b_solid = sdf(corner_b, radius_float) < 0;
                     if (corner_a_solid == corner_b_solid) continue;
 
                     switch (kind) {
@@ -92,10 +53,10 @@ pub fn Planet(kind: PlanetKind) type {
                             const c4 = node_map.get(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue;
 
                             const base: u32 = @intCast(vertices.items.len);
-                            try vertices.append(gpa, makeVertex(c1, .{ 0, 0 }, radius));
-                            try vertices.append(gpa, makeVertex(c2, .{ 1, 0 }, radius));
-                            try vertices.append(gpa, makeVertex(c3, .{ 0, 1 }, radius));
-                            try vertices.append(gpa, makeVertex(c4, .{ 1, 1 }, radius));
+                            try vertices.append(gpa, makeVertex(c1, .{ 0, 0 }, radius_float));
+                            try vertices.append(gpa, makeVertex(c2, .{ 1, 0 }, radius_float));
+                            try vertices.append(gpa, makeVertex(c3, .{ 0, 1 }, radius_float));
+                            try vertices.append(gpa, makeVertex(c4, .{ 1, 1 }, radius_float));
 
                             if (corner_a_solid) {
                                 try indices.appendSlice(gpa, &.{ base + 0, base + 1, base + 3, base + 0, base + 3, base + 2 });
@@ -148,13 +109,123 @@ pub fn Planet(kind: PlanetKind) type {
                 },
             };
         }
-        fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
-            const frequency = 0.04;
-            const amplitude = 2;
-            const noise = simplex3(position[0] * frequency, position[1] * frequency, position[2] * frequency) * amplitude;
-            return nz.vec.distance(position, .{ 0, 0, 0 }) - radius + noise;
-        }
     };
+}
+
+const NodeMap = std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32));
+
+const CellNode = struct {
+    cell: nz.Vec3(i32),
+    centroid: nz.Vec3(f32),
+};
+
+const SlabTask = struct {
+    gpa: std.mem.Allocator,
+    radius: f32,
+    bound: f32,
+    x_start: f32,
+    x_end: f32,
+    nodes: std.ArrayList(CellNode),
+    err: ?std.mem.Allocator.Error,
+};
+
+fn buildNodeMap(gpa: std.mem.Allocator, node_map: *NodeMap, radius: f32, bound: f32) !void {
+    const total_steps: usize = @intFromFloat(@ceil(2 * bound));
+    const cpu_count = std.Thread.getCpuCount() catch 1;
+    const worker_count = @max(1, @min(total_steps, cpu_count));
+
+    const tasks = try gpa.alloc(SlabTask, worker_count);
+    defer gpa.free(tasks);
+
+    const base = total_steps / worker_count;
+    const remainder = total_steps % worker_count;
+    var step_offset: usize = 0;
+    for (tasks, 0..) |*task, index| {
+        const steps = base + @as(usize, @intFromBool(index < remainder));
+        task.* = .{
+            .gpa = gpa,
+            .radius = radius,
+            .bound = bound,
+            .x_start = -bound + @as(f32, @floatFromInt(step_offset)),
+            .x_end = -bound + @as(f32, @floatFromInt(step_offset + steps)),
+            .nodes = .empty,
+            .err = null,
+        };
+        step_offset += steps;
+    }
+    defer for (tasks) |*task| task.nodes.deinit(gpa);
+
+    if (worker_count == 1) {
+        buildCellSlab(&tasks[0]);
+    } else {
+        const threads = try gpa.alloc(std.Thread, worker_count);
+        defer gpa.free(threads);
+        var spawned: usize = 0;
+        errdefer for (threads[0..spawned]) |thread| thread.join();
+        while (spawned < worker_count) : (spawned += 1)
+            threads[spawned] = try std.Thread.spawn(.{}, buildCellSlab, .{&tasks[spawned]});
+        for (threads) |thread| thread.join();
+    }
+
+    // merge slabs in order so node_map insertion order is identical to the single-threaded traversal (logical vertices index by insertion order)
+    for (tasks) |*task| {
+        if (task.err) |err| return err;
+        for (task.nodes.items) |node| try node_map.put(gpa, node.cell, node.centroid);
+    }
+}
+
+fn buildCellSlab(task: *SlabTask) void {
+    var x = task.x_start;
+    while (x < task.x_end) : (x += 1) {
+        var y = -task.bound;
+        while (y < task.bound) : (y += 1) {
+            var z = -task.bound;
+            while (z < task.bound) : (z += 1) {
+                // narrow band: a cell farther than (noise amplitude 2 + cell half-diagonal ~0.87) from the shell can't straddle it, skip before sampling 8 corners
+                const cell_center: nz.Vec3(f32) = .{ x + 0.5, y + 0.5, z + 0.5 };
+                if (@abs(nz.vec.length(cell_center) - task.radius) > 4) continue;
+                var checksum: u8 = 0;
+                var corners: [8]nz.Vec3(f32) = undefined;
+                var corner_sdf: [8]f32 = undefined;
+                for (0..8) |i| {
+                    corners[i] = .{
+                        x + cube_corners[i][0],
+                        y + cube_corners[i][1],
+                        z + cube_corners[i][2],
+                    };
+                    corner_sdf[i] = sdf(corners[i], task.radius);
+                    if (corner_sdf[i] < 0) checksum += 1;
+                }
+                if (checksum % 8 == 0) continue;
+
+                var count: f32 = 0;
+                var sum: nz.Vec3(f32) = @splat(0);
+                for (cube_edges) |edge| {
+                    const d1 = corner_sdf[edge[0]];
+                    const d2 = corner_sdf[edge[1]];
+                    if ((d1 < 0.0) != (d2 < 0.0)) {
+                        count += 1;
+                        const interp1: f32 = d1 / (d1 - d2);
+                        const interp2: f32 = 1.0 - interp1;
+                        sum += nz.vec.scale(corners[edge[0]], interp2) + nz.vec.scale(corners[edge[1]], interp1);
+                    }
+                }
+                const centroid = nz.vec.scale(sum, 1 / count);
+                const cell: nz.Vec3(i32) = .{ @intFromFloat(x), @intFromFloat(y), @intFromFloat(z) };
+                task.nodes.append(task.gpa, .{ .cell = cell, .centroid = centroid }) catch |err| {
+                    task.err = err;
+                    return;
+                };
+            }
+        }
+    }
+}
+
+fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
+    const frequency = 0.04;
+    const amplitude = 2;
+    const noise = simplex3(position[0] * frequency, position[1] * frequency, position[2] * frequency) * amplitude;
+    return nz.vec.distance(position, .{ 0, 0, 0 }) - radius + noise;
 }
 
 const cube_corners = [_]nz.Vec3(f32){

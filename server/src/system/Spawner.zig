@@ -130,9 +130,9 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     world.teleporter_id = 0;
     self.should_spawm = true;
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
-    world.planet_size = @intFromFloat(rand.float(f32) * 100 + 1);
-    // world.planet_size = 50;
-    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_size);
+    world.planet_radius = @intFromFloat(rand.float(f32) * 99 + 1);
+    // world.planet_radius = 100;
+    const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_radius);
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},
@@ -158,7 +158,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
         _ = try self.spawn(.{
             .kind = item_kind,
-            .transform = .{ .position = nz.vec.scale(vector_direction, 100) },
+            .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },
             .collider = .{
                 .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
                 .motion_type = .dynamic,
