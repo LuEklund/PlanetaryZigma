@@ -3,6 +3,7 @@ const nz = @import("numz");
 
 const noise_frequency = 0.04;
 const noise_amplitude = 2;
+const cell_margin = 1;
 
 pub const PlanetKind = enum {
     logical,
@@ -26,57 +27,52 @@ pub fn Planet(kind: PlanetKind) type {
             var indices: std.ArrayList(u32) = .empty;
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
-            const bound: f32 = radius_float + noise_amplitude;
+            const bound: f32 = radius_float + noise_amplitude + cell_margin;
             try buildNodeMap(gpa, &node_map, radius_float, bound);
-
-            const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
-                .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
-                .{ .edge_axis = .{ 0, 1, 0 }, .perp_b = .{ 0, 0, 1 }, .perp_c = .{ 1, 0, 0 } },
-                .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
-            };
 
             if (kind == .logical) {
                 for (node_map.values()) |centroid|
                     try vertices.append(gpa, .{ centroid[0], centroid[1], centroid[2], 1 });
             }
 
+            const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
+                .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
+                .{ .edge_axis = .{ 0, 1, 0 }, .perp_b = .{ 0, 0, 1 }, .perp_c = .{ 1, 0, 0 } },
+                .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
+            };
             for (node_map.keys()) |cell| {
-                const corner_a: nz.Vec3(f32) = @floatFromInt(cell);
+                const edge_start: nz.Vec3(f32) = @floatFromInt(cell);
                 for (quad_axes) |quad_axis| {
-                    const corner_b: nz.Vec3(f32) = corner_a + @as(nz.Vec3(f32), @floatFromInt(quad_axis.edge_axis));
-                    const corner_a_solid = sdf(corner_a, radius_float) < 0;
-                    const corner_b_solid = sdf(corner_b, radius_float) < 0;
-                    if (corner_a_solid == corner_b_solid) continue;
+                    const edge_end: nz.Vec3(f32) = edge_start + @as(nz.Vec3(f32), @floatFromInt(quad_axis.edge_axis));
+                    const edge_start_solid = sdf(edge_start, radius_float) < 0;
+                    const edge_end_solid = sdf(edge_end, radius_float) < 0;
+                    if (edge_start_solid == edge_end_solid) continue;
+
+                    const index_at_cell: u32 = @intCast(node_map.getIndex(cell) orelse continue);
+                    const index_minus_b: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b) orelse continue);
+                    const index_minus_c: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_c) orelse continue);
+                    const index_minus_bc: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue);
 
                     switch (kind) {
                         .renderable => {
-                            const c1 = node_map.get(cell) orelse continue;
-                            const c2 = node_map.get(cell - quad_axis.perp_b) orelse continue;
-                            const c3 = node_map.get(cell - quad_axis.perp_c) orelse continue;
-                            const c4 = node_map.get(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue;
+                            const centroids = node_map.values();
+                            const base_vertex_index: u32 = @intCast(vertices.items.len);
+                            try vertices.append(gpa, makeVertex(centroids[index_at_cell], .{ 0, 0 }, radius_float));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_b], .{ 1, 0 }, radius_float));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius_float));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius_float));
 
-                            const base: u32 = @intCast(vertices.items.len);
-                            try vertices.append(gpa, makeVertex(c1, .{ 0, 0 }, radius_float));
-                            try vertices.append(gpa, makeVertex(c2, .{ 1, 0 }, radius_float));
-                            try vertices.append(gpa, makeVertex(c3, .{ 0, 1 }, radius_float));
-                            try vertices.append(gpa, makeVertex(c4, .{ 1, 1 }, radius_float));
-
-                            if (corner_a_solid) {
-                                try indices.appendSlice(gpa, &.{ base + 0, base + 1, base + 3, base + 0, base + 3, base + 2 });
+                            if (edge_start_solid) {
+                                try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
                             } else {
-                                try indices.appendSlice(gpa, &.{ base + 0, base + 3, base + 1, base + 0, base + 2, base + 3 });
+                                try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 1, base_vertex_index + 0, base_vertex_index + 2, base_vertex_index + 3 });
                             }
                         },
                         .logical => {
-                            const i_1: u32 = @intCast(node_map.getIndex(cell) orelse continue);
-                            const i_2: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b) orelse continue);
-                            const i_3: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_c) orelse continue);
-                            const i_4: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue);
-
-                            if (corner_a_solid)
-                                try indices.appendSlice(gpa, &.{ i_1, i_2, i_4, i_1, i_4, i_3 })
+                            if (edge_start_solid)
+                                try indices.appendSlice(gpa, &.{ index_at_cell, index_minus_b, index_minus_bc, index_at_cell, index_minus_bc, index_minus_c })
                             else
-                                try indices.appendSlice(gpa, &.{ i_1, i_4, i_2, i_1, i_3, i_4 });
+                                try indices.appendSlice(gpa, &.{ index_at_cell, index_minus_bc, index_minus_b, index_at_cell, index_minus_c, index_minus_bc });
                         },
                     }
                 }
@@ -98,14 +94,14 @@ pub fn Planet(kind: PlanetKind) type {
                 .logical => .{ position[0], position[1], position[2], 1 },
                 .renderable => blk: {
                     const height = nz.vec.length(position);
-                    const t = std.math.clamp((height - (radius)) / 30, 0, 1);
-                    const low: nz.Vec3(f32) = .{ 1, 0.35, 0.2 };
-                    const high: nz.Vec3(f32) = .{ 0.1, 0.75, 0.6 };
-                    const rgb = nz.vec.scale(low, 1 - t) + nz.vec.scale(high, t);
+                    const height_fraction = std.math.clamp((height - radius) / 30, 0, 1);
+                    const low_color: nz.Vec3(f32) = .{ 1, 0.35, 0.2 };
+                    const high_color: nz.Vec3(f32) = .{ 0.1, 0.75, 0.6 };
+                    const color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
                     break :blk .{
                         .position = position,
                         .normal = nz.vec.normalize(position),
-                        .color = .{ rgb[0], rgb[1], rgb[2], 1 },
+                        .color = .{ color[0], color[1], color[2], 1 },
                         .uv_x = uv[0],
                         .uv_y = uv[1],
                     };
@@ -120,7 +116,7 @@ const CellNode = struct {
     centroid: nz.Vec3(f32),
 };
 
-const SlabTask = struct {
+const SliceTask = struct {
     gpa: std.mem.Allocator,
     radius: f32,
     bound: f32,
@@ -135,7 +131,7 @@ fn buildNodeMap(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged
     const cpu_count = std.Thread.getCpuCount() catch 1;
     const worker_count = @max(1, @min(total_steps, cpu_count));
 
-    const tasks = try gpa.alloc(SlabTask, worker_count);
+    const tasks = try gpa.alloc(SliceTask, worker_count);
     defer gpa.free(tasks);
 
     const base = total_steps / worker_count;
@@ -157,61 +153,59 @@ fn buildNodeMap(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged
     defer for (tasks) |*task| task.nodes.deinit(gpa);
 
     if (worker_count == 1) {
-        buildCellSlab(&tasks[0]);
+        buildCellSlice(&tasks[0]);
     } else {
         const threads = try gpa.alloc(std.Thread, worker_count);
         defer gpa.free(threads);
         var spawned: usize = 0;
         errdefer for (threads[0..spawned]) |thread| thread.join();
         while (spawned < worker_count) : (spawned += 1)
-            threads[spawned] = try std.Thread.spawn(.{}, buildCellSlab, .{&tasks[spawned]});
+            threads[spawned] = try std.Thread.spawn(.{}, buildCellSlice, .{&tasks[spawned]});
         for (threads) |thread| thread.join();
     }
 
-    // merge slabs in order so node_map insertion order is identical to the single-threaded traversal (logical vertices index by insertion order)
     for (tasks) |*task| {
         if (task.err) |err| return err;
         for (task.nodes.items) |node| try node_map.put(gpa, node.cell, node.centroid);
     }
 }
 
-fn buildCellSlab(task: *SlabTask) void {
+fn buildCellSlice(task: *SliceTask) void {
     var x = task.x_start;
     while (x < task.x_end) : (x += 1) {
         var y = -task.bound;
         while (y < task.bound) : (y += 1) {
             var z = -task.bound;
             while (z < task.bound) : (z += 1) {
-                // narrow band: a cell farther than (noise_amplitude + cell half-diagonal ~0.87) from the shell can't straddle it, skip before sampling 8 corners
-                const cell_center: nz.Vec3(f32) = .{ x + 0.5, y + 0.5, z + 0.5 };
-                if (@abs(nz.vec.length(cell_center) - task.radius) > noise_amplitude + 1) continue;
+                const cell_origin: nz.Vec3(f32) = .{ x, y, z };
+                const cell_center: nz.Vec3(f32) = cell_origin + @as(nz.Vec3(f32), @splat(0.5));
+                if (@abs(nz.vec.length(cell_center) - task.radius) > noise_amplitude + cell_margin) continue;
                 var checksum: u8 = 0;
                 var corners: [8]nz.Vec3(f32) = undefined;
                 var corner_sdf: [8]f32 = undefined;
                 for (0..8) |i| {
-                    corners[i] = .{
-                        x + cube_corners[i][0],
-                        y + cube_corners[i][1],
-                        z + cube_corners[i][2],
-                    };
+                    corners[i] = cube_corners[i] + cell_origin;
                     corner_sdf[i] = sdf(corners[i], task.radius);
                     if (corner_sdf[i] < 0) checksum += 1;
                 }
-                if (checksum % 8 == 0) continue;
+                if (checksum == 0 or checksum == 8) continue;
 
-                var count: f32 = 0;
-                var sum: nz.Vec3(f32) = @splat(0);
+                var crossing_count: f32 = 0;
+                var crossing_sum: nz.Vec3(f32) = @splat(0);
                 for (cube_edges) |edge| {
-                    const d1 = corner_sdf[edge[0]];
-                    const d2 = corner_sdf[edge[1]];
-                    if ((d1 < 0.0) != (d2 < 0.0)) {
-                        count += 1;
-                        const interp1: f32 = d1 / (d1 - d2);
-                        const interp2: f32 = 1.0 - interp1;
-                        sum += nz.vec.scale(corners[edge[0]], interp2) + nz.vec.scale(corners[edge[1]], interp1);
+                    const start_distance = corner_sdf[edge[0]];
+                    const end_distance = corner_sdf[edge[1]];
+                    if ((start_distance < 0.0) != (end_distance < 0.0)) {
+                        crossing_count += 1;
+                        const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
+                        const start_weight: f32 = 1.0 - crossing_fraction;
+                        const end_weight: f32 = crossing_fraction;
+                        const start_corner = corners[edge[0]];
+                        const end_corner = corners[edge[1]];
+                        crossing_sum += nz.vec.scale(start_corner, start_weight) + nz.vec.scale(end_corner, end_weight);
                     }
                 }
-                const centroid = nz.vec.scale(sum, 1 / count);
+                const centroid = nz.vec.scale(crossing_sum, 1 / crossing_count);
                 const cell: nz.Vec3(i32) = .{ @intFromFloat(x), @intFromFloat(y), @intFromFloat(z) };
                 task.nodes.append(task.gpa, .{ .cell = cell, .centroid = centroid }) catch |err| {
                     task.err = err;
@@ -223,8 +217,9 @@ fn buildCellSlab(task: *SlabTask) void {
 }
 
 fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
-    const noise = simplex3(position[0] * noise_frequency, position[1] * noise_frequency, position[2] * noise_frequency) * noise_amplitude;
-    return nz.vec.distance(position, .{ 0, 0, 0 }) - radius + noise;
+    const sample = nz.vec.scale(position, noise_frequency);
+    const noise = simplex3(sample[0], sample[1], sample[2]) * noise_amplitude;
+    return nz.vec.length(position) - radius + noise;
 }
 
 const cube_corners = [_]nz.Vec3(f32){
@@ -239,18 +234,18 @@ const cube_corners = [_]nz.Vec3(f32){
 };
 
 const cube_edges = [_][2]u3{
-    .{ 0b000, 0b001 },
-    .{ 0b000, 0b010 },
-    .{ 0b000, 0b100 },
-    .{ 0b001, 0b011 },
-    .{ 0b001, 0b101 },
-    .{ 0b010, 0b011 },
-    .{ 0b010, 0b110 },
-    .{ 0b011, 0b111 },
-    .{ 0b100, 0b101 },
-    .{ 0b100, 0b110 },
-    .{ 0b101, 0b111 },
-    .{ 0b110, 0b111 },
+    .{ 0, 1 },
+    .{ 0, 2 },
+    .{ 0, 4 },
+    .{ 1, 3 },
+    .{ 1, 5 },
+    .{ 2, 3 },
+    .{ 2, 6 },
+    .{ 3, 7 },
+    .{ 4, 5 },
+    .{ 4, 6 },
+    .{ 5, 7 },
+    .{ 6, 7 },
 };
 
 //
