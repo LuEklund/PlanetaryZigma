@@ -68,6 +68,8 @@ pub fn deinit(self: *@This()) !void {
     self.pending_despawn.deinit(self.gpa);
     self.pending_motions.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
+    self.pending_events.deinit(self.gpa);
+    self.pending_stats.deinit(self.gpa);
     self.last_motions.deinit();
 }
 
@@ -137,7 +139,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                     if (client.name.len == 0) client.name = try self.gpa.dupe(u8, connect.name);
                     const new_player_entity = try spawner.spawn(.{
                         .kind = .player,
-                        .transform = .{ .position = .{ 0, 100, 0 } },
+                        .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                         .collider = .{
                             .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } } },
                             .motion_type = .dynamic,
@@ -146,7 +148,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         .flags = .{ .invinsible = true },
                     });
-                    new_player_entity.stats.init(100, 10, 1, 1);
+                    new_player_entity.stats.init(100, 10, 100, 1);
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
 
@@ -323,10 +325,9 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
         .position = entity.transform.position,
         .rotation = entity.transform.rotation.toVec(),
         .data = switch (entity.kind) {
-            .planet => .{ .planet_size = info.world.planet_size },
-            .bullet => .{ .bullet_velocity = entity.bullet.velocity },
+            .planet => .{ .planet_radius = info.world.planet_radius },
             .skelly, .wizard => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .unknown, .player, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .none,
+            .unknown, .bullet, .player, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .none,
         },
     };
 }

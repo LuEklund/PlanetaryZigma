@@ -134,3 +134,56 @@ pub fn getMaterialPtr(self: *@This(), name_id: ?[]const u8) !*Material {
         return error.NoDefaultMaterialFound;
     }
 }
+
+pub fn loadUiImages(self: *@This(), gpa: std.mem.Allocator, device: Device, vma: Vma, paths: []const []const u8) !void {
+    var decoded_images = try gpa.alloc(Image.Decoded, paths.len);
+    defer {
+        for (decoded_images) |*decoded_image| decoded_image.deinit();
+        gpa.free(decoded_images);
+    }
+    @memset(decoded_images, .{});
+
+    var decode_tasks = try gpa.alloc(Image.DecodeTask, paths.len);
+    defer {
+        for (0..decode_tasks.len) |i| {
+            if (decode_tasks[i].uri) |uri| gpa.free(uri);
+        }
+        gpa.free(decode_tasks);
+    }
+
+    var buffer: [256]u8 = undefined;
+    for (0..paths.len) |i| {
+        const path = try std.fmt.bufPrint(&buffer, "assets/textures/{s}", .{paths[i]});
+        decode_tasks[i] = .{ .result = &decoded_images[i] };
+        decode_tasks[i].uri = try gpa.dupeSentinel(u8, path, 0);
+    }
+
+    try Image.decodeImages(gpa, decode_tasks);
+
+    for (decoded_images) |decoded_image| {
+        const width: u32 = @intCast(decoded_image.width);
+        const height: u32 = @intCast(decoded_image.height);
+
+        try self.images.append(gpa, try .init(
+            vma,
+            device,
+            c.VK_FORMAT_R8G8B8A8_UNORM,
+            .{
+                .width = width,
+                .height = height,
+                .depth = 1,
+            },
+            .@"2d",
+            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+            c.VK_IMAGE_ASPECT_COLOR_BIT,
+            false,
+        ));
+        try self.images.items[self.images.items.len - 1].uploadDataToImage(
+            vma,
+            device,
+            decoded_image.pixels,
+            4,
+            0,
+        );
+    }
+}

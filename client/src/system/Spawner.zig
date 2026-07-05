@@ -62,8 +62,8 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
             .planet => {
-                const size: u32 = entity_info.data.planet_size;
-                var planet: shared.Planet(.renderable) = try .init(self.gpa, size);
+                const radius: u32 = entity_info.data.planet_radius;
+                var planet: shared.Planet(.renderable) = try .init(self.gpa, radius);
                 defer planet.deinit(self.gpa);
                 try system_context.renderer.inner.createStaticMesh(
                     self.gpa,
@@ -72,11 +72,10 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                     planet.indices,
                     .planet,
                 );
-                std.log.debug("SPAWNED: Planet {d}", .{size});
+                std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
             .bullet => {
                 entity.transform.scale = @splat(0.3);
-                entity.velocity = entity_info.data.bullet_velocity;
             },
             .teleporter => {
                 info.world.teleporter_id = entity.id;

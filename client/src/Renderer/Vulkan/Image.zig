@@ -4,6 +4,7 @@ const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const check = @import("utils.zig").check;
+const stb_image = @import("stb_image");
 
 vk_image: c.VkImage = undefined,
 vk_imageview: c.VkImageView = undefined,
@@ -395,6 +396,7 @@ pub const Barrier = struct {
         var new: c.VkImageMemoryBarrier2 = .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask = self.src_stage,
+
             .srcAccessMask = self.src_access,
             .dstStageMask = dst_stage,
             .dstAccessMask = dst_access,
@@ -423,3 +425,85 @@ pub const Barrier = struct {
         self.*.src_access = dst_access;
     }
 };
+
+const DecodeError = error{
+    DataNotSupported,
+    FailedToLoadGLTFImage,
+    LoadingStbi,
+    MissingBufferViews,
+};
+
+pub const Decoded = struct {
+    pixels: [*c]stb_image.stbi_uc = null,
+    width: i32 = 0,
+    height: i32 = 0,
+    nr_channel: i32 = 0,
+    err: ?DecodeError = null,
+
+    pub fn deinit(self: *@This()) void {
+        if (self.pixels != null) stb_image.stbi_image_free(self.pixels);
+        self.* = .{};
+    }
+};
+
+pub const DecodeTask = struct {
+    bytes: ?[]const u8 = null,
+    uri: ?[:0]const u8 = null,
+    result: *Decoded,
+};
+
+pub fn decodeImages(gpa: std.mem.Allocator, tasks: []DecodeTask) !void {
+    if (tasks.len == 0) return;
+
+    const cpu_count = std.Thread.getCpuCount() catch 1;
+    const worker_count = @min(tasks.len, @max(@as(usize, 1), cpu_count));
+    if (worker_count == 1) {
+        decodeImageWorker(tasks, 0, 1);
+        return;
+    }
+
+    // TODO: Replace per-model thread spawning with a persistent asset thread pool.
+    var threads = try gpa.alloc(std.Thread, worker_count);
+    defer gpa.free(threads);
+
+    var spawned: usize = 0;
+    errdefer {
+        for (threads[0..spawned]) |thread| thread.join();
+    }
+
+    while (spawned < worker_count) : (spawned += 1) {
+        threads[spawned] = try std.Thread.spawn(.{}, decodeImageWorker, .{ tasks, spawned, worker_count });
+    }
+    for (threads) |thread| thread.join();
+}
+
+fn decodeImageWorker(tasks: []DecodeTask, worker_index: usize, worker_count: usize) void {
+    var image_index = worker_index;
+    while (image_index < tasks.len) : (image_index += worker_count) {
+        decodeImageTask(&tasks[image_index]);
+    }
+}
+
+fn decodeImageTask(task: *DecodeTask) void {
+    var width: i32 = 0;
+    var height: i32 = 0;
+    var nr_channel: i32 = 0;
+
+    if (task.uri) |uri| {
+        task.result.pixels = stb_image.stbi_load(uri, &width, &height, &nr_channel, 4);
+    } else if (task.bytes) |bytes| {
+        task.result.pixels = stb_image.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &width, &height, &nr_channel, 4);
+    } else {
+        task.result.err = error.FailedToLoadGLTFImage;
+        return;
+    }
+
+    if (task.result.pixels == null) {
+        task.result.err = error.LoadingStbi;
+        return;
+    }
+
+    task.result.width = width;
+    task.result.height = height;
+    task.result.nr_channel = nr_channel;
+}

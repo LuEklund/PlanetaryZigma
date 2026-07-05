@@ -2,7 +2,6 @@ const std = @import("std");
 const c = @import("vulkan");
 const nz = @import("shared").numz;
 const zgltf = @import("zgltf");
-const stb_image = @import("stb_image");
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Image = @import("Image.zig");
@@ -12,88 +11,6 @@ const Material = @import("Material.zig");
 const Buffer = @import("Buffer.zig");
 const RenderResources = @import("RenderResources.zig");
 const check = @import("utils.zig").check;
-
-const DecodeError = error{
-    DataNotSupported,
-    FailedToLoadGLTFImage,
-    LoadingStbi,
-    MissingBufferViews,
-};
-
-pub const DecodedImage = struct {
-    pixels: [*c]stb_image.stbi_uc = null,
-    width: i32 = 0,
-    height: i32 = 0,
-    nr_channel: i32 = 0,
-    err: ?DecodeError = null,
-
-    pub fn deinit(self: *@This()) void {
-        if (self.pixels != null) stb_image.stbi_image_free(self.pixels);
-        self.* = .{};
-    }
-};
-
-pub const ImageDecodeTask = struct {
-    bytes: ?[]const u8 = null,
-    uri: ?[:0]const u8 = null,
-    result: *DecodedImage,
-};
-
-pub fn decodeImages(gpa: std.mem.Allocator, tasks: []ImageDecodeTask) !void {
-    if (tasks.len == 0) return;
-
-    const cpu_count = std.Thread.getCpuCount() catch 1;
-    const worker_count = @min(tasks.len, @max(@as(usize, 1), cpu_count));
-    if (worker_count == 1) {
-        decodeImageWorker(tasks, 0, 1);
-        return;
-    }
-
-    // TODO: Replace per-model thread spawning with a persistent asset thread pool.
-    var threads = try gpa.alloc(std.Thread, worker_count);
-    defer gpa.free(threads);
-
-    var spawned: usize = 0;
-    errdefer {
-        for (threads[0..spawned]) |thread| thread.join();
-    }
-
-    while (spawned < worker_count) : (spawned += 1) {
-        threads[spawned] = try std.Thread.spawn(.{}, decodeImageWorker, .{ tasks, spawned, worker_count });
-    }
-    for (threads) |thread| thread.join();
-}
-
-fn decodeImageWorker(tasks: []ImageDecodeTask, worker_index: usize, worker_count: usize) void {
-    var image_index = worker_index;
-    while (image_index < tasks.len) : (image_index += worker_count) {
-        decodeImageTask(&tasks[image_index]);
-    }
-}
-
-fn decodeImageTask(task: *ImageDecodeTask) void {
-    var width: i32 = 0;
-    var height: i32 = 0;
-    var nr_channel: i32 = 0;
-
-    if (task.uri) |uri| {
-        task.result.pixels = stb_image.stbi_load(uri, &width, &height, &nr_channel, 4);
-    } else if (task.bytes) |bytes| {
-        task.result.pixels = stb_image.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &width, &height, &nr_channel, 4);
-    } else {
-        task.result.err = error.FailedToLoadGLTFImage;
-        return;
-    }
-
-    if (task.result.pixels == null) {
-        task.result.err = error.LoadingStbi;
-        return;
-    }
-
-    task.result.width = width;
-    task.result.height = height;
-    task.result.nr_channel = nr_channel;
-}
 
 pub const Glb = struct {
     content: []u8,
@@ -172,14 +89,15 @@ pub fn parseScene(
     {
         if (gltf.images) |images| {
             std.log.info("image count was {d}", .{images.len});
-            var decoded_images = try gpa.alloc(DecodedImage, images.len);
+            var decoded_images = try gpa.alloc(Image.Decoded, images.len);
             defer {
                 for (decoded_images) |*decoded_image| decoded_image.deinit();
                 gpa.free(decoded_images);
             }
             @memset(decoded_images, .{});
 
-            var decode_tasks = try gpa.alloc(ImageDecodeTask, images.len);
+            var decode_tasks = try gpa.alloc(Image.DecodeTask, images.len);
+
             defer {
                 for (decode_tasks) |*task| {
                     if (task.uri) |uri| gpa.free(uri);
@@ -203,7 +121,7 @@ pub fn parseScene(
             }
 
             {
-                try decodeImages(gpa, decode_tasks);
+                try Image.decodeImages(gpa, decode_tasks);
             }
 
             var upload_buffers: std.ArrayList(Buffer) = .empty;
