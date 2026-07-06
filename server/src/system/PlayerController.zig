@@ -73,7 +73,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 .kind = .skelly,
                 .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                 .collider = .{
-                    .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
@@ -92,7 +92,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             .kind = .wizard,
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
-                                .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } } },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.wizard).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },

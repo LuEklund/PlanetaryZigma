@@ -211,8 +211,7 @@ pub const ffi = struct {
         std.log.debug("system context init", .{});
         context.init(data.*) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context init: {s}", .{@errorName(err)});
-            return;
+            std.debug.panic("context init: {s}", .{@errorName(err)});
         };
     }
 
@@ -228,16 +227,14 @@ pub const ffi = struct {
         const result = if (event != null) context.eventUpdate(info, event.?) else context.update(info);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
-            return;
+            std.debug.panic("context update: {s}", .{@errorName(err)});
         };
     }
     pub export fn systemContextReload(context: *Context, pre_reload: bool) void {
         const result = context.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
-            return;
+            std.debug.panic("context reload: {s}", .{@errorName(err)});
         };
     }
 };

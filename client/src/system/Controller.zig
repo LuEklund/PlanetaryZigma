@@ -5,6 +5,8 @@ const yes = @import("yes");
 mouse_pos: [2]f64 = .{ 0, 0 },
 mouse_prev_pos: [2]f64 = .{ 0, 0 },
 input_map: shared.net.Input = .{},
+debug_draw_colliders: bool = false,
+f1_held: bool = false,
 
 pub fn update(self: *@This()) void {
     const tracy_scope = tracy.zone(@src());
@@ -30,6 +32,10 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
                 .r => self.input_map.keys.r = pressed,
                 .k => self.input_map.keys.k = pressed,
                 .e => self.input_map.keys.e = pressed,
+                .f1 => {
+                    if (pressed and !self.f1_held) self.debug_draw_colliders = !self.debug_draw_colliders;
+                    self.f1_held = pressed;
+                },
                 else => {},
             }
         },

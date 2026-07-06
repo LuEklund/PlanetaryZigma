@@ -165,6 +165,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .frag_planet = .{ .path = "shaders/planet.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+        .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+        .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
     });
     inline for (comptime std.enums.values(Shader.Kind)) |kind| {
         const spec = shader_specs.get(kind);
@@ -614,6 +616,48 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 
+    if (info.world.controller.debug_draw_colliders) {
+        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
+        const handles = [_]c.VkShaderEXT{ self.shaders.get(.vert_debug).?.handle, self.shaders.get(.frag_debug).?.handle };
+        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
+        ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+        c.vkCmdSetLineWidth(cmd, 1);
+        ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_FALSE);
+
+        const world_pipeline_layout_handle = self.render_resources.pipeline_layouts.get(.world).handle;
+        const debug_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+                .address = current_frame.gpu_scene.getGPUAddress(),
+                .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
+            },
+        };
+        ext.vkCmdBindDescriptorBuffersEXT(cmd, 1, &debug_bindings[0]);
+        const scene_buffer_index: u32 = 0;
+        const scene_offset: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 0, 1, &scene_buffer_index, &scene_offset);
+
+        const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
+        var debug_vertex_count: u32 = 0;
+        for (info.world.entities.values()) |*entity| {
+            const collider_shape = shared.Entity.colliderShape(entity.kind) orelse continue;
+            const first_vertex = debug_vertex_count;
+            switch (collider_shape) {
+                .capsule => |capsule| try appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
+                .box => |box| try appendBoxLines(debug_vertices, &debug_vertex_count, box.half_extent),
+            }
+            var collider_transform = entity.transform;
+            collider_transform.scale = @splat(1);
+            var push: Shader.StaticPushConstant = .{
+                .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress(),
+                .model_matrix = collider_transform.toMat4x4().d,
+            };
+            c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(Shader.StaticPushConstant), &push);
+            c.vkCmdDraw(cmd, debug_vertex_count - first_vertex, 1, first_vertex, 0);
+        }
+        ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    }
+
     current_frame.ui_vertex_buffer.copy(Ui.Quad, self.ui.quads.items);
     var stages_ui = [_]c.VkShaderStageFlagBits{
         c.VK_SHADER_STAGE_VERTEX_BIT,
@@ -709,6 +753,78 @@ fn drawSkeletal(
 
     for (node.children.items) |child_id| {
         try drawSkeletal(self, cmd, skeleton, current_frame, child_id, node_matrix);
+    }
+}
+
+const debug_collider_color: [4]f32 = .{ 0, 1, 0, 1 };
+const debug_circle_segments = 16;
+
+fn appendDebugLine(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, from: nz.Vec3(f32), to: nz.Vec3(f32)) !void {
+    if (vertex_count.* + 2 > FrameData.max_debug_vertices) return error.DebugVertexBufferFull;
+    vertices[vertex_count.*] = .{ .position = .{ from[0], from[1], from[2], 1 }, .color = debug_collider_color };
+    vertices[vertex_count.* + 1] = .{ .position = .{ to[0], to[1], to[2], 1 }, .color = debug_collider_color };
+    vertex_count.* += 2;
+}
+
+fn appendCapsuleLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, half_heigth: f32, radius: f32) !void {
+    for (0..debug_circle_segments) |segment| {
+        const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / debug_circle_segments;
+        const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / debug_circle_segments;
+        for ([2]f32{ -half_heigth, half_heigth }) |ring_y| {
+            try appendDebugLine(
+                vertices,
+                vertex_count,
+                .{ radius * @cos(angle_start), ring_y, radius * @sin(angle_start) },
+                .{ radius * @cos(angle_end), ring_y, radius * @sin(angle_end) },
+            );
+        }
+    }
+    for (0..4) |quarter| {
+        const angle = std.math.tau * @as(f32, @floatFromInt(quarter)) / 4;
+        try appendDebugLine(
+            vertices,
+            vertex_count,
+            .{ radius * @cos(angle), -half_heigth, radius * @sin(angle) },
+            .{ radius * @cos(angle), half_heigth, radius * @sin(angle) },
+        );
+    }
+    const arc_segments = debug_circle_segments / 2;
+    for (0..arc_segments) |segment| {
+        const angle_start = std.math.pi * @as(f32, @floatFromInt(segment)) / arc_segments;
+        const angle_end = std.math.pi * @as(f32, @floatFromInt(segment + 1)) / arc_segments;
+        for ([2]f32{ 1, -1 }) |cap_direction| {
+            const cap_y = cap_direction * half_heigth;
+            try appendDebugLine(
+                vertices,
+                vertex_count,
+                .{ radius * @cos(angle_start), cap_y + cap_direction * radius * @sin(angle_start), 0 },
+                .{ radius * @cos(angle_end), cap_y + cap_direction * radius * @sin(angle_end), 0 },
+            );
+            try appendDebugLine(
+                vertices,
+                vertex_count,
+                .{ 0, cap_y + cap_direction * radius * @sin(angle_start), radius * @cos(angle_start) },
+                .{ 0, cap_y + cap_direction * radius * @sin(angle_end), radius * @cos(angle_end) },
+            );
+        }
+    }
+}
+
+fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, half_extent: f32) !void {
+    const bottom_corners = [4]nz.Vec3(f32){
+        .{ -half_extent, -half_extent, -half_extent },
+        .{ half_extent, -half_extent, -half_extent },
+        .{ half_extent, -half_extent, half_extent },
+        .{ -half_extent, -half_extent, half_extent },
+    };
+    var top_corners = bottom_corners;
+    for (&top_corners) |*corner| corner[1] = half_extent;
+
+    for (0..4) |corner_index| {
+        const next_corner_index = (corner_index + 1) % 4;
+        try appendDebugLine(vertices, vertex_count, bottom_corners[corner_index], bottom_corners[next_corner_index]);
+        try appendDebugLine(vertices, vertex_count, top_corners[corner_index], top_corners[next_corner_index]);
+        try appendDebugLine(vertices, vertex_count, bottom_corners[corner_index], top_corners[corner_index]);
     }
 }
 

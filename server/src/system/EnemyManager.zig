@@ -88,7 +88,7 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                             .kind = .skelly,
                             .transform = .{ .position = player.transform.position },
                             .collider = .{
-                                .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },

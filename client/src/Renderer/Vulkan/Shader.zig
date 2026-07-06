@@ -10,10 +10,12 @@ pub const Kind = enum(u16) {
     vert_static,
     vert_ui,
     vert_sky,
+    vert_debug,
     frag_ui,
     frag_sky,
     frag_mesh,
     frag_planet,
+    frag_debug,
 };
 
 handle: c.VkShaderEXT = null,
