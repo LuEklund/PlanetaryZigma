@@ -159,13 +159,8 @@ pub const Context = struct {
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
         }
 
-        info.world.camera.update(info, &info.world.controller.input_map);
-        info.world.controller.input_map.mouse_wheel = 0;
-        if (!info.world.controller.free_camera) {
-            if (info.world.getPtr(info.world.player_id)) |player| {
-                info.world.camera.applyPose(player.transform.position);
-            }
-        }
+        info.world.camera.update(info);
+        info.world.controller.mouse_wheel = 0;
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
 

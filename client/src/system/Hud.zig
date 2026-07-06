@@ -116,13 +116,27 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             ui.add("inventory", .{
-                .text = .{ .data = ui.print("{t} : {d}", .{ item_kind, amount }) },
                 .size = .{ .percent = .{
                     .heigth = 1,
                     .width = 0.1,
                 } },
                 .color = .new(1, 1, 1, 1),
-                .texture = .damage_item,
+                .texture = switch (item_kind) {
+                    .health_potion => .oxygen_tank,
+                    .speed_potion => .energy_drink,
+                    else => .damage_item,
+                },
+                // .child_anchor = .{ .x = .end, .y = .end },
+                .children = &.{.{
+                    .size = .{ .percent = .{
+                        .heigth = 0,
+                        .width = 0,
+                    } },
+                    .text = .{
+                        .data = ui.print("{d}", .{amount}),
+                        .color = .new(0, 0, 0, 1),
+                    },
+                }},
             });
         }
         ui.add(null, .{
@@ -136,8 +150,8 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 .{
                     .size = .{
                         .fixed = .{
-                            .heigth = 100,
-                            .width = 100,
+                            .heigth = 50,
+                            .width = 50,
                         },
                     },
                     .color = .new(1, 1, 1, 1),

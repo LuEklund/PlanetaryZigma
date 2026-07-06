@@ -4,6 +4,8 @@ const yes = @import("yes");
 
 mouse_pos: [2]f64 = .{ 0, 0 },
 mouse_prev_pos: [2]f64 = .{ 0, 0 },
+mouse_delta: [2]f64 = .{ 0, 0 },
+mouse_wheel: f64 = 0,
 input_map: shared.net.Input = .{},
 debug_draw_colliders: bool = false,
 f1_held: bool = false,
@@ -14,8 +16,8 @@ pub fn update(self: *@This()) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    self.input_map.mouse_delta[0] = self.mouse_pos[0] - self.mouse_prev_pos[0];
-    self.input_map.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
+    self.mouse_delta[0] = self.mouse_pos[0] - self.mouse_prev_pos[0];
+    self.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
     self.mouse_prev_pos[0] = self.mouse_pos[0];
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 }
@@ -47,12 +49,15 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
         },
         .mouse_scroll => switch (event.mouse_scroll) {
             .vertical => |scroll| {
-                self.input_map.mouse_wheel = scroll;
+                self.mouse_wheel = scroll;
             },
             .horizontal => {},
         },
         .focus => |focused| {
-            if (!focused) self.input_map = .{};
+            if (!focused) {
+                self.input_map = .{};
+                self.mouse_wheel = 0;
+            }
         },
         .mouse_motion => |motion| {
             self.mouse_pos[0] = motion.x;

@@ -132,8 +132,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
         .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
-        .health_item = .{ .path = "objects/health.glb", .offset = .{}, .skinned = false },
-        .speed_item = .{ .path = "objects/speed.glb", .offset = .{}, .skinned = false },
+        .health_item = .{ .path = "objects/oxigen_tank.glb", .offset = .{}, .skinned = false },
+        .speed_item = .{ .path = "objects/energy_drink.glb", .offset = .{}, .skinned = false },
         .damage_item = .{ .path = "objects/damage.glb", .offset = .{}, .skinned = false },
         .attack_speed_item = .{ .path = "objects/attack_speed.glb", .offset = .{}, .skinned = false },
     });

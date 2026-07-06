@@ -85,8 +85,6 @@ pub const Input = struct {
         mouse_button_right: bool = false,
         _padding: u5 = 0,
     } = .{},
-    mouse_wheel: f64 = 0,
-    mouse_delta: [2]f64 = .{ 0, 0 },
     camera_yaw_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
 };
 
