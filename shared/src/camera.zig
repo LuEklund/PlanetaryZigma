@@ -5,6 +5,7 @@ const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
 pub const sensitivity: f32 = 1;
+pub const default_boom_offset: Vec3 = .{ 0, 1, 8 };
 
 pub fn look(
     yaw_rotation: *Quat,
@@ -44,6 +45,7 @@ pub fn look(
 pub fn boomTransform(yaw_rotation: Quat, pitch: f32, boom_offset: Vec3, player_position: Vec3) struct { position: Vec3, rotation: Quat } {
     const pitch_quat: Quat = .angleAxis(pitch, .{ 1, 0, 0 });
     const final_rotation = yaw_rotation.mul(pitch_quat).normalize();
-    const boom_world = final_rotation.rotateVec(boom_offset);
-    return .{ .position = player_position + boom_world, .rotation = final_rotation };
+    const pivot = player_position + yaw_rotation.rotateVec(.{ boom_offset[0], boom_offset[1], 0 });
+    const arm = final_rotation.rotateVec(.{ 0, 0, boom_offset[2] });
+    return .{ .position = pivot + arm, .rotation = final_rotation };
 }

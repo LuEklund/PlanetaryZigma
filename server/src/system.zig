@@ -9,7 +9,6 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
-const CameraController = @import("system/CameraController.zig");
 const BulletManager = @import("system/BulletManager.zig");
 
 pub const Info = struct {
@@ -136,7 +135,6 @@ pub const Context = struct {
     health_manager: HealthManager,
     physics: Physics,
     player_controller: PlayerController,
-    camera_controller: CameraController,
     spawner: Spawner,
     enemy_manager: EnemyManager,
     item_manager: ItemManager,
@@ -161,13 +159,11 @@ pub const Context = struct {
             .network_manager = undefined,
             .physics = undefined,
             .player_controller = undefined,
-            .camera_controller = undefined,
             .bullet_manager = undefined,
             .health_manager = undefined,
             .item_manager = undefined,
         };
         try self.physics.init(data.gpa, data.io);
-        try self.camera_controller.init();
         try self.bullet_manager.init(data.gpa, self.world, &self.physics);
         try self.enemy_manager.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_server);
@@ -194,7 +190,6 @@ pub const Context = struct {
         try self.enemy_manager.update(info, &self.health_manager, &self.network_manager, &self.spawner);
         try self.physics.update(info);
         try self.bullet_manager.update(info, &self.health_manager, &self.spawner);
-        try self.camera_controller.update(info);
         try self.spawner.update(info, &self.physics, &self.network_manager);
         try self.item_manager.update(info, self);
 

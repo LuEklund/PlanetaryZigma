@@ -7,6 +7,8 @@ mouse_prev_pos: [2]f64 = .{ 0, 0 },
 input_map: shared.net.Input = .{},
 debug_draw_colliders: bool = false,
 f1_held: bool = false,
+free_camera: bool = false,
+f2_held: bool = false,
 
 pub fn update(self: *@This()) void {
     const tracy_scope = tracy.zone(@src());
@@ -35,6 +37,10 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
                 .f1 => {
                     if (pressed and !self.f1_held) self.debug_draw_colliders = !self.debug_draw_colliders;
                     self.f1_held = pressed;
+                },
+                .f2 => {
+                    if (pressed and !self.f2_held) self.free_camera = !self.free_camera;
+                    self.f2_held = pressed;
                 },
                 else => {},
             }

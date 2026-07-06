@@ -160,8 +160,10 @@ pub const Context = struct {
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
         }
 
-        if (info.world.getPtr(info.world.player_id)) |player| {
-            info.world.camera.applyPose(player.transform.position);
+        if (!info.world.controller.free_camera) {
+            if (info.world.getPtr(info.world.player_id)) |player| {
+                info.world.camera.applyPose(player.transform.position);
+            }
         }
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
