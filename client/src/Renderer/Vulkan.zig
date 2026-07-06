@@ -21,11 +21,7 @@ const Swapchain = @import("Vulkan/Swapchain.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
-const Font = @import("Vulkan/Font.zig");
-const Buffer = @import("Vulkan/Buffer.zig");
-const descriptor = @import("Vulkan/desrciptor.zig");
 const RenderResources = @import("Vulkan/RenderResources.zig");
-const pipeline = @import("Vulkan/pipeline.zig");
 const Shader = @import("Vulkan/Shader.zig");
 const Ui = @import("Vulkan/Ui.zig");
 const procs = @import("Vulkan/procs.zig");
@@ -62,15 +58,6 @@ frames: [max_frames_inflight]FrameData,
 ui: Ui,
 
 //Temporary
-scene_descriptor_layout: descriptor.Layout,
-material_descriptor_layout: descriptor.Layout,
-ui_descriptor_layout: descriptor.Layout,
-
-ui_texture_buffer: Buffer,
-
-ui_pipeline_layout: pipeline.Layout,
-pipeline_layout: pipeline.Layout,
-font: *Font,
 skybox: Image,
 sky_material: Material,
 
@@ -125,109 +112,16 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
-    self.scene_descriptor_layout = try .init(self.device, &.{
-        .{
-            .binding = 0,
-            .descriptorCount = @sizeOf(FrameData.GPUScene),
-            .descriptorType = c.VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
-            .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-    }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
-    self.material_descriptor_layout = try .init(self.device, &.{
-        .{
-            .binding = 0,
-            .descriptorCount = 1,
-            .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImmutableSamplers = null,
-            .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-    }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
-
-    self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, self.material_descriptor_layout);
-    self.ui_descriptor_layout = try .init(self.device, &.{
-        .{
-            .binding = 0,
-            .descriptorCount = 64,
-            .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImmutableSamplers = null,
-            .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-    }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
-
-    var binding_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(self.device.handle, self.ui_descriptor_layout.handle, 0, &binding_offset);
-
-    var set_size: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutSizeEXT(self.device.handle, self.ui_descriptor_layout.handle, &set_size);
-
-    self.ui_texture_buffer = try .init(
-        self.device,
-        self.vma,
-        u8,
-        set_size * 64,
-        c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-            c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
-    );
-
-    self.font = try .init(
-        gpa,
-        self.vma,
-        self.device,
-        "fonts/Roboto-Regular.ttf",
-        asset_server,
-        &self.render_resources,
-    );
-    try self.render_resources.loadUiImages(gpa, self.device, self.vma, &.{ "damage.png", "crosshair.png" });
-
-    for (0..64) |i| {
-        const sampler = if (i == 1) self.font.sampler else self.render_resources.samplers.items[0];
-        const image_view = switch (i) {
-            0 => self.render_resources.images.items[0].vk_imageview,
-            1 => self.font.image.vk_imageview,
-            2...3 => self.render_resources.images.items[i - 1].vk_imageview,
-            else => self.render_resources.images.items[0].vk_imageview,
-        };
-
-        const img_info: c.VkDescriptorImageInfo = .{
-            .sampler = sampler,
-            .imageView = image_view,
-            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-        const get_info: c.VkDescriptorGetInfoEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .data = .{ .pCombinedImageSampler = &img_info },
-        };
-        const material_dst: [*]u8 = @ptrCast(self.ui_texture_buffer.info.pMappedData);
-        ext.vkGetDescriptorEXT(
-            self.device.handle,
-            &get_info,
-            self.render_resources.combined_image_sampler_descriptor_size,
-            material_dst + binding_offset + i * self.render_resources.combined_image_sampler_descriptor_size,
-        );
-    }
-
+    self.render_resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
     self.ui = try .init(
         gpa,
         self.vma,
         self.device,
         self.swapchain.extent.width,
         self.swapchain.extent.height,
-        self.font,
+        self.render_resources.font,
     );
 
-    self.pipeline_layout = try .init(
-        self.device,
-        Shader.AnimationPushConstant,
-        &.{ self.scene_descriptor_layout.handle, self.material_descriptor_layout.handle },
-    );
-
-    self.ui_pipeline_layout = try .init(
-        self.device,
-        Shader.UiPushConstant,
-        &.{self.ui_descriptor_layout.handle},
-    );
     self.renderables = .{};
     const Spec = struct { path: ?[]const u8, offset: nz.Transform3D(f32), skinned: bool };
     const specs = std.EnumArray(shared.Entity.Kind, Spec).init(.{
@@ -275,9 +169,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     inline for (comptime std.enums.values(Shader.Kind)) |kind| {
         const spec = shader_specs.get(kind);
         const layouts: []const c.VkDescriptorSetLayout = switch (spec.layout) {
-            .scene_material => &.{ self.scene_descriptor_layout.handle, self.material_descriptor_layout.handle },
-            .material => &.{self.material_descriptor_layout.handle},
-            .ui => &.{self.ui_descriptor_layout.handle},
+            .scene_material => &.{ self.render_resources.descriptor_layouts.get(.scene).handle, self.render_resources.descriptor_layouts.get(.material).handle },
+            .material => &.{self.render_resources.descriptor_layouts.get(.material).handle},
+            .ui => &.{self.render_resources.descriptor_layouts.get(.ui).handle},
         };
         self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
     }
@@ -379,18 +273,11 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     }
     self.skeletons.deinit();
 
-    self.material_descriptor_layout.deinit(self.device);
-    self.scene_descriptor_layout.deinit(self.device);
-    self.ui_descriptor_layout.deinit(self.device);
-    self.ui_texture_buffer.deinit(self.vma);
-    self.pipeline_layout.deinit(self.device);
-    self.ui_pipeline_layout.deinit(self.device);
     var shader_it = self.shaders.iterator();
     while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
     self.skybox.deinit(self.vma, self.device);
     self.sky_material.deinit(self.gpa, self.vma);
     self.ui.deinit(gpa, self.vma);
-    self.font.deinit(gpa, self.vma, self.device);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
     self.vma.deinit();
@@ -717,12 +604,13 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     };
     ext.vkCmdBindDescriptorBuffersEXT(cmd, sky_bindings.len, &sky_bindings[0]);
     {
+        const world_pipeline_layout_handle = self.render_resources.pipeline_layouts.get(.world).handle;
         const buf_idx_0: u32 = 0;
         const off_0: c.VkDeviceSize = 0;
-        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 0, 1, &buf_idx_0, &off_0);
         const buf_idx_1: u32 = 1;
         const off_1: c.VkDeviceSize = 0;
-        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 1, 1, &buf_idx_1, &off_1);
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 
@@ -753,22 +641,23 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     const ui_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-            .address = self.ui_texture_buffer.getGPUAddress(),
+            .address = self.render_resources.ui_texture_buffer.getGPUAddress(),
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },
     };
     ext.vkCmdBindDescriptorBuffersEXT(cmd, 1, &ui_bindings[0]);
 
+    const ui_pipeline_layout_handle = self.render_resources.pipeline_layouts.get(.ui).handle;
     const buf_idx_0: u32 = 0;
     const off_0: c.VkDeviceSize = 0;
-    ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.ui_pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
+    ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_layout_handle, 0, 1, &buf_idx_0, &off_0);
 
     var push: Shader.UiPushConstant = .{
         .vertex_buffer_address = current_frame.ui_vertex_buffer.getGPUAddress(),
         .screnn_size = .{ width, height },
     };
-    c.vkCmdPushConstants(cmd, self.ui_pipeline_layout.handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
+    c.vkCmdPushConstants(cmd, ui_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
     c.vkCmdBindIndexBuffer(cmd, self.ui.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
     c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(self.ui.quads.items.len * 6)), 1, 0, 0, 0);
     ext.vkCmdEndRendering(cmd);
@@ -841,8 +730,9 @@ fn emitNode(
     mesh: *Mesh,
     push: anytype,
 ) !void {
+    const world_pipeline_layout_handle = self.render_resources.pipeline_layouts.get(.world).handle;
     c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-    c.vkCmdPushConstants(cmd, self.pipeline_layout.handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(@typeInfo(@TypeOf(push)).pointer.child), push);
+    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(@typeInfo(@TypeOf(push)).pointer.child), push);
     for (mesh.surfaces.items) |surface| {
         const material = try self.render_resources.getMaterialPtr(surface.material_name);
         const surface_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -862,10 +752,10 @@ fn emitNode(
 
         const buf_idx_0: u32 = 0;
         const off_0: c.VkDeviceSize = 0;
-        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 0, 1, &buf_idx_0, &off_0);
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 0, 1, &buf_idx_0, &off_0);
         const buf_idx_1: u32 = 1;
         const off_1: c.VkDeviceSize = 0;
-        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle, 1, 1, &buf_idx_1, &off_1);
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
 
         c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
