@@ -23,9 +23,8 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    for (info.world.entities.values()) |*player| {
-        if (player.kind != .player) continue;
-
+    for (info.world.players.items) |player_id| {
+        const player = info.world.getPtr(player_id).?;
         const camera = &player.camera;
         const transform = &player.transform;
         const controller = &player.controller;

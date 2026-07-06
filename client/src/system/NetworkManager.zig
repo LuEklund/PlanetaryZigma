@@ -111,7 +111,6 @@ pub fn update(
         if (info.world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
-        info.world.controller.input_map.mouse_wheel = 0;
     }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     // 4. Drain inbound commands.

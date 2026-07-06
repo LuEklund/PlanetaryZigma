@@ -28,17 +28,10 @@ pub fn look(
         pitch.* = std.math.clamp(pitch.* + delta_pitch, -pitch_limit, pitch_limit);
     }
 
-    const camera_up = nz.vec.normalize(yaw_rotation.rotateVec(.{ 0, 1, 0 }));
-    const alignment = std.math.clamp(nz.vec.dot(camera_up, planet_up), -1.0, 1.0);
-    if (alignment < 0.9999) {
-        const camera_forward = nz.vec.normalize(yaw_rotation.rotateVec(.{ 0, 0, -1 }));
-        const axis: Vec3 = if (alignment > -0.9999)
-            nz.vec.normalize(nz.vec.cross(camera_up, planet_up))
-        else
-            nz.vec.normalize(nz.vec.cross(camera_up, camera_forward));
-        const angle = std.math.acos(alignment);
-        const align_quat: Quat = .angleAxis(angle, axis);
-        yaw_rotation.* = align_quat.mul(yaw_rotation.*).normalize();
+    const camera_forward = yaw_rotation.rotateVec(.{ 0, 0, -1 });
+    const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
+    if (nz.vec.length(tangent_forward) > 0.0001) {
+        yaw_rotation.* = .lookAt(tangent_forward, planet_up);
     }
 }
 

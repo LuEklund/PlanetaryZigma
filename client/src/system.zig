@@ -131,7 +131,6 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
-        info.world.camera.update(info, &info.world.controller.input_map);
         try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
         try self.animation.update(info, &self.renderer.inner.skeletons);
@@ -160,6 +159,8 @@ pub const Context = struct {
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
         }
 
+        info.world.camera.update(info, &info.world.controller.input_map);
+        info.world.controller.input_map.mouse_wheel = 0;
         if (!info.world.controller.free_camera) {
             if (info.world.getPtr(info.world.player_id)) |player| {
                 info.world.camera.applyPose(player.transform.position);
