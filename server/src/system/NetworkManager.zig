@@ -141,7 +141,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .kind = .player,
                         .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                         .collider = .{
-                            .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } } },
+                            .shape = .{ .primitive = shared.Entity.colliderShape(.player).? },
                             .motion_type = .dynamic,
                             .object_layer = .moving,
                         },

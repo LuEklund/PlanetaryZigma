@@ -131,7 +131,6 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
-        info.world.camera.update(info, &info.world.controller.input_map);
         try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
         try self.animation.update(info, &self.renderer.inner.skeletons);
@@ -160,8 +159,12 @@ pub const Context = struct {
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
         }
 
-        if (info.world.getPtr(info.world.player_id)) |player| {
-            info.world.camera.applyPose(player.transform.position);
+        info.world.camera.update(info, &info.world.controller.input_map);
+        info.world.controller.input_map.mouse_wheel = 0;
+        if (!info.world.controller.free_camera) {
+            if (info.world.getPtr(info.world.player_id)) |player| {
+                info.world.camera.applyPose(player.transform.position);
+            }
         }
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
@@ -211,8 +214,7 @@ pub const ffi = struct {
         std.log.debug("system context init", .{});
         context.init(data.*) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context init: {s}", .{@errorName(err)});
-            return;
+            std.debug.panic("context init: {s}", .{@errorName(err)});
         };
     }
 
@@ -228,16 +230,14 @@ pub const ffi = struct {
         const result = if (event != null) context.eventUpdate(info, event.?) else context.update(info);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
-            return;
+            std.debug.panic("context update: {s}", .{@errorName(err)});
         };
     }
     pub export fn systemContextReload(context: *Context, pre_reload: bool) void {
         const result = context.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
-            return;
+            std.debug.panic("context reload: {s}", .{@errorName(err)});
         };
     }
 };

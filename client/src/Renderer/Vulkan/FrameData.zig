@@ -12,6 +12,14 @@ render_fence: c.VkFence,
 command_buffer: c.VkCommandBuffer,
 gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
+debug_vertex_buffer: Buffer,
+
+pub const max_debug_vertices: u32 = 65536;
+
+pub const DebugVertex = extern struct {
+    position: [4]f32,
+    color: [4]f32,
+};
 
 pub const GPUScene = extern struct {
     view_proj: [16]f32,
@@ -74,6 +82,17 @@ pub fn init(vma: Vma, device: Device) !@This() {
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
             },
         ),
+        .debug_vertex_buffer = try .init(
+            device,
+            vma,
+            DebugVertex,
+            max_debug_vertices,
+            c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            .{
+                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            },
+        ),
     };
 }
 
@@ -83,4 +102,5 @@ pub fn deinit(self: *@This(), vma: Vma, device: Device) void {
     c.vkFreeCommandBuffers(device.handle, device.command_pool.handle, 1, &self.command_buffer);
     self.gpu_scene.deinit(vma);
     self.ui_vertex_buffer.deinit(vma);
+    self.debug_vertex_buffer.deinit(vma);
 }

@@ -91,7 +91,7 @@ pub fn update(
                 .kind = .skelly,
                 .transform = .{ .position = vector_direction },
                 .collider = .{
-                    .shape = .{ .primitive = .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } } },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
@@ -164,7 +164,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             .kind = item_kind,
             .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },
             .collider = .{
-                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                .shape = .{ .primitive = shared.Entity.colliderShape(item_kind).? },
                 .motion_type = .dynamic,
                 .object_layer = .planet_only,
             },
@@ -179,7 +179,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             .kind = .teleporter,
             .transform = .{ .position = teleport_position.? },
             .collider = .{
-                .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+                .shape = .{ .primitive = shared.Entity.colliderShape(.teleporter).? },
                 .motion_type = .static,
                 .object_layer = .non_moving,
             },

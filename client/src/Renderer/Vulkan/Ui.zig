@@ -17,6 +17,14 @@ pub const Texture = enum {
     pub fn toInt(self: @This()) u32 {
         return @intFromEnum(self);
     }
+
+    pub fn path(self: @This()) ?[:0]const u8 {
+        return switch (self) {
+            .blank, .font_atlas => null,
+            .damage_item => "assets/textures/damage.png",
+            .crosshair => "assets/textures/crosshair.png",
+        };
+    }
 };
 
 pub const Vertex = extern struct {

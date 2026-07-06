@@ -1,12 +1,10 @@
 const std = @import("std");
 const c = @import("vulkan");
 const Image = @import("Image.zig");
-const Material = @import("Material.zig");
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
 const AssetServer = @import("shared").AssetServer;
-const RenderResources = @import("RenderResources.zig");
 const check = @import("utils.zig").check;
 
 pub const Glyph = struct {
@@ -21,13 +19,11 @@ pub const Glyph = struct {
     xadvance: f32,
 };
 
-material: Material,
 image: Image,
 sampler: c.VkSampler,
 
 device: Device,
 vma: Vma,
-render_resources: *RenderResources,
 glyphs: [96]Glyph,
 name: []const u8,
 size: f32,
@@ -38,18 +34,15 @@ pub fn init(
     device: Device,
     path: []const u8,
     asset_server: *AssetServer,
-    render_resources: *RenderResources,
 ) !*@This() {
     const self = try gpa.create(@This());
     self.* = .{
         .device = device,
         .vma = vma,
-        .render_resources = render_resources,
         .name = try gpa.dupe(u8, path),
         .image = undefined,
         .sampler = undefined,
         .glyphs = undefined,
-        .material = undefined,
         .size = 32,
     };
     try asset_server.loadAsset(@This(), self, path, loadFont);
@@ -161,22 +154,10 @@ fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std
         .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     };
     try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &self.sampler));
-
-    self.material = try .init(
-        gpa,
-        self.name,
-        self.device,
-        self.vma,
-        self.render_resources.set_size,
-        self.render_resources.combined_image_sampler_descriptor_size,
-        self.sampler,
-        self.image.vk_imageview,
-    );
 }
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) void {
     self.image.deinit(vma, device);
-    self.material.deinit(gpa, vma);
     c.vkDestroySampler(device.handle, self.sampler, null);
     gpa.free(self.name);
     gpa.destroy(self);

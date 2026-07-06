@@ -35,24 +35,11 @@ pub const ObjectLayer = enum {
 };
 
 pub const Collider = struct {
-    const Primitive = union(enum) {
-        box: struct {
-            size: f32,
-        },
-        capsule: struct {
-            half_heigth: f32,
-            radius: f32,
-        },
-        sphere: struct {
-            size: f32,
-        },
-    };
-
     const Mesh = struct {
         indices: []u32,
         vertices: [][4]f32,
     };
-    shape: union(enum) { primitive: Primitive, mesh: Mesh },
+    shape: union(enum) { primitive: shared.Entity.ColliderShape, mesh: Mesh },
     body_id: ?c.b3BodyId = null,
     motion_type: MotionType,
     object_layer: ObjectLayer,
@@ -164,9 +151,8 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 fn colliderGroundExtent(collider: Collider) f32 {
     return switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
-            .box => |box| box.size,
-            .sphere => 1,
-            .capsule => 2,
+            .box => |box| box.half_extent,
+            .capsule => |capsule| capsule.half_heigth + capsule.radius,
         },
         .mesh => 0,
     };
@@ -217,12 +203,8 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
     switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
             .box => |box| {
-                var hull = c.b3MakeBoxHull(box.size, box.size, box.size);
+                var hull = c.b3MakeBoxHull(box.half_extent, box.half_extent, box.half_extent);
                 _ = c.b3CreateHullShape(body_id, &shape_def, &hull.base);
-            },
-            .sphere => {
-                const sphere: c.b3Sphere = .{ .center = .{ .x = 0, .y = 0, .z = 0 }, .radius = 1 };
-                _ = c.b3CreateSphereShape(body_id, &shape_def, &sphere);
             },
             .capsule => |capsule| {
                 const cap: c.b3Capsule = .{

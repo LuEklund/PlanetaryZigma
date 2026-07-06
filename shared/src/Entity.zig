@@ -25,6 +25,26 @@ pub fn hasCollider(kind: Kind) bool {
     };
 }
 
+pub const ColliderShape = union(enum) {
+    box: struct { half_extent: f32 },
+    capsule: struct { half_heigth: f32, radius: f32 },
+};
+
+pub fn colliderShape(kind: Kind) ?ColliderShape {
+    return switch (kind) {
+        .unknown, .bullet, .planet => null,
+        .player => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+        .skelly => .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } },
+        .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+        .teleporter,
+        .health_item,
+        .speed_item,
+        .damage_item,
+        .attack_speed_item,
+        => .{ .box = .{ .half_extent = 1 } },
+    };
+}
+
 pub fn hasHealth(kind: Kind) bool {
     return kind == .player or isEnemy(kind);
 }
