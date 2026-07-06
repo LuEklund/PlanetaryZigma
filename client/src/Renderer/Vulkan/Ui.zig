@@ -13,6 +13,8 @@ pub const Texture = enum {
     font_atlas,
     damage_item,
     crosshair,
+    oxygen_tank,
+    energy_drink,
 
     pub fn toInt(self: @This()) u32 {
         return @intFromEnum(self);
@@ -22,7 +24,9 @@ pub const Texture = enum {
         return switch (self) {
             .blank, .font_atlas => null,
             .damage_item => "assets/textures/damage.png",
+            .oxygen_tank => "assets/textures/oxygen_tank.png",
             .crosshair => "assets/textures/crosshair.png",
+            .energy_drink => "assets/textures/energy_drink.png",
         };
     }
 };
@@ -235,14 +239,21 @@ fn resolveLayout(self: *@This()) void {
     for (self.nodes.items) |*node| {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
         const layout: *Layout = &node.layout;
+
+        //TODO: text ofsett beased on size.
+        const text_size: Size2D = .{ .width = 0, .heigth = 0 };
+        // if (layout.text) |text| {
+        //     const metrics = measureText(&self.default_font.glyphs, text.data, text.size);
+        //     text_size = .{ .width = metrics.width, .heigth = @abs(metrics.bottom) + @abs(metrics.top) };
+        // }
         switch (layout.size) {
             .fixed => |size| {
-                node.rect.width = size.width;
-                node.rect.heigth = size.heigth;
+                node.rect.width = @max(size.width, text_size.width);
+                node.rect.heigth = @max(size.heigth, text_size.heigth);
             },
             .percent => |percent| {
-                node.rect.width = percent.width * origin.width;
-                node.rect.heigth = percent.heigth * origin.heigth;
+                node.rect.width = @max(percent.width * origin.width, text_size.width);
+                node.rect.heigth = @max(percent.heigth * origin.heigth, text_size.heigth);
             },
         }
     }
