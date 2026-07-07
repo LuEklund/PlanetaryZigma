@@ -2,7 +2,8 @@ const Item = @import("inventory.zig").Item;
 
 pub const Enemy = struct {
     pub const Kind = enum(u16) {
-        skelly,
+        tubloid,
+        tubloida,
         wizard,
     };
 };
@@ -24,7 +25,7 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
         .unknown, .bullet, .planet => null,
         .player => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
         .enemy => |enemy_kind| switch (enemy_kind) {
-            .skelly => .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } },
+            .tubloid, .tubloida => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
             .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
         },
         .teleporter, .item => .{ .box = .{ .half_extent = 1 } },

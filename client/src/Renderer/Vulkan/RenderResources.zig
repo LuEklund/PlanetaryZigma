@@ -125,9 +125,9 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     try images.append(gpa, default_texture);
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .magFilter = c.VK_FILTER_LINEAR,
         .minFilter = c.VK_FILTER_LINEAR,
         .anisotropyEnable = c.VK_FALSE,

@@ -61,7 +61,8 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
         }
 
         switch (enemy.kind.enemy) {
-            .skelly => {
+            .tubloida => {},
+            .tubloid => {
                 if (info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     if (distance < 4) {
                         enemy.last_attack = info.elapsed_time;
@@ -80,15 +81,15 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                     if (desired == .attack) {
                         enemy.last_attack = info.elapsed_time;
                         const spawned = try spawner.spawn(.{
-                            .kind = .{ .enemy = .skelly },
+                            .kind = .{ .enemy = .tubloid },
                             .transform = .{ .position = player.transform.position },
                             .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloid }).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
                         });
-                        spawned.stats.init(20, 10, 1, 1);
+                        spawned.stats.init(20, 3, 1, 1);
                         enemy.last_attack = info.elapsed_time;
                         network_manager.pending_events.appendAssumeCapacity(.{ .attack = enemy.id });
                     }

@@ -20,7 +20,6 @@ last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 should_spawm: bool = false,
 
-pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 
 pub fn init(
@@ -41,7 +40,6 @@ pub fn init(
 
 pub fn deinit(self: *@This()) void {
     self.pending_despawn.deinit(self.gpa);
-    self.pending_spawn.deinit(self.gpa);
 }
 
 pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
@@ -50,7 +48,6 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     const id: u32 = entity.id;
     entity.* = entity_info;
     entity.id = id;
-    try self.pending_spawn.append(self.gpa, id);
     if (entity.flags.is_teleporter_boss) self.world.teleport_bosses.appendAssumeCapacity(entity.id);
     try self.network_manager.pending_spawn.append(self.gpa, entity.id);
     if (shared.Entity.hasCollider(entity.kind)) {
@@ -88,10 +85,10 @@ pub fn update(
         if (self.credits >= self.enemy_cost) {
             self.credits -= self.enemy_cost;
             const spawned = try self.spawn(.{
-                .kind = .{ .enemy = .skelly },
+                .kind = .{ .enemy = .tubloid },
                 .transform = .{ .position = vector_direction },
                 .collider = .{
-                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloid }).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },

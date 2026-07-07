@@ -108,7 +108,7 @@ pub fn clipFor(kind: shared.Entity.Kind, state: shared.Entity.State, default: us
             .attack => .{ 2, false },
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
-            .skelly => switch (state) {
+            .tubloid, .tubloida => switch (state) {
                 .idle => .{ 0, true },
                 .walk => .{ 1, true },
                 .attack => .{ 2, false },

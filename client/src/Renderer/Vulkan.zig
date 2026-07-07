@@ -45,7 +45,8 @@ pub const Model = enum {
     planet,
     bullet,
     teleporter,
-    skelly,
+    tubloid,
+    tubloida,
     wizard,
     health,
     speed,
@@ -60,7 +61,8 @@ pub const Model = enum {
             .bullet => .bullet,
             .teleporter => .teleporter,
             .enemy => |enemy_kind| switch (enemy_kind) {
-                .skelly => .skelly,
+                .tubloid => .tubloid,
+                .tubloida => .tubloida,
                 .wizard => .wizard,
             },
             .item => |item_kind| switch (item_kind) {
@@ -158,9 +160,10 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .planet = .{ .path = null, .offset = .{}, .skinned = false }, //comes from server
         .unknown = .{ .path = null, .offset = .{}, .skinned = false },
         .bullet = .{ .path = null, .offset = .{}, .skinned = false },
-        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .player = .{ .path = "objects/BenRun.glb", .offset = .{ .position = .{ 0, -0.8, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
-        .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .tubloid = .{ .path = "objects/Tubloid.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
+        .tubloida = .{ .path = "objects/Tubloida.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .health = .{ .path = "objects/oxigen_tank.glb", .offset = .{}, .skinned = false },
         .speed = .{ .path = "objects/energy_drink.glb", .offset = .{}, .skinned = false },
@@ -513,6 +516,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         const transform = entity.transform;
         // transform.position += nz.vec.scale(transform.position + nz.Vec3(f32){ 0, 100, 0 }, @floatFromInt(i));
         const base_matrix = transform.toMat4x4().mul(model.offset.toMat4x4());
+
         try drawStatic(self, cmd, model, current_frame, base_matrix);
         // }
     }

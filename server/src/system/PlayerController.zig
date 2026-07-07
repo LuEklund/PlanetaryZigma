@@ -46,25 +46,25 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
             // }
             // try self.spawner.startStage(info.world, self.physics);
-            _ = try self.spawner.spawn(.{
-                .kind = .{ .item = .health },
-                .transform = .{ .position = player.transform.position },
-                .collider = .{
-                    .shape = .{ .primitive = .{ .box = .{ .half_extent = 1 } } },
-                    .motion_type = .dynamic,
-                    .object_layer = .planet_only,
-                },
-            });
-            // const skelly = try self.spawner.spawn(.{
-            //     .kind = .{ .enemy = .skelly },
-            //     .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
+            // _ = try self.spawner.spawn(.{
+            //     .kind = .{ .item = .speed },
+            //     .transform = .{ .position = player.transform.position },
             //     .collider = .{
-            //         .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
+            //         .shape = .{ .primitive = .{ .box = .{ .half_extent = 1 } } },
             //         .motion_type = .dynamic,
-            //         .object_layer = .moving,
+            //         .object_layer = .planet_only,
             //     },
             // });
-            // skelly.stats.init(20, 10, 1, 1);
+            const tubloid = try self.spawner.spawn(.{
+                .kind = .{ .enemy = .tubloida },
+                .transform = .{ .position = player.transform.position },
+                .collider = .{
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloida }).? },
+                    .motion_type = .dynamic,
+                    .object_layer = .moving,
+                },
+            });
+            tubloid.stats.init(20, 3, 1, 1);
         }
 
         if (player.controller.input.keys.e) {

@@ -150,6 +150,7 @@ fn handleCommand(
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id) != null) return;
             if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
+
             self.spawner.spawn(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
