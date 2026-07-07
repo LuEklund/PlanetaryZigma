@@ -553,7 +553,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         },
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-            .address = (try self.render_resources.getMaterialPtr("skybox")).buffer.getGPUAddress(),
+            .address = self.render_resources.getMaterialPtr(self.render_resources.skybox_material_index).buffer.getGPUAddress(),
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },
@@ -671,7 +671,7 @@ fn drawStatic(
     top_matrix: nz.Mat4x4(f32),
 ) !void {
     for (model.surfaces.items) |surface| {
-        const mesh = try self.render_resources.getMeshPtr(surface.mesh_id);
+        const mesh = self.render_resources.getMeshPtr(surface.mesh_id);
         const surface_matrix = top_matrix.mul(surface.local_matrix);
         var push: Shader.StaticPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
@@ -693,7 +693,7 @@ fn drawSkeletal(
     const node_matrix = top_matrix.mul(node.world_matrix);
 
     if (node.mesh_id) |mesh_id| {
-        const mesh = try self.render_resources.getMeshPtr(mesh_id);
+        const mesh = self.render_resources.getMeshPtr(mesh_id);
         var push: Shader.AnimationPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
             .model_matrix = node_matrix.d,
@@ -804,7 +804,7 @@ fn emitNode(
     c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
     c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(@typeInfo(@TypeOf(push)).pointer.child), push);
     for (mesh.surfaces.items) |surface| {
-        const material = try self.render_resources.getMaterialPtr(surface.material_name);
+        const material = self.render_resources.getMaterialPtr(surface.material_index);
         const surface_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
             .{
                 .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
@@ -846,11 +846,11 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
 }
 
 pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model) !void {
-    if (self.render_resources.meshes.fetchSwapRemove(name)) |kv| {
-        try check(c.vkDeviceWaitIdle(self.device.handle));
-        var old_mesh = kv.value;
-        old_mesh.deinit(self.gpa, self.vma);
-        std.log.warn("swap removed excsisting mesh", .{});
+    for (self.render_resources.meshes.items) |existing| {
+        if (std.mem.eql(u8, existing.name, name)) {
+            try check(c.vkDeviceWaitIdle(self.device.handle));
+            break;
+        }
     }
     const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, self.render_resources, name, vertices, indices, .{});
     if (self.renderables.get(model_kind)) |old| switch (old) {

@@ -27,8 +27,9 @@ pub const PipelineLayoutKind = enum { world, ui };
 
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
-meshes: std.StringArrayHashMapUnmanaged(Mesh),
-materials: std.StringArrayHashMapUnmanaged(Material),
+meshes: std.ArrayList(Mesh),
+materials: std.ArrayList(Material),
+skybox_material_index: usize,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout),
@@ -41,8 +42,8 @@ vma: Vma,
 device: Device,
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*@This() {
-    const meshes: std.StringArrayHashMapUnmanaged(Mesh) = .empty;
-    var materials: std.StringArrayHashMapUnmanaged(Material) = .empty;
+    const meshes: std.ArrayList(Mesh) = .empty;
+    var materials: std.ArrayList(Material) = .empty;
     var samplers: std.ArrayList(c.VkSampler) = .empty;
     var images: std.ArrayList(Image) = .empty;
 
@@ -151,7 +152,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         default_sampler,
         default_texture.vk_imageview,
     );
-    try materials.put(gpa, default_material.name, default_material);
+    try materials.append(gpa, default_material);
 
     const self = try gpa.create(@This());
     self.* = .{
@@ -167,6 +168,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf", asset_server),
         .ui_image_indices = .initFill(null),
         .skybox = undefined,
+        .skybox_material_index = undefined,
         .vma = vma,
         .device = device,
     };
@@ -241,7 +243,8 @@ fn loadSkybox(self: *@This(), gpa: std.mem.Allocator) !void {
         self.samplers.items[0],
         self.skybox.vk_imageview,
     );
-    try self.materials.put(gpa, sky_material.name, sky_material);
+    try self.materials.append(gpa, sky_material);
+    self.skybox_material_index = self.materials.items.len - 1;
 }
 
 fn uploadSkyboxFaces(self: *@This(), gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
@@ -378,13 +381,10 @@ fn loadUiTextures(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Devi
 }
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    {
-        var it = self.materials.iterator();
-        while (it.next()) |pair| {
-            pair.value_ptr.deinit(gpa, vma);
-        }
-        self.materials.deinit(gpa);
+    for (self.materials.items) |*material| {
+        material.deinit(gpa, vma);
     }
+    self.materials.deinit(gpa);
 
     for (self.images.items) |*image| {
         image.deinit(vma, device);
@@ -397,7 +397,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     }
     self.samplers.deinit(gpa);
 
-    for (self.meshes.values()) |*mesh| {
+    for (self.meshes.items) |*mesh| {
         mesh.deinit(gpa, vma);
     }
     self.meshes.deinit(gpa);
@@ -413,20 +413,9 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     gpa.destroy(self);
 }
 
-pub fn getMeshPtr(self: *@This(), name_id: ?[]const u8) !*Mesh {
-    if (name_id) |name| {
-        // std.log.debug("got mesh: {s}", .{name});
-        if (self.meshes.getPtr(name)) |mesh| return mesh;
-    } else {
-        std.log.debug("mesh: NULL", .{});
-    }
-    if (self.meshes.getPtr(default_mesh_name)) |default_mesh| return default_mesh else {
-        return error.NoDefaultMeshFound;
-    }
+pub fn getMeshPtr(self: *@This(), index: usize) *Mesh {
+    return &self.meshes.items[index];
 }
-pub fn getMaterialPtr(self: *@This(), name_id: ?[]const u8) !*Material {
-    if (name_id) |name| if (self.materials.getPtr(name)) |material| return material;
-    if (self.materials.getPtr(default_material_name)) |default_material| return default_material else {
-        return error.NoDefaultMaterialFound;
-    }
+pub fn getMaterialPtr(self: *@This(), index: ?usize) *Material {
+    return &self.materials.items[index orelse 0];
 }

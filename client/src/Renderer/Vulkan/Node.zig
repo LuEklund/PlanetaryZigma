@@ -6,7 +6,7 @@ const Material = @import("Material.zig");
 
 parent: ?usize = null,
 children: std.ArrayList(usize) = .empty,
-mesh_id: ?[]const u8 = null,
+mesh_id: ?usize = null,
 translation: nz.Vec3(f32) = @splat(0),
 scale: nz.Vec3(f32) = @splat(1),
 rotation: nz.quat.Hamiltonian(f32) = .identity,

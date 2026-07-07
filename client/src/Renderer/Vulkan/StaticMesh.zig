@@ -9,7 +9,7 @@ const AssetServer = @import("shared").AssetServer;
 const gltf = @import("gltf.zig");
 
 pub const Surface = struct {
-    mesh_id: []const u8,
+    mesh_id: usize,
     local_matrix: nz.Mat4x4(f32),
 };
 
@@ -104,12 +104,22 @@ pub fn fromMesh(
         &.{.{
             .index_start = 0,
             .index_count = @intCast(indices.len),
-            .material_name = null,
+            .material_index = null,
         }},
     );
 
-    try render_resources.meshes.put(gpa, mesh.name, mesh);
+    const existing_index = for (render_resources.meshes.items, 0..) |existing, index| {
+        if (std.mem.eql(u8, existing.name, name)) break index;
+    } else null;
+    const mesh_id = if (existing_index) |index| blk: {
+        render_resources.meshes.items[index].deinit(gpa, vma);
+        render_resources.meshes.items[index] = mesh;
+        break :blk index;
+    } else blk: {
+        try render_resources.meshes.append(gpa, mesh);
+        break :blk render_resources.meshes.items.len - 1;
+    };
     const self = try init(gpa, vma, device, render_resources, offset);
-    try self.surfaces.append(gpa, .{ .mesh_id = mesh.name, .local_matrix = nz.Mat4x4(f32).identity });
+    try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .local_matrix = nz.Mat4x4(f32).identity });
     return self;
 }

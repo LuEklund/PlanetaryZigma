@@ -164,6 +164,33 @@ pub fn parseScene(
         }
     }
 
+    const original_material_count = render_resources.materials.items.len;
+    {
+        if (gltf.materials) |materials| for (materials) |material| {
+            var sampler = render_resources.samplers.items[0];
+            var image_view = render_resources.images.items[0].vk_imageview;
+            if (material.pbrMetallicRoughness) |metallic_roughness| {
+                if (metallic_roughness.baseColorTexture) |base_texture| {
+                    const texture_info = gltf.textures.?[base_texture.index];
+                    if (texture_info.sampler) |sampler_index| sampler = render_resources.samplers.items[original_sample_count + sampler_index];
+                    if (texture_info.source) |image_index| image_view = render_resources.images.items[original_image_count + image_index].vk_imageview;
+                }
+            }
+            const new_material: Material = try .init(
+                gpa,
+                material.name orelse "material",
+                device,
+                vma,
+                render_resources.set_size,
+                render_resources.combined_image_sampler_descriptor_size,
+                sampler,
+                image_view,
+            );
+            try render_resources.materials.append(gpa, new_material);
+        };
+    }
+
+    const original_mesh_count = render_resources.meshes.items.len;
     {
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
             var surfaces: std.ArrayList(Mesh.GeoSurface) = try .initCapacity(gpa, mesh.primitives.len);
@@ -214,42 +241,10 @@ pub fn parseScene(
                 );
 
                 var base_color: [4]f32 = .{ 1, 0, 0, 1 };
-                var material_name: ?[]const u8 = null;
                 if (primitive.material) |material_index| {
                     if (gltf.materials) |materials| {
-                        const material = materials[material_index];
-                        if (material.pbrMetallicRoughness) |matallic_roughness| {
-                            base_color = matallic_roughness.baseColorFactor;
-                            if (matallic_roughness.baseColorTexture) |base_texture| {
-                                if (material.name != null and render_resources.materials.contains(material.name.?)) {
-                                    material_name = (try render_resources.getMaterialPtr(material.name.?)).name;
-                                } else if (material.name) |name| {
-                                    const texture_index = base_texture.index;
-
-                                    const texture_info = gltf.textures.?[texture_index];
-                                    const sampler = if (texture_info.sampler) |sampler_index|
-                                        render_resources.samplers.items[original_sample_count + sampler_index]
-                                    else
-                                        render_resources.samplers.items[0];
-                                    const image_view = if (texture_info.source) |image_index|
-                                        render_resources.images.items[original_image_count + image_index].vk_imageview
-                                    else
-                                        render_resources.images.items[0].vk_imageview;
-
-                                    const new_material: Material = try .init(
-                                        gpa,
-                                        name,
-                                        device,
-                                        vma,
-                                        render_resources.set_size,
-                                        render_resources.combined_image_sampler_descriptor_size,
-                                        sampler,
-                                        image_view,
-                                    );
-                                    try render_resources.materials.put(gpa, new_material.name, new_material);
-                                    material_name = new_material.name;
-                                }
-                            }
+                        if (materials[material_index].pbrMetallicRoughness) |metallic_roughness| {
+                            base_color = metallic_roughness.baseColorFactor;
                         }
                     }
                 }
@@ -257,7 +252,7 @@ pub fn parseScene(
                 surfaces.appendAssumeCapacity(.{
                     .index_count = indices_count,
                     .index_start = indices_start,
-                    .material_name = if (material_name) |name| name else RenderResources.default_material_name,
+                    .material_index = if (primitive.material) |material_index| original_material_count + material_index else null,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
@@ -337,19 +332,17 @@ pub fn parseScene(
                 }
             }
 
-            if (mesh.name != null and !render_resources.meshes.contains(mesh.name.?)) {
-                const new_mesh: Mesh = try .init(
-                    gpa,
-                    vma,
-                    mesh.name.?,
-                    device,
-                    V,
-                    vertices.items,
-                    indices.items,
-                    surfaces.items,
-                );
-                try render_resources.meshes.put(gpa, new_mesh.name, new_mesh);
-            }
+            const new_mesh: Mesh = try .init(
+                gpa,
+                vma,
+                mesh.name orelse "mesh",
+                device,
+                V,
+                vertices.items,
+                indices.items,
+                surfaces.items,
+            );
+            try render_resources.meshes.append(gpa, new_mesh);
         };
     }
 
@@ -358,9 +351,7 @@ pub fn parseScene(
         for (gltf_nodes, out_nodes.items, 0..) |gltf_node, *scene_node, scene_node_id| {
             scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| @intCast(skin_id) else -1 };
             if (gltf_node.mesh) |mesh_id| {
-                const gltf_mesh = gltf.meshes.?[mesh_id];
-                const mesh = try render_resources.getMeshPtr(gltf_mesh.name);
-                scene_node.mesh_id = mesh.name;
+                scene_node.mesh_id = original_mesh_count + mesh_id;
             }
 
             if (gltf_node.matrix) |matrix| {
