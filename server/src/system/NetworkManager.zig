@@ -40,7 +40,6 @@ pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
-pending_animatoin_state: std.ArrayList(struct { id: u32, state: shared.Entity.State }) = .empty,
 pending_events: std.ArrayList(shared.net.Event) = .empty,
 
 pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
@@ -52,9 +51,8 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.Ste
         .steam_server = net,
         .clients = .init(gpa),
         .pending_stats = try .initCapacity(gpa, 4096),
-        .pending_animatoin_state = try .initCapacity(gpa, 1024),
         .pending_inventory = try .initCapacity(gpa, 1024),
-        .pending_events = try .initCapacity(gpa, 64),
+        .pending_events = try .initCapacity(gpa, 1024),
         .last_motions = last_motions,
     };
 }
@@ -63,7 +61,6 @@ pub fn deinit(self: *@This()) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
-    self.pending_animatoin_state.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
     self.pending_motions.deinit(self.gpa);
@@ -281,15 +278,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             }, .reliable);
         }
 
-        // animations states
-        for (self.pending_animatoin_state.items) |entry| {
-            try client.sendCommand(writer, .{
-                .update_animation_state = .{
-                    .id = @intCast(entry.id),
-                    .state = entry.state,
-                },
-            }, .reliable);
-        }
         // events
         for (self.pending_events.items) |event| {
             try client.sendCommand(writer, .{
@@ -302,7 +290,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.pending_despawn.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();
-    self.pending_animatoin_state.clearRetainingCapacity();
     self.pending_events.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
     self.steam_server.packet_mutex.unlock(self.io);

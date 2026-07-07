@@ -63,18 +63,12 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
         switch (enemy.kind.enemy) {
             .skelly => {
                 if (info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
-                    var desired: shared.Entity.State = .idle;
                     if (distance < 4) {
-                        desired = .attack;
                         enemy.last_attack = info.elapsed_time;
                         if (!health_manager.removeHealth(player, damage)) std.log.debug("did not take damage", .{});
+                        network_manager.pending_events.appendAssumeCapacity(.{ .attack = enemy.id });
                     } else if (distance >= 3) {
-                        desired = .walk;
                         Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
-                    }
-                    if (desired != enemy.state or desired == .attack) {
-                        enemy.state = desired;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
                     }
                 }
             },
@@ -95,18 +89,11 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                             },
                         });
                         spawned.stats.init(20, 10, 1, 1);
-                        if (enemy.state != .attack) {
-                            enemy.state = .attack;
-                        }
                         enemy.last_attack = info.elapsed_time;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .attack });
+                        network_manager.pending_events.appendAssumeCapacity(.{ .attack = enemy.id });
                     }
                 } else {
                     if (distance < 40) continue;
-                    if (enemy.state != .walk) {
-                        enemy.state = .walk;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
-                    }
                     Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
                 }
             },

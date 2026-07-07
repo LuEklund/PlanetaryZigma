@@ -8,6 +8,7 @@ const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
+const Animations = @import("Animations.zig");
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
@@ -170,36 +171,6 @@ fn handleCommand(
             };
             Spawner.applyStat(entity, update_stat_command);
         },
-        .update_animation_state => |state_command| {
-            const entity = info.world.getPtr(state_command.id) orelse return;
-            entity.state = state_command.state;
-            const skeleton_animation = skeletons.getPtr(entity.id) orelse return;
-            skeleton_animation.player.active, skeleton_animation.player.loop = switch (entity.kind) {
-                .player => switch (entity.state) {
-                    .idle => .{ 0, true },
-                    .walk => .{ 1, true },
-                    .attack => .{ 2, false },
-                },
-                .enemy => |enemy_kind| switch (enemy_kind) {
-                    .skelly => switch (entity.state) {
-                        .idle => .{ 0, true },
-                        .walk => .{ 1, true },
-                        .attack => .{ 2, false },
-                    },
-                    .wizard => switch (entity.state) {
-                        // .idle => .{ 0, true },
-                        .walk => .{ 0, true },
-                        .attack => .{ 1, false },
-                        else => unreachable,
-                    },
-                },
-
-                .unknown, .planet, .bullet, .teleporter, .item => .{ skeleton_animation.player.default, true },
-            };
-            if (skeleton_animation.player.loop == false) {
-                skeleton_animation.player.current_time = 0;
-            }
-        },
         .update_event => |event| {
             switch (event) {
                 .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
@@ -209,6 +180,12 @@ fn handleCommand(
                     entity.teleporter.charged = charged;
                 },
                 .new_stage => info.world.teleporter_id = 0,
+                .attack => |id| {
+                    const entity = info.world.getPtr(id) orelse return;
+                    const skeleton_animation = skeletons.getPtr(id) orelse return;
+                    skeleton_animation.player.active, skeleton_animation.player.loop = Animations.clipFor(entity.kind, .attack, skeleton_animation.player.default);
+                    skeleton_animation.player.current_time = 0;
+                },
             }
         },
         .update_inventory => |inventory| {

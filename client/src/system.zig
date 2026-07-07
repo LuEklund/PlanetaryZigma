@@ -22,7 +22,6 @@ pub const Info = struct {
 pub const Entity = struct {
     id: u32 = 0,
     kind: shared.Entity.Kind,
-    state: shared.Entity.State = .walk,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},

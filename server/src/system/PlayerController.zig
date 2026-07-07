@@ -29,7 +29,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const transform = &player.transform;
         const controller = &player.controller;
         const input = &controller.input;
-        var desired_state: shared.Entity.State = .idle;
 
         // std.log.debug("handle input for: {d}", .{player.id});
         // std.log.debug("pos {any}", .{transform.position});
@@ -130,11 +129,9 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 Physics.setPosition(id, .{ 0, 0, 0 });
                 Physics.setRotation(id, transform.rotation);
             }
-            if (nz.vec.length(dir) > std.math.floatEps(f32)) desired_state = .walk;
         }
 
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
-            desired_state = .attack;
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, BulletManager.muzzle_speed);
             const bullet = try self.spawner.spawn(
@@ -147,12 +144,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 },
             );
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
-            player.state = .attack;
-            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player_id, .state = .attack });
-        }
-        if (info.elapsed_time - player.last_attack >= 2 and desired_state != player.state) {
-            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player_id, .state = desired_state });
-            player.state = desired_state;
+            network_manager.pending_events.appendAssumeCapacity(.{ .attack = player_id });
         }
     }
 }

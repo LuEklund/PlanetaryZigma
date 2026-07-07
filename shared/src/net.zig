@@ -37,7 +37,6 @@ pub const ServerPacket = union(enum) {
     update_motion: UpdateMotion,
     server_tick: u32,
     update_stat: UpdateStat,
-    update_animation_state: UpdateAnimationState,
     update_event: Event,
     update_inventory: UpdateInventory,
 };
@@ -117,15 +116,11 @@ pub const UpdateInventory = struct {
     set: u8,
 };
 
-pub const UpdateAnimationState = struct {
-    id: u32,
-    state: Entity.State,
-};
-
 pub const Event = union(enum(u16)) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: void,
+    attack: u32,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────
