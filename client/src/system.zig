@@ -38,12 +38,6 @@ pub const Entity = struct {
         _ = self;
         _ = gpa;
     }
-    pub fn isEnemy(self: *Entity) bool {
-        return shared.Entity.isEnemy(self.kind);
-    }
-    pub fn isItem(self: *Entity) bool {
-        return shared.Entity.isItem(self.kind);
-    }
 };
 
 pub const World = struct {

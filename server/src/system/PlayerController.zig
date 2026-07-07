@@ -57,10 +57,10 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             //     },
             // });
             const skelly = try self.spawner.spawn(.{
-                .kind = .skelly,
+                .kind = .{ .enemy = .skelly },
                 .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                 .collider = .{
-                    .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
@@ -76,10 +76,10 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                         teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
                         const wizard = try self.spawner.spawn(.{
-                            .kind = .wizard,
+                            .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.wizard).? },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .wizard }).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },

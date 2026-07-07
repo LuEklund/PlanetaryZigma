@@ -34,7 +34,7 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
     const player = info.world.getPtr(info.world.players.getLast()) orelse return;
 
     for (info.world.entities.values()) |*enemy| {
-        if (!shared.Entity.isEnemy(enemy.kind)) continue;
+        if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
         const speed = enemy.stats.get(.speed).current;
@@ -60,7 +60,7 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
             Physics.setRotation(body_id, rot);
         }
 
-        switch (enemy.kind) {
+        switch (enemy.kind.enemy) {
             .skelly => {
                 if (info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     var desired: shared.Entity.State = .idle;
@@ -86,10 +86,10 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                     if (desired == .attack) {
                         enemy.last_attack = info.elapsed_time;
                         const spawned = try spawner.spawn(.{
-                            .kind = .skelly,
+                            .kind = .{ .enemy = .skelly },
                             .transform = .{ .position = player.transform.position },
                             .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
@@ -110,7 +110,6 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                     Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
                 }
             },
-            else => unreachable,
         }
     }
 }

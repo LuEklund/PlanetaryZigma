@@ -88,10 +88,10 @@ pub fn update(
         if (self.credits >= self.enemy_cost) {
             self.credits -= self.enemy_cost;
             const spawned = try self.spawn(.{
-                .kind = .skelly,
+                .kind = .{ .enemy = .skelly },
                 .transform = .{ .position = vector_direction },
                 .collider = .{
-                    .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .skelly }).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
@@ -153,18 +153,18 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     });
 
     for (0..20) |i| {
-        const item_kind: shared.Entity.Kind = switch (i) {
-            0...5 => .attack_speed_item,
-            6...10 => .speed_item,
-            11...15 => .damage_item,
-            else => .health_item,
+        const item_kind: shared.Item.Kind = switch (i) {
+            0...5 => .attack_speed,
+            6...10 => .speed,
+            11...15 => .damage,
+            else => .health,
         };
         const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
         _ = try self.spawn(.{
-            .kind = item_kind,
+            .kind = .{ .item = item_kind },
             .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },
             .collider = .{
-                .shape = .{ .primitive = shared.Entity.colliderShape(item_kind).? },
+                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .item = item_kind }).? },
                 .motion_type = .dynamic,
                 .object_layer = .planet_only,
             },

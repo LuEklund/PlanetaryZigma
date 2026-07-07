@@ -9,7 +9,8 @@ const Info = system.Info;
 pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {
-        const item_kind = entity.kind.toItem() orelse continue;
+        if (entity.kind != .item) continue;
+        const item_kind = entity.kind.item;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
             const length = player.transform.position - entity.transform.position;

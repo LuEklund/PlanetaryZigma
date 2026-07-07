@@ -124,9 +124,9 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 } },
                 .color = .new(1, 1, 1, 1),
                 .texture = switch (item_kind) {
-                    .health_potion => .oxygen_tank,
-                    .speed_potion => .energy_drink,
-                    else => .damage_item,
+                    .health => .oxygen_tank,
+                    .speed => .energy_drink,
+                    .damage, .attack_speed => .damage_item,
                 },
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{

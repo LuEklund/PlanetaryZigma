@@ -39,6 +39,40 @@ pub const Renderable = union(enum) {
     skeletal: *SkeletalMesh,
 };
 
+pub const Model = enum {
+    unknown,
+    player,
+    planet,
+    bullet,
+    teleporter,
+    skelly,
+    wizard,
+    health,
+    speed,
+    damage,
+    attack_speed,
+
+    pub fn fromKind(kind: shared.Entity.Kind) Model {
+        return switch (kind) {
+            .unknown => .unknown,
+            .player => .player,
+            .planet => .planet,
+            .bullet => .bullet,
+            .teleporter => .teleporter,
+            .enemy => |enemy_kind| switch (enemy_kind) {
+                .skelly => .skelly,
+                .wizard => .wizard,
+            },
+            .item => |item_kind| switch (item_kind) {
+                .health => .health,
+                .speed => .speed,
+                .damage => .damage,
+                .attack_speed => .attack_speed,
+            },
+        };
+    }
+};
+
 gpa: std.mem.Allocator,
 asset_server: *AssetServer,
 
@@ -50,7 +84,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 render_resources: RenderResources,
-renderables: std.EnumMap(shared.Entity.Kind, Renderable),
+renderables: std.EnumMap(Model, Renderable),
 shaders: std.EnumMap(Shader.Kind, *Shader),
 skeletons: std.AutoHashMap(u32, SkeletonInstance),
 current_frame_inflight: u32 = 0,
@@ -124,7 +158,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
     self.renderables = .{};
     const Spec = struct { path: ?[]const u8, offset: nz.Transform3D(f32), skinned: bool };
-    const specs = std.EnumArray(shared.Entity.Kind, Spec).init(.{
+    const specs = std.EnumArray(Model, Spec).init(.{
         .planet = .{ .path = null, .offset = .{}, .skinned = false }, //comes from server
         .unknown = .{ .path = null, .offset = .{}, .skinned = false },
         .bullet = .{ .path = null, .offset = .{}, .skinned = false },
@@ -132,19 +166,19 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .teleporter = .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false },
         .skelly = .{ .path = "objects/Skelly.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
         .wizard = .{ .path = "objects/Wizard.glb", .offset = .{ .position = .{ 0, -0.6, 0 }, .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }) }, .skinned = true },
-        .health_item = .{ .path = "objects/oxigen_tank.glb", .offset = .{}, .skinned = false },
-        .speed_item = .{ .path = "objects/energy_drink.glb", .offset = .{}, .skinned = false },
-        .damage_item = .{ .path = "objects/damage.glb", .offset = .{}, .skinned = false },
-        .attack_speed_item = .{ .path = "objects/attack_speed.glb", .offset = .{}, .skinned = false },
+        .health = .{ .path = "objects/oxigen_tank.glb", .offset = .{}, .skinned = false },
+        .speed = .{ .path = "objects/energy_drink.glb", .offset = .{}, .skinned = false },
+        .damage = .{ .path = "objects/damage.glb", .offset = .{}, .skinned = false },
+        .attack_speed = .{ .path = "objects/attack_speed.glb", .offset = .{}, .skinned = false },
     });
-    for (std.enums.values(shared.Entity.Kind)) |kind| {
-        const spec = specs.get(kind);
+    for (std.enums.values(Model)) |model| {
+        const spec = specs.get(model);
         const path = spec.path orelse continue;
         const renderable: Renderable = if (spec.skinned)
             .{ .skeletal = try SkeletalMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) }
         else
             .{ .static = try StaticMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) };
-        self.renderables.put(kind, renderable);
+        self.renderables.put(model, renderable);
     }
     try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
     try self.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
@@ -547,7 +581,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     for (info.world.entities.values()) |*entity| {
         // const spawns: usize = if (entity.kind == .planet) 3 else 1;
         // for (0..spawns) |i| {
-        const renderable = self.renderables.get(entity.kind) orelse {
+        const renderable = self.renderables.get(.fromKind(entity.kind)) orelse {
             if (entity.kind.expectsModel()) {
                 std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
                 return error.NoModel;
@@ -570,7 +604,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);
     bindVertexShader(cmd, self.shaders.get(.vert_skinned).?);
     for (info.world.entities.values()) |*entity| {
-        const renderable = self.renderables.get(entity.kind) orelse continue;
+        const renderable = self.renderables.get(.fromKind(entity.kind)) orelse continue;
         const model = switch (renderable) {
             .skeletal => |skeletal_model| skeletal_model,
             .static => continue,
@@ -891,7 +925,7 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, kind: shared.Entity.Kind) !void {
+pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model) !void {
     if (self.render_resources.meshes.fetchSwapRemove(name)) |kv| {
         try check(c.vkDeviceWaitIdle(self.device.handle));
         var old_mesh = kv.value;
@@ -899,11 +933,11 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
         std.log.warn("swap removed excsisting mesh", .{});
     }
     const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, &self.render_resources, name, vertices, indices, .{});
-    if (self.renderables.get(kind)) |old| switch (old) {
+    if (self.renderables.get(model_kind)) |old| switch (old) {
         .static => |static| static.deinit(gpa),
         .skeletal => |skeletal| skeletal.deinit(gpa),
     };
-    self.renderables.put(kind, .{ .static = mesh });
+    self.renderables.put(model_kind, .{ .static = mesh });
 }
 
 fn createShader(
@@ -931,7 +965,7 @@ fn createShader(
 }
 
 pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
-    const renderable = self.renderables.get(entity_kind) orelse {
+    const renderable = self.renderables.get(.fromKind(entity_kind)) orelse {
         if (entity_kind.expectsModel()) std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
         return; // bullet/unknown: no skeleton
     };

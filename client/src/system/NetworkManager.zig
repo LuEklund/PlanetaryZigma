@@ -180,19 +180,21 @@ fn handleCommand(
                     .walk => .{ 1, true },
                     .attack => .{ 2, false },
                 },
-                .skelly => switch (entity.state) {
-                    .idle => .{ 0, true },
-                    .walk => .{ 1, true },
-                    .attack => .{ 2, false },
-                },
-                .wizard => switch (entity.state) {
-                    // .idle => .{ 0, true },
-                    .walk => .{ 0, true },
-                    .attack => .{ 1, false },
-                    else => unreachable,
+                .enemy => |enemy_kind| switch (enemy_kind) {
+                    .skelly => switch (entity.state) {
+                        .idle => .{ 0, true },
+                        .walk => .{ 1, true },
+                        .attack => .{ 2, false },
+                    },
+                    .wizard => switch (entity.state) {
+                        // .idle => .{ 0, true },
+                        .walk => .{ 0, true },
+                        .attack => .{ 1, false },
+                        else => unreachable,
+                    },
                 },
 
-                .unknown, .planet, .bullet, .teleporter, .health_item, .speed_item, .damage_item, .attack_speed_item => .{ skeleton_animation.player.default, true },
+                .unknown, .planet, .bullet, .teleporter, .item => .{ skeleton_animation.player.default, true },
             };
             if (skeleton_animation.player.loop == false) {
                 skeleton_animation.player.current_time = 0;
