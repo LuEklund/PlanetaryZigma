@@ -194,7 +194,7 @@ fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, fi
                 var decoded = try decodeFile(gpa, io, file);
                 defer decoded.deinit();
 
-                // ponytail: same-size reload only, resize needs new image + descriptor rewrite -> restart
+                //TODO: same-size reload only, resize needs new image + descriptor rewrite -> restart
                 if (@as(u32, @intCast(decoded.width)) != image.extent.width or
                     @as(u32, @intCast(decoded.height)) != image.extent.height) return;
                 try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
