@@ -62,6 +62,14 @@ pub fn Planet(kind: PlanetKind) type {
                             try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius_float));
                             try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius_float));
 
+                            //NOTE: Later for video:
+                            // const centroids = node_map.values();
+                            // const base_vertex_index: u32 = @intCast(vertices.items.len);
+                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell), .{ 0, 0 }, radius_float));
+                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_b), .{ 1, 0 }, radius_float));
+                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_c), .{ 0, 1 }, radius_float));
+                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_b - quad_axis.perp_c), .{ 1, 1 }, radius_float));
+
                             if (edge_start_solid) {
                                 try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
                             } else {
@@ -177,14 +185,14 @@ fn buildCellSlice(task: *SliceTask) void {
         while (y < task.bound) : (y += 1) {
             var z = -task.bound;
             while (z < task.bound) : (z += 1) {
-                const cell_origin: nz.Vec3(f32) = .{ x, y, z };
-                const cell_center: nz.Vec3(f32) = cell_origin + @as(nz.Vec3(f32), @splat(0.5));
-                if (@abs(nz.vec.length(cell_center) - task.radius) > noise_amplitude + cell_margin) continue;
+                const cell_position: nz.Vec3(f32) = .{ x, y, z };
+                const cell_center: nz.Vec3(f32) = cell_position + @as(nz.Vec3(f32), @splat(0.5));
+                if (nz.vec.length(cell_center) > task.bound) continue;
                 var checksum: u8 = 0;
                 var corners: [8]nz.Vec3(f32) = undefined;
                 var corner_sdf: [8]f32 = undefined;
                 for (0..8) |i| {
-                    corners[i] = cube_corners[i] + cell_origin;
+                    corners[i] = cube_corners[i] + cell_position;
                     corner_sdf[i] = sdf(corners[i], task.radius);
                     if (corner_sdf[i] < 0) checksum += 1;
                 }

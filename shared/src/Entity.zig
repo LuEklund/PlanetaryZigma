@@ -1,22 +1,12 @@
 const Item = @import("inventory.zig").Item;
 
-pub fn isEnemy(kind: Kind) bool {
-    return switch (kind) {
-        .skelly, .wizard => true,
-        else => false,
+pub const Enemy = struct {
+    pub const Kind = enum(u16) {
+        tubloid,
+        tubloida,
+        wizard,
     };
-}
-
-pub fn isItem(kind: Kind) bool {
-    return switch (kind) {
-        .health_item,
-        .speed_item,
-        .damage_item,
-        .attack_speed_item,
-        => true,
-        else => false,
-    };
-}
+};
 
 pub fn hasCollider(kind: Kind) bool {
     return switch (kind) {
@@ -34,22 +24,19 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
     return switch (kind) {
         .unknown, .bullet, .planet => null,
         .player => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
-        .skelly => .{ .capsule = .{ .half_heigth = 0.8, .radius = 0.8 } },
-        .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
-        .teleporter,
-        .health_item,
-        .speed_item,
-        .damage_item,
-        .attack_speed_item,
-        => .{ .box = .{ .half_extent = 1 } },
+        .enemy => |enemy_kind| switch (enemy_kind) {
+            .tubloid, .tubloida => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+            .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+        },
+        .teleporter, .item => .{ .box = .{ .half_extent = 1 } },
     };
 }
 
 pub fn hasHealth(kind: Kind) bool {
-    return kind == .player or isEnemy(kind);
+    return kind == .player or kind == .enemy;
 }
 
-pub const Kind = enum(u16) {
+pub const Kind = union(enum(u16)) {
     unknown,
     player,
     planet,
@@ -57,29 +44,13 @@ pub const Kind = enum(u16) {
 
     teleporter,
 
-    skelly,
-    wizard,
-
-    health_item,
-    speed_item,
-    damage_item,
-    attack_speed_item,
+    enemy: Enemy.Kind,
+    item: Item.Kind,
 
     pub fn expectsModel(kind: Kind) bool {
         return switch (kind) {
-            .player, .planet => true,
-            .unknown, .bullet => false,
-            else => isEnemy(kind) or isItem(kind),
-        };
-    }
-
-    pub fn toItem(kind: Kind) ?Item.Kind {
-        return switch (kind) {
-            .health_item => .health_potion,
-            .speed_item => .speed_potion,
-            .damage_item => .damage_potion,
-            .attack_speed_item => .attack_speed_potion,
-            else => null,
+            .player, .planet, .enemy, .item => true,
+            .unknown, .bullet, .teleporter => false,
         };
     }
 };

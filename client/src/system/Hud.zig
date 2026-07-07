@@ -42,6 +42,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
             .{
                 .name = "servers",
                 .axis_align = .verical,
+                .color = .grey,
                 .size = .{
                     .percent = .{
                         .heigth = 0.8,
@@ -115,29 +116,50 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
+            const amount_text = ui.print("{d}", .{amount});
             ui.add("inventory", .{
                 .size = .{ .percent = .{
                     .heigth = 1,
                     .width = 0.1,
                 } },
                 .color = .new(1, 1, 1, 1),
+                .name = ui.print("{t}", .{item_kind}),
                 .texture = switch (item_kind) {
-                    .health_potion => .oxygen_tank,
-                    .speed_potion => .energy_drink,
-                    else => .damage_item,
+                    .health => .oxygen_tank,
+                    .speed => .energy_drink,
+                    .damage, .attack_speed => .damage_item,
                 },
-                // .child_anchor = .{ .x = .end, .y = .end },
+                .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
-                    .size = .{ .percent = .{
-                        .heigth = 0,
-                        .width = 0,
-                    } },
+                    .size = .{ .fixed = ui.textSize(amount_text, 32) },
                     .text = .{
-                        .data = ui.print("{d}", .{amount}),
+                        .data = amount_text,
                         .color = .new(0, 0, 0, 1),
                     },
                 }},
             });
+        }
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+            const amount = player.inventory.get(item_kind);
+            if (amount == 0) continue;
+            if (ui.isHot(ui.print("{t}", .{item_kind}))) {
+                const attributes = item_kind.getAttributeValues();
+                var tool_tip_text: []const u8 = "";
+                inline for (std.meta.fields(shared.Item.Attribute)) |field| {
+                    const value = @field(attributes, field.name);
+                    if (value != 0) {
+                        tool_tip_text = ui.print("{s}{s}: {d}", .{ tool_tip_text, field.name, value });
+                    }
+                }
+                ui.add(
+                    null,
+                    .{
+                        .offset = .{ .left = ui.mouse_state.position.left, .top = ui.mouse_state.position.top },
+                        .size = .{ .fixed = ui.textSize(tool_tip_text, 32) },
+                        .text = .{ .data = ui.print("{s}", .{tool_tip_text}) },
+                    },
+                );
+            }
         }
         ui.add(null, .{
             .name = "crosshair",
@@ -174,6 +196,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             const stat = player.stats.get(stat_kind);
             ui.add("stats", .{
                 .text = .{ .data = ui.print("{t} : {d:.2}", .{ stat_kind, stat.current }) },
+                .color = .grey,
                 .size = .{ .percent = .{
                     .heigth = 0.2,
                     .width = 1,

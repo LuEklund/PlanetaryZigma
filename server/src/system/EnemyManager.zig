@@ -34,7 +34,7 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
     const player = info.world.getPtr(info.world.players.getLast()) orelse return;
 
     for (info.world.entities.values()) |*enemy| {
-        if (!shared.Entity.isEnemy(enemy.kind)) continue;
+        if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
         const speed = enemy.stats.get(.speed).current;
@@ -60,21 +60,16 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
             Physics.setRotation(body_id, rot);
         }
 
-        switch (enemy.kind) {
-            .skelly => {
+        switch (enemy.kind.enemy) {
+            .tubloida => {},
+            .tubloid => {
                 if (info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
-                    var desired: shared.Entity.State = .idle;
                     if (distance < 4) {
-                        desired = .attack;
                         enemy.last_attack = info.elapsed_time;
                         if (!health_manager.removeHealth(player, damage)) std.log.debug("did not take damage", .{});
+                        network_manager.pending_events.appendAssumeCapacity(.{ .attack = enemy.id });
                     } else if (distance >= 3) {
-                        desired = .walk;
                         Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
-                    }
-                    if (desired != enemy.state or desired == .attack) {
-                        enemy.state = desired;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = desired });
                     }
                 }
             },
@@ -86,31 +81,23 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
                     if (desired == .attack) {
                         enemy.last_attack = info.elapsed_time;
                         const spawned = try spawner.spawn(.{
-                            .kind = .skelly,
+                            .kind = .{ .enemy = .tubloid },
                             .transform = .{ .position = player.transform.position },
                             .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloid }).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
                         });
-                        spawned.stats.init(20, 10, 1, 1);
-                        if (enemy.state != .attack) {
-                            enemy.state = .attack;
-                        }
+                        spawned.stats.init(20, 3, 1, 1);
                         enemy.last_attack = info.elapsed_time;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .attack });
+                        network_manager.pending_events.appendAssumeCapacity(.{ .attack = enemy.id });
                     }
                 } else {
                     if (distance < 40) continue;
-                    if (enemy.state != .walk) {
-                        enemy.state = .walk;
-                        network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = enemy.id, .state = .walk });
-                    }
                     Physics.moveOnPlanet(body_id, planet_up, enemy.transform.forward(), speed, 0);
                 }
             },
-            else => unreachable,
         }
     }
 }

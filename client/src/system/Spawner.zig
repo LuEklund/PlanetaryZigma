@@ -80,14 +80,14 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             .teleporter => {
                 info.world.teleporter_id = entity.id;
             },
-            .skelly, .wizard => {
+            .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
                     entity.transform.scale = @splat(5);
                     info.world.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
                 try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
             },
-            .unknown, .health_item, .speed_item, .damage_item, .attack_speed_item => {},
+            .unknown, .item => {},
         }
     }
     self.pending_spawn.clearRetainingCapacity();
@@ -106,9 +106,4 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         _ = self.world.despawn(id);
     }
     self.pending_despawn.clearRetainingCapacity();
-    for (info.world.entities.values()) |*entity| {
-        if (entity.isEnemy()) {
-            // std.log.debug("is enemy", .{});
-        }
-    }
 }

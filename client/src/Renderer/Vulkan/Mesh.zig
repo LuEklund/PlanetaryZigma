@@ -19,7 +19,7 @@ pub const SkinnedVertex = shared.SkinnedVertex;
 pub const GeoSurface = struct {
     index_start: u32,
     index_count: u32,
-    material_name: ?[]const u8,
+    material_index: ?usize,
 };
 
 pub fn init(

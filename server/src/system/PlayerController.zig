@@ -29,7 +29,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const transform = &player.transform;
         const controller = &player.controller;
         const input = &controller.input;
-        var desired_state: shared.Entity.State = .idle;
 
         // std.log.debug("handle input for: {d}", .{player.id});
         // std.log.debug("pos {any}", .{transform.position});
@@ -48,24 +47,24 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             // }
             // try self.spawner.startStage(info.world, self.physics);
             // _ = try self.spawner.spawn(.{
-            //     .kind = .attack_speed_item,
+            //     .kind = .{ .item = .speed },
             //     .transform = .{ .position = player.transform.position },
             //     .collider = .{
-            //         .shape = .{ .primitive = .{ .box = .{ .size = 1 } } },
+            //         .shape = .{ .primitive = .{ .box = .{ .half_extent = 1 } } },
             //         .motion_type = .dynamic,
             //         .object_layer = .planet_only,
             //     },
             // });
-            const skelly = try self.spawner.spawn(.{
-                .kind = .skelly,
-                .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
+            const tubloid = try self.spawner.spawn(.{
+                .kind = .{ .enemy = .tubloida },
+                .transform = .{ .position = player.transform.position },
                 .collider = .{
-                    .shape = .{ .primitive = shared.Entity.colliderShape(.skelly).? },
+                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloida }).? },
                     .motion_type = .dynamic,
                     .object_layer = .moving,
                 },
             });
-            skelly.stats.init(20, 10, 1, 1);
+            tubloid.stats.init(20, 3, 1, 1);
         }
 
         if (player.controller.input.keys.e) {
@@ -76,10 +75,10 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                         teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
                         const wizard = try self.spawner.spawn(.{
-                            .kind = .wizard,
+                            .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.wizard).? },
+                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .wizard }).? },
                                 .motion_type = .dynamic,
                                 .object_layer = .moving,
                             },
@@ -130,11 +129,9 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 Physics.setPosition(id, .{ 0, 0, 0 });
                 Physics.setRotation(id, transform.rotation);
             }
-            if (nz.vec.length(dir) > std.math.floatEps(f32)) desired_state = .walk;
         }
 
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
-            desired_state = .attack;
             player.last_attack = info.elapsed_time;
             const muzzle_velocity = nz.vec.scale(player_forward_direction, BulletManager.muzzle_speed);
             const bullet = try self.spawner.spawn(
@@ -147,12 +144,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 },
             );
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
-            player.state = .attack;
-            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player_id, .state = .attack });
-        }
-        if (info.elapsed_time - player.last_attack >= 2 and desired_state != player.state) {
-            network_manager.pending_animatoin_state.appendAssumeCapacity(.{ .id = player_id, .state = desired_state });
-            player.state = desired_state;
+            network_manager.pending_events.appendAssumeCapacity(.{ .attack = player_id });
         }
     }
 }

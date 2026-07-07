@@ -37,11 +37,11 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
                 .k => self.input_map.keys.k = pressed,
                 .e => self.input_map.keys.e = pressed,
                 .f1 => {
-                    if (pressed and !self.f1_held) self.debug_draw_colliders = !self.debug_draw_colliders;
+                    if (pressed and !self.f1_held) self.free_camera = !self.free_camera;
                     self.f1_held = pressed;
                 },
                 .f2 => {
-                    if (pressed and !self.f2_held) self.free_camera = !self.free_camera;
+                    if (pressed and !self.f2_held) self.debug_draw_colliders = !self.debug_draw_colliders;
                     self.f2_held = pressed;
                 },
                 else => {},

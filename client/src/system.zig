@@ -22,7 +22,6 @@ pub const Info = struct {
 pub const Entity = struct {
     id: u32 = 0,
     kind: shared.Entity.Kind,
-    state: shared.Entity.State = .walk,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
@@ -37,12 +36,6 @@ pub const Entity = struct {
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
         _ = self;
         _ = gpa;
-    }
-    pub fn isEnemy(self: *Entity) bool {
-        return shared.Entity.isEnemy(self.kind);
-    }
-    pub fn isItem(self: *Entity) bool {
-        return shared.Entity.isItem(self.kind);
     }
 };
 

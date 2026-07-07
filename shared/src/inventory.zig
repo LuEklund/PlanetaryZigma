@@ -3,10 +3,19 @@ const Stat = @import("stats.zig").Stat;
 
 pub const Item = struct {
     pub const Kind = enum(u16) {
-        health_potion,
-        speed_potion,
-        damage_potion,
-        attack_speed_potion,
+        health,
+        speed,
+        damage,
+        attack_speed,
+
+        pub fn getAttributeValues(kind: Kind) Attribute {
+            return switch (kind) {
+                .health => .{ .health = 10 },
+                .speed => .{ .speed = 1 },
+                .damage => .{ .damage = 1 },
+                .attack_speed => .{ .attack_speed = 0.2 },
+            };
+        }
     };
 
     pub const Attribute = struct {
@@ -24,15 +33,6 @@ pub const Item = struct {
             };
         }
     };
-
-    pub fn getAttributeValues(kind: Item.Kind) Attribute {
-        return switch (kind) {
-            .health_potion => .{ .health = 10 },
-            .speed_potion => .{ .speed = 1 },
-            .damage_potion => .{ .damage = 1 },
-            .attack_speed_potion => .{ .attack_speed = 0.2 },
-        };
-    }
 };
 
 pub const Inventory = struct {

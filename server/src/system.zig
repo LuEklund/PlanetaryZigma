@@ -49,7 +49,6 @@ pub const Entity = struct {
     controller: Controller = .{},
     camera: Camera = .{},
     bullet: BulletData = .{},
-    state: shared.Entity.State = .idle,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},

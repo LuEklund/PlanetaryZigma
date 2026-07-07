@@ -228,9 +228,6 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
             mesh_def.indices = indices.ptr;
             mesh_def.vertexCount = @intCast(vertices.len);
             mesh_def.triangleCount = @intCast(@divExact(indices.len, 3));
-            // ponytail: mesh_data intentionally not destroyed; only the planet uses a
-            // mesh shape and it lives for the whole session. Track+b3DestroyMesh if
-            // transient mesh bodies ever appear.
             const mesh_data = c.b3CreateMesh(&mesh_def, null, 0);
             _ = c.b3CreateMeshShape(body_id, &shape_def, mesh_data, .{ .x = 1, .y = 1, .z = 1 });
         },

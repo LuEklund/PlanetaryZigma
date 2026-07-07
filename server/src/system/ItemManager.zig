@@ -9,7 +9,8 @@ const Info = system.Info;
 pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {
-        const item_kind = entity.kind.toItem() orelse continue;
+        if (entity.kind != .item) continue;
+        const item_kind = entity.kind.item;
         for (info.world.players.items) |player_id| {
             const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
             const length = player.transform.position - entity.transform.position;
@@ -24,7 +25,7 @@ pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
                 .set = item_count,
             });
             for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
-                if (shared.Item.getAttributeValues(item_kind).get(stat_kind) == 0) continue;
+                if (item_kind.getAttributeValues().get(stat_kind) == 0) continue;
                 const stat = player.stats.get(stat_kind);
                 ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } });
                 ctx.network_manager.pending_stats.appendAssumeCapacity(.{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } });

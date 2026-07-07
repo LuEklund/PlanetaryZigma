@@ -28,14 +28,25 @@ pub fn update(
         const instance = skeletons.getPtr(entity.id) orelse continue;
         const model = instance.model;
         if (model.clips.items.len == 0) continue;
+
+        const oneshot_playing = !instance.player.loop and
+            instance.player.current_time <= model.clips.items[instance.player.active].end;
+        if (!oneshot_playing) {
+            const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
+            const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
+            const desired_active, const desired_loop = clipFor(entity.kind, state, instance.player.default);
+            if (desired_active != instance.player.active) {
+                instance.player.active = desired_active;
+                instance.player.current_time = 0;
+            }
+            instance.player.loop = desired_loop;
+        }
+
         const animation = model.clips.items[instance.player.active];
         instance.player.current_time += info.delta_time;
 
-        if (instance.player.current_time > animation.end) {
-            if (instance.player.loop) instance.player.current_time -= animation.end else {
-                instance.player.active = instance.player.default;
-                instance.player.current_time = 0;
-            }
+        if (instance.player.loop and instance.player.current_time > animation.end) {
+            instance.player.current_time -= animation.end;
         }
         for (animation.channels.items) |*channel| {
             const sampler = animation.samplers.items[channel.sampler_index];
@@ -87,6 +98,28 @@ pub fn update(
             updateJoints(root_index, instance);
         }
     }
+}
+
+pub fn clipFor(kind: shared.Entity.Kind, state: shared.Entity.State, default: usize) struct { usize, bool } {
+    return switch (kind) {
+        .player => switch (state) {
+            .idle => .{ 0, true },
+            .walk => .{ 1, true },
+            .attack => .{ 2, false },
+        },
+        .enemy => |enemy_kind| switch (enemy_kind) {
+            .tubloid, .tubloida => switch (state) {
+                .idle => .{ 0, true },
+                .walk => .{ 1, true },
+                .attack => .{ 2, false },
+            },
+            .wizard => switch (state) {
+                .idle, .walk => .{ 0, true },
+                .attack => .{ 1, false },
+            },
+        },
+        .unknown, .planet, .bullet, .teleporter, .item => .{ default, true },
+    };
 }
 
 fn updateJoints(node_index: usize, instance: *SkeletonInstance) void {
