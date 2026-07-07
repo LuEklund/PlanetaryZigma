@@ -35,8 +35,12 @@ descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout),
 ui_texture_buffer: Buffer,
 font: *Font,
+ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
+skybox: Image,
+vma: Vma,
+device: Device,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*@This() {
     const meshes: std.StringArrayHashMapUnmanaged(Mesh) = .empty;
     var materials: std.StringArrayHashMapUnmanaged(Material) = .empty;
     var samplers: std.ArrayList(c.VkSampler) = .empty;
@@ -149,7 +153,8 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     );
     try materials.put(gpa, default_material.name, default_material);
 
-    var self: @This() = .{
+    const self = try gpa.create(@This());
+    self.* = .{
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
         .meshes = meshes,
@@ -160,9 +165,147 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .pipeline_layouts = pipeline_layouts,
         .ui_texture_buffer = ui_texture_buffer,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf", asset_server),
+        .ui_image_indices = .initFill(null),
+        .skybox = undefined,
+        .vma = vma,
+        .device = device,
     };
     try self.loadUiTextures(gpa, vma, device);
+    try self.loadSkybox(gpa);
+
+    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
+        if (comptime texture.path()) |texture_path| {
+            try asset_server.watchAsset(@This(), self, texture_path["assets/".len..], reloadUiTexture);
+        }
+    }
+    try asset_server.watchAsset(@This(), self, "textures/skybox_cubemap.png", reloadSkybox);
+
     return self;
+}
+
+fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    const self: *@This() = @ptrCast(@alignCast(user_data));
+    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
+        if (comptime texture.path()) |texture_path| {
+            if (std.mem.eql(u8, texture_path["assets/".len..], file_path)) {
+                const image_index = self.ui_image_indices.get(texture) orelse return;
+                const image = &self.images.items[image_index];
+
+                var decoded = try decodeFile(gpa, io, file);
+                defer decoded.deinit();
+
+                // ponytail: same-size reload only, resize needs new image + descriptor rewrite -> restart
+                if (@as(u32, @intCast(decoded.width)) != image.extent.width or
+                    @as(u32, @intCast(decoded.height)) != image.extent.height) return;
+                try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
+                return;
+            }
+        }
+    }
+}
+
+fn loadSkybox(self: *@This(), gpa: std.mem.Allocator) !void {
+    var decoded: Image.Decoded = .{};
+    defer decoded.deinit();
+    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = "assets/textures/skybox_cubemap.png" }};
+    try Image.decodeImages(gpa, &decode_tasks);
+    if (decoded.err) |err| return err;
+    try if (decoded.pixels == null) error.LoadingStbi;
+
+    const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
+    std.log.debug("res: {d}, face. {d}", .{ decoded.width, face_size });
+
+    self.skybox = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{
+            .width = face_size,
+            .height = face_size,
+            .depth = 1,
+        },
+        .cube_map,
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    try self.uploadSkyboxFaces(gpa, decoded);
+
+    const sky_material: Material = try .init(
+        gpa,
+        "skybox",
+        self.device,
+        self.vma,
+        self.set_size,
+        self.combined_image_sampler_descriptor_size,
+        self.samplers.items[0],
+        self.skybox.vk_imageview,
+    );
+    try self.materials.put(gpa, sky_material.name, sky_material);
+}
+
+fn uploadSkyboxFaces(self: *@This(), gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
+    const width: u32 = @intCast(decoded.width);
+    const face_size: u32 = @divTrunc(width, 4);
+    const channels: u32 = @intCast(decoded.nr_channel);
+    const row_bytes = face_size * channels;
+    const data = try gpa.alloc(u8, face_size * face_size * channels);
+    defer gpa.free(data);
+    for (0..6) |i| {
+        var x_start: u32, var y_start: u32 = switch (i) {
+            0 => .{ 2, 1 },
+            1 => .{ 0, 1 },
+            2 => .{ 1, 0 },
+            3 => .{ 1, 2 },
+            4 => .{ 1, 1 },
+            5 => .{ 3, 1 },
+            else => unreachable,
+        };
+        x_start *= face_size;
+        y_start *= face_size;
+
+        for (0..face_size) |y| {
+            const dst = y * row_bytes;
+            const src = ((y_start + y) * width + x_start) * channels;
+            @memcpy(data[dst..][0..row_bytes], decoded.pixels[src..][0..row_bytes]);
+        }
+
+        try self.skybox.uploadDataToImage(
+            self.vma,
+            self.device,
+            data,
+            channels,
+            @intCast(i),
+        );
+    }
+}
+
+fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image.Decoded {
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &buffer);
+    const len: usize = @intCast((try file.stat(io)).size);
+    const bytes = try gpa.alloc(u8, len);
+    defer gpa.free(bytes);
+    try reader.interface.readSliceAll(bytes);
+
+    var decoded: Image.Decoded = .{};
+    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .bytes = bytes }};
+    try Image.decodeImages(gpa, &decode_tasks);
+    if (decoded.err) |err| return err;
+    try if (decoded.pixels == null) error.LoadingStbi;
+    return decoded;
+}
+
+fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    _ = file_path;
+    const self: *@This() = @ptrCast(@alignCast(user_data));
+
+    var decoded = try decodeFile(gpa, io, file);
+    defer decoded.deinit();
+
+    const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
+    if (face_size != self.skybox.extent.width) return;
+    try self.uploadSkyboxFaces(gpa, decoded);
 }
 
 fn loadUiTextures(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) !void {
@@ -203,6 +346,7 @@ fn loadUiTextures(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Devi
         );
         try ui_image.uploadDataToImage(vma, device, decoded_ui_image.pixels, 4, 0);
         try self.images.append(gpa, ui_image);
+        self.ui_image_indices.set(texture, self.images.items.len - 1);
         ui_views.set(texture, ui_image.vk_imageview);
     }
 
@@ -246,6 +390,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
         image.deinit(vma, device);
     }
     self.images.deinit(gpa);
+    self.skybox.deinit(vma, device);
 
     for (self.samplers.items) |sampler| {
         c.vkDestroySampler(device.handle, sampler, null);
@@ -265,6 +410,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     }
     self.ui_texture_buffer.deinit(vma);
     self.font.deinit(gpa, vma, device);
+    gpa.destroy(self);
 }
 
 pub fn getMeshPtr(self: *@This(), name_id: ?[]const u8) !*Mesh {

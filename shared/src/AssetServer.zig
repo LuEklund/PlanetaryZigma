@@ -73,14 +73,27 @@ pub fn update(self: *@This()) !void {
         };
 
         if (entry_stat.mtime.nanoseconds > metadata.mtime.nanoseconds + std.time.ns_per_s) {
-            std.debug.print("reload shader {s}\n", .{metadata.file_path});
+            std.debug.print("reload asset {s}\n", .{metadata.file_path});
             const file = try self.dir.openFile(self.io, metadata.file_path, .{});
 
             defer file.close(self.io);
-            try metadata.callback(metadata.user_data, self.gpa, self.io, file, metadata.file_path);
+            metadata.callback(metadata.user_data, self.gpa, self.io, file, metadata.file_path) catch |err| {
+                std.debug.print("reload failed {s}: {s}, retrying\n", .{ metadata.file_path, @errorName(err) });
+                continue;
+            };
             metadata.mtime = entry_stat.mtime;
         }
     }
+}
+
+pub fn watchAsset(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
+    for (self.metadata.items) |metadata| {
+        if (std.mem.eql(u8, metadata.file_path, file_path) == true) return;
+    }
+    try self.metadata.append(
+        self.gpa,
+        try .init(self.gpa, self.io, user_data, file_path, callback),
+    );
 }
 
 pub fn loadAsset(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {

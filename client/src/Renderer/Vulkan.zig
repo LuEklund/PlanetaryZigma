@@ -83,17 +83,13 @@ physical_device: PhysicalDevice,
 device: Device,
 vma: Vma,
 swapchain: Swapchain,
-render_resources: RenderResources,
+render_resources: *RenderResources,
 renderables: std.EnumMap(Model, Renderable),
 shaders: std.EnumMap(Shader.Kind, *Shader),
 skeletons: std.AutoHashMap(u32, SkeletonInstance),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
-
-//Temporary
-skybox: Image,
-sky_material: Material,
 
 pub const InitOptions = struct {
     instance: struct {
@@ -175,9 +171,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         const spec = specs.get(model);
         const path = spec.path orelse continue;
         const renderable: Renderable = if (spec.skinned)
-            .{ .skeletal = try SkeletalMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) }
+            .{ .skeletal = try SkeletalMesh.load(self.gpa, self.vma, self.device, self.asset_server, self.render_resources, path, spec.offset) }
         else
-            .{ .static = try StaticMesh.load(self.gpa, self.vma, self.device, self.asset_server, &self.render_resources, path, spec.offset) };
+            .{ .static = try StaticMesh.load(self.gpa, self.vma, self.device, self.asset_server, self.render_resources, path, spec.offset) };
         self.renderables.put(model, renderable);
     }
     try self.createStaticMesh(gpa, RenderResources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
@@ -212,84 +208,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
     }
 
-    var decoded_images = try gpa.alloc(Image.Decoded, 1);
-    defer {
-        for (decoded_images) |*decoded_image| decoded_image.deinit();
-        gpa.free(decoded_images);
-    }
-    @memset(decoded_images, .{});
-
-    var decode_tasks = try gpa.alloc(Image.DecodeTask, 1);
-    defer {
-        gpa.free(decode_tasks);
-    }
-
-    decode_tasks[0] = .{ .result = &decoded_images[0] };
-    decode_tasks[0].uri = "assets/textures/skybox_cubemap.png";
-
-    try Image.decodeImages(gpa, decode_tasks);
-
-    const width: u32 = @intCast(decoded_images[0].width);
-    const face_size: u32 = @divTrunc(width, 4);
-    std.log.debug("res: {d}, face. {d}", .{ decoded_images[0].width, face_size });
-
-    self.skybox = try .init(
-        self.vma,
-        self.device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{
-            .width = face_size,
-            .height = face_size,
-            .depth = 1,
-        },
-        .cube_map,
-        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    const channels: u32 = @intCast(decoded_images[0].nr_channel);
-    const row_bytes = face_size * channels;
-    const data = try gpa.alloc(u8, face_size * face_size * channels);
-    defer gpa.free(data);
-    for (0..6) |i| {
-        var x_start: u32, var y_start: u32 = switch (i) {
-            0 => .{ 2, 1 },
-            1 => .{ 0, 1 },
-            2 => .{ 1, 0 },
-            3 => .{ 1, 2 },
-            4 => .{ 1, 1 },
-            5 => .{ 3, 1 },
-            else => unreachable,
-        };
-        x_start *= face_size;
-        y_start *= face_size;
-
-        for (0..face_size) |y| {
-            const dst = y * row_bytes;
-            const src = ((y_start + y) * width + x_start) * channels;
-            @memcpy(data[dst..][0..row_bytes], decoded_images[0].pixels[src..][0..row_bytes]);
-        }
-
-        try self.skybox.uploadDataToImage(
-            self.vma,
-            self.device,
-            data,
-            channels,
-            @intCast(i),
-        );
-        // std.log.debug("sizes x: {d}, y: {d}", .{ x, y });
-    }
-    self.sky_material = try .init(
-        gpa,
-        "skybox",
-        self.device,
-        self.vma,
-        self.render_resources.set_size,
-        self.render_resources.combined_image_sampler_descriptor_size,
-        self.render_resources.samplers.items[0],
-        self.skybox.vk_imageview,
-    );
-
     return self;
 }
 
@@ -311,8 +229,6 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
 
     var shader_it = self.shaders.iterator();
     while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
-    self.skybox.deinit(self.vma, self.device);
-    self.sky_material.deinit(self.gpa, self.vma);
     self.ui.deinit(gpa, self.vma);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
@@ -633,7 +549,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         },
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-            .address = self.sky_material.buffer.getGPUAddress(),
+            .address = (try self.render_resources.getMaterialPtr("skybox")).buffer.getGPUAddress(),
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },
@@ -932,7 +848,7 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
         old_mesh.deinit(self.gpa, self.vma);
         std.log.warn("swap removed excsisting mesh", .{});
     }
-    const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, &self.render_resources, name, vertices, indices, .{});
+    const mesh = try StaticMesh.fromMesh(gpa, self.vma, self.device, self.render_resources, name, vertices, indices, .{});
     if (self.renderables.get(model_kind)) |old| switch (old) {
         .static => |static| static.deinit(gpa),
         .skeletal => |skeletal| skeletal.deinit(gpa),
