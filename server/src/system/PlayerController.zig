@@ -47,7 +47,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             // }
             // try self.spawner.startStage(info.world, self.physics);
             _ = try self.spawner.spawn(.{
-                .kind = .{ .item = .speed },
+                .kind = .{ .item = .health },
                 .transform = .{ .position = player.transform.position },
                 .collider = .{
                     .shape = .{ .primitive = .{ .box = .{ .half_extent = 1 } } },

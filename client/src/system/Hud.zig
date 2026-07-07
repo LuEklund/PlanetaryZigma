@@ -123,6 +123,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .width = 0.1,
                 } },
                 .color = .new(1, 1, 1, 1),
+                .name = ui.print("{t}", .{item_kind}),
                 .texture = switch (item_kind) {
                     .health => .oxygen_tank,
                     .speed => .energy_drink,
@@ -137,6 +138,28 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     },
                 }},
             });
+        }
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+            const amount = player.inventory.get(item_kind);
+            if (amount == 0) continue;
+            if (ui.isHot(ui.print("{t}", .{item_kind}))) {
+                const attributes = item_kind.getAttributeValues();
+                var tool_tip_text: []const u8 = "";
+                inline for (std.meta.fields(shared.Item.Attribute)) |field| {
+                    const value = @field(attributes, field.name);
+                    if (value != 0) {
+                        tool_tip_text = ui.print("{s}{s}: {d}", .{ tool_tip_text, field.name, value });
+                    }
+                }
+                ui.add(
+                    null,
+                    .{
+                        .offset = .{ .left = ui.mouse_state.position.left, .top = ui.mouse_state.position.top },
+                        .size = .{ .fixed = ui.textSize(tool_tip_text, 32) },
+                        .text = .{ .data = ui.print("{s}", .{tool_tip_text}) },
+                    },
+                );
+            }
         }
         ui.add(null, .{
             .name = "crosshair",

@@ -7,6 +7,15 @@ pub const Item = struct {
         speed,
         damage,
         attack_speed,
+
+        pub fn getAttributeValues(kind: Kind) Attribute {
+            return switch (kind) {
+                .health => .{ .health = 10 },
+                .speed => .{ .speed = 1 },
+                .damage => .{ .damage = 1 },
+                .attack_speed => .{ .attack_speed = 0.2 },
+            };
+        }
     };
 
     pub const Attribute = struct {
@@ -24,15 +33,6 @@ pub const Item = struct {
             };
         }
     };
-
-    pub fn getAttributeValues(kind: Item.Kind) Attribute {
-        return switch (kind) {
-            .health => .{ .health = 10 },
-            .speed => .{ .speed = 1 },
-            .damage => .{ .damage = 1 },
-            .attack_speed => .{ .attack_speed = 0.2 },
-        };
-    }
 };
 
 pub const Inventory = struct {

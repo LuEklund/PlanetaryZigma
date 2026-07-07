@@ -102,6 +102,8 @@ const Node = struct {
 };
 
 writter_buffer: [256]u8 = undefined,
+writter_buffer_out: [8192]u8 = undefined,
+writer_len: usize = 0,
 index_buffer: Buffer,
 text_buffer: [8192]u8 = undefined,
 text_len: usize = 0,
@@ -167,6 +169,7 @@ pub fn start(self: *@This(), mouse_state: MouseState) void {
     self.hotUpdate();
     // self.activeUpdate();
     self.text_len = 0;
+    self.writer_len = 0;
     self.left_click_prev = mouse_state.left_click;
     self.nodes.clearRetainingCapacity();
     self.quads.clearRetainingCapacity();
@@ -176,7 +179,10 @@ pub fn start(self: *@This(), mouse_state: MouseState) void {
 
 pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
     const text = std.fmt.bufPrint(&self.writter_buffer, fmt, args) catch unreachable;
-    return text;
+    const out_text = self.writter_buffer_out[self.writer_len .. self.writer_len + text.len];
+    @memcpy(out_text, text);
+    self.writer_len += text.len;
+    return out_text;
 }
 
 pub fn add(self: *@This(), parent: ?[]const u8, layout: Layout) void {
