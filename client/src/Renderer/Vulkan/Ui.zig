@@ -81,7 +81,7 @@ pub const Layout = struct {
 
     offset: Position2D = .{ .left = 0, .top = 0 },
     size: Size,
-    color: nz.color.Rgba(f32) = .grey,
+    color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     texture: Texture = .blank,
@@ -226,6 +226,12 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
     return metrics;
 }
 
+pub fn textSize(self: *const @This(), text: []const u8, size: f32) Size2D {
+    const scale = size / self.default_font.size;
+    const metrics = measureText(&self.default_font.glyphs, text, scale);
+    return .{ .width = metrics.width, .heigth = metrics.bottom - metrics.top };
+}
+
 fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
     return switch (anchor) {
         .start => 0,
@@ -240,20 +246,14 @@ fn resolveLayout(self: *@This()) void {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
         const layout: *Layout = &node.layout;
 
-        //TODO: text ofsett beased on size.
-        const text_size: Size2D = .{ .width = 0, .heigth = 0 };
-        // if (layout.text) |text| {
-        //     const metrics = measureText(&self.default_font.glyphs, text.data, text.size);
-        //     text_size = .{ .width = metrics.width, .heigth = @abs(metrics.bottom) + @abs(metrics.top) };
-        // }
         switch (layout.size) {
             .fixed => |size| {
-                node.rect.width = @max(size.width, text_size.width);
-                node.rect.heigth = @max(size.heigth, text_size.heigth);
+                node.rect.width = size.width;
+                node.rect.heigth = size.heigth;
             },
             .percent => |percent| {
-                node.rect.width = @max(percent.width * origin.width, text_size.width);
-                node.rect.heigth = @max(percent.heigth * origin.heigth, text_size.heigth);
+                node.rect.width = percent.width * origin.width;
+                node.rect.heigth = percent.heigth * origin.heigth;
             },
         }
     }
@@ -309,14 +309,16 @@ fn screenRect(self: *const @This()) Rect {
 fn pushQuads(self: *@This()) void {
     for (self.nodes.items) |node| {
         const rect = node.rect;
-        const colors: [4]f32 = node.layout.color.toVec();
-        //left_top, right_top, right_bottom, left_bottom
-        self.quads.appendAssumeCapacity(.{ .vertices = .{
-            .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-            .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-            .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-            .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-        } });
+        if (node.layout.color.a != 0) {
+            const colors: [4]f32 = node.layout.color.toVec();
+            //left_top, right_top, right_bottom, left_bottom
+            self.quads.appendAssumeCapacity(.{ .vertices = .{
+                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
+                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
+                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
+            } });
+        }
         if (node.layout.text) |text| {
             const color = text.color.toVec();
             const font = self.default_font;
