@@ -8,6 +8,10 @@ const Renderer = @import("../Renderer/Vulkan.zig");
 const Model = @import("../Renderer/Vulkan/Model.zig");
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
 
+const look_pitch_sign: f32 = -1;
+const look_yaw_sign: f32 = 1;
+const look_yaw_deadzone: f32 = 0.05;
+
 gpa: std.mem.Allocator,
 
 pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
@@ -84,6 +88,24 @@ pub fn update(
                         },
                     }
                 }
+            }
+        }
+        if (entity.id == info.world.player_id and model.look_nodes.len > 0) {
+            const camera = &info.world.camera;
+            const node_count: f32 = @floatFromInt(model.look_nodes.len);
+            const look_pitch = std.math.clamp(camera.pitch * look_pitch_sign, -1.0, 1.0);
+            var yaw_offset = entity.transform.rotation.conjugate().mul(camera.yaw_rotation);
+            if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
+            var look_yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w) * look_yaw_sign, -1.2, 1.2);
+            if (@abs(look_yaw) < look_yaw_deadzone) look_yaw = 0;
+            const pitch_per_node = look_pitch / node_count;
+            const yaw_per_node = look_yaw / node_count;
+            for (model.look_nodes) |node_index| {
+                const node = &instance.nodes[node_index];
+                node.rotation = node.rotation
+                    .mul(nz.Quat(f32).angleAxis(pitch_per_node, .{ 1, 0, 0 }))
+                    .mul(nz.Quat(f32).angleAxis(yaw_per_node, .{ 0, 1, 0 }))
+                    .normalize();
             }
         }
         Model.computeMatrices(instance.nodes);

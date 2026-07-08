@@ -55,11 +55,11 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     }
     switch (entity.kind) {
         .enemy => |enemy| switch (enemy) {
-            .tubloid => entity.stats.init(20, 3, 1, 1, 3),
+            .tubloid => entity.stats.init(20, 3, 1, 1, 2),
             .tubloida => entity.stats.init(20, 3, 1, 0.2, 10),
             .wizard => entity.stats.init(100, 10, 1, 0.25, 40),
         },
-        .player => entity.stats.init(100, 10, 100, 1, 10),
+        .player => entity.stats.init(100, 10, 10, 10, 10),
         else => {},
     }
 
@@ -142,6 +142,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
     world.planet_radius = @intFromFloat(rand.float(f32) * 99 + 1);
     // world.planet_radius = 100;
+    std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_radius);
     _ = try self.spawn(.{
         .kind = .planet,

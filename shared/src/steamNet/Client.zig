@@ -171,18 +171,23 @@ fn endReasonName(reason: i32) []const u8 {
 pub fn handlePackets(self: *@This()) !void {
     while (true) {
         try self.io.checkCancel();
-        try self.packet_mutex.lock(self.io);
-        try self.steamPump();
-        try self.recievePackets();
-        try self.sendPackets();
-        if (self.browser.list.refresh_state == .request) {
-            self.browser.list.refresh_state = .refreshing;
-            const servers = steam.SteamMatchmakingServers();
-            const app_id = steam.SteamUtils().GetAppID();
-            std.log.info("requsting internet server list for app {d}...", .{app_id});
-            self.browser.request = servers.RequestInternetServerList(app_id, null, 0, @ptrCast(&self.browser));
+        {
+            try self.packet_mutex.lock(self.io);
+            defer self.packet_mutex.unlock(self.io);
+            self.steamPump() catch |err|
+                std.log.err("steamPump: {s}", .{@errorName(err)});
+            self.recievePackets() catch |err|
+                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.sendPackets() catch |err|
+                std.log.err("sendPackets: {s}", .{@errorName(err)});
+            if (self.browser.list.refresh_state == .request) {
+                self.browser.list.refresh_state = .refreshing;
+                const servers = steam.SteamMatchmakingServers();
+                const app_id = steam.SteamUtils().GetAppID();
+                std.log.info("requsting internet server list for app {d}...", .{app_id});
+                self.browser.request = servers.RequestInternetServerList(app_id, null, 0, @ptrCast(&self.browser));
+            }
         }
-        self.packet_mutex.unlock(self.io);
         try self.io.sleep(.{ .nanoseconds = 1_000_000 }, .real);
     }
 }

@@ -66,13 +66,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {
-        switch (err) {
-            error.Canceled => std.log.err("valid error: {s}", .{@errorName(err)}),
-            else => {
-                std.log.err("err: {s}", .{@errorName(err)});
-                return err;
-            },
-        }
+        std.log.err("packet pump exit: {s}", .{@errorName(err)});
     };
 }
 

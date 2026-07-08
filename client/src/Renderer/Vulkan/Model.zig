@@ -51,7 +51,7 @@ pub const Kind = enum {
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
             .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
-            .player => .{ .path = "objects/BenRun.glb", .offset = player_offset, .skinned = true, .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" } },
+            .player => .{ .path = "objects/BenRun.glb", .offset = player_offset, .skinned = true, .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" }, .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null } },
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
             .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
@@ -70,11 +70,18 @@ const ClipNames = struct {
     attack: []const u8,
 };
 
+const LookNodeNames = struct {
+    spine: ?[]const u8,
+    neck: ?[]const u8,
+    head: ?[]const u8,
+};
+
 const Spec = struct {
     path: ?[]const u8,
     offset: nz.Transform3D(f32) = .{},
     skinned: bool,
     clip_names: ?ClipNames,
+    look_node_names: ?LookNodeNames = null,
 };
 
 const Surface = struct {
@@ -91,6 +98,7 @@ surfaces: std.ArrayList(Surface),
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
+look_nodes: []usize,
 state_clips: std.EnumArray(shared.Entity.State, StateClip),
 offset: nz.Transform3D(f32),
 
@@ -99,6 +107,7 @@ pub const empty: @This() = .{
     .nodes = .empty,
     .clips = &.{},
     .skins = &.{},
+    .look_nodes = &.{},
     .state_clips = .initFill(.{ .index = 0, .loop = true }),
     .offset = .{},
 };
@@ -127,9 +136,20 @@ pub fn loadGlb(
     defer glb.deinit(gpa);
 
     if (spec.skinned) {
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips);
+        var look_node_name_buffer: [3][]const u8 = undefined;
+        var look_node_count: usize = 0;
+        if (spec.look_node_names) |look_node_names| {
+            inline for (.{ look_node_names.spine, look_node_names.neck, look_node_names.head }) |maybe_node_name| {
+                if (maybe_node_name) |node_name| {
+                    look_node_name_buffer[look_node_count] = node_name;
+                    look_node_count += 1;
+                }
+            }
+        }
+        const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
+        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes);
     } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null);
+        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null, null, null);
     }
     computeMatrices(self.nodes.items);
 
@@ -184,6 +204,8 @@ pub fn clear(self: *@This(), gpa: std.mem.Allocator) void {
     for (self.skins) |*skin| skin.deinit(gpa);
     gpa.free(self.skins);
     self.skins = &.{};
+    gpa.free(self.look_nodes);
+    self.look_nodes = &.{};
     self.surfaces.clearAndFree(gpa);
 }
 

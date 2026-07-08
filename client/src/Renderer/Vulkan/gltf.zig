@@ -50,6 +50,8 @@ pub fn parseScene(
     out_nodes: *std.ArrayList(Node),
     out_skins: ?*[]Skin,
     out_clips: ?*[]AnimationClip,
+    look_node_names: ?[]const []const u8,
+    out_look_nodes: ?*[]usize,
 ) !void {
     const original_sample_count = resources.samplers.items.len;
     {
@@ -413,6 +415,22 @@ pub fn parseScene(
             out_nodes.items[node_map[gltf_child_index]].parent = sorted_index;
         }
     }
+    if (look_node_names) |node_names| {
+        const look_nodes = try gpa.alloc(usize, node_names.len);
+        errdefer gpa.free(look_nodes);
+        for (node_names, look_nodes) |node_name, *node_index| {
+            node_index.* = for (gltf_nodes, 0..) |gltf_node, gltf_index| {
+                if (std.mem.eql(u8, gltf_node.name orelse "", node_name)) break node_map[gltf_index];
+            } else {
+                std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
+                for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
+                std.log.err("in Model.Kind.spec assign one of these", .{});
+                return error.LookBoneNotFound;
+            };
+        }
+        out_look_nodes.?.* = look_nodes;
+    }
+
     if (out_skins) |skins| {
         if (gltf.skins) |gltf_skins| {
             const model_skins = try gpa.alloc(Skin, gltf_skins.len);

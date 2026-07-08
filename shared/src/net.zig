@@ -84,7 +84,8 @@ pub const Input = struct {
         mouse_button_right: bool = false,
         _padding: u5 = 0,
     } = .{},
-    camera_yaw_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
+    camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
+    camera_position: @Vector(3, f32) = .{ 0, 0, 0 },
 };
 
 pub const UpdateMotion = struct {

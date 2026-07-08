@@ -45,11 +45,11 @@ pub const Collider = struct {
     object_layer: ObjectLayer,
 };
 
-fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
+pub fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
     return .{ v.x, v.y, v.z };
 }
 
-fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
+pub fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
     return .{ .x = v[0], .y = v[1], .z = v[2] };
 }
 
@@ -304,7 +304,8 @@ pub fn moveTowardsOnPlanet(
 pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
     const random = world.prng.random();
     const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) * 2);
+    // radius * 2 starts inside the terrain on tiny planets (mesh min radius + noise)
+    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) + 10);
     const translation = nz.vec.scale(origin, -2.0);
 
     const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
@@ -313,7 +314,7 @@ pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.
 }
 
 pub fn getSurfacePoint(self: *@This(), world: *system.World, from_point: nz.Vec3(f32)) ?nz.Vec3(f32) {
-    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) * 2);
+    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) + 10);
     const translation = nz.vec.scale(origin, -2.0);
 
     const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
