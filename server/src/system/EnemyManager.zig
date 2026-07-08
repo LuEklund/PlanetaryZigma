@@ -42,14 +42,10 @@ pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager,
 
         // entity.transform = player.transform;
 
-        // Skip entities at (or near) world origin — planet_up is undefined there
-        // and `nz.vec.normalize` returns the input unchanged on zero length.
         const up_len = nz.vec.length(enemy.transform.position);
         if (up_len < 0.0001) continue;
         const planet_up = nz.vec.scale(enemy.transform.position, 1.0 / up_len);
 
-        // Project onto the tangent plane so enemies yaw toward the player but never pitch.
-        // Skips when projection is degenerate (player on top of, or along up from, the enemy).
         const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
         if (nz.vec.length(fwd_proj) > 0.0001) {
             const forward = nz.vec.normalize(fwd_proj);
