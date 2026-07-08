@@ -427,11 +427,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
         if (model.isEmpty()) {
-            if (entity.kind.expectsModel()) {
-                std.log.err("no model registered for {s}", .{@tagName(entity.kind)});
-                return error.NoModel;
-            }
-            continue; // bullet/unknown: intentionally modelless
+            continue;
         }
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         if (model.isSkinned()) {
