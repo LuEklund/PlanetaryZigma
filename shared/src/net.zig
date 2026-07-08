@@ -58,6 +58,8 @@ pub const SpawnEntity = struct {
     kind: Entity.Kind,
     position: @Vector(3, f32) = @splat(0),
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
+    velocity: @Vector(3, f32) = @splat(0),
+    tick: u32 = 0,
     data: union(enum(u16)) {
         none: void,
         planet_radius: u32,

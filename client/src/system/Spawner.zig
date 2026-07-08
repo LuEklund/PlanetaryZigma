@@ -56,6 +56,13 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),
             },
+            .update_motion = .{
+                .id = entity_info.id,
+                .position = entity_info.position,
+                .velocity = entity_info.velocity,
+                .rotation = entity_info.rotation,
+                .tick = entity_info.tick,
+            },
         };
         switch (entity_info.kind) {
             .player => {
