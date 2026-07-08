@@ -65,7 +65,7 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 const radius: u32 = entity_info.data.planet_radius;
                 var planet: shared.Planet(.renderable) = try .init(self.gpa, radius);
                 defer planet.deinit(self.gpa);
-                try system_context.renderer.inner.createStaticMesh(
+                try system_context.renderer.inner.resources.createStaticMesh(
                     self.gpa,
                     "planet",
                     planet.vertices,

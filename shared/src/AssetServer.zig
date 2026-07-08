@@ -86,7 +86,7 @@ pub fn update(self: *@This()) !void {
     }
 }
 
-pub fn watchAsset(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
+pub fn watch(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
     for (self.metadata.items) |metadata| {
         if (std.mem.eql(u8, metadata.file_path, file_path) == true) return;
     }
@@ -96,20 +96,8 @@ pub fn watchAsset(self: *@This(), comptime UserData: type, user_data: *UserData,
     );
 }
 
-pub fn loadAsset(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
-    var metadata_index: ?usize = null;
-    for (self.metadata.items, 0..) |metadata, i| {
-        if (std.mem.eql(u8, metadata.file_path, file_path) == true) {
-            metadata_index = i;
-            break;
-        }
-    }
-    if (metadata_index == null) {
-        try self.metadata.append(
-            self.gpa,
-            try .init(self.gpa, self.io, user_data, file_path, callback),
-        );
-    }
+pub fn loadAndWatch(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
+    try self.watch(UserData, user_data, file_path, callback);
 
     std.log.debug("path: {s}", .{file_path});
     const file = try self.dir.openFile(self.io, file_path, .{});

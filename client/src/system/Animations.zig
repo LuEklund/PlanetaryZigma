@@ -5,7 +5,7 @@ const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
 const Renderer = @import("../Renderer/Vulkan.zig");
-const Node = @import("../Renderer/Vulkan/Node.zig");
+const Model = @import("../Renderer/Vulkan/Model.zig");
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
 
 gpa: std.mem.Allocator,
@@ -34,12 +34,12 @@ pub fn update(
         if (!oneshot_playing) {
             const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
             const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
-            const desired_active, const desired_loop = clipFor(entity.kind, state, instance.player.default);
-            if (desired_active != instance.player.active) {
-                instance.player.active = desired_active;
+            const state_clip = model.state_clips.get(state);
+            if (state_clip.index != instance.player.active) {
+                instance.player.active = state_clip.index;
                 instance.player.current_time = 0;
             }
-            instance.player.loop = desired_loop;
+            instance.player.loop = state_clip.loop;
         }
 
         const animation = model.clips.items[instance.player.active];
@@ -90,50 +90,18 @@ pub fn update(
                 }
             }
         }
-        for (model.top_nodes.items) |node_index| {
-            var top_matrix: nz.Mat4x4(f32) = .identity;
-            instance.nodes[node_index].refreshMatrices(instance.nodes, &top_matrix);
-        }
-        for (model.top_nodes.items) |root_index| {
-            updateJoints(root_index, instance);
+        Model.computeWorldMatrices(instance.nodes);
+        for (instance.nodes) |*node| {
+            if (node.skin_id < 0) continue;
+            const skin = &model.skins.items[@intCast(node.skin_id)];
+            const inverse_bind_matrices = skin.inverse_bind_matrices.?;
+            const inverse_transform: nz.Mat4x4(f32) = node.world_matrix.inverse();
+            const palette = instance.palettes[@intCast(node.skin_id)];
+            for (skin.joints, inverse_bind_matrices.items, palette) |joint_index, inverse_bind_matrix, *joint_matrix| {
+                joint_matrix.* = inverse_transform.mul(instance.nodes[joint_index].world_matrix.mul(inverse_bind_matrix));
+            }
         }
     }
 }
 
-pub fn clipFor(kind: shared.Entity.Kind, state: shared.Entity.State, default: usize) struct { usize, bool } {
-    return switch (kind) {
-        .player => switch (state) {
-            .idle => .{ 0, true },
-            .walk => .{ 1, true },
-            .attack => .{ 2, false },
-        },
-        .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid, .tubloida => switch (state) {
-                .idle => .{ 0, true },
-                .walk => .{ 1, true },
-                .attack => .{ 2, false },
-            },
-            .wizard => switch (state) {
-                .idle, .walk => .{ 0, true },
-                .attack => .{ 1, false },
-            },
-        },
-        .unknown, .planet, .bullet, .teleporter, .item => .{ default, true },
-    };
-}
 
-fn updateJoints(node_index: usize, instance: *SkeletonInstance) void {
-    const node = &instance.nodes[node_index];
-    if (node.skin_id > -1) {
-        const skin = &instance.model.skins.items[@intCast(node.skin_id)];
-        const inverse_bind_matrices = skin.inverse_bind_matrices.?;
-        const inverse_transform: nz.Mat4x4(f32) = node.world_matrix.inverse();
-        const joint_matrices: [*]nz.Mat4x4(f32) = @ptrCast(@alignCast(instance.buffers[@intCast(node.skin_id)].info.pMappedData));
-        for (skin.joints, 0..) |joint_index, i| {
-            joint_matrices[i] = inverse_transform.mul(instance.nodes[joint_index].world_matrix.mul(inverse_bind_matrices.items[i]));
-        }
-    }
-    for (node.children.items) |child_id| {
-        updateJoints(child_id, instance);
-    }
-}
