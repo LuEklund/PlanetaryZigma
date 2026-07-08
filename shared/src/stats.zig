@@ -9,6 +9,7 @@ pub const Stat = struct {
         speed,
         damage,
         attack_speed,
+        range,
     };
 
     current: f32 = 0,
@@ -45,11 +46,12 @@ pub const Stats = struct {
         return stat.current;
     }
 
-    pub fn init(self: *Stats, health: f32, speed: f32, damage: f32, attack_speed: f32) void {
+    pub fn init(self: *Stats, health: f32, speed: f32, damage: f32, attack_speed: f32, range: f32) void {
         self.map.put(.health, .{ .current = health, .base_max = health, .max = health });
         self.map.put(.speed, .{ .current = speed, .base_max = speed, .max = speed });
         self.map.put(.damage, .{ .current = damage, .base_max = damage, .max = damage });
         self.map.put(.attack_speed, .{ .current = attack_speed, .base_max = attack_speed, .max = attack_speed });
+        self.map.put(.range, .{ .current = range, .base_max = range, .max = range });
     }
 
     pub fn gain(self: *Stats, item_kind: Item.Kind, amount: f32) void {

@@ -145,7 +145,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         .flags = .{ .invinsible = true },
                     });
-                    new_player_entity.stats.init(100, 10, 100, 1);
+
                     client.entity_id = new_player_entity.id;
                     info.world.players.appendAssumeCapacity(client.entity_id);
 
@@ -198,7 +198,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                 .rotation = rotation,
                 .tick = info.tick,
             };
-            try self.pending_motions.append(self.gpa, entry.value_ptr.*);
             continue;
         }
 
@@ -311,6 +310,8 @@ fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) 
         .kind = entity.kind,
         .position = entity.transform.position,
         .rotation = entity.transform.rotation.toVec(),
+        .velocity = entity.velocity,
+        .tick = info.tick,
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,

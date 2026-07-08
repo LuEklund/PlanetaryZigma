@@ -224,7 +224,7 @@ fn buildCellSlice(task: *SliceTask) void {
     }
 }
 
-fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
+pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
     const sample = nz.vec.scale(position, noise_frequency);
     const noise = simplex3(sample[0], sample[1], sample[2]) * noise_amplitude;
     return nz.vec.length(position) - radius + noise;

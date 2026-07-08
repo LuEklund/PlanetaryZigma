@@ -8,6 +8,7 @@ const Device = @import("device.zig").Logical;
 const descriptor = @import("desrciptor.zig");
 const pipeline = @import("pipeline.zig");
 const Mesh = @import("Mesh.zig");
+const Model = @import("Model.zig");
 const Material = @import("Material.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
@@ -28,6 +29,7 @@ pub const PipelineLayoutKind = enum { world, ui };
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
+models: std.EnumArray(Model.Kind, Model),
 materials: std.ArrayList(Material),
 skybox_material_index: usize,
 samplers: std.ArrayList(c.VkSampler),
@@ -159,6 +161,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
         .meshes = meshes,
+        .models = .initFill(.empty),
         .materials = materials,
         .samplers = samplers,
         .images = images,
@@ -177,12 +180,61 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
 
     inline for (comptime std.enums.values(Ui.Texture)) |texture| {
         if (comptime texture.path()) |texture_path| {
-            try asset_server.watchAsset(@This(), self, texture_path["assets/".len..], reloadUiTexture);
+            try asset_server.watch(@This(), self, texture_path["assets/".len..], reloadUiTexture);
         }
     }
-    try asset_server.watchAsset(@This(), self, "textures/skybox_cubemap.png", reloadSkybox);
+    try asset_server.watch(@This(), self, "textures/skybox_cubemap.png", reloadSkybox);
+
+    for (std.enums.values(Model.Kind)) |kind| {
+        const path = kind.spec().path orelse continue;
+        try asset_server.loadAndWatch(@This(), self, path, reloadModel);
+    }
 
     return self;
+}
+
+fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const kind = for (std.enums.values(Model.Kind)) |kind| {
+        const spec_path = kind.spec().path orelse continue;
+        if (std.mem.eql(u8, spec_path, file_path)) break kind;
+    } else return error.UnknownModelPath;
+    try self.models.getPtr(kind).loadGlb(gpa, io, file, self.vma, self.device, self, kind.spec());
+}
+
+pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
+    const existing_index = for (self.meshes.items, 0..) |existing, index| {
+        if (std.mem.eql(u8, existing.name, name)) break index;
+    } else null;
+    if (existing_index != null) try check(c.vkDeviceWaitIdle(self.device.handle));
+
+    const mesh = try Mesh.init(
+        gpa,
+        self.vma,
+        name,
+        self.device,
+        Mesh.StaticVertex,
+        vertices,
+        indices,
+        &.{.{
+            .index_start = 0,
+            .index_count = @intCast(indices.len),
+            .material_index = null,
+        }},
+    );
+    const mesh_id = if (existing_index) |index| blk: {
+        self.meshes.items[index].deinit(gpa, self.vma);
+        self.meshes.items[index] = mesh;
+        break :blk index;
+    } else blk: {
+        try self.meshes.append(gpa, mesh);
+        break :blk self.meshes.items.len - 1;
+    };
+
+    const model = self.models.getPtr(model_kind);
+    model.clear(gpa);
+    try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
+    model.offset = .{};
 }
 
 fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
@@ -401,6 +453,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
         mesh.deinit(gpa, vma);
     }
     self.meshes.deinit(gpa);
+    for (&self.models.values) |*model| model.deinit(gpa);
 
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);

@@ -56,6 +56,13 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),
             },
+            .update_motion = .{
+                .id = entity_info.id,
+                .position = entity_info.position,
+                .velocity = entity_info.velocity,
+                .rotation = entity_info.rotation,
+                .tick = entity_info.tick,
+            },
         };
         switch (entity_info.kind) {
             .player => {
@@ -63,9 +70,10 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
+                info.world.planet_radius = @floatFromInt(radius);
                 var planet: shared.Planet(.renderable) = try .init(self.gpa, radius);
                 defer planet.deinit(self.gpa);
-                try system_context.renderer.inner.createStaticMesh(
+                try system_context.renderer.inner.resources.createStaticMesh(
                     self.gpa,
                     "planet",
                     planet.vertices,

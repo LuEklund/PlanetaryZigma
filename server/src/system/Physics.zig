@@ -45,11 +45,11 @@ pub const Collider = struct {
     object_layer: ObjectLayer,
 };
 
-fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
+pub fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
     return .{ v.x, v.y, v.z };
 }
 
-fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
+pub fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
     return .{ .x = v[0], .y = v[1], .z = v[2] };
 }
 
@@ -273,10 +273,39 @@ pub fn moveOnPlanet(
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + walk));
 }
 
+pub fn moveTowardsOnPlanet(
+    body_id: c.b3BodyId,
+    planet_up: nz.Vec3(f32),
+    dir: nz.Vec3(f32),
+    target_speed: f32,
+    accel: f32,
+    delta_time: f32,
+) void {
+    const velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
+    const radial = nz.vec.scale(planet_up, nz.vec.dot(velocity, planet_up));
+    const tangential = velocity - radial;
+
+    const target: nz.Vec3(f32) = if (nz.vec.length(dir) > 0.0001)
+        nz.vec.scale(nz.vec.normalize(dir), target_speed)
+    else
+        .{ 0, 0, 0 };
+
+    const to_target = target - tangential;
+    const distance_to_target = nz.vec.length(to_target);
+    const step = accel * delta_time;
+    const new_tangential = if (distance_to_target <= step)
+        target
+    else
+        tangential + nz.vec.scale(to_target, step / distance_to_target);
+
+    c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
+}
+
 pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
     const random = world.prng.random();
     const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) * 2);
+    // radius * 2 starts inside the terrain on tiny planets (mesh min radius + noise)
+    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) + 10);
     const translation = nz.vec.scale(origin, -2.0);
 
     const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
@@ -285,7 +314,7 @@ pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.
 }
 
 pub fn getSurfacePoint(self: *@This(), world: *system.World, from_point: nz.Vec3(f32)) ?nz.Vec3(f32) {
-    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) * 2);
+    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) + 10);
     const translation = nz.vec.scale(origin, -2.0);
 
     const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());

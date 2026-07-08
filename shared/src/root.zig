@@ -4,6 +4,7 @@ pub const numz = @import("numz");
 pub const net = @import("net.zig");
 pub const PlanetKind = @import("planet.zig").PlanetKind;
 pub const Planet = @import("planet.zig").Planet;
+pub const planetSdf = @import("planet.zig").sdf;
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 

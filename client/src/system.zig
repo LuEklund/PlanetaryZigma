@@ -50,6 +50,7 @@ pub const World = struct {
     hud: Hud = .{},
     teleporter_id: u32 = 0,
     player_id: u32 = 0,
+    planet_radius: f32 = 0,
 
     pub fn init(gpa: std.mem.Allocator) !@This() {
         return .{

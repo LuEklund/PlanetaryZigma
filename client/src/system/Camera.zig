@@ -1,5 +1,6 @@
 const std = @import("std");
-const nz = @import("shared").numz;
+const shared = @import("shared");
+const nz = shared.numz;
 const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
@@ -7,14 +8,16 @@ const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
 pub const sensitivity: f32 = 0.02;
-pub const default_boom_offset: Vec3 = .{ 0, 1.5, 8 };
+const camera_padding: f32 = 0.5;
+const arm_ease_speed: f32 = 4;
 
 fov_rad: f32 = 1.5,
 transform: nz.Transform3D(f32) = .{},
 
 yaw_rotation: Quat = .identity,
 pitch: f32 = 0,
-boom_offset: Vec3 = default_boom_offset,
+boom_offset: Vec3 = .{ 0, 1.5, 8 },
+arm_length: f32 = 1.5,
 free_speed: f32 = 30,
 
 pub fn update(self: *@This(), info: *const Info) void {
@@ -62,8 +65,6 @@ pub fn update(self: *@This(), info: *const Info) void {
     if (info.world.getPtr(info.world.player_id)) |player| {
         if (nz.vec.length(player.transform.position) > 0.001) {
             const planet_up = nz.vec.normalize(player.transform.position);
-            self.boom_offset[2] += @floatCast(-controller.mouse_wheel);
-            self.boom_offset[2] = std.math.clamp(self.boom_offset[2], 0, 1000);
             if (keys.mouse_button_right) {
                 const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
                 self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
@@ -78,9 +79,30 @@ pub fn update(self: *@This(), info: *const Info) void {
         const pitch_quat: Quat = .angleAxis(self.pitch, .{ 1, 0, 0 });
         const final_rotation = self.yaw_rotation.mul(pitch_quat).normalize();
         const pivot = player.transform.position + self.yaw_rotation.rotateVec(.{ self.boom_offset[0], self.boom_offset[1], 0 });
-        const arm = final_rotation.rotateVec(.{ 0, 0, self.boom_offset[2] });
-        self.transform.position = pivot + arm;
+        const arm_direction = final_rotation.rotateVec(.{ 0, 0, 1 });
+
+        const clear_length = traceArm(pivot, arm_direction, self.boom_offset[2], info.world.planet_radius);
+        if (clear_length < self.arm_length) {
+            self.arm_length = clear_length;
+        } else {
+            self.arm_length += (clear_length - self.arm_length) * @min(1, arm_ease_speed * info.delta_time);
+        }
+
+        self.transform.position = pivot + nz.vec.scale(arm_direction, self.arm_length);
         self.transform.rotation = final_rotation;
     }
-    controller.input_map.camera_yaw_rotation = self.yaw_rotation.toVec();
+    controller.input_map.camera_rotation = self.transform.rotation.toVec();
+    controller.input_map.camera_position = self.transform.position;
+}
+
+fn traceArm(pivot: Vec3, direction: Vec3, max_length: f32, planet_radius: f32) f32 {
+    if (planet_radius <= 0) return max_length;
+    var distance: f32 = 0;
+    for (0..32) |_| {
+        if (distance >= max_length) return max_length;
+        const clearance = shared.planetSdf(pivot + nz.vec.scale(direction, distance), planet_radius) - camera_padding;
+        if (clearance <= 0.01) return distance;
+        distance += clearance;
+    }
+    return distance;
 }

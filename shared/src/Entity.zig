@@ -1,3 +1,4 @@
+const std = @import("std");
 const Item = @import("inventory.zig").Item;
 
 pub const Enemy = struct {
@@ -46,6 +47,10 @@ pub const Kind = union(enum(u16)) {
 
     enemy: Enemy.Kind,
     item: Item.Kind,
+
+    pub fn eql(kind: Kind, other_kind: Kind) bool {
+        return std.meta.eql(kind, other_kind);
+    }
 
     pub fn expectsModel(kind: Kind) bool {
         return switch (kind) {

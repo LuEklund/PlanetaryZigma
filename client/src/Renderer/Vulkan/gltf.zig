@@ -7,9 +7,11 @@ const Device = @import("device.zig").Logical;
 const Image = @import("Image.zig");
 const Mesh = @import("Mesh.zig");
 const Node = @import("Node.zig");
+const Skin = @import("Skin.zig");
+const AnimationClip = @import("AnimationClip.zig");
 const Material = @import("Material.zig");
 const Buffer = @import("Buffer.zig");
-const RenderResources = @import("RenderResources.zig");
+const Resources = @import("Resources.zig");
 const check = @import("utils.zig").check;
 
 pub const Glb = struct {
@@ -38,17 +40,20 @@ pub fn readGlb(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
 }
 
 pub fn parseScene(
-    comptime V: type,
+    comptime VertexType: type,
     gpa: std.mem.Allocator,
     vma: Vma,
     device: Device,
-    render_resources: *RenderResources,
+    resources: *Resources,
     gltf: zgltf.Gltf,
     bin: []const u8,
     out_nodes: *std.ArrayList(Node),
-    out_top_nodes: *std.ArrayList(usize),
+    out_skins: ?*[]Skin,
+    out_clips: ?*[]AnimationClip,
+    look_node_names: ?[]const []const u8,
+    out_look_nodes: ?*[]usize,
 ) !void {
-    const original_sample_count = render_resources.samplers.items.len;
+    const original_sample_count = resources.samplers.items.len;
     {
         if (gltf.samplers) |samplers| {
             std.log.info("Sampler count was {d}", .{samplers.len});
@@ -78,14 +83,14 @@ pub fn parseScene(
                 };
                 var new_sampler: c.VkSampler = undefined;
                 try check(c.vkCreateSampler(device.handle, &sampler_info, null, &new_sampler));
-                try render_resources.samplers.append(gpa, new_sampler);
+                try resources.samplers.append(gpa, new_sampler);
             }
         } else {
             std.log.info("Sampler count was 0", .{});
         }
     }
 
-    const original_image_count = render_resources.images.items.len;
+    const original_image_count = resources.images.items.len;
     {
         if (gltf.images) |images| {
             std.log.info("image count was {d}", .{images.len});
@@ -156,7 +161,7 @@ pub fn parseScene(
                     );
                 }
                 decoded_image.deinit();
-                try render_resources.images.append(gpa, new_image);
+                try resources.images.append(gpa, new_image);
             }
             try device.endImmediateCommand(upload_cmd);
         } else {
@@ -164,16 +169,16 @@ pub fn parseScene(
         }
     }
 
-    const original_material_count = render_resources.materials.items.len;
+    const original_material_count = resources.materials.items.len;
     {
         if (gltf.materials) |materials| for (materials) |material| {
-            var sampler = render_resources.samplers.items[0];
-            var image_view = render_resources.images.items[0].vk_imageview;
+            var sampler = resources.samplers.items[0];
+            var image_view = resources.images.items[0].vk_imageview;
             if (material.pbrMetallicRoughness) |metallic_roughness| {
                 if (metallic_roughness.baseColorTexture) |base_texture| {
                     const texture_info = gltf.textures.?[base_texture.index];
-                    if (texture_info.sampler) |sampler_index| sampler = render_resources.samplers.items[original_sample_count + sampler_index];
-                    if (texture_info.source) |image_index| image_view = render_resources.images.items[original_image_count + image_index].vk_imageview;
+                    if (texture_info.sampler) |sampler_index| sampler = resources.samplers.items[original_sample_count + sampler_index];
+                    if (texture_info.source) |image_index| image_view = resources.images.items[original_image_count + image_index].vk_imageview;
                 }
             }
             const new_material: Material = try .init(
@@ -181,21 +186,21 @@ pub fn parseScene(
                 material.name orelse "material",
                 device,
                 vma,
-                render_resources.set_size,
-                render_resources.combined_image_sampler_descriptor_size,
+                resources.set_size,
+                resources.combined_image_sampler_descriptor_size,
                 sampler,
                 image_view,
             );
-            try render_resources.materials.append(gpa, new_material);
+            try resources.materials.append(gpa, new_material);
         };
     }
 
-    const original_mesh_count = render_resources.meshes.items.len;
+    const original_mesh_count = resources.meshes.items.len;
     {
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
             var surfaces: std.ArrayList(Mesh.GeoSurface) = try .initCapacity(gpa, mesh.primitives.len);
             defer surfaces.deinit(gpa);
-            var vertices: std.ArrayList(V) = .empty;
+            var vertices: std.ArrayList(VertexType) = .empty;
             defer vertices.deinit(gpa);
             var indices: std.ArrayList(u32) = .empty;
             defer indices.deinit(gpa);
@@ -276,7 +281,7 @@ pub fn parseScene(
                     bin[normal_offset .. normal_offset + normal_accessor.count * @sizeOf([3]f32)],
                 );
 
-                if (comptime @hasField(V, "joint_indices")) {
+                if (comptime @hasField(VertexType, "joint_indices")) {
                     const joint_accessor_idx = primitive.attributes.map.get("JOINTS_0") orelse return error.NoJoints;
                     const joint_accessor = gltf.accessors.?[joint_accessor_idx];
                     std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
@@ -337,46 +342,175 @@ pub fn parseScene(
                 vma,
                 mesh.name orelse "mesh",
                 device,
-                V,
+                VertexType,
                 vertices.items,
                 indices.items,
                 surfaces.items,
             );
-            try render_resources.meshes.append(gpa, new_mesh);
+            try resources.meshes.append(gpa, new_mesh);
         };
     }
 
-    if (gltf.nodes) |gltf_nodes| {
-        _ = try out_nodes.addManyAsSlice(gpa, gltf_nodes.len);
-        for (gltf_nodes, out_nodes.items, 0..) |gltf_node, *scene_node, scene_node_id| {
-            scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| @intCast(skin_id) else -1 };
-            if (gltf_node.mesh) |mesh_id| {
-                scene_node.mesh_id = original_mesh_count + mesh_id;
-            }
+    const gltf_nodes = gltf.nodes orelse return;
+    const node_map = try gpa.alloc(usize, gltf_nodes.len);
+    defer gpa.free(node_map);
+    {
+        const is_child = try gpa.alloc(bool, gltf_nodes.len);
+        defer gpa.free(is_child);
+        @memset(is_child, false);
+        for (gltf_nodes) |gltf_node| {
+            if (gltf_node.children) |children| for (children) |child_index| {
+                is_child[child_index] = true;
+            };
+        }
+        var stack: std.ArrayList(usize) = .empty;
+        defer stack.deinit(gpa);
+        for (0..gltf_nodes.len) |gltf_index| {
+            if (!is_child[gltf_index]) try stack.append(gpa, gltf_index);
+        }
+        var sorted_index: usize = 0;
+        while (stack.pop()) |gltf_index| {
+            node_map[gltf_index] = sorted_index;
+            sorted_index += 1;
+            if (gltf_nodes[gltf_index].children) |children| for (children) |child_index| {
+                try stack.append(gpa, child_index);
+            };
+        }
+        std.debug.assert(sorted_index == gltf_nodes.len);
+    }
 
-            if (gltf_node.matrix) |matrix| {
-                const local_matrix: nz.Mat4x4(f32) = .{ .d = matrix };
-                scene_node.rotation = nz.quat.Hamiltonian(f32).fromMat4x4(local_matrix);
-                scene_node.translation = local_matrix.vecPosition();
-                scene_node.scale = local_matrix.vecScale();
-            } else {
-                scene_node.translation = if (gltf_node.translation) |translation| translation else @splat(0);
-                scene_node.rotation = if (gltf_node.rotation) |r| .{ .w = r[3], .x = r[0], .y = r[1], .z = r[2] } else nz.quat.Hamiltonian(f32).identity;
-                scene_node.scale = if (gltf_node.scale) |scale| scale else @splat(1);
-            }
-            if (gltf_node.children) |children| {
-                for (children) |child_id| {
-                    try scene_node.children.append(gpa, child_id);
-                    out_nodes.items[child_id].parent = scene_node_id;
-                }
-            }
+    _ = try out_nodes.addManyAsSlice(gpa, gltf_nodes.len);
+    for (0..gltf_nodes.len) |gltf_index| {
+        const gltf_node = gltf_nodes[gltf_index];
+        const sorted_index = node_map[gltf_index];
+        const scene_node = &out_nodes.items[sorted_index];
+        scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| skin_id else null };
+        if (gltf_node.mesh) |mesh_id| {
+            scene_node.mesh_id = original_mesh_count + mesh_id;
+        }
+
+        if (gltf_node.matrix) |matrix| {
+            const local_matrix: nz.Mat4x4(f32) = .{ .d = matrix };
+            scene_node.rotation = nz.quat.Hamiltonian(f32).fromMat4x4(local_matrix);
+            scene_node.translation = local_matrix.vecPosition();
+            scene_node.scale = local_matrix.vecScale();
+        } else {
+            scene_node.translation = if (gltf_node.translation) |translation| translation else @splat(0);
+            scene_node.rotation = if (gltf_node.rotation) |rotation| .{
+                .w = rotation[3],
+                .x = rotation[0],
+                .y = rotation[1],
+                .z = rotation[2],
+            } else nz.quat.Hamiltonian(f32).identity;
+            scene_node.scale = if (gltf_node.scale) |scale| scale else @splat(1);
         }
     }
-    for (out_nodes.items, 0..) |*node, i| {
-        if (node.parent == null) {
-            try out_top_nodes.append(gpa, i);
-            var top_matrix: nz.Mat4x4(f32) = .identity;
-            node.refreshMatrices(out_nodes.items, &top_matrix);
+    for (0..gltf_nodes.len) |gltf_index| {
+        const gltf_node = gltf_nodes[gltf_index];
+        const gltf_children = gltf_node.children orelse continue;
+        const sorted_index = node_map[gltf_index];
+        const scene_node = &out_nodes.items[sorted_index];
+        for (gltf_children) |gltf_child_index| {
+            try scene_node.children.append(gpa, node_map[gltf_child_index]);
+            out_nodes.items[node_map[gltf_child_index]].parent = sorted_index;
+        }
+    }
+    if (look_node_names) |node_names| {
+        const look_nodes = try gpa.alloc(usize, node_names.len);
+        errdefer gpa.free(look_nodes);
+        for (node_names, look_nodes) |node_name, *node_index| {
+            node_index.* = for (gltf_nodes, 0..) |gltf_node, gltf_index| {
+                if (std.mem.eql(u8, gltf_node.name orelse "", node_name)) break node_map[gltf_index];
+            } else {
+                std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
+                for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
+                std.log.err("in Model.Kind.spec assign one of these", .{});
+                return error.LookBoneNotFound;
+            };
+        }
+        out_look_nodes.?.* = look_nodes;
+    }
+
+    if (out_skins) |skins| {
+        if (gltf.skins) |gltf_skins| {
+            const model_skins = try gpa.alloc(Skin, gltf_skins.len);
+            for (gltf_skins, model_skins) |skin, *model_skin| {
+                const joints = try gpa.alloc(usize, skin.joints.len);
+                for (skin.joints, joints) |gltf_joint_index, *joint| {
+                    joint.* = node_map[gltf_joint_index];
+                }
+                var matrices: ?[]nz.Mat4x4(f32) = null;
+                if (skin.inverseBindMatrices.? > -1) {
+                    const accessor = gltf.accessors.?[skin.inverseBindMatrices.?];
+                    const mat_buffer_view = gltf.bufferViews.?[@intCast(accessor.bufferView.?)];
+                    const matrix_data = bin[accessor.byteOffset + mat_buffer_view.byteOffset .. accessor.byteOffset + mat_buffer_view.byteOffset + mat_buffer_view.byteLength];
+                    matrices = try gpa.alloc(nz.Mat4x4(f32), accessor.count);
+                    @memcpy(std.mem.sliceAsBytes(matrices.?), matrix_data);
+                }
+                model_skin.* = try .init(gpa, skin.name orelse "skin", matrices, joints);
+            }
+            skins.* = model_skins;
+        }
+    }
+
+    if (out_clips) |clips| {
+        if (gltf.animations) |animations| {
+            const model_animations = try gpa.alloc(AnimationClip, animations.len);
+            for (animations, model_animations) |gltf_animation, *model_animation| {
+                model_animation.* = try .init(gpa, gltf_animation.name orelse "animation", gltf_animation.samplers.len, gltf_animation.channels.len);
+                for (gltf_animation.samplers, model_animation.samplers) |sampler, *model_sampler| {
+                    const in_sampler_accessor = gltf.accessors.?[sampler.input];
+                    const out_sampler_accessor = gltf.accessors.?[sampler.output];
+
+                    model_sampler.* = .{
+                        .inputs = try gpa.alloc(f32, in_sampler_accessor.count),
+                        .outputs = try gpa.alloc(nz.Vec4(f32), out_sampler_accessor.count),
+                    };
+
+                    const in_sampler_buffer_view = gltf.bufferViews.?[@intCast(in_sampler_accessor.bufferView.?)];
+                    const in_sampler_offset = in_sampler_accessor.byteOffset + in_sampler_buffer_view.byteOffset;
+                    const in_sampler_data = bin[in_sampler_offset .. in_sampler_offset + in_sampler_buffer_view.byteLength];
+                    for (model_sampler.inputs, 0..) |*input, i| {
+                        input.* = @bitCast(in_sampler_data[i * 4 ..][0..4].*);
+                    }
+                    for (model_sampler.inputs) |input| {
+                        if (input < model_animation.start) model_animation.start = input;
+                        if (input > model_animation.end) model_animation.end = input;
+                    }
+
+                    const out_sampler_buffer_view = gltf.bufferViews.?[@intCast(out_sampler_accessor.bufferView.?)];
+                    const offset = out_sampler_accessor.byteOffset + out_sampler_buffer_view.byteOffset;
+                    const out_sampler_data = bin[offset .. offset + out_sampler_buffer_view.byteLength];
+                    switch (out_sampler_accessor.type) {
+                        .VEC3 => {
+                            for (model_sampler.outputs, 0..) |*output, i| {
+                                const value: [3]f32 = @bitCast(out_sampler_data[i * 12 ..][0..12].*);
+                                output.* = .{ value[0], value[1], value[2], 0 };
+                            }
+                        },
+                        .VEC4 => {
+                            for (model_sampler.outputs, 0..) |*output, i| {
+                                const value: [4]f32 = @bitCast(out_sampler_data[i * 16 ..][0..16].*);
+                                output.* = value;
+                            }
+                        },
+                        else => return error.UnsupportedAnimationOutput,
+                    }
+                }
+                for (gltf_animation.channels, model_animation.channels) |channel, *model_channel| {
+                    model_channel.* = .{
+                        .path = switch (channel.target.coreKind() orelse return error.AnimationTargetPath) {
+                            .translation => .translation,
+                            .rotation => .rotation,
+                            .scale => .scale,
+                            .weights => return error.WeightsNotSupported,
+                        },
+                        .node = node_map[channel.target.node orelse return error.ChannelWithoutNode],
+                        .sampler_index = channel.sampler,
+                    };
+                }
+            }
+            clips.* = model_animations;
         }
     }
 }

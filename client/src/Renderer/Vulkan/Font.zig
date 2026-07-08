@@ -45,7 +45,7 @@ pub fn init(
         .glyphs = undefined,
         .size = 32,
     };
-    try asset_server.loadAsset(@This(), self, path, loadFont);
+    try asset_server.loadAndWatch(@This(), self, path, loadFont);
     return self;
 }
 

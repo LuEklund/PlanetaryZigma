@@ -8,7 +8,6 @@ const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
-const Animations = @import("Animations.zig");
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
@@ -182,10 +181,11 @@ fn handleCommand(
                 },
                 .new_stage => info.world.teleporter_id = 0,
                 .attack => |id| {
-                    const entity = info.world.getPtr(id) orelse return;
                     const skeleton_animation = skeletons.getPtr(id) orelse return;
-                    skeleton_animation.player.active, skeleton_animation.player.loop = Animations.clipFor(entity.kind, .attack, skeleton_animation.player.default);
-                    skeleton_animation.player.current_time = 0;
+                    const state_clip = skeleton_animation.model.state_clips.get(.attack);
+                    skeleton_animation.player.active = state_clip.index;
+                    skeleton_animation.player.loop = state_clip.loop;
+                    skeleton_animation.player.current_time = skeleton_animation.model.clips[state_clip.index].start;
                 },
             }
         },

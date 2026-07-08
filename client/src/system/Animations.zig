@@ -5,8 +5,12 @@ const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
 const Renderer = @import("../Renderer/Vulkan.zig");
-const Node = @import("../Renderer/Vulkan/Node.zig");
+const Model = @import("../Renderer/Vulkan/Model.zig");
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
+
+const look_pitch_sign: f32 = -1;
+const look_yaw_sign: f32 = 1;
+const look_yaw_deadzone: f32 = 0.05;
 
 gpa: std.mem.Allocator,
 
@@ -27,38 +31,37 @@ pub fn update(
     for (info.world.entities.values()) |*entity| {
         const instance = skeletons.getPtr(entity.id) orelse continue;
         const model = instance.model;
-        if (model.clips.items.len == 0) continue;
+        if (model.clips.len == 0) continue;
 
         const oneshot_playing = !instance.player.loop and
-            instance.player.current_time <= model.clips.items[instance.player.active].end;
+            instance.player.current_time <= model.clips[instance.player.active].end;
         if (!oneshot_playing) {
             const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
             const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
-            const desired_active, const desired_loop = clipFor(entity.kind, state, instance.player.default);
-            if (desired_active != instance.player.active) {
-                instance.player.active = desired_active;
-                instance.player.current_time = 0;
+            const state_clip = model.state_clips.get(state);
+            if (state_clip.index != instance.player.active) {
+                instance.player.active = state_clip.index;
+                instance.player.current_time = model.clips[state_clip.index].start;
             }
-            instance.player.loop = desired_loop;
+            instance.player.loop = state_clip.loop;
         }
 
-        const animation = model.clips.items[instance.player.active];
+        const animation = model.clips[instance.player.active];
         instance.player.current_time += info.delta_time;
 
         if (instance.player.loop and instance.player.current_time > animation.end) {
-            instance.player.current_time -= animation.end;
+            instance.player.current_time -= animation.end - animation.start;
         }
-        for (animation.channels.items) |*channel| {
-            const sampler = animation.samplers.items[channel.sampler_index];
-            for (0..sampler.inputs.items.len - 1) |i| {
-                const sampler_in = sampler.inputs.items[i];
-                const sampler_in_next = sampler.inputs.items[i + 1];
+        for (animation.channels) |*channel| {
+            const sampler = animation.samplers[channel.sampler_index];
+            for (0..sampler.inputs.len - 1) |i| {
+                const sampler_in = sampler.inputs[i];
+                const sampler_in_next = sampler.inputs[i + 1];
                 if (instance.player.current_time >= sampler_in and instance.player.current_time <= sampler_in_next) {
                     const interpolate_value: f32 = (instance.player.current_time - sampler_in) / (sampler_in_next - sampler_in);
-                    const node_id = channel.node orelse return error.NoNode;
-                    const node = &instance.nodes[node_id];
-                    const sampler_out = sampler.outputs.items[i];
-                    const sampler_out_next = sampler.outputs.items[i + 1];
+                    const node = &instance.nodes[channel.node];
+                    const sampler_out = sampler.outputs[i];
+                    const sampler_out_next = sampler.outputs[i + 1];
                     switch (channel.path) {
                         .translation => {
                             const new_val = std.math.lerp(
@@ -83,57 +86,40 @@ pub fn update(
                             );
                             node.scale = .{ new_val[0], new_val[1], new_val[2] };
                         },
-                        .weights => {
-                            return error.WeightsNotImplemented;
-                        },
                     }
                 }
             }
         }
-        for (model.top_nodes.items) |node_index| {
-            var top_matrix: nz.Mat4x4(f32) = .identity;
-            instance.nodes[node_index].refreshMatrices(instance.nodes, &top_matrix);
+        if (entity.id == info.world.player_id and model.look_nodes.len > 0) {
+            const camera = &info.world.camera;
+            const node_count: f32 = @floatFromInt(model.look_nodes.len);
+            const look_pitch = std.math.clamp(camera.pitch * look_pitch_sign, -1.0, 1.0);
+            var yaw_offset = entity.transform.rotation.conjugate().mul(camera.yaw_rotation);
+            if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
+            var look_yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w) * look_yaw_sign, -1.2, 1.2);
+            if (@abs(look_yaw) < look_yaw_deadzone) look_yaw = 0;
+            const pitch_per_node = look_pitch / node_count;
+            const yaw_per_node = look_yaw / node_count;
+            for (model.look_nodes) |node_index| {
+                const node = &instance.nodes[node_index];
+                node.rotation = node.rotation
+                    .mul(nz.Quat(f32).angleAxis(pitch_per_node, .{ 1, 0, 0 }))
+                    .mul(nz.Quat(f32).angleAxis(yaw_per_node, .{ 0, 1, 0 }))
+                    .normalize();
+            }
         }
-        for (model.top_nodes.items) |root_index| {
-            updateJoints(root_index, instance);
+        Model.computeMatrices(instance.nodes);
+        for (instance.nodes) |*node| {
+            const skin_index = node.skin_id orelse continue;
+            const skin = model.skins[skin_index];
+            const palette = instance.palettes[skin_index];
+            const mesh_node_matrix_inverse = node.model_matrix.inverse();
+            for (0..skin.joints.len) |joint_index| {
+                const node_index = skin.joints[joint_index];
+                const node_model_matrix = instance.nodes[node_index].model_matrix;
+                const inverse_bind_matrix = skin.inverse_bind_matrices.?[joint_index];
+                palette[joint_index] = mesh_node_matrix_inverse.mul(node_model_matrix.mul(inverse_bind_matrix));
+            }
         }
-    }
-}
-
-pub fn clipFor(kind: shared.Entity.Kind, state: shared.Entity.State, default: usize) struct { usize, bool } {
-    return switch (kind) {
-        .player => switch (state) {
-            .idle => .{ 0, true },
-            .walk => .{ 1, true },
-            .attack => .{ 2, false },
-        },
-        .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid, .tubloida => switch (state) {
-                .idle => .{ 0, true },
-                .walk => .{ 1, true },
-                .attack => .{ 2, false },
-            },
-            .wizard => switch (state) {
-                .idle, .walk => .{ 0, true },
-                .attack => .{ 1, false },
-            },
-        },
-        .unknown, .planet, .bullet, .teleporter, .item => .{ default, true },
-    };
-}
-
-fn updateJoints(node_index: usize, instance: *SkeletonInstance) void {
-    const node = &instance.nodes[node_index];
-    if (node.skin_id > -1) {
-        const skin = &instance.model.skins.items[@intCast(node.skin_id)];
-        const inverse_bind_matrices = skin.inverse_bind_matrices.?;
-        const inverse_transform: nz.Mat4x4(f32) = node.world_matrix.inverse();
-        const joint_matrices: [*]nz.Mat4x4(f32) = @ptrCast(@alignCast(instance.buffers[@intCast(node.skin_id)].info.pMappedData));
-        for (skin.joints, 0..) |joint_index, i| {
-            joint_matrices[i] = inverse_transform.mul(instance.nodes[joint_index].world_matrix.mul(inverse_bind_matrices.items[i]));
-        }
-    }
-    for (node.children.items) |child_id| {
-        updateJoints(child_id, instance);
     }
 }

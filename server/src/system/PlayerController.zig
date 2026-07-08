@@ -34,9 +34,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         // std.log.debug("pos {any}", .{transform.position});
 
         const planet_up = nz.vec.normalize(transform.position);
-        camera.yaw_rotation = .fromVec(input.camera_yaw_rotation);
-
-        const player_forward_direction = player.transform.forward();
+        const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
@@ -55,7 +53,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             //         .object_layer = .planet_only,
             //     },
             // });
-            const tubloid = try self.spawner.spawn(.{
+            _ = try self.spawner.spawn(.{
                 .kind = .{ .enemy = .tubloida },
                 .transform = .{ .position = player.transform.position },
                 .collider = .{
@@ -64,7 +62,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     .object_layer = .moving,
                 },
             });
-            tubloid.stats.init(20, 3, 1, 1);
         }
 
         if (player.controller.input.keys.e) {
@@ -74,7 +71,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     if (!teleporter.active) {
                         teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
-                        const wizard = try self.spawner.spawn(.{
+                        _ = try self.spawner.spawn(.{
                             .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
@@ -84,7 +81,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             },
                             .flags = .{ .is_teleporter_boss = true },
                         });
-                        wizard.stats.init(100, 10, 1, 0.25);
                     } else {
                         if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
                             try self.spawner.startStage(info.world, self.physics);
@@ -94,13 +90,14 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             }
         }
 
-        const cam_fwd = nz.vec.normalize(camera.yaw_rotation.rotateVec(.{ 0, 0, -1 }));
-        const fwd_proj = cam_fwd - nz.vec.scale(planet_up, nz.vec.dot(cam_fwd, planet_up));
+        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+        const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
         const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
             nz.vec.normalize(fwd_proj)
         else
-            nz.vec.normalize(camera.yaw_rotation.rotateVec(.{ 1, 0, 0 }));
+            nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
         const move_right = nz.vec.normalize(nz.vec.cross(move_fwd, planet_up));
+        camera.yaw_rotation = .lookAt(move_fwd, planet_up);
 
         // --- Apply to body ---
         if (player.collider.body_id) |id| {
@@ -133,18 +130,31 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
 
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
             player.last_attack = info.elapsed_time;
-            const muzzle_velocity = nz.vec.scale(player_forward_direction, BulletManager.muzzle_speed);
+            const aim_point = self.aimPoint(transform.position, input.camera_position, camera_forward);
+            const start_direction = nz.vec.normalize(aim_point - transform.position);
+            const muzzle_velocity = nz.vec.scale(start_direction, 100);
             const bullet = try self.spawner.spawn(
                 .{
                     .kind = .bullet,
                     .owner_id = player.id,
-                    .transform = .{ .position = player.transform.position + nz.vec.scale(player_forward_direction, 1.5), .rotation = player.transform.rotation },
+                    .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
                     .velocity = muzzle_velocity,
-                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = BulletManager.lifetime },
+                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = 1 },
                 },
             );
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
             network_manager.pending_events.appendAssumeCapacity(.{ .attack = player_id });
         }
     }
+}
+
+const aim_range: f32 = 300;
+
+fn aimPoint(self: *@This(), player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+    const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
+    const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth + 1.5);
+    const translation = nz.vec.scale(camera_forward, aim_range);
+    const result = Physics.c.b3World_CastRayClosest(self.physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
+    if (result.hit) return Physics.toVec(result.point);
+    return ray_start + translation;
 }

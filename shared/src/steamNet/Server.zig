@@ -77,11 +77,16 @@ pub fn deinit(self: *@This()) void {
 pub fn handlePackets(self: *@This()) !void {
     while (true) {
         try self.io.checkCancel();
-        try self.packet_mutex.lock(self.io);
-        _ = try self.steamCallback(self.gpa, self.pipe, self.socket);
-        try self.recievePackets();
-        try self.sendPackets();
-        self.packet_mutex.unlock(self.io);
+        {
+            try self.packet_mutex.lock(self.io);
+            defer self.packet_mutex.unlock(self.io);
+            _ = self.steamCallback(self.gpa, self.pipe, self.socket) catch |err|
+                std.log.err("steamCallback: {s}", .{@errorName(err)});
+            self.recievePackets() catch |err|
+                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.sendPackets() catch |err|
+                std.log.err("sendPackets: {s}", .{@errorName(err)});
+        }
         try self.io.sleep(.{ .nanoseconds = 1_000_000 }, .real);
     }
 }

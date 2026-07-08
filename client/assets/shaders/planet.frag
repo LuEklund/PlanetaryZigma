@@ -19,6 +19,6 @@ layout(set = 0, binding = 0) uniform sceneData {
 layout(set = 1, binding = 0) uniform sampler2D texSampler;
 
 void main() {
-  float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.4);
+  float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.2);
   out_frag_color = vec4(in_color.xyz * diff * scene_data.light_color.xyz, 1);
 }
