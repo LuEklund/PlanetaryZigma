@@ -55,7 +55,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
             //         .object_layer = .planet_only,
             //     },
             // });
-            const tubloid = try self.spawner.spawn(.{
+            _ = try self.spawner.spawn(.{
                 .kind = .{ .enemy = .tubloida },
                 .transform = .{ .position = player.transform.position },
                 .collider = .{
@@ -64,7 +64,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     .object_layer = .moving,
                 },
             });
-            tubloid.stats.init(20, 3, 1, 1);
         }
 
         if (player.controller.input.keys.e) {
@@ -74,7 +73,7 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                     if (!teleporter.active) {
                         teleporter.active = true;
                         network_manager.pending_events.appendAssumeCapacity(.teleport_start);
-                        const wizard = try self.spawner.spawn(.{
+                        _ = try self.spawner.spawn(.{
                             .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .collider = .{
@@ -84,7 +83,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                             },
                             .flags = .{ .is_teleporter_boss = true },
                         });
-                        wizard.stats.init(100, 10, 1, 0.25);
                     } else {
                         if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
                             try self.spawner.startStage(info.world, self.physics);

@@ -73,7 +73,11 @@ pub fn update(
         const hit_id: u32 = @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)));
         if (hit_id == entity.owner_id) continue;
 
+        const owner_entity = self.world.getPtr(entity.owner_id) orelse continue;
         const hit_entity = self.world.getPtr(hit_id) orelse continue;
+        if (owner_entity.kind.eql(hit_entity.kind)) continue;
+        std.log.debug("{t} {t}", .{ owner_entity.kind, hit_entity.kind });
+
         _ = health_manager.removeHealth(hit_entity, entity.stats.get(.damage).current);
         spawner.depspawn(entity.id);
     }

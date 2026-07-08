@@ -23,6 +23,7 @@ pub const Item = struct {
         speed: f32 = 0,
         damage: f32 = 0,
         attack_speed: f32 = 0,
+        range: f32 = 0,
 
         pub fn get(self: Attribute, kind: Stat.Kind) f32 {
             return switch (kind) {
@@ -30,6 +31,7 @@ pub const Item = struct {
                 .speed => self.speed,
                 .damage => self.damage,
                 .attack_speed => self.attack_speed,
+                .range => self.range,
             };
         }
     };

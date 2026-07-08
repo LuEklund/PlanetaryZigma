@@ -47,6 +47,24 @@ pub const Kind = union(enum(u16)) {
     enemy: Enemy.Kind,
     item: Item.Kind,
 
+    pub fn eql(kind: Kind, other_kind: Kind) bool {
+        return switch (kind) {
+            .enemy => |enemy| switch (other_kind) {
+                .enemy => |other_enemy| enemy == other_enemy,
+                else => false,
+            },
+            .item => |item| switch (other_kind) {
+                .item => |other_item| item == other_item,
+                else => false,
+            },
+            .unknown => other_kind == .unknown,
+            .player => other_kind == .player,
+            .planet => other_kind == .planet,
+            .bullet => other_kind == .bullet,
+            .teleporter => other_kind == .teleporter,
+        };
+    }
+
     pub fn expectsModel(kind: Kind) bool {
         return switch (kind) {
             .player, .planet, .enemy, .item => true,

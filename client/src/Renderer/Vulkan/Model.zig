@@ -50,16 +50,16 @@ pub const Kind = enum {
         const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera, .scale = @splat(0.1) };
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
-            .unknown, .planet, .bullet => .{ .path = null, .offset = .{}, .skinned = false, .clip_names = null },
+            .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
             .player => .{ .path = "objects/BenRun.glb", .offset = player_offset, .skinned = true, .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" } },
-            .teleporter => .{ .path = "objects/pillar.glb", .offset = .{}, .skinned = false, .clip_names = null },
+            .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
             .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
             .wizard => .{ .path = "objects/Wizard.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = null, .walk = "Walking", .attack = "Summon" } },
-            .health => .{ .path = "objects/oxigen_tank.glb", .offset = .{}, .skinned = false, .clip_names = null },
-            .speed => .{ .path = "objects/energy_drink.glb", .offset = .{}, .skinned = false, .clip_names = null },
-            .damage => .{ .path = "objects/damage.glb", .offset = .{}, .skinned = false, .clip_names = null },
-            .attack_speed => .{ .path = "objects/attack_speed.glb", .offset = .{}, .skinned = false, .clip_names = null },
+            .health => .{ .path = "objects/oxigen_tank.glb", .skinned = false, .clip_names = null },
+            .speed => .{ .path = "objects/energy_drink.glb", .skinned = false, .clip_names = null },
+            .damage => .{ .path = "objects/damage.glb", .skinned = false, .clip_names = null },
+            .attack_speed => .{ .path = "objects/attack_speed.glb", .skinned = false, .clip_names = null },
         };
     }
 };
@@ -72,7 +72,7 @@ const ClipNames = struct {
 
 const Spec = struct {
     path: ?[]const u8,
-    offset: nz.Transform3D(f32),
+    offset: nz.Transform3D(f32) = .{},
     skinned: bool,
     clip_names: ?ClipNames,
 };
