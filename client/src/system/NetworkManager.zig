@@ -185,7 +185,7 @@ fn handleCommand(
                     const state_clip = skeleton_animation.model.state_clips.get(.attack);
                     skeleton_animation.player.active = state_clip.index;
                     skeleton_animation.player.loop = state_clip.loop;
-                    skeleton_animation.player.current_time = 0;
+                    skeleton_animation.player.current_time = skeleton_animation.model.clips[state_clip.index].start;
                 },
             }
         },

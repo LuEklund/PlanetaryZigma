@@ -37,7 +37,7 @@ pub fn update(
             const state_clip = model.state_clips.get(state);
             if (state_clip.index != instance.player.active) {
                 instance.player.active = state_clip.index;
-                instance.player.current_time = 0;
+                instance.player.current_time = model.clips[state_clip.index].start;
             }
             instance.player.loop = state_clip.loop;
         }
@@ -46,7 +46,7 @@ pub fn update(
         instance.player.current_time += info.delta_time;
 
         if (instance.player.loop and instance.player.current_time > animation.end) {
-            instance.player.current_time -= animation.end;
+            instance.player.current_time -= animation.end - animation.start;
         }
         for (animation.channels) |*channel| {
             const sampler = animation.samplers[channel.sampler_index];
@@ -86,18 +86,18 @@ pub fn update(
                 }
             }
         }
-        Model.computeWorldMatrices(instance.nodes);
+        Model.computeMatrices(instance.nodes);
         for (instance.nodes) |*node| {
-            if (node.skin_id < 0) continue;
-            const skin = &model.skins[@intCast(node.skin_id)];
-            const inverse_bind_matrices = skin.inverse_bind_matrices.?;
-            const inverse_transform: nz.Mat4x4(f32) = node.world_matrix.inverse();
-            const palette = instance.palettes[@intCast(node.skin_id)];
-            for (skin.joints, inverse_bind_matrices, palette) |joint_index, inverse_bind_matrix, *joint_matrix| {
-                joint_matrix.* = inverse_transform.mul(instance.nodes[joint_index].world_matrix.mul(inverse_bind_matrix));
+            const skin_index = node.skin_id orelse continue;
+            const skin = model.skins[skin_index];
+            const palette = instance.palettes[skin_index];
+            const mesh_node_matrix_inverse = node.model_matrix.inverse();
+            for (0..skin.joints.len) |joint_index| {
+                const node_index = skin.joints[joint_index];
+                const node_model_matrix = instance.nodes[node_index].model_matrix;
+                const inverse_bind_matrix = skin.inverse_bind_matrices.?[joint_index];
+                palette[joint_index] = mesh_node_matrix_inverse.mul(node_model_matrix.mul(inverse_bind_matrix));
             }
         }
     }
 }
-
-

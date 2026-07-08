@@ -233,7 +233,7 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
 
     const model = self.models.getPtr(model_kind);
     model.clear(gpa);
-    try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .local_matrix = .identity });
+    try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
     model.offset = .{};
 }
 

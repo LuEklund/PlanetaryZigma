@@ -382,7 +382,7 @@ pub fn parseScene(
         const gltf_node = gltf_nodes[gltf_index];
         const sorted_index = node_map[gltf_index];
         const scene_node = &out_nodes.items[sorted_index];
-        scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| @intCast(skin_id) else -1 };
+        scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| skin_id else null };
         if (gltf_node.mesh) |mesh_id| {
             scene_node.mesh_id = original_mesh_count + mesh_id;
         }

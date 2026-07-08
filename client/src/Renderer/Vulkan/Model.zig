@@ -79,7 +79,7 @@ const Spec = struct {
 
 const Surface = struct {
     mesh_id: usize,
-    local_matrix: nz.Mat4x4(f32),
+    model_matrix: nz.Mat4x4(f32),
 };
 
 const StateClip = struct {
@@ -131,7 +131,7 @@ pub fn loadGlb(
     } else {
         try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null);
     }
-    computeWorldMatrices(self.nodes.items);
+    computeMatrices(self.nodes.items);
 
     if (spec.skinned) {
         if (spec.clip_names) |clip_names| {
@@ -147,7 +147,7 @@ pub fn loadGlb(
     } else {
         for (self.nodes.items) |node| {
             const mesh_id = node.mesh_id orelse continue;
-            try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .local_matrix = node.world_matrix });
+            try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = node.model_matrix });
         }
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
@@ -165,12 +165,12 @@ fn clipIndex(self: *const @This(), name: []const u8, spec: Spec) !usize {
     return error.ClipNotFound;
 }
 
-pub fn computeWorldMatrices(nodes: []Node) void {
+pub fn computeMatrices(nodes: []Node) void {
     for (nodes, 0..) |*node, node_index| {
         const local_matrix = node.getLocalMatrix();
-        node.world_matrix = if (node.parent) |parent_index| blk: {
+        node.model_matrix = if (node.parent) |parent_index| blk: {
             std.debug.assert(parent_index < node_index);
-            break :blk nodes[parent_index].world_matrix.mul(local_matrix);
+            break :blk nodes[parent_index].model_matrix.mul(local_matrix);
         } else local_matrix;
     }
 }

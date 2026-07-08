@@ -7,8 +7,8 @@ mesh_id: ?usize = null,
 translation: nz.Vec3(f32) = @splat(0),
 scale: nz.Vec3(f32) = @splat(1),
 rotation: nz.quat.Hamiltonian(f32) = .identity,
-skin_id: i32 = -1,
-world_matrix: nz.Mat4x4(f32) = undefined,
+skin_id: ?usize = null,
+model_matrix: nz.Mat4x4(f32) = undefined,
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.children.deinit(gpa);

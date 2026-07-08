@@ -585,7 +585,7 @@ fn drawStatic(
 ) !void {
     for (model.surfaces.items) |surface| {
         const mesh = self.resources.getMeshPtr(surface.mesh_id);
-        const surface_matrix = top_matrix.mul(surface.local_matrix);
+        const surface_matrix = top_matrix.mul(surface.model_matrix);
         var push: Shader.StaticPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
             .model_matrix = surface_matrix.d,
@@ -606,9 +606,9 @@ fn drawSkeletal(
         const mesh = self.resources.getMeshPtr(mesh_id);
         var push: Shader.AnimationPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-            .model_matrix = top_matrix.mul(node.world_matrix).d,
-            .inverse_bind_matrices_addess = if (node.skin_id >= 0)
-                skeleton.buffers[@intCast(node.skin_id)].getGPUAddress()
+            .model_matrix = top_matrix.mul(node.model_matrix).d,
+            .inverse_bind_matrices_addess = if (node.skin_id) |skin_index|
+                skeleton.buffers[skin_index].getGPUAddress()
             else
                 0,
         };
