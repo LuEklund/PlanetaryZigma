@@ -89,18 +89,16 @@ const StateClip = struct {
 
 surfaces: std.ArrayList(Surface),
 nodes: std.ArrayList(Node),
-top_nodes: std.ArrayList(usize),
-clips: std.ArrayList(AnimationClip),
-skins: std.ArrayList(Skin),
+clips: []AnimationClip,
+skins: []Skin,
 state_clips: std.EnumArray(shared.Entity.State, StateClip),
 offset: nz.Transform3D(f32),
 
 pub const empty: @This() = .{
     .surfaces = .empty,
     .nodes = .empty,
-    .top_nodes = .empty,
-    .clips = .empty,
-    .skins = .empty,
+    .clips = &.{},
+    .skins = &.{},
     .state_clips = .initFill(.{ .index = 0, .loop = true }),
     .offset = .{},
 };
@@ -110,7 +108,7 @@ pub fn isEmpty(self: *const @This()) bool {
 }
 
 pub fn isSkinned(self: *const @This()) bool {
-    return self.skins.items.len > 0;
+    return self.skins.len > 0;
 }
 
 pub fn loadGlb(
@@ -129,9 +127,9 @@ pub fn loadGlb(
     defer glb.deinit(gpa);
 
     if (spec.skinned) {
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.top_nodes, &self.skins, &self.clips);
+        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips);
     } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.top_nodes, null, null);
+        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null);
     }
     computeWorldMatrices(self.nodes.items);
 
@@ -153,17 +151,16 @@ pub fn loadGlb(
         }
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
-        self.top_nodes.clearAndFree(gpa);
     }
     self.offset = spec.offset;
 }
 
 fn clipIndex(self: *const @This(), name: []const u8, spec: Spec) !usize {
-    for (self.clips.items, 0..) |clip, index| {
+    for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
     std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path.? });
-    for (self.clips.items) |clip| std.log.err("  \"{s}\"", .{clip.name});
+    for (self.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
     std.log.err("in Model.Kind.spec assign null or one of these", .{});
     return error.ClipNotFound;
 }
@@ -181,11 +178,12 @@ pub fn computeWorldMatrices(nodes: []Node) void {
 pub fn clear(self: *@This(), gpa: std.mem.Allocator) void {
     for (self.nodes.items) |*node| node.deinit(gpa);
     self.nodes.clearAndFree(gpa);
-    for (self.clips.items) |*clip| clip.deinit(gpa);
-    self.clips.clearAndFree(gpa);
-    for (self.skins.items) |*skin| skin.deinit(gpa);
-    self.skins.clearAndFree(gpa);
-    self.top_nodes.clearAndFree(gpa);
+    for (self.clips) |*clip| clip.deinit(gpa);
+    gpa.free(self.clips);
+    self.clips = &.{};
+    for (self.skins) |*skin| skin.deinit(gpa);
+    gpa.free(self.skins);
+    self.skins = &.{};
     self.surfaces.clearAndFree(gpa);
 }
 
