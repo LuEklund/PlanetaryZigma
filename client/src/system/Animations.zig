@@ -7,6 +7,8 @@ const nz = shared.numz;
 const Renderer = @import("../Renderer/Vulkan.zig");
 const Model = @import("../Renderer/Vulkan/Model.zig");
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
+const Node = @import("../Renderer/Vulkan/Node.zig");
+const AnimationClip = @import("../Renderer/Vulkan/AnimationClip.zig");
 
 const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
@@ -44,49 +46,23 @@ pub fn update(
             } else instance.player.loop = state_clip.loop;
         }
 
+        if (instance.overlay) |*overlay| {
+            overlay.current_time += info.delta_time;
+            if (overlay.current_time > model.clips[overlay.active].end) {
+                instance.overlay = null;
+                instance.startFade();
+            }
+        }
+
         const animation = model.clips[instance.player.active];
         instance.player.current_time += info.delta_time;
 
         if (instance.player.loop and instance.player.current_time > animation.end) {
             instance.player.current_time -= animation.end - animation.start;
         }
-        for (animation.channels) |*channel| {
-            const sampler = animation.samplers[channel.sampler_index];
-            for (0..sampler.inputs.len - 1) |i| {
-                const sampler_in = sampler.inputs[i];
-                const sampler_in_next = sampler.inputs[i + 1];
-                if (instance.player.current_time >= sampler_in and instance.player.current_time <= sampler_in_next) {
-                    const interpolate_value: f32 = (instance.player.current_time - sampler_in) / (sampler_in_next - sampler_in);
-                    const node = &instance.nodes[channel.node];
-                    const sampler_out = sampler.outputs[i];
-                    const sampler_out_next = sampler.outputs[i + 1];
-                    switch (channel.path) {
-                        .translation => {
-                            const new_val = std.math.lerp(
-                                sampler_out,
-                                sampler_out_next,
-                                @as(nz.Vec4(f32), @splat(interpolate_value)),
-                            );
-                            node.translation = .{ new_val[0], new_val[1], new_val[2] };
-                        },
-                        .rotation => {
-                            node.rotation = nz.Quat(f32).slerp(
-                                .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
-                                .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
-                                interpolate_value,
-                            );
-                        },
-                        .scale => {
-                            const new_val = std.math.lerp(
-                                sampler_out,
-                                sampler_out_next,
-                                @as(nz.Vec4(f32), @splat(interpolate_value)),
-                            );
-                            node.scale = .{ new_val[0], new_val[1], new_val[2] };
-                        },
-                    }
-                }
-            }
+        sampleClip(instance.nodes, animation, instance.player.current_time, null);
+        if (instance.overlay) |overlay| {
+            sampleClip(instance.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask.?);
         }
         if (instance.fade_time > 0) {
             instance.fade_time -= info.delta_time;
@@ -129,6 +105,50 @@ pub fn update(
         for (model.skins, instance.joint_matrices) |skin, joint_matrices| {
             for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices.cpu) |node_index, inverse_bind_matrix, *joint_matrix| {
                 joint_matrix.* = instance.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
+            }
+        }
+    }
+}
+
+fn sampleClip(nodes: []Node, animation: AnimationClip, time: f32, mask: ?[]const bool) void {
+    for (animation.channels) |*channel| {
+        if (mask) |masked| {
+            if (!masked[channel.node]) continue;
+        }
+        const sampler = animation.samplers[channel.sampler_index];
+        for (0..sampler.inputs.len - 1) |i| {
+            const sampler_in = sampler.inputs[i];
+            const sampler_in_next = sampler.inputs[i + 1];
+            if (time >= sampler_in and time <= sampler_in_next) {
+                const interpolate_value: f32 = (time - sampler_in) / (sampler_in_next - sampler_in);
+                const node = &nodes[channel.node];
+                const sampler_out = sampler.outputs[i];
+                const sampler_out_next = sampler.outputs[i + 1];
+                switch (channel.path) {
+                    .translation => {
+                        const new_val = std.math.lerp(
+                            sampler_out,
+                            sampler_out_next,
+                            @as(nz.Vec4(f32), @splat(interpolate_value)),
+                        );
+                        node.translation = .{ new_val[0], new_val[1], new_val[2] };
+                    },
+                    .rotation => {
+                        node.rotation = nz.Quat(f32).slerp(
+                            .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
+                            .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
+                            interpolate_value,
+                        );
+                    },
+                    .scale => {
+                        const new_val = std.math.lerp(
+                            sampler_out,
+                            sampler_out_next,
+                            @as(nz.Vec4(f32), @splat(interpolate_value)),
+                        );
+                        node.scale = .{ new_val[0], new_val[1], new_val[2] };
+                    },
+                }
             }
         }
     }

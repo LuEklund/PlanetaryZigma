@@ -32,16 +32,30 @@ fade_time: f32,
 joint_matrices: []JointMatrices,
 model: *Model,
 player: AnimationPlayer = .{},
+overlay: ?AnimationPlayer,
 
-pub fn playClip(self: *@This(), state_clip: Model.StateClip) void {
+pub fn startFade(self: *@This()) void {
     for (self.nodes, self.fade_pose) |node, *pose| {
         pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
     }
     self.fade_time = fade_duration;
+}
+
+pub fn playClip(self: *@This(), state_clip: Model.StateClip) void {
+    self.startFade();
     self.player = .{
         .current_time = self.model.clips[state_clip.index].start,
         .active = state_clip.index,
         .loop = state_clip.loop,
+    };
+}
+
+pub fn playOverlay(self: *@This(), state_clip: Model.StateClip) void {
+    self.startFade();
+    self.overlay = .{
+        .current_time = self.model.clips[state_clip.index].start,
+        .active = state_clip.index,
+        .loop = false,
     };
 }
 
@@ -68,7 +82,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
         );
     }
 
-    return .{ .nodes = nodes, .fade_pose = fade_pose, .fade_time = 0, .model = model, .joint_matrices = joint_matrices };
+    return .{ .nodes = nodes, .fade_pose = fade_pose, .fade_time = 0, .model = model, .joint_matrices = joint_matrices, .overlay = null };
 }
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
