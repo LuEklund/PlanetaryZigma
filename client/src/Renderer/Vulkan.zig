@@ -130,7 +130,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
         .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-        .frag_planet = .{ .path = "shaders/planet.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
         .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
         .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
     });
@@ -424,25 +423,25 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     ext.vkCmdBeginRendering(cmd, &render_info);
 
+    bindVertexShader(cmd, self.shaders.get(.vert_static).?);
+    bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
-        if (model.isEmpty()) {
-            continue;
+        if (model.isEmpty() or model.isSkinned()) continue;
+        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        try drawStatic(self, cmd, model, current_frame, base_matrix);
+    }
+
+    bindVertexShader(cmd, self.shaders.get(.vert_skinned).?);
+    for (info.world.entities.values()) |*entity| {
+        const model = self.resources.models.getPtr(.fromKind(entity.kind));
+        if (model.isEmpty() or !model.isSkinned()) continue;
+        const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+        for (skeleton.joint_matrices) |*matrices| {
+            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
         }
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
-        if (model.isSkinned()) {
-            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-            bindVertexShader(cmd, self.shaders.get(.vert_skinned).?);
-            bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);
-            for (skeleton.buffers, skeleton.palettes) |*joint_buffer, palette| {
-                joint_buffer.copy(nz.Mat4x4(f32), palette);
-            }
-            try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
-        } else {
-            bindVertexShader(cmd, self.shaders.get(.vert_static).?);
-            bindFragmentShader(cmd, self.shaders.get(if (entity.kind == .planet) .frag_planet else .frag_mesh).?);
-            try drawStatic(self, cmd, model, current_frame, base_matrix);
-        }
+        try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
     }
 
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
@@ -602,9 +601,9 @@ fn drawSkeletal(
         const mesh = self.resources.getMeshPtr(mesh_id);
         var push: Shader.AnimationPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-            .model_matrix = top_matrix.mul(node.model_matrix).d,
-            .inverse_bind_matrices_addess = if (node.skin_id) |skin_index|
-                skeleton.buffers[skin_index].getGPUAddress()
+            .model_matrix = if (node.skin_id != null) top_matrix.d else top_matrix.mul(node.model_matrix).d,
+            .joint_matrices_address = if (node.skin_id) |skin_index|
+                skeleton.joint_matrices[skin_index].gpu.getGPUAddress()
             else
                 0,
         };

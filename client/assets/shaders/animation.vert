@@ -27,14 +27,14 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer {
   Vertex vertices[];
 };
 
-layout(buffer_reference, std430) readonly buffer InverseBindMatrices {
+layout(buffer_reference, std430) readonly buffer JointMatrices {
   mat4 matrices[];
 };
 
 layout(push_constant, std430) uniform pc {
   mat4 model_matrix;
   VertexBuffer vertex_buffer;
-  InverseBindMatrices inverse_bind_matrices;
+  JointMatrices joint_matrices;
 } push_constant;
 
 layout(location = 0) out vec4 out_frag_color;
@@ -49,10 +49,10 @@ void main() {
   float z = v.position.z;
 
   mat4 skin_mat =
-    v.joint_weights.x * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.x)] +
-      v.joint_weights.y * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.y)] +
-      v.joint_weights.z * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.z)] +
-      v.joint_weights.w * push_constant.inverse_bind_matrices.matrices[int(v.joint_indices.w)];
+    v.joint_weights.x * push_constant.joint_matrices.matrices[int(v.joint_indices.x)] +
+      v.joint_weights.y * push_constant.joint_matrices.matrices[int(v.joint_indices.y)] +
+      v.joint_weights.z * push_constant.joint_matrices.matrices[int(v.joint_indices.z)] +
+      v.joint_weights.w * push_constant.joint_matrices.matrices[int(v.joint_indices.w)];
 
   gl_Position = scene_data.proj_view * push_constant.model_matrix * skin_mat * vec4(x, y, z, 1.0);
   // gl_Position = scene_data.proj_view * vec4(x, y, z, 1.0);
@@ -67,6 +67,6 @@ void main() {
   // out_frag_color = v.joint_indices.x == -1 ? vec4(v.color) : vec4(col, 1);
   // out_frag_color = vec4(col, 1);
   out_frag_color = v.color;
-  out_normal = (push_constant.model_matrix * vec4(v.normal, 1)).xyz;
+  out_normal = (push_constant.model_matrix * skin_mat * vec4(v.normal, 0)).xyz;
   out_uv = vec2(v.uv_x, v.uv_y);
 }

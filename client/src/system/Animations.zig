@@ -109,16 +109,9 @@ pub fn update(
             }
         }
         Model.computeMatrices(instance.nodes);
-        for (instance.nodes) |*node| {
-            const skin_index = node.skin_id orelse continue;
-            const skin = model.skins[skin_index];
-            const palette = instance.palettes[skin_index];
-            const mesh_node_matrix_inverse = node.model_matrix.inverse();
-            for (0..skin.joints.len) |joint_index| {
-                const node_index = skin.joints[joint_index];
-                const node_model_matrix = instance.nodes[node_index].model_matrix;
-                const inverse_bind_matrix = skin.inverse_bind_matrices.?[joint_index];
-                palette[joint_index] = mesh_node_matrix_inverse.mul(node_model_matrix.mul(inverse_bind_matrix));
+        for (model.skins, instance.joint_matrices) |skin, joint_matrices| {
+            for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices.cpu) |node_index, inverse_bind_matrix, *joint_matrix| {
+                joint_matrix.* = instance.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
             }
         }
     }

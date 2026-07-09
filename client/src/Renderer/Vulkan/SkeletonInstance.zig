@@ -13,9 +13,13 @@ pub const AnimationPlayer = struct {
     loop: bool = true,
 };
 
+pub const JointMatrices = struct {
+    cpu: []nz.Mat4x4(f32),
+    gpu: Buffer,
+};
+
 nodes: []Node,
-buffers: []Buffer,
-palettes: [][]nz.Mat4x4(f32),
+joint_matrices: []JointMatrices,
 model: *Model,
 player: AnimationPlayer = .{},
 
@@ -25,10 +29,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
         dst.* = src;
         dst.children = try src.children.clone(gpa);
     }
-    const buffers = try gpa.alloc(Buffer, model.skins.len);
-    const palettes = try gpa.alloc([]nz.Mat4x4(f32), model.skins.len);
-    for (model.skins, buffers, palettes) |skin, *buffer, *palette| {
-        buffer.* = try .init(
+    const joint_matrices = try gpa.alloc(JointMatrices, model.skins.len);
+    for (model.skins, joint_matrices) |skin, *matrices| {
+        matrices.cpu = try gpa.alloc(nz.Mat4x4(f32), skin.inverse_bind_matrices.?.len);
+        matrices.gpu = try .init(
             device,
             vma,
             nz.Mat4x4(f32),
@@ -39,17 +43,17 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
             },
         );
-        palette.* = try gpa.alloc(nz.Mat4x4(f32), skin.inverse_bind_matrices.?.len);
     }
 
-    return .{ .nodes = nodes, .model = model, .buffers = buffers, .palettes = palettes };
+    return .{ .nodes = nodes, .model = model, .joint_matrices = joint_matrices };
 }
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     for (self.nodes) |*node| node.deinit(gpa);
     gpa.free(self.nodes);
-    for (self.buffers) |*buffer| buffer.deinit(vma);
-    gpa.free(self.buffers);
-    for (self.palettes) |palette| gpa.free(palette);
-    gpa.free(self.palettes);
+    for (self.joint_matrices) |*matrices| {
+        gpa.free(matrices.cpu);
+        matrices.gpu.deinit(vma);
+    }
+    gpa.free(self.joint_matrices);
 }

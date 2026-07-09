@@ -123,7 +123,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         c.VK_IMAGE_ASPECT_COLOR_BIT,
         false,
     );
-    var green_color: nz.color.Rgba(u8) = .{ .r = 155, .g = 255, .b = 0, .a = 255 };
+    var green_color: nz.color.Rgba(u8) = .{ .r = 255, .g = 255, .b = 255, .a = 255 };
     try default_texture.uploadDataToImage(vma, device, &green_color, 4, 0);
     try images.append(gpa, default_texture);
     const sampler_info: c.VkSamplerCreateInfo = .{

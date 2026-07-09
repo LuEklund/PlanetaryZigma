@@ -14,7 +14,6 @@ pub const Kind = enum(u16) {
     frag_ui,
     frag_sky,
     frag_mesh,
-    frag_planet,
     frag_debug,
 };
 
@@ -29,7 +28,7 @@ push_constant_size: u32,
 pub const AnimationPushConstant = extern struct {
     model_matrix: [16]f32,
     vertex_buffer_address: c.VkDeviceAddress,
-    inverse_bind_matrices_addess: c.VkDeviceAddress,
+    joint_matrices_address: c.VkDeviceAddress,
 };
 pub const StaticPushConstant = extern struct {
     model_matrix: [16]f32,

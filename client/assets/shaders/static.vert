@@ -38,6 +38,6 @@ void main() {
 
   gl_Position = scene_data.proj_view * push_constant.model_matrix * vec4(v.position, 1.0);
   out_frag_color = v.color;
-  out_normal = (push_constant.model_matrix * vec4(v.normal, 1)).xyz;
+  out_normal = (push_constant.model_matrix * vec4(v.normal, 0)).xyz;
   out_uv = vec2(v.uv_x, v.uv_y);
 }
