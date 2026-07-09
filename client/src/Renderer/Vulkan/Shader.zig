@@ -4,6 +4,20 @@ const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
 pub const check = @import("utils.zig").check;
 
+pub const AnimationPushConstant = extern struct {
+    model_matrix: [16]f32,
+    vertex_buffer_address: c.VkDeviceAddress,
+    joint_matrices_address: c.VkDeviceAddress,
+};
+pub const StaticPushConstant = extern struct {
+    model_matrix: [16]f32,
+    vertex_buffer_address: c.VkDeviceAddress,
+};
+pub const UiPushConstant = extern struct {
+    vertex_buffer_address: c.VkDeviceAddress,
+    screnn_size: [2]f32,
+};
+
 pub const Kind = enum(u16) {
     vert_skinned,
     vert_static,
@@ -42,20 +56,6 @@ descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
 descriptor_set_count: u32,
 shader_name: []const u8,
 push_constant_size: u32,
-
-pub const AnimationPushConstant = extern struct {
-    model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
-    joint_matrices_address: c.VkDeviceAddress,
-};
-pub const StaticPushConstant = extern struct {
-    model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
-};
-pub const UiPushConstant = extern struct {
-    vertex_buffer_address: c.VkDeviceAddress,
-    screnn_size: [2]f32,
-};
 
 pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) @This() {
     const shader_spec = specs.get(kind);
