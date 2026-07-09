@@ -76,7 +76,13 @@ pub fn deinit(self: *@This()) void {
 }
 
 pub fn handlePackets(self: *@This()) !void {
+    defer std.log.warn("packet pump exited", .{});
+    var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     while (true) {
+        const now: std.Io.Timestamp = .now(self.io, .real);
+        const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
+        if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
+        last_iteration = now;
         try self.io.checkCancel();
         {
             try self.packet_mutex.lock(self.io);

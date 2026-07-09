@@ -35,7 +35,6 @@ const max_frames_inflight: usize = 3;
 pub const Model = @import("Vulkan/Model.zig");
 
 gpa: std.mem.Allocator,
-asset_server: *AssetServer,
 
 instance: Instance,
 debug_messenger: DebugMessenger,
@@ -45,7 +44,6 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
-shaders: std.EnumMap(Shader.Kind, *Shader),
 skeletons: std.AutoHashMap(u32, SkeletonInstance),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
@@ -72,7 +70,6 @@ pub const InitOptions = struct {
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*@This() {
     const self = try gpa.create(@This());
     self.gpa = gpa;
-    self.asset_server = asset_server;
     self.skeletons = .init(gpa);
 
     self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
@@ -112,36 +109,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
         self.device,
         self.swapchain.extent.width,
         self.swapchain.extent.height,
-        self.resources.font,
+        &self.resources.font,
     );
-
-    self.shaders = .{};
-    const ShaderSpec = struct {
-        path: []const u8,
-        push_constant_type: type,
-        stage_bit: c.VkShaderStageFlagBits,
-        layout: enum { scene_material, material, ui },
-    };
-    const shader_specs = std.EnumArray(Shader.Kind, ShaderSpec).init(.{
-        .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
-        .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_type = Shader.UiPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
-        .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_type = void, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-        .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_type = Shader.AnimationPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-        .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-        .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_type = Shader.StaticPushConstant, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    });
-    inline for (comptime std.enums.values(Shader.Kind)) |kind| {
-        const spec = shader_specs.get(kind);
-        const layouts: []const c.VkDescriptorSetLayout = switch (spec.layout) {
-            .scene_material => &.{ self.resources.descriptor_layouts.get(.scene).handle, self.resources.descriptor_layouts.get(.material).handle },
-            .material => &.{self.resources.descriptor_layouts.get(.material).handle},
-            .ui => &.{self.resources.descriptor_layouts.get(.ui).handle},
-        };
-        self.shaders.put(kind, try self.createShader(spec.path, spec.push_constant_type, spec.stage_bit, layouts));
-    }
 
     return self;
 }
@@ -157,8 +126,6 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     }
     self.skeletons.deinit();
 
-    var shader_it = self.shaders.iterator();
-    while (shader_it.next()) |entry| entry.value.*.deinit(gpa);
     self.ui.deinit(gpa, self.vma);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
@@ -320,7 +287,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             c.VK_SHADER_STAGE_GEOMETRY_BIT,
         };
 
-        const bound = [_]c.VkShaderEXT{ self.shaders.get(.vert_skinned).?.handle, self.shaders.get(.frag_mesh).?.handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_skinned).handle, self.resources.shaders.get(.frag_mesh).handle, null, null, null };
         ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
     }
 
@@ -423,8 +390,8 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     ext.vkCmdBeginRendering(cmd, &render_info);
 
-    bindVertexShader(cmd, self.shaders.get(.vert_static).?);
-    bindFragmentShader(cmd, self.shaders.get(.frag_mesh).?);
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
         if (model.isEmpty() or model.isSkinned()) continue;
@@ -432,7 +399,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         try drawStatic(self, cmd, model, current_frame, base_matrix);
     }
 
-    bindVertexShader(cmd, self.shaders.get(.vert_skinned).?);
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
         if (model.isEmpty() or !model.isSkinned()) continue;
@@ -450,7 +417,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handle = [_]c.VkShaderEXT{ self.shaders.get(.vert_sky).?.handle, self.shaders.get(.frag_sky).?.handle };
+        const handle = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_sky).handle, self.resources.shaders.get(.frag_sky).handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
     }
     const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -480,7 +447,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     if (info.world.controller.debug_draw_colliders) {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handles = [_]c.VkShaderEXT{ self.shaders.get(.vert_debug).?.handle, self.shaders.get(.frag_debug).?.handle };
+        const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_debug).handle, self.resources.shaders.get(.frag_debug).handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
         ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
         c.vkCmdSetLineWidth(cmd, 1);
@@ -527,8 +494,8 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     };
 
     const bounds_ui = [_]c.VkShaderEXT{
-        self.shaders.get(.vert_ui).?.handle,
-        self.shaders.get(.frag_ui).?.handle,
+        self.resources.shaders.get(.vert_ui).handle,
+        self.resources.shaders.get(.frag_ui).handle,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
@@ -744,30 +711,6 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     );
     self.ui.screen_heigth = @floatFromInt(self.swapchain.extent.height);
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
-}
-
-fn createShader(
-    self: *@This(),
-    name: []const u8,
-    push_constant_type: type,
-    stage_bit: c.VkShaderStageFlagBits,
-    layouts_handles: []const c.VkDescriptorSetLayout,
-) !*Shader {
-    return Shader.init(
-        self.gpa,
-        self.device,
-        self.asset_server,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = stage_bit,
-            .nextStage = if (stage_bit == c.VK_SHADER_STAGE_VERTEX_BIT) c.VK_SHADER_STAGE_FRAGMENT_BIT else 0,
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pName = "main",
-        },
-        layouts_handles,
-        name,
-        push_constant_type,
-    );
 }
 
 pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {

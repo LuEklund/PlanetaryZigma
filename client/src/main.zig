@@ -76,7 +76,9 @@ pub fn main(init: std.process.Init) !void {
     startup_zone.end();
     main_loop: while (true) {
         tracy.frameMark();
-        accumlated_time += getDeltaTime(io);
+        const delta_time = getDeltaTime(io);
+        if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
+        accumlated_time += delta_time;
         if (accumlated_time < time_step) continue;
         accumlated_time -= time_step;
         while (try window.poll(platform)) |event| {
