@@ -40,10 +40,8 @@ pub fn update(
             const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
             const state_clip = model.state_clips.get(state);
             if (state_clip.index != instance.player.active) {
-                instance.player.active = state_clip.index;
-                instance.player.current_time = model.clips[state_clip.index].start;
-            }
-            instance.player.loop = state_clip.loop;
+                instance.playClip(state_clip);
+            } else instance.player.loop = state_clip.loop;
         }
 
         const animation = model.clips[instance.player.active];
@@ -90,7 +88,21 @@ pub fn update(
                 }
             }
         }
-        if (entity.id == info.world.player_id and model.look_nodes.len > 0) {
+        if (instance.fade_time > 0) {
+            instance.fade_time -= info.delta_time;
+            const alpha = @max(instance.fade_time, 0) / SkeletonInstance.fade_duration;
+            for (instance.nodes, instance.fade_pose) |*node, pose| {
+                node.translation = std.math.lerp(node.translation, pose.translation, @as(nz.Vec3(f32), @splat(alpha)));
+                node.rotation = nz.Quat(f32).slerp(node.rotation, pose.rotation, alpha);
+                node.scale = std.math.lerp(node.scale, pose.scale, @as(nz.Vec3(f32), @splat(alpha)));
+            }
+        }
+        var saved_look_rotations: [3]nz.Quat(f32) = undefined;
+        const looking = entity.id == info.world.player_id and model.look_nodes.len > 0;
+        if (looking) {
+            for (model.look_nodes, 0..) |node_index, saved_index| {
+                saved_look_rotations[saved_index] = instance.nodes[node_index].rotation;
+            }
             const camera = &info.world.camera;
             const node_count: f32 = @floatFromInt(model.look_nodes.len);
             const look_pitch = std.math.clamp(camera.pitch * look_pitch_sign, -1.0, 1.0);
@@ -109,6 +121,11 @@ pub fn update(
             }
         }
         Model.computeMatrices(instance.nodes);
+        if (looking) {
+            for (model.look_nodes, 0..) |node_index, saved_index| {
+                instance.nodes[node_index].rotation = saved_look_rotations[saved_index];
+            }
+        }
         for (model.skins, instance.joint_matrices) |skin, joint_matrices| {
             for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices.cpu) |node_index, inverse_bind_matrix, *joint_matrix| {
                 joint_matrix.* = instance.nodes[node_index].model_matrix.mul(inverse_bind_matrix);

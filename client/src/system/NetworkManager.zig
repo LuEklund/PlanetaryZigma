@@ -182,10 +182,7 @@ fn handleCommand(
                 .new_stage => info.world.teleporter_id = 0,
                 .attack => |id| {
                     const skeleton_animation = skeletons.getPtr(id) orelse return;
-                    const state_clip = skeleton_animation.model.state_clips.get(.attack);
-                    skeleton_animation.player.active = state_clip.index;
-                    skeleton_animation.player.loop = state_clip.loop;
-                    skeleton_animation.player.current_time = skeleton_animation.model.clips[state_clip.index].start;
+                    skeleton_animation.playClip(skeleton_animation.model.state_clips.get(.attack));
                 },
             }
         },

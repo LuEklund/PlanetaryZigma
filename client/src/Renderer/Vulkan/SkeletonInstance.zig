@@ -18,10 +18,32 @@ pub const JointMatrices = struct {
     gpu: Buffer,
 };
 
+pub const fade_duration: f32 = 0.15;
+
+pub const Pose = struct {
+    translation: nz.Vec3(f32),
+    rotation: nz.Quat(f32),
+    scale: nz.Vec3(f32),
+};
+
 nodes: []Node,
+fade_pose: []Pose,
+fade_time: f32,
 joint_matrices: []JointMatrices,
 model: *Model,
 player: AnimationPlayer = .{},
+
+pub fn playClip(self: *@This(), state_clip: Model.StateClip) void {
+    for (self.nodes, self.fade_pose) |node, *pose| {
+        pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
+    }
+    self.fade_time = fade_duration;
+    self.player = .{
+        .current_time = self.model.clips[state_clip.index].start,
+        .active = state_clip.index,
+        .loop = state_clip.loop,
+    };
+}
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@This() {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
@@ -29,6 +51,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
         dst.* = src;
         dst.children = try src.children.clone(gpa);
     }
+    const fade_pose = try gpa.alloc(Pose, model.nodes.items.len);
     const joint_matrices = try gpa.alloc(JointMatrices, model.skins.len);
     for (model.skins, joint_matrices) |skin, *matrices| {
         matrices.cpu = try gpa.alloc(nz.Mat4x4(f32), skin.inverse_bind_matrices.?.len);
@@ -45,12 +68,13 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
         );
     }
 
-    return .{ .nodes = nodes, .model = model, .joint_matrices = joint_matrices };
+    return .{ .nodes = nodes, .fade_pose = fade_pose, .fade_time = 0, .model = model, .joint_matrices = joint_matrices };
 }
 
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     for (self.nodes) |*node| node.deinit(gpa);
     gpa.free(self.nodes);
+    gpa.free(self.fade_pose);
     for (self.joint_matrices) |*matrices| {
         gpa.free(matrices.cpu);
         matrices.gpu.deinit(vma);

@@ -89,7 +89,7 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
-const StateClip = struct {
+pub const StateClip = struct {
     index: usize,
     loop: bool,
 };
