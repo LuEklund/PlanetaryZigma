@@ -74,6 +74,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 server_conn: steam.HSteamNetConnection = 0,
 own_lobby: u64 = 0,
+last_send_result: steam.EResult = .k_EResultOK,
 packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
@@ -264,7 +265,11 @@ pub fn sendPackets(self: *@This()) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
         var message_number: i64 = 0;
-        _ = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        if (result != self.last_send_result) {
+            self.last_send_result = result;
+            std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
+        }
     }
     self.packets.outgoing.clearRetainingCapacity();
 }

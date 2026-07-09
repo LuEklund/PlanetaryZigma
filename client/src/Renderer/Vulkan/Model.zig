@@ -51,7 +51,14 @@ pub const Kind = enum {
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
             .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
-            .player => .{ .path = "objects/BenRun.glb", .offset = player_offset, .skinned = true, .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" }, .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null }, .overlay_root_name = "mixamorig:Spine1" },
+            .player => .{
+                .path = "objects/BenRun.glb",
+                .offset = player_offset,
+                .skinned = true,
+                .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" },
+                .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null },
+                .overlay_root_name = "mixamorig:Spine1",
+            },
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
             .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
@@ -90,18 +97,13 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
-pub const StateClip = struct {
-    index: usize,
-    loop: bool,
-};
-
 surfaces: std.ArrayList(Surface),
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
 look_nodes: []usize,
 overlay_mask: ?[]bool,
-state_clips: std.EnumArray(shared.Entity.State, StateClip),
+state_clips: std.EnumArray(shared.Entity.State, usize),
 offset: nz.Transform3D(f32),
 
 pub const empty: @This() = .{
@@ -111,7 +113,7 @@ pub const empty: @This() = .{
     .skins = &.{},
     .look_nodes = &.{},
     .overlay_mask = null,
-    .state_clips = .initFill(.{ .index = 0, .loop = true }),
+    .state_clips = .initFill(0),
     .offset = .{},
 };
 
@@ -170,9 +172,9 @@ pub fn loadGlb(
             const idle_index = if (clip_names.idle) |idle_name| try self.clipIndex(idle_name, spec) else walk_index;
             const attack_index = try self.clipIndex(clip_names.attack, spec);
             self.state_clips = .init(.{
-                .idle = .{ .index = idle_index, .loop = true },
-                .walk = .{ .index = walk_index, .loop = true },
-                .attack = .{ .index = attack_index, .loop = false },
+                .idle = idle_index,
+                .walk = walk_index,
+                .attack = attack_index,
             });
         }
     } else {

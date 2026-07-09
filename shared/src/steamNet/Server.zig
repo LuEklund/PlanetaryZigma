@@ -7,6 +7,7 @@ connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
+last_send_result: steam.EResult = .k_EResultOK,
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -125,7 +126,11 @@ pub fn sendPackets(self: *@This()) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
         var msg_num: i64 = 0;
-        _ = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
+        const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
+        if (result != self.last_send_result) {
+            self.last_send_result = result;
+            std.log.warn("send result changed: {t} (conn={d})", .{ result, msg.conn });
+        }
     }
     self.packets.outgoing.clearRetainingCapacity();
 }

@@ -35,8 +35,9 @@ layout(location = 2) out vec3 out_normal;
 
 void main() {
   Vertex v = push_constant.vertex_buffer.vertices[gl_VertexIndex];
-
   gl_Position = scene_data.proj_view * push_constant.model_matrix * vec4(v.position, 1.0);
+  // vec3 col = 0.5 + 0.5 * cos(scene_data.time * 10 + v.uv_x + vec3(0, 2, 4));
+  // out_frag_color = vec4(col, 1);
   out_frag_color = v.color;
   out_normal = (push_constant.model_matrix * vec4(v.normal, 0)).xyz;
   out_uv = vec2(v.uv_x, v.uv_y);

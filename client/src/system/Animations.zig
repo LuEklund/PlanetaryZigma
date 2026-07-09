@@ -35,15 +35,11 @@ pub fn update(
         const model = instance.model;
         if (model.clips.len == 0) continue;
 
-        const oneshot_playing = !instance.player.loop and
-            instance.player.current_time <= model.clips[instance.player.active].end;
-        if (!oneshot_playing) {
-            const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
-            const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
-            const state_clip = model.state_clips.get(state);
-            if (state_clip.index != instance.player.active) {
-                instance.playClip(state_clip);
-            } else instance.player.loop = state_clip.loop;
+        const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
+        const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
+        const clip_index = model.state_clips.get(state);
+        if (clip_index != instance.player.active) {
+            instance.playClip(clip_index);
         }
 
         if (instance.overlay) |*overlay| {
@@ -57,20 +53,20 @@ pub fn update(
         const animation = model.clips[instance.player.active];
         instance.player.current_time += info.delta_time;
 
-        if (instance.player.loop and instance.player.current_time > animation.end) {
+        if (instance.player.current_time > animation.end) {
             instance.player.current_time -= animation.end - animation.start;
         }
         sampleClip(instance.nodes, animation, instance.player.current_time, null);
         if (instance.overlay) |overlay| {
-            sampleClip(instance.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask.?);
+            sampleClip(instance.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
         }
         if (instance.fade_time > 0) {
             instance.fade_time -= info.delta_time;
             const alpha = @max(instance.fade_time, 0) / SkeletonInstance.fade_duration;
-            for (instance.nodes, instance.fade_pose) |*node, pose| {
-                node.translation = std.math.lerp(node.translation, pose.translation, @as(nz.Vec3(f32), @splat(alpha)));
-                node.rotation = nz.Quat(f32).slerp(node.rotation, pose.rotation, alpha);
-                node.scale = std.math.lerp(node.scale, pose.scale, @as(nz.Vec3(f32), @splat(alpha)));
+            for (instance.nodes, instance.fade_joints) |*node, fade_joint| {
+                node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
+                node.rotation = nz.Quat(f32).slerp(node.rotation, fade_joint.rotation, alpha);
+                node.scale = std.math.lerp(node.scale, fade_joint.scale, @as(nz.Vec3(f32), @splat(alpha)));
             }
         }
         var saved_look_rotations: [3]nz.Quat(f32) = undefined;
