@@ -31,12 +31,6 @@ pub const Entity = struct {
     position_error: nz.Vec3(f32) = @splat(0),
 
     transform: nz.Transform3D(f32) = .{},
-    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
-
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        _ = self;
-        _ = gpa;
-    }
 };
 
 pub const World = struct {
@@ -59,7 +53,6 @@ pub const World = struct {
         };
     }
     pub fn deinit(self: *@This()) void {
-        for (self.entities.values()) |*entity| entity.deinit(self.gpa);
         self.entities.deinit(self.gpa);
         self.teleporter_bosses.deinit(self.gpa);
     }
@@ -74,7 +67,6 @@ pub const World = struct {
     }
 
     pub fn despawn(self: *@This(), id: u32) bool {
-        if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
         return self.entities.swapRemove(id);
     }
 };

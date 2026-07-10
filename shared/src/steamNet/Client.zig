@@ -74,6 +74,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 server_conn: steam.HSteamNetConnection = 0,
 own_lobby: u64 = 0,
+last_send_result: steam.EResult = .k_EResultOK,
 packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
@@ -169,7 +170,13 @@ fn endReasonName(reason: i32) []const u8 {
 }
 
 pub fn handlePackets(self: *@This()) !void {
+    defer std.log.warn("packet pump exited", .{});
+    var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     while (true) {
+        const now: std.Io.Timestamp = .now(self.io, .real);
+        const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
+        if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
+        last_iteration = now;
         try self.io.checkCancel();
         {
             try self.packet_mutex.lock(self.io);
@@ -264,7 +271,11 @@ pub fn sendPackets(self: *@This()) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
         var message_number: i64 = 0;
-        _ = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        if (result != self.last_send_result) {
+            self.last_send_result = result;
+            std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
+        }
     }
     self.packets.outgoing.clearRetainingCapacity();
 }

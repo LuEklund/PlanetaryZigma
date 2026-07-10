@@ -7,6 +7,7 @@ connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
+last_send_result: steam.EResult = .k_EResultOK,
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -75,7 +76,13 @@ pub fn deinit(self: *@This()) void {
 }
 
 pub fn handlePackets(self: *@This()) !void {
+    defer std.log.warn("packet pump exited", .{});
+    var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     while (true) {
+        const now: std.Io.Timestamp = .now(self.io, .real);
+        const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
+        if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
+        last_iteration = now;
         try self.io.checkCancel();
         {
             try self.packet_mutex.lock(self.io);
@@ -125,7 +132,11 @@ pub fn sendPackets(self: *@This()) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
         var msg_num: i64 = 0;
-        _ = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
+        const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
+        if (result != self.last_send_result) {
+            self.last_send_result = result;
+            std.log.warn("send result changed: {t} (conn={d})", .{ result, msg.conn });
+        }
     }
     self.packets.outgoing.clearRetainingCapacity();
 }

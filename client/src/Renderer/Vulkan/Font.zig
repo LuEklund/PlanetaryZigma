@@ -4,7 +4,6 @@ const Image = @import("Image.zig");
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
-const AssetServer = @import("shared").AssetServer;
 const check = @import("utils.zig").check;
 
 pub const Glyph = struct {
@@ -33,10 +32,8 @@ pub fn init(
     vma: Vma,
     device: Device,
     path: []const u8,
-    asset_server: *AssetServer,
-) !*@This() {
-    const self = try gpa.create(@This());
-    self.* = .{
+) !@This() {
+    return .{
         .device = device,
         .vma = vma,
         .name = try gpa.dupe(u8, path),
@@ -45,13 +42,9 @@ pub fn init(
         .glyphs = undefined,
         .size = 32,
     };
-    try asset_server.loadAndWatch(@This(), self, path, loadFont);
-    return self;
 }
 
-fn loadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+pub fn load(self: *@This(), gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     const content = try reader.interface.allocRemaining(gpa, .unlimited);
@@ -160,5 +153,4 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     self.image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.sampler, null);
     gpa.free(self.name);
-    gpa.destroy(self);
 }

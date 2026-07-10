@@ -83,6 +83,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     const world = info.world;
 
     try self.steam_server.packet_mutex.lock(self.io);
+    defer self.steam_server.packet_mutex.unlock(self.io);
     // std.log.debug("cmd coint: {d}", .{self.steam_server.packets.incoming.items.len});
     // 1. Drain Steam lifecycle events into client map.
     for (self.steam_server.packets.events.items) |ev| switch (ev) {
@@ -291,7 +292,6 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     self.pending_stats.clearRetainingCapacity();
     self.pending_events.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
-    self.steam_server.packet_mutex.unlock(self.io);
 }
 
 fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {

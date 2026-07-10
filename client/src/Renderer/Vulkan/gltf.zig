@@ -52,6 +52,8 @@ pub fn parseScene(
     out_clips: ?*[]AnimationClip,
     look_node_names: ?[]const []const u8,
     out_look_nodes: ?*[]usize,
+    overlay_root_name: ?[]const u8,
+    out_overlay_root: ?*usize,
 ) !void {
     const original_sample_count = resources.samplers.items.len;
     {
@@ -429,6 +431,16 @@ pub fn parseScene(
             };
         }
         out_look_nodes.?.* = look_nodes;
+    }
+    if (overlay_root_name) |root_name| {
+        out_overlay_root.?.* = for (gltf_nodes, 0..) |gltf_node, gltf_index| {
+            if (std.mem.eql(u8, gltf_node.name orelse "", root_name)) break node_map[gltf_index];
+        } else {
+            std.log.err("overlay root \"{s}\" not found; nodes in this file:", .{root_name});
+            for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
+            std.log.err("in Model.Kind.spec assign one of these", .{});
+            return error.OverlayRootNotFound;
+        };
     }
 
     if (out_skins) |skins| {

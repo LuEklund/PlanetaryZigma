@@ -70,6 +70,7 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
+    defer self.steam_client.packet_mutex.unlock(self.io);
 
     // 0. server list update.
     if (self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
@@ -128,8 +129,6 @@ pub fn update(
     self.server_tick_estimate += info.delta_time / shared.tick_seconds;
     const target = @as(f32, @floatFromInt(self.server_tick_latest)) - self.render_delay_ticks;
     self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
-
-    self.steam_client.packet_mutex.unlock(self.io);
 }
 
 fn handleCommand(
@@ -182,10 +181,7 @@ fn handleCommand(
                 .new_stage => info.world.teleporter_id = 0,
                 .attack => |id| {
                     const skeleton_animation = skeletons.getPtr(id) orelse return;
-                    const state_clip = skeleton_animation.model.state_clips.get(.attack);
-                    skeleton_animation.player.active = state_clip.index;
-                    skeleton_animation.player.loop = state_clip.loop;
-                    skeleton_animation.player.current_time = skeleton_animation.model.clips[state_clip.index].start;
+                    skeleton_animation.playOverlay(skeleton_animation.model.state_clips.get(.attack));
                 },
             }
         },

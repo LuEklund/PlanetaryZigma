@@ -30,6 +30,7 @@ set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
 models: std.EnumArray(Model.Kind, Model),
+shaders: std.EnumArray(Shader.Kind, Shader),
 materials: std.ArrayList(Material),
 skybox_material_index: usize,
 samplers: std.ArrayList(c.VkSampler),
@@ -37,7 +38,7 @@ images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout),
 ui_texture_buffer: Buffer,
-font: *Font,
+font: Font,
 ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
 skybox: Image,
 vma: Vma,
@@ -123,7 +124,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         c.VK_IMAGE_ASPECT_COLOR_BIT,
         false,
     );
-    var green_color: nz.color.Rgba(u8) = .{ .r = 155, .g = 255, .b = 0, .a = 255 };
+    var green_color: nz.color.Rgba(u8) = .{ .r = 255, .g = 255, .b = 255, .a = 255 };
     try default_texture.uploadDataToImage(vma, device, &green_color, 4, 0);
     try images.append(gpa, default_texture);
     const sampler_info: c.VkSamplerCreateInfo = .{
@@ -162,21 +163,33 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .set_size = set_size,
         .meshes = meshes,
         .models = .initFill(.empty),
+        .shaders = undefined,
         .materials = materials,
         .samplers = samplers,
         .images = images,
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .ui_texture_buffer = ui_texture_buffer,
-        .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf", asset_server),
+        .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
         .ui_image_indices = .initFill(null),
         .skybox = undefined,
         .skybox_material_index = undefined,
         .vma = vma,
         .device = device,
     };
+    try asset_server.loadAndWatch(@This(), self, self.font.name, reloadFont);
     try self.loadUiTextures(gpa, vma, device);
     try self.loadSkybox(gpa);
+
+    for (std.enums.values(Shader.Kind)) |kind| {
+        const shader_spec = Shader.specs.get(kind);
+        const layout_handles: []const c.VkDescriptorSetLayout = switch (shader_spec.layout) {
+            .scene_material => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
+            .ui => &.{descriptor_layouts.get(.ui).handle},
+        };
+        self.shaders.set(kind, .init(device, kind, layout_handles));
+        try asset_server.loadAndWatch(@This(), self, shader_spec.path, reloadShader);
+    }
 
     inline for (comptime std.enums.values(Ui.Texture)) |texture| {
         if (comptime texture.path()) |texture_path| {
@@ -200,6 +213,20 @@ fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: 
         if (std.mem.eql(u8, spec_path, file_path)) break kind;
     } else return error.UnknownModelPath;
     try self.models.getPtr(kind).loadGlb(gpa, io, file, self.vma, self.device, self, kind.spec());
+}
+
+fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const kind = for (std.enums.values(Shader.Kind)) |kind| {
+        if (std.mem.eql(u8, Shader.specs.get(kind).path, file_path)) break kind;
+    } else return error.UnknownShaderPath;
+    try self.shaders.getPtr(kind).load(gpa, io, file);
+}
+
+fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    _ = file_path;
+    const self: *@This() = @ptrCast(@alignCast(user_data));
+    try self.font.load(gpa, io, file);
 }
 
 pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
@@ -454,6 +481,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     }
     self.meshes.deinit(gpa);
     for (&self.models.values) |*model| model.deinit(gpa);
+    for (&self.shaders.values) |*shader| shader.deinit();
 
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);

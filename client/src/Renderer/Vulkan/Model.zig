@@ -51,7 +51,14 @@ pub const Kind = enum {
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
             .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
-            .player => .{ .path = "objects/BenRun.glb", .offset = player_offset, .skinned = true, .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" }, .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null } },
+            .player => .{
+                .path = "objects/BenRun.glb",
+                .offset = player_offset,
+                .skinned = true,
+                .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" },
+                .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null },
+                .overlay_root_name = "mixamorig:Spine1",
+            },
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
             .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
@@ -82,6 +89,7 @@ const Spec = struct {
     skinned: bool,
     clip_names: ?ClipNames,
     look_node_names: ?LookNodeNames = null,
+    overlay_root_name: ?[]const u8 = null,
 };
 
 const Surface = struct {
@@ -89,17 +97,13 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
-const StateClip = struct {
-    index: usize,
-    loop: bool,
-};
-
 surfaces: std.ArrayList(Surface),
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
 look_nodes: []usize,
-state_clips: std.EnumArray(shared.Entity.State, StateClip),
+overlay_mask: ?[]bool,
+state_clips: std.EnumArray(shared.Entity.State, usize),
 offset: nz.Transform3D(f32),
 
 pub const empty: @This() = .{
@@ -108,7 +112,8 @@ pub const empty: @This() = .{
     .clips = &.{},
     .skins = &.{},
     .look_nodes = &.{},
-    .state_clips = .initFill(.{ .index = 0, .loop = true }),
+    .overlay_mask = null,
+    .state_clips = .initFill(0),
     .offset = .{},
 };
 
@@ -147,9 +152,17 @@ pub fn loadGlb(
             }
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes);
+        var overlay_root: usize = undefined;
+        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
+        if (spec.overlay_root_name != null) {
+            const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
+            for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
+                masked.* = node_index == overlay_root or if (node.parent) |parent| overlay_mask[parent] else false;
+            }
+            self.overlay_mask = overlay_mask;
+        }
     } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null, null, null);
+        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
     }
     computeMatrices(self.nodes.items);
 
@@ -159,9 +172,9 @@ pub fn loadGlb(
             const idle_index = if (clip_names.idle) |idle_name| try self.clipIndex(idle_name, spec) else walk_index;
             const attack_index = try self.clipIndex(clip_names.attack, spec);
             self.state_clips = .init(.{
-                .idle = .{ .index = idle_index, .loop = true },
-                .walk = .{ .index = walk_index, .loop = true },
-                .attack = .{ .index = attack_index, .loop = false },
+                .idle = idle_index,
+                .walk = walk_index,
+                .attack = attack_index,
             });
         }
     } else {
@@ -206,6 +219,8 @@ pub fn clear(self: *@This(), gpa: std.mem.Allocator) void {
     self.skins = &.{};
     gpa.free(self.look_nodes);
     self.look_nodes = &.{};
+    if (self.overlay_mask) |overlay_mask| gpa.free(overlay_mask);
+    self.overlay_mask = null;
     self.surfaces.clearAndFree(gpa);
 }
 

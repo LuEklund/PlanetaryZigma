@@ -101,7 +101,6 @@ const Node = struct {
     children_size: f32,
 };
 
-writter_buffer: [256]u8 = undefined,
 writter_buffer_out: [8192]u8 = undefined,
 writer_len: usize = 0,
 index_buffer: Buffer,
@@ -178,11 +177,9 @@ pub fn start(self: *@This(), mouse_state: MouseState) void {
 }
 
 pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
-    const text = std.fmt.bufPrint(&self.writter_buffer, fmt, args) catch unreachable;
-    const out_text = self.writter_buffer_out[self.writer_len .. self.writer_len + text.len];
-    @memcpy(out_text, text);
+    const text = std.fmt.bufPrint(self.writter_buffer_out[self.writer_len..], fmt, args) catch unreachable;
     self.writer_len += text.len;
-    return out_text;
+    return text;
 }
 
 pub fn add(self: *@This(), parent: ?[]const u8, layout: Layout) void {
