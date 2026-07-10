@@ -34,6 +34,25 @@ pub const Event = union(enum) {
     disconnected: Conn,
 };
 
+pub var log_connection_status: bool = false;
+
+pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.HSteamNetConnection) void {
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
+    if (sockets.GetConnectionRealTimeStatus(conn, &status, &.{}) != .k_EResultOK) return;
+    std.log.debug("conn={d} ping={d}ms qual={d:.2}/{d:.2} out={d:.0}pps in={d:.0}pps rate={d}Bps pending={d}u/{d}r unacked={d}", .{
+        conn,
+        status.m_nPing,
+        status.m_flConnectionQualityLocal,
+        status.m_flConnectionQualityRemote,
+        status.m_flOutPacketsPerSec,
+        status.m_flInPacketsPerSec,
+        status.m_nSendRateBytesPerSecond,
+        status.m_cbPendingUnreliable,
+        status.m_cbPendingReliable,
+        status.m_cbSentUnackedReliable,
+    });
+}
+
 pub const Packets = struct {
     incoming: std.ArrayListUnmanaged(Message) = .empty,
     outgoing: std.ArrayListUnmanaged(Message) = .empty,

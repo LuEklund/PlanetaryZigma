@@ -47,16 +47,20 @@ pub const Kind = enum {
 
     pub fn spec(kind: Kind) Spec {
         const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-        const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera, .scale = @splat(0.1) };
+        const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
             .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
             .player => .{
-                .path = "objects/BenRun.glb",
+                .path = "objects/BenBozo.glb",
                 .offset = player_offset,
                 .skinned = true,
-                .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" },
-                .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null },
+                .clip_names = .{
+                    .idle = "Idle",
+                    .walk = "Run",
+                    .attack = "shoot",
+                },
+                .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },

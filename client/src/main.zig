@@ -19,6 +19,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
     const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
+    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET_STATS") catch false;
     var steam_client: shared.SteamNet.Client = try .init(gpa, io);
     steam_client.handle_packets_future = try io.concurrent(shared.SteamNet.Client.handlePackets, .{&steam_client});
     steam_zone.end();

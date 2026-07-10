@@ -16,6 +16,7 @@ pub fn main(init: std.process.Init) !void {
     const gpa = gpa_impl.allocator();
     const io = init.io;
 
+    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET_STATS") catch false;
     var steam_server: shared.SteamNet.Server = try .init(gpa, io);
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
