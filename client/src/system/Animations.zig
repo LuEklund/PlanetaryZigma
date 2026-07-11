@@ -16,15 +16,11 @@ const look_yaw_deadzone: f32 = 0.05;
 
 gpa: std.mem.Allocator,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
-    self.* = .{ .gpa = gpa };
+pub fn init(gpa: std.mem.Allocator) @This() {
+    return .{ .gpa = gpa };
 }
 
-pub fn update(
-    self: *@This(),
-    info: *const Info,
-    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
-) !void {
+pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(u32, SkeletonInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -122,27 +118,25 @@ fn sampleClip(nodes: []Node, animation: AnimationClip, time: f32, mask: ?[]const
                 const sampler_out_next = sampler.outputs[i + 1];
                 switch (channel.path) {
                     .translation => {
-                        const new_val = std.math.lerp(
+                        const translation = std.math.lerp(
                             sampler_out,
                             sampler_out_next,
                             @as(nz.Vec4(f32), @splat(interpolate_value)),
                         );
-                        node.translation = .{ new_val[0], new_val[1], new_val[2] };
+                        node.translation = .{ translation[0], translation[1], translation[2] };
                     },
-                    .rotation => {
-                        node.rotation = nz.Quat(f32).slerp(
-                            .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
-                            .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
-                            interpolate_value,
-                        );
-                    },
+                    .rotation => node.rotation = nz.Quat(f32).slerp(
+                        .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
+                        .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
+                        interpolate_value,
+                    ),
                     .scale => {
-                        const new_val = std.math.lerp(
+                        const scale = std.math.lerp(
                             sampler_out,
                             sampler_out_next,
                             @as(nz.Vec4(f32), @splat(interpolate_value)),
                         );
-                        node.scale = .{ new_val[0], new_val[1], new_val[2] };
+                        node.scale = .{ scale[0], scale[1], scale[2] };
                     },
                 }
             }

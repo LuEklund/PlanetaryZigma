@@ -7,10 +7,6 @@ const Info = system.Info;
 const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
-pub const sensitivity: f32 = 0.02;
-const camera_padding: f32 = 0.5;
-const arm_ease_speed: f32 = 4;
-
 fov_rad: f32 = 1.5,
 transform: nz.Transform3D(f32) = .{},
 
@@ -19,6 +15,10 @@ pitch: f32 = 0,
 boom_offset: Vec3 = .{ 0, 1.5, 8 },
 arm_length: f32 = 1.5,
 free_speed: f32 = 30,
+
+pub const sensitivity: f32 = 0.02;
+pub const camera_padding: f32 = 0.5;
+pub const arm_ease_speed: f32 = 4;
 
 pub fn update(self: *@This(), info: *const Info) void {
     const tracy_scope = tracy.zone(@src());

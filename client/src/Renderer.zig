@@ -12,11 +12,6 @@ const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Inner = *Vulkan;
 
-const YesSurfaceCreateUserData = struct {
-    platform: yes.Platform,
-    window: *yes.Window,
-};
-
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: yes.Platform, window: *yes.Window) !@This() {
     return switch (builtin.os.tag) {
         else => initVulkan(gpa, asset_server, platform, window),
@@ -115,6 +110,11 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: 
     });
     return .{ .inner = vulkan_renderer };
 }
+
+const YesSurfaceCreateUserData = struct {
+    platform: yes.Platform,
+    window: *yes.Window,
+};
 
 fn createVulkanSurface(instance: *Vulkan.c.VkInstance, user_data: *const YesSurfaceCreateUserData) !Vulkan.c.VkSurfaceKHR {
     return @ptrCast(try yes.vulkan.createSurface(user_data.platform, user_data.window, @ptrCast(instance), null, @ptrCast(&Vulkan.c.vkGetInstanceProcAddr)));

@@ -103,7 +103,7 @@ pub const Context = struct {
         self.renderer = try .init(data.gpa, data.asset_server, data.platform, data.window);
         try self.spawner.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_client, &self.spawner);
-        self.animation.init(data.gpa);
+        self.animation = .init(data.gpa);
     }
 
     pub fn deinit(self: *@This()) void {
