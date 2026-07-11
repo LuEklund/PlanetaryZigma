@@ -20,24 +20,24 @@ pub const Glb = struct {
     gltf: zgltf.Gltf,
     bin: []const u8,
 
+    pub fn read(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
+        var read_buffer: [4096]u8 = undefined;
+        var reader = file.reader(io, &read_buffer);
+        const content = try reader.interface.allocRemaining(gpa, .unlimited);
+        errdefer gpa.free(content);
+
+        var loaded = try zgltf.parseGlbSlice(gpa, content);
+        errdefer loaded.deinit();
+        const bin = loaded.bin orelse return error.MissingBin;
+
+        return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
+    }
+
     pub fn deinit(self: *Glb, gpa: std.mem.Allocator) void {
         self.loaded.deinit();
         gpa.free(self.content);
     }
 };
-
-pub fn readGlb(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
-    var read_buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &read_buffer);
-    const content = try reader.interface.allocRemaining(gpa, .unlimited);
-    errdefer gpa.free(content);
-
-    var loaded = try zgltf.parseGlbSlice(gpa, content);
-    errdefer loaded.deinit();
-    const bin = loaded.bin orelse return error.MissingBin;
-
-    return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
-}
 
 pub fn parseScene(
     comptime VertexType: type,

@@ -143,7 +143,7 @@ pub fn loadGlb(
 ) !void {
     self.clear(gpa);
 
-    var glb = try gltf.readGlb(gpa, io, file);
+    var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
 
     if (spec.skinned) {
