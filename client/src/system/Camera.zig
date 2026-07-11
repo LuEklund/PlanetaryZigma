@@ -1,3 +1,5 @@
+const Camera = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -20,7 +22,7 @@ pub const sensitivity: f32 = 0.02;
 pub const camera_padding: f32 = 0.5;
 pub const arm_ease_speed: f32 = 4;
 
-pub fn update(self: *@This(), info: *const Info) void {
+pub fn update(self: *Camera, info: *const Info) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 

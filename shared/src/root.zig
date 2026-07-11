@@ -8,7 +8,7 @@ pub const planetSdf = @import("planet.zig").sdf;
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
-pub const Watcher = @import("watcher.zig");
+pub const Watcher = @import("Watcher.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");

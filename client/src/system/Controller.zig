@@ -1,5 +1,6 @@
+const Controller = @This();
+
 const shared = @import("shared");
-const tracy = @import("ztracy");
 const yes = @import("yes");
 
 mouse_pos: [2]f64 = .{ 0, 0 },
@@ -12,17 +13,14 @@ f1_held: bool = false,
 free_camera: bool = false,
 f2_held: bool = false,
 
-pub fn update(self: *@This()) void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-
+pub fn update(self: *Controller) void {
     self.mouse_delta[0] = self.mouse_pos[0] - self.mouse_prev_pos[0];
     self.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
     self.mouse_prev_pos[0] = self.mouse_pos[0];
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 }
 
-pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
+pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
     switch (event.*) {
         .key => |key| {
             const pressed = key.state == .pressed;

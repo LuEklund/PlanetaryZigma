@@ -58,27 +58,27 @@ pub const Packets = struct {
     outgoing: std.ArrayListUnmanaged(Message) = .empty,
     events: std.ArrayListUnmanaged(Event) = .empty,
 
-    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+    pub fn deinit(self: *Packets, gpa: std.mem.Allocator) void {
         self.incoming.deinit(gpa);
         self.outgoing.deinit(gpa);
         self.events.deinit(gpa);
     }
 
-    pub fn pushIncoming(self: *@This(), gpa: std.mem.Allocator, conn: Conn, bytes: []const u8) !void {
+    pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Conn, bytes: []const u8) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.incoming.append(gpa, msg);
     }
 
-    pub fn pushOutgoing(self: *@This(), gpa: std.mem.Allocator, conn: Conn, bytes: []const u8, flags: SendFlags) !void {
+    pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Conn, bytes: []const u8, flags: SendFlags) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .flags = flags, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.outgoing.append(gpa, msg);
     }
 
-    pub fn pushEvent(self: *@This(), gpa: std.mem.Allocator, event: Event) !void {
+    pub fn pushEvent(self: *Packets, gpa: std.mem.Allocator, event: Event) !void {
         try self.events.append(gpa, event);
     }
 };

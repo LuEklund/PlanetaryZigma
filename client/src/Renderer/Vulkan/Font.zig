@@ -1,3 +1,5 @@
+const Font = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const Image = @import("Image.zig");
@@ -5,6 +7,15 @@ const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
 const check = @import("utils.zig").check;
+
+image: Image,
+sampler: c.VkSampler,
+
+device: Device,
+vma: Vma,
+glyphs: [96]Glyph,
+name: []const u8,
+size: f32,
 
 pub const Glyph = struct {
     u0: f32,
@@ -18,21 +29,7 @@ pub const Glyph = struct {
     xadvance: f32,
 };
 
-image: Image,
-sampler: c.VkSampler,
-
-device: Device,
-vma: Vma,
-glyphs: [96]Glyph,
-name: []const u8,
-size: f32,
-
-pub fn init(
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    path: []const u8,
-) !@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, path: []const u8) !Font {
     return .{
         .device = device,
         .vma = vma,
@@ -44,7 +41,7 @@ pub fn init(
     };
 }
 
-pub fn load(self: *@This(), gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
+pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     const content = try reader.interface.allocRemaining(gpa, .unlimited);
@@ -149,7 +146,7 @@ pub fn load(self: *@This(), gpa: std.mem.Allocator, io: std.Io, file: std.Io.Fil
     try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &self.sampler));
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) void {
+pub fn deinit(self: *Font, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
     self.image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.sampler, null);
     gpa.free(self.name);

@@ -1,3 +1,5 @@
+const Spawner = @This();
+
 const std = @import("std");
 const system = @import("../system.zig");
 const Entity = system.Entity;
@@ -7,7 +9,6 @@ const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
-const max_despawn_count: u32 = 1000;
 
 gpa: std.mem.Allocator,
 world: *system.World,
@@ -22,13 +23,9 @@ should_spawm: bool = false,
 
 pending_despawn: std.ArrayList(u32) = .empty,
 
-pub fn init(
-    self: *@This(),
-    gpa: std.mem.Allocator,
-    world: *system.World,
-    physics: *Physics,
-    network_manager: *NetworkManager,
-) !void {
+pub const max_despawn_count: u32 = 1000;
+
+pub fn init(self: *Spawner, gpa: std.mem.Allocator, world: *system.World, physics: *Physics, network_manager: *NetworkManager) !void {
     self.* = .{
         .gpa = gpa,
         .world = world,
@@ -38,11 +35,11 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *Spawner) void {
     self.pending_despawn.deinit(self.gpa);
 }
 
-pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
+pub fn spawn(self: *Spawner, entity_info: system.Entity) !*system.Entity {
     // std.log.debug("SIZE: {d}", .{self.world.entities.entries.len});
     const entity = try self.world.spawn();
     const id: u32 = entity.id;
@@ -66,13 +63,13 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
     return entity;
 }
 
-pub fn depspawn(self: *@This(), entity_id: u32) void {
+pub fn depspawn(self: *Spawner, entity_id: u32) void {
     // std.log.debug("despawn ID: {d}", .{entity_id});
     self.pending_despawn.appendAssumeCapacity(entity_id);
 }
 
 pub fn update(
-    self: *@This(),
+    self: *Spawner,
     info: *const system.Info,
     physics: *Physics,
     network_manager: *NetworkManager,
@@ -132,15 +129,15 @@ pub fn update(
     self.pending_despawn.clearRetainingCapacity();
 }
 
-pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
+pub fn startStage(self: *Spawner, world: *system.World, physics: *Physics) !void {
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) self.depspawn(entry.id);
     }
-    const rand = world.prng.random();
+    const random = world.prng.random();
     world.teleporter_id = 0;
     self.should_spawm = true;
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
-    world.planet_radius = @intFromFloat(rand.float(f32) * 99 + 1);
+    world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
     // world.planet_radius = 100;
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_radius);
@@ -166,7 +163,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             11...15 => .damage,
             else => .health,
         };
-        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
+        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
         _ = try self.spawn(.{
             .kind = .{ .item = item_kind },
             .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },

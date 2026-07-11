@@ -1,3 +1,5 @@
+const Resources = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const ext = @import("procs.zig").device.ProcTable;
@@ -5,8 +7,8 @@ const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
-const descriptor = @import("desrciptor.zig");
-const pipeline = @import("pipeline.zig");
+const DescriptorLayout = @import("DesrciptorLayout.zig");
+const PipelineLayout = @import("PipelineLayout.zig");
 const Mesh = @import("Mesh.zig");
 const Model = @import("Model.zig");
 const Material = @import("Material.zig");
@@ -23,7 +25,6 @@ const check = @import("utils.zig").check;
 pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
 
-pub const DescriptorLayoutKind = enum { scene, material, ui };
 pub const PipelineLayoutKind = enum { world, ui };
 
 set_size: c.VkDeviceSize,
@@ -35,8 +36,8 @@ materials: std.ArrayList(Material),
 skybox_material_index: usize,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
-descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout),
-pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout),
+descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
+pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 ui_texture_buffer: Buffer,
 font: Font,
 ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
@@ -44,7 +45,7 @@ skybox: Image,
 vma: Vma,
 device: Device,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*Resources {
     const meshes: std.ArrayList(Mesh) = .empty;
     var materials: std.ArrayList(Material) = .empty;
     var samplers: std.ArrayList(c.VkSampler) = .empty;
@@ -59,7 +60,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     };
     c.vkGetPhysicalDeviceProperties2(physical_device.handle, &prop2);
 
-    const descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout) = .init(.{
+    const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
                 .binding = 0,
@@ -88,7 +89,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
     });
 
-    const pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout) = .init(.{
+    const pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout) = .init(.{
         .world = try .init(device, Shader.AnimationPushConstant, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
@@ -157,7 +158,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     );
     try materials.append(gpa, default_material);
 
-    const self = try gpa.create(@This());
+    const self = try gpa.create(Resources);
     self.* = .{
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
@@ -177,7 +178,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .vma = vma,
         .device = device,
     };
-    try asset_server.loadAndWatch(@This(), self, self.font.name, reloadFont);
+    try asset_server.loadAndWatch(Resources, self, self.font.name, reloadFont);
     try self.loadUiTextures(gpa, vma, device);
     try self.loadSkybox(gpa);
 
@@ -188,26 +189,26 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
             .ui => &.{descriptor_layouts.get(.ui).handle},
         };
         self.shaders.set(kind, .init(device, kind, layout_handles));
-        try asset_server.loadAndWatch(@This(), self, shader_spec.path, reloadShader);
+        try asset_server.loadAndWatch(Resources, self, shader_spec.path, reloadShader);
     }
 
     inline for (comptime std.enums.values(Ui.Texture)) |texture| {
         if (comptime texture.path()) |texture_path| {
-            try asset_server.watch(@This(), self, texture_path["assets/".len..], reloadUiTexture);
+            try asset_server.watch(Resources, self, texture_path["assets/".len..], reloadUiTexture);
         }
     }
-    try asset_server.watch(@This(), self, "textures/skybox_cubemap.png", reloadSkybox);
+    try asset_server.watch(Resources, self, "textures/skybox_cubemap.png", reloadSkybox);
 
     for (std.enums.values(Model.Kind)) |kind| {
         const path = kind.spec().path orelse continue;
-        try asset_server.loadAndWatch(@This(), self, path, reloadModel);
+        try asset_server.loadAndWatch(Resources, self, path, reloadModel);
     }
 
     return self;
 }
 
 fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const self: *Resources = @ptrCast(@alignCast(user_data));
     const kind = for (std.enums.values(Model.Kind)) |kind| {
         const spec_path = kind.spec().path orelse continue;
         if (std.mem.eql(u8, spec_path, file_path)) break kind;
@@ -216,7 +217,7 @@ fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: 
 }
 
 fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const self: *Resources = @ptrCast(@alignCast(user_data));
     const kind = for (std.enums.values(Shader.Kind)) |kind| {
         if (std.mem.eql(u8, Shader.specs.get(kind).path, file_path)) break kind;
     } else return error.UnknownShaderPath;
@@ -225,11 +226,11 @@ fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file:
 
 fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
     _ = file_path;
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const self: *Resources = @ptrCast(@alignCast(user_data));
     try self.font.load(gpa, io, file);
 }
 
-pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
+pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
     const existing_index = for (self.meshes.items, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.name, name)) break index;
     } else null;
@@ -265,7 +266,7 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
 }
 
 fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const self: *Resources = @ptrCast(@alignCast(user_data));
     inline for (comptime std.enums.values(Ui.Texture)) |texture| {
         if (comptime texture.path()) |texture_path| {
             if (std.mem.eql(u8, texture_path["assets/".len..], file_path)) {
@@ -285,7 +286,7 @@ fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, fi
     }
 }
 
-fn loadSkybox(self: *@This(), gpa: std.mem.Allocator) !void {
+fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
     var decoded: Image.Decoded = .{};
     defer decoded.deinit();
     var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = "assets/textures/skybox_cubemap.png" }};
@@ -326,7 +327,7 @@ fn loadSkybox(self: *@This(), gpa: std.mem.Allocator) !void {
     self.skybox_material_index = self.materials.items.len - 1;
 }
 
-fn uploadSkyboxFaces(self: *@This(), gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
+fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
     const width: u32 = @intCast(decoded.width);
     const face_size: u32 = @divTrunc(width, 4);
     const channels: u32 = @intCast(decoded.nr_channel);
@@ -380,7 +381,7 @@ fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image.Deco
 
 fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
     _ = file_path;
-    const self: *@This() = @ptrCast(@alignCast(user_data));
+    const self: *Resources = @ptrCast(@alignCast(user_data));
 
     var decoded = try decodeFile(gpa, io, file);
     defer decoded.deinit();
@@ -390,7 +391,7 @@ fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file:
     try self.uploadSkyboxFaces(gpa, decoded);
 }
 
-fn loadUiTextures(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) !void {
+fn loadUiTextures(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) !void {
     const loadable_textures = comptime blk: {
         var textures: []const Ui.Texture = &.{};
         for (std.enums.values(Ui.Texture)) |texture| {
@@ -459,7 +460,7 @@ fn loadUiTextures(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Devi
     }
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) void {
+pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
     for (self.materials.items) |*material| {
         material.deinit(gpa, vma);
     }
@@ -494,9 +495,9 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
     gpa.destroy(self);
 }
 
-pub fn getMeshPtr(self: *@This(), index: usize) *Mesh {
+pub fn getMeshPtr(self: *Resources, index: usize) *Mesh {
     return &self.meshes.items[index];
 }
-pub fn getMaterialPtr(self: *@This(), index: ?usize) *Material {
+pub fn getMaterialPtr(self: *Resources, index: ?usize) *Material {
     return &self.materials.items[index orelse 0];
 }

@@ -1,3 +1,5 @@
+const BulletManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -12,20 +14,20 @@ physics: *Physics,
 world: *system.World,
 to_despawn: std.ArrayList(u32) = .empty,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World, physics: *Physics) !void {
-    self.* = .{
+pub fn init(gpa: std.mem.Allocator, world: *system.World, physics: *Physics) BulletManager {
+    return .{
         .gpa = gpa,
         .physics = physics,
         .world = world,
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *BulletManager) void {
     self.to_despawn.deinit(self.gpa);
 }
 
 pub fn update(
-    self: *@This(),
+    self: *BulletManager,
     info: *const system.Info,
     health_manager: *HealthManager,
     spawner: *Spawner,

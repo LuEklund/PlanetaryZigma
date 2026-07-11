@@ -1,10 +1,12 @@
+const Instance = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const check = @import("utils.zig").check;
 
 handle: c.VkInstance,
 
-pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, layers: []const [*:0]const u8) !@This() {
+pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, layers: []const [*:0]const u8) !Instance {
     var version: u32 = undefined;
     try check(c.vkEnumerateInstanceVersion(&version));
     if (c.VK_API_VERSION_MAJOR(version) < 1 or c.VK_API_VERSION_MINOR(version) < 3) return error.DynamicRenderingUnsupported;
@@ -52,6 +54,6 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, 
     return .{ .handle = instance };
 }
 
-pub fn deinit(self: @This()) void {
+pub fn deinit(self: Instance) void {
     c.vkDestroyInstance(self.handle, null);
 }

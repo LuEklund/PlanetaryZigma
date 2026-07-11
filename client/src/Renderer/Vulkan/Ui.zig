@@ -1,3 +1,5 @@
+const Ui = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const nz = @import("shared").numz;
@@ -16,17 +18,18 @@ pub const Texture = enum {
     oxygen_tank,
     energy_drink,
 
-    pub fn toInt(self: @This()) u32 {
+    pub fn toInt(self: Texture) u32 {
         return @intFromEnum(self);
     }
 
-    pub fn path(self: @This()) ?[:0]const u8 {
+    pub fn path(self: Texture) ?[:0]const u8 {
+        const root = "assets/textures/";
         return switch (self) {
             .blank, .font_atlas => null,
-            .damage_item => "assets/textures/damage.png",
-            .oxygen_tank => "assets/textures/oxygen_tank.png",
-            .crosshair => "assets/textures/crosshair.png",
-            .energy_drink => "assets/textures/energy_drink.png",
+            .damage_item => root ++ "damage.png",
+            .oxygen_tank => root ++ "oxygen_tank.png",
+            .crosshair => root ++ "crosshair.png",
+            .energy_drink => root ++ "energy_drink.png",
         };
     }
 };
@@ -44,10 +47,40 @@ pub const Quad = struct {
     vertices: [4]Vertex,
 };
 
+writer_buffer_out: [8192]u8 = undefined,
+writer_len: usize = 0,
+index_buffer: Buffer,
+text_buffer: [8192]u8 = undefined,
+text_len: usize = 0,
+quads: std.ArrayList(Quad) = .empty,
+nodes: std.ArrayList(Node) = .empty,
+names: std.StringArrayHashMapUnmanaged(u32) = .empty,
+mouse_state: MouseState = .{},
+screen_width: f32,
+screen_heigth: f32,
+default_font: *Font,
+hot_item: ?[]const u8 = null,
+active_item: ?[]const u8 = null,
+fire_item: ?[]const u8 = null,
+left_click_prev: bool = false,
+pressed: bool = false,
+released: bool = false,
+
+const Node = struct {
+    id: u32,
+    layout: Layout,
+    name: ?[]const u8,
+    parent_id: ?u32,
+    rect: Rect,
+    offset: f32,
+    children_size: f32,
+};
+
 const Position2D = struct {
     left: f32,
     top: f32,
 };
+
 const Size2D = struct {
     width: f32,
     heigth: f32,
@@ -91,35 +124,6 @@ pub const Layout = struct {
     children: []const Layout = &.{},
 };
 
-const Node = struct {
-    id: u32,
-    layout: Layout,
-    name: ?[]const u8,
-    parent_id: ?u32,
-    rect: Rect,
-    offset: f32,
-    children_size: f32,
-};
-
-writter_buffer_out: [8192]u8 = undefined,
-writer_len: usize = 0,
-index_buffer: Buffer,
-text_buffer: [8192]u8 = undefined,
-text_len: usize = 0,
-quads: std.ArrayList(Quad) = .empty,
-nodes: std.ArrayList(Node) = .empty,
-names: std.StringArrayHashMapUnmanaged(u32) = .empty,
-mouse_state: MouseState = .{},
-screen_width: f32,
-screen_heigth: f32,
-default_font: *Font,
-hot_item: ?[]const u8 = null,
-active_item: ?[]const u8 = null,
-fire_item: ?[]const u8 = null,
-left_click_prev: bool = false,
-pressed: bool = false,
-released: bool = false,
-
 pub fn init(
     gpa: std.mem.Allocator,
     vma: Vma,
@@ -127,7 +131,7 @@ pub fn init(
     screen_width: u32,
     screen_heigth: u32,
     default_font: *Font,
-) !@This() {
+) !Ui {
     const ui_index_buffer: Buffer = try .init(
         device,
         vma,
@@ -157,14 +161,14 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *Ui, gpa: std.mem.Allocator, vma: Vma) void {
     self.index_buffer.deinit(vma);
     self.quads.deinit(gpa);
     self.nodes.deinit(gpa);
     self.names.deinit(gpa);
 }
 
-pub fn start(self: *@This(), mouse_state: MouseState) void {
+pub fn start(self: *Ui, mouse_state: MouseState) void {
     self.hotUpdate();
     // self.activeUpdate();
     self.text_len = 0;
@@ -176,18 +180,23 @@ pub fn start(self: *@This(), mouse_state: MouseState) void {
     self.mouse_state = mouse_state;
 }
 
-pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
-    const text = std.fmt.bufPrint(self.writter_buffer_out[self.writer_len..], fmt, args) catch unreachable;
+pub fn end(self: *Ui) void {
+    self.resolveLayout();
+    self.pushQuads();
+}
+
+pub fn print(self: *Ui, comptime fmt: []const u8, args: anytype) []const u8 {
+    const text = std.fmt.bufPrint(self.writer_buffer_out[self.writer_len..], fmt, args) catch unreachable;
     self.writer_len += text.len;
     return text;
 }
 
-pub fn add(self: *@This(), parent: ?[]const u8, layout: Layout) void {
+pub fn add(self: *Ui, parent: ?[]const u8, layout: Layout) void {
     const parent_id: ?u32 = if (parent) |name| (self.names.get(name) orelse return) else null;
     self.addNode(parent_id, layout);
 }
 
-fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
+fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
     const handle: u32 = @intCast(self.nodes.items.len);
     self.nodes.appendAssumeCapacity(.{
         .id = handle,
@@ -210,11 +219,6 @@ fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
     for (layout.children) |child| self.addNode(handle, child);
 }
 
-pub fn end(self: *@This()) void {
-    self.resolveLayout();
-    self.pushQuads();
-}
-
 const TextMetrics = struct { width: f32, top: f32, bottom: f32 };
 
 fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) TextMetrics {
@@ -229,7 +233,7 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
     return metrics;
 }
 
-pub fn textSize(self: *const @This(), text: []const u8, size: f32) Size2D {
+pub fn textSize(self: *const Ui, text: []const u8, size: f32) Size2D {
     const scale = size / self.default_font.size;
     const metrics = measureText(&self.default_font.glyphs, text, scale);
     return .{ .width = metrics.width, .heigth = metrics.bottom - metrics.top };
@@ -243,7 +247,7 @@ fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
     };
 }
 
-fn resolveLayout(self: *@This()) void {
+fn resolveLayout(self: *Ui) void {
     // pass 1: sizes (parent before child, so percent resolves against a known parent)
     for (self.nodes.items) |*node| {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
@@ -305,11 +309,11 @@ fn resolveLayout(self: *@This()) void {
     }
 }
 
-fn screenRect(self: *const @This()) Rect {
+fn screenRect(self: *const Ui) Rect {
     return .{ .left = 0, .top = 0, .width = self.screen_width, .heigth = self.screen_heigth };
 }
 
-fn pushQuads(self: *@This()) void {
+fn pushQuads(self: *Ui) void {
     for (self.nodes.items) |node| {
         const rect = node.rect;
         if (node.layout.color.a != 0) {
@@ -354,20 +358,20 @@ fn pushQuads(self: *@This()) void {
     }
 }
 
-// pub fn clicked(self: *@This(), id: u32) ?*Layout {
+// pub fn clicked(self: *Ui, id: u32) ?*Layout {
 //     if (id >= self.nodes.items.len) return null;
 //     const node = self.nodes.items[id];
 // }
 
-pub fn isHot(self: *@This(), name: []const u8) bool {
+pub fn isHot(self: *Ui, name: []const u8) bool {
     return eqlName(name, self.hot_item);
 }
 
-pub fn isActive(self: *@This(), name: []const u8) bool {
+pub fn isActive(self: *Ui, name: []const u8) bool {
     return (eqlName(name, self.hot_item) and self.mouse_state.left_click);
 }
 
-fn hotUpdate(self: *@This()) void {
+fn hotUpdate(self: *Ui) void {
     self.hot_item = null;
     var i = self.nodes.items.len;
     while (i > 0) {
@@ -385,7 +389,7 @@ fn hotUpdate(self: *@This()) void {
     }
 }
 
-// fn activeUpdate(self: *@This()) void {
+// fn activeUpdate(self: *Ui) void {
 //     if (self.hot_item)
 //     if (self.left_click_prev) return;
 // }

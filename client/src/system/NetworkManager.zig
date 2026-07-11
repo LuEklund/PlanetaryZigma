@@ -1,3 +1,5 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
@@ -30,7 +32,7 @@ const ServerList = struct {
 };
 
 pub fn init(
-    self: *@This(),
+    self: *NetworkManager,
     gpa: std.mem.Allocator,
     io: std.Io,
     net: *shared.SteamNet.Client,
@@ -44,17 +46,17 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *NetworkManager) void {
     _ = self;
 }
 
-fn sendConnect(self: *@This()) !void {
+fn sendConnect(self: *NetworkManager) !void {
     const name = "lucas";
     const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = name.len, .name = name } };
     try self.sendCommand(cmd, .reliable);
 }
 
-pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
+pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
     if (self.server_conn == 0) return;
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -64,7 +66,7 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
 }
 
 pub fn update(
-    self: *@This(),
+    self: *NetworkManager,
     info: *const Info,
     skeletons: *std.AutoHashMap(u32, SkeletonInstance),
 ) !void {
@@ -133,7 +135,7 @@ pub fn update(
 }
 
 fn handleCommand(
-    self: *@This(),
+    self: *NetworkManager,
     info: *const Info,
     command: shared.net.ServerPacket,
     skeletons: *std.AutoHashMap(u32, SkeletonInstance),

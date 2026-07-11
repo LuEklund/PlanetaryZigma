@@ -1,3 +1,5 @@
+const ItemManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -6,7 +8,7 @@ const Spawner = @import("Spawner.zig");
 const HealthManager = @import("HealthManager.zig");
 const Info = system.Info;
 
-pub fn update(self: *@This(), info: *const Info, ctx: *system.Context) !void {
+pub fn update(self: *ItemManager, info: *const Info, ctx: *system.Context) !void {
     _ = self;
     for (info.world.entities.values()) |*entity| {
         if (entity.kind != .item) continue;

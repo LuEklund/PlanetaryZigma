@@ -20,7 +20,7 @@ pub const Glb = struct {
     gltf: zgltf.Gltf,
     bin: []const u8,
 
-    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+    pub fn deinit(self: *Glb, gpa: std.mem.Allocator) void {
         self.loaded.deinit();
         gpa.free(self.content);
     }

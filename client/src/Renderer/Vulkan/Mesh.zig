@@ -1,3 +1,5 @@
+const Mesh = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const c = @import("vulkan");
@@ -6,7 +8,7 @@ const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 
-pub const box = @import("Meshes/box.zig");
+pub const box = @import("Mesh/box.zig");
 
 surfaces: std.ArrayList(GeoSurface),
 index_buffer: Buffer,
@@ -31,7 +33,7 @@ pub fn init(
     vertices: []const VertexType,
     indices: []const u32,
     surfaces: []const GeoSurface,
-) !@This() {
+) !Mesh {
     var vertex_buffer: Buffer = try .init(
         device,
         vma,
@@ -69,7 +71,7 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, vma: Vma) void {
     self.index_buffer.deinit(vma);
     self.vertex_buffer.deinit(vma);
     gpa.free(self.name);

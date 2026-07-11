@@ -46,27 +46,27 @@ pub const World = struct {
     player_id: u32 = 0,
     planet_radius: f32 = 0,
 
-    pub fn init(gpa: std.mem.Allocator) !@This() {
+    pub fn init(gpa: std.mem.Allocator) !World {
         return .{
             .gpa = gpa,
             .teleporter_bosses = try .initCapacity(gpa, max_entities),
         };
     }
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *World) void {
         self.entities.deinit(self.gpa);
         self.teleporter_bosses.deinit(self.gpa);
     }
 
-    pub fn spawn(self: *@This(), id: u32) !*Entity {
+    pub fn spawn(self: *World, id: u32) !*Entity {
         try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
         return self.entities.getPtr(id).?;
     }
 
-    pub fn getPtr(self: *@This(), id: u32) ?*Entity {
+    pub fn getPtr(self: *World, id: u32) ?*Entity {
         return self.entities.getPtr(id);
     }
 
-    pub fn despawn(self: *@This(), id: u32) bool {
+    pub fn despawn(self: *World, id: u32) bool {
         return self.entities.swapRemove(id);
     }
 };
@@ -93,7 +93,7 @@ pub const Context = struct {
         steam_client: *shared.SteamNet.Client,
     };
 
-    pub fn init(self: *@This(), data: Data) !void {
+    pub fn init(self: *Context, data: Data) !void {
         self.gpa = data.gpa;
         self.io = data.io;
         self.platform = data.platform;
@@ -106,13 +106,13 @@ pub const Context = struct {
         self.animation = .init(data.gpa);
     }
 
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *Context) void {
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
         self.spawner.deinit();
     }
 
-    pub fn update(self: *@This(), info: *const Info) !void {
+    pub fn update(self: *Context, info: *const Info) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         // tracy.frameMark();
@@ -150,13 +150,13 @@ pub const Context = struct {
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
 
-    pub fn eventUpdate(self: *@This(), info: *const Info, event: *const yes.Window.Event) !void {
+    pub fn eventUpdate(self: *Context, info: *const Info, event: *const yes.Window.Event) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         _ = self;
         info.world.controller.eventUpdate(event);
     }
-    fn reload(self: *@This(), pre_reload: bool) !void {
+    fn reload(self: *Context, pre_reload: bool) !void {
         if (pre_reload) {
             std.log.debug("pre-hotreload", .{});
         } else {
@@ -177,9 +177,9 @@ pub const ffi = struct {
         systemContextUpdate: *const fn (*Context, data: *const Info, event: ?*const yes.Window.Event) callconv(.c) void,
         systemContextReload: *const fn (*Context, pre_reload: bool) callconv(.c) void,
 
-        pub fn load(dynlib: *shared.DynLib) !@This() {
-            var self: @This() = undefined;
-            inline for (@typeInfo(@This()).@"struct".fields) |field| {
+        pub fn load(dynlib: *shared.DynLib) !Table {
+            var self: Table = undefined;
+            inline for (std.meta.fields(Table)) |field| {
                 std.log.debug("Looking up symbol: {s}", .{field.name});
                 const ptr = dynlib.lookup(field.type, field.name) orelse {
                     std.log.err("Failed to lookup symbol: {s}", .{field.name});
@@ -214,6 +214,7 @@ pub const ffi = struct {
             std.debug.panic("context update: {s}", .{@errorName(err)});
         };
     }
+
     pub export fn systemContextReload(context: *Context, pre_reload: bool) void {
         const result = context.reload(pre_reload);
         result catch |err| {

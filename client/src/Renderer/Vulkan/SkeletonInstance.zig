@@ -1,3 +1,5 @@
+const SkeletonInstance = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const nz = @import("shared").numz;
@@ -6,6 +8,16 @@ const Device = @import("device.zig").Logical;
 const Model = @import("Model.zig");
 const Node = @import("Node.zig");
 const Buffer = @import("Buffer.zig");
+
+nodes: []Node,
+fade_joints: []JointTransform,
+fade_time: f32,
+joint_matrices: []JointMatrices,
+model: *Model,
+player: AnimationPlayer = .{},
+overlay: ?AnimationPlayer,
+
+pub const fade_duration: f32 = 0.15;
 
 pub const AnimationPlayer = struct {
     current_time: f32 = 0,
@@ -17,46 +29,13 @@ pub const JointMatrices = struct {
     gpu: Buffer,
 };
 
-pub const fade_duration: f32 = 0.15;
-
 pub const JointTransform = struct {
     translation: nz.Vec3(f32),
     rotation: nz.Quat(f32),
     scale: nz.Vec3(f32),
 };
 
-nodes: []Node,
-fade_joints: []JointTransform,
-fade_time: f32,
-joint_matrices: []JointMatrices,
-model: *Model,
-player: AnimationPlayer = .{},
-overlay: ?AnimationPlayer,
-
-pub fn startFade(self: *@This()) void {
-    for (self.nodes, self.fade_joints) |node, *pose| {
-        pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
-    }
-    self.fade_time = fade_duration;
-}
-
-pub fn playClip(self: *@This(), clip_index: usize) void {
-    self.startFade();
-    self.player = .{
-        .current_time = self.model.clips[clip_index].start,
-        .active = clip_index,
-    };
-}
-
-pub fn playOverlay(self: *@This(), clip_index: usize) void {
-    self.startFade();
-    self.overlay = .{
-        .current_time = self.model.clips[clip_index].start,
-        .active = clip_index,
-    };
-}
-
-pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !SkeletonInstance {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
     for (model.nodes.items, nodes) |src, *dst| {
         dst.* = src;
@@ -82,7 +61,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@T
     return .{ .nodes = nodes, .fade_joints = fade_joints, .fade_time = 0, .model = model, .joint_matrices = joint_matrices, .overlay = null };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *SkeletonInstance, gpa: std.mem.Allocator, vma: Vma) void {
     for (self.nodes) |*node| node.deinit(gpa);
     gpa.free(self.nodes);
     gpa.free(self.fade_joints);
@@ -91,4 +70,27 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
         matrices.gpu.deinit(vma);
     }
     gpa.free(self.joint_matrices);
+}
+
+pub fn startFade(self: *SkeletonInstance) void {
+    for (self.nodes, self.fade_joints) |node, *pose| {
+        pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
+    }
+    self.fade_time = fade_duration;
+}
+
+pub fn playClip(self: *SkeletonInstance, clip_index: usize) void {
+    self.startFade();
+    self.player = .{
+        .current_time = self.model.clips[clip_index].start,
+        .active = clip_index,
+    };
+}
+
+pub fn playOverlay(self: *SkeletonInstance, clip_index: usize) void {
+    self.startFade();
+    self.overlay = .{
+        .current_time = self.model.clips[clip_index].start,
+        .active = clip_index,
+    };
 }

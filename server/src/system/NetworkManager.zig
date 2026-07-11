@@ -1,3 +1,5 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -5,30 +7,6 @@ const Spawner = @import("Spawner.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
-
-pub const Client = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    steam_server: *shared.SteamNet.Server,
-    conn: shared.SteamNet.Conn,
-    name: []const u8 = "",
-    entity_id: u32 = 0,
-    needs_full_sync: bool = true,
-    command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
-
-    pub fn sendCommand(self: *@This(), writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
-        writer.end = 0;
-        try shared.net.write(shared.net.ServerPacket, command, writer);
-        // std.log.debug("len: {d}", .{writer.buffered().len});
-
-        try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
-    }
-
-    pub fn deinit(self: *@This()) !void {
-        if (self.name.len != 0) self.gpa.free(self.name);
-        try self.command_queue.deinit(self.gpa, self.io);
-    }
-};
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -42,7 +20,31 @@ pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_events: std.ArrayList(shared.net.Event) = .empty,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
+pub const Client = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    steam_server: *shared.SteamNet.Server,
+    conn: shared.SteamNet.Conn,
+    name: []const u8 = "",
+    entity_id: u32 = 0,
+    needs_full_sync: bool = true,
+    command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
+
+    pub fn sendCommand(self: *Client, writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
+        writer.end = 0;
+        try shared.net.write(shared.net.ServerPacket, command, writer);
+        // std.log.debug("len: {d}", .{writer.buffered().len});
+
+        try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
+    }
+
+    pub fn deinit(self: *Client) !void {
+        if (self.name.len != 0) self.gpa.free(self.name);
+        try self.command_queue.deinit(self.gpa, self.io);
+    }
+};
+
+pub fn init(self: *NetworkManager, gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
     var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
     self.* = .{
@@ -57,7 +59,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.Ste
     };
 }
 
-pub fn deinit(self: *@This()) !void {
+pub fn deinit(self: *NetworkManager) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
@@ -70,14 +72,14 @@ pub fn deinit(self: *@This()) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *@This(), pre_reload: bool) !void {
+pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
     _ = self;
     _ = pre_reload;
     // Steam connection state lives in main.zig and survives reload; nothing to
     // tear down or rebuild here.
 }
 
-pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
+pub fn update(self: *NetworkManager, info: *const Info, spawner: *Spawner) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const world = info.world;
@@ -303,7 +305,7 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
-fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+fn spawnPacket(self: *NetworkManager, info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
     _ = self;
     return .{
         .id = entity.id,
