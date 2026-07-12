@@ -1,5 +1,3 @@
-const Server = @This();
-
 const std = @import("std");
 const steam = @import("steamworks");
 const Packets = @import("../SteamNet.zig").Packets;
@@ -19,7 +17,7 @@ packets: Packets,
 
 pub const max_connections: usize = 32;
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !Server {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     if (!steam.Server.SteamInternal_GameServer_Init(
         0,
         27016,
@@ -73,12 +71,12 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Server {
     };
 }
 
-pub fn deinit(self: *Server) void {
+pub fn deinit(self: *@This()) void {
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
 }
 
-pub fn handlePackets(self: *Server) !void {
+pub fn handlePackets(self: *@This()) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     var last_status_log = last_iteration;
@@ -108,7 +106,7 @@ pub fn handlePackets(self: *Server) !void {
     }
 }
 
-pub fn recievePackets(self: *Server) !void {
+pub fn recievePackets(self: *@This()) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
         if (conn == 0) continue;
@@ -138,7 +136,7 @@ pub fn recievePackets(self: *Server) !void {
     }
 }
 
-pub fn sendPackets(self: *Server) !void {
+pub fn sendPackets(self: *@This()) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
         var msg_num: i64 = 0;
@@ -152,7 +150,7 @@ pub fn sendPackets(self: *Server) !void {
 }
 
 fn steamCallback(
-    self: ?*Server,
+    self: ?*@This(),
     gpa: std.mem.Allocator,
     pipe: steam.HSteamPipe,
     sock: ?steam.ISteamNetworkingSockets,
@@ -195,7 +193,7 @@ fn steamCallback(
     return -1;
 }
 
-fn addConnection(self: *Server, conn: steam.HSteamNetConnection) void {
+fn addConnection(self: *@This(), conn: steam.HSteamNetConnection) void {
     for (&self.connections) |*slot| {
         if (slot.* == 0) {
             slot.* = conn;
@@ -205,7 +203,7 @@ fn addConnection(self: *Server, conn: steam.HSteamNetConnection) void {
     std.log.err("connection table full; dropping conn={d}", .{conn});
 }
 
-fn removeConnection(self: *Server, conn: steam.HSteamNetConnection) void {
+fn removeConnection(self: *@This(), conn: steam.HSteamNetConnection) void {
     for (&self.connections) |*slot| {
         if (slot.* == conn) {
             slot.* = 0;

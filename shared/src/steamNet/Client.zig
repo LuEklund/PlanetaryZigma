@@ -1,5 +1,3 @@
-const Client = @This();
-
 const std = @import("std");
 const steam = @import("steamworks");
 const Packets = @import("../SteamNet.zig").Packets;
@@ -81,7 +79,7 @@ packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     if (!steam.SteamAPI_Init()) {
         std.log.err("SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.", .{});
         return error.InitSteamworks;
@@ -99,7 +97,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
     };
 }
 
-pub fn deinit(self: *Client) void {
+pub fn deinit(self: *@This()) void {
     self.handle_packets_future.cancel(self.io) catch {};
 
     const servers = steam.SteamMatchmakingServers();
@@ -171,7 +169,7 @@ fn endReasonName(reason: i32) []const u8 {
     };
 }
 
-pub fn handlePackets(self: *Client) !void {
+pub fn handlePackets(self: *@This()) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     var last_status_log = last_iteration;
@@ -206,7 +204,7 @@ pub fn handlePackets(self: *Client) !void {
     }
 }
 
-fn steamPump(self: *Client) !void {
+fn steamPump(self: *@This()) !void {
     steam.SteamAPI_ManualDispatch_RunFrame(self.pipe);
     if (self.browser.list.refresh_state == .done and self.browser.request != 0) {
         const servers = steam.SteamMatchmakingServers();
@@ -248,7 +246,7 @@ fn steamPump(self: *Client) !void {
     }
 }
 
-pub fn recievePackets(self: *Client) !void {
+pub fn recievePackets(self: *@This()) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;
@@ -267,7 +265,7 @@ pub fn recievePackets(self: *Client) !void {
     }
 }
 
-pub fn sendPackets(self: *Client) !void {
+pub fn sendPackets(self: *@This()) !void {
     if (self.packets.outgoing.items.len == 0) return;
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
@@ -281,7 +279,7 @@ pub fn sendPackets(self: *Client) !void {
     self.packets.outgoing.clearRetainingCapacity();
 }
 
-pub fn connectToServer(self: *Client, steam_id: u64) !void {
+pub fn connectToServer(self: *@This(), steam_id: u64) !void {
     var identity: steam.SteamNetworkingIdentity = undefined;
     identity.Clear();
     identity.SetSteamID64(steam_id);

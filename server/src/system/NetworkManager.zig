@@ -1,5 +1,3 @@
-const NetworkManager = @This();
-
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -44,7 +42,7 @@ pub const Client = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !NetworkManager {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
     var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
     return .{
@@ -59,7 +57,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !N
     };
 }
 
-pub fn deinit(self: *NetworkManager) !void {
+pub fn deinit(self: *@This()) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
@@ -72,14 +70,14 @@ pub fn deinit(self: *NetworkManager) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
+pub fn reload(self: *@This(), pre_reload: bool) !void {
     _ = self;
     _ = pre_reload;
     // Steam connection state lives in main.zig and survives reload; nothing to
     // tear down or rebuild here.
 }
 
-pub fn update(self: *NetworkManager, info: *const Info, spawner: *Spawner) !void {
+pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const world = info.world;
@@ -305,7 +303,7 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
-fn spawnPacket(self: *NetworkManager, info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
     _ = self;
     return .{
         .id = entity.id,

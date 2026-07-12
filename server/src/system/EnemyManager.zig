@@ -1,5 +1,3 @@
-const EnemyManager = @This();
-
 const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
@@ -14,15 +12,15 @@ const Info = system.Info;
 gpa: std.mem.Allocator,
 world: *system.World,
 
-pub fn init(gpa: std.mem.Allocator, world: *system.World) EnemyManager {
+pub fn init(gpa: std.mem.Allocator, world: *system.World) @This() {
     return .{ .gpa = gpa, .world = world };
 }
 
-pub fn deinit(self: *EnemyManager) !void {
+pub fn deinit(self: *@This()) !void {
     _ = self;
 }
 
-pub fn update(self: *EnemyManager, info: *const Info, health_manager: *HealthManager, network_manager: *NetworkManager, spawner: *Spawner) !void {
+pub fn update(self: *@This(), info: *const Info, health_manager: *HealthManager, network_manager: *NetworkManager, spawner: *Spawner) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;

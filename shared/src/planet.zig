@@ -12,8 +12,6 @@ pub const PlanetKind = enum {
 
 pub fn Planet(kind: PlanetKind) type {
     return struct {
-        const Self = @This();
-
         vertices: []Vertex,
         indices: []u32,
 
@@ -22,7 +20,7 @@ pub fn Planet(kind: PlanetKind) type {
             .renderable => @import("vertex.zig").StaticVertex,
         };
 
-        pub fn init(gpa: std.mem.Allocator, radius: u32) !Self {
+        pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
             const radius_float: f32 = if (radius < 2) 2.0 else @floatFromInt(radius);
 
             var vertices: std.ArrayList(Vertex) = .empty;
@@ -94,7 +92,7 @@ pub fn Planet(kind: PlanetKind) type {
             };
         }
 
-        pub fn deinit(self: Self, gpa: std.mem.Allocator) void {
+        pub fn deinit(self: @This(), gpa: std.mem.Allocator) void {
             gpa.free(self.vertices);
             gpa.free(self.indices);
         }

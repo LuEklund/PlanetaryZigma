@@ -1,5 +1,3 @@
-const PlayerController = @This();
-
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -15,15 +13,15 @@ spawner: *Spawner,
 
 pub const aim_range: f32 = 300;
 
-pub fn init(physics: *Physics, spawner: *Spawner) PlayerController {
+pub fn init(physics: *Physics, spawner: *Spawner) @This() {
     return .{ .physics = physics, .spawner = spawner };
 }
 
-pub fn deinit(self: *PlayerController) void {
+pub fn deinit(self: *@This()) void {
     _ = self;
 }
 
-pub fn update(self: *PlayerController, info: *const system.Info, network_manager: *NetworkManager) !void {
+pub fn update(self: *@This(), info: *const system.Info, network_manager: *NetworkManager) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -152,7 +150,7 @@ pub fn update(self: *PlayerController, info: *const system.Info, network_manager
     }
 }
 
-fn aimPoint(self: *PlayerController, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(self: *@This(), player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth + 1.5);
     const translation = nz.vec.scale(camera_forward, aim_range);
