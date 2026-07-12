@@ -18,6 +18,7 @@ salary_per_second: f32 = 1,
 last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 should_spawm: bool = false,
+elapsed_time: f32 = 0,
 
 pending_despawn: std.ArrayList(u32) = .empty,
 
@@ -49,10 +50,13 @@ pub fn spawn(self: *@This(), entity_info: system.Entity) !*system.Entity {
         try self.physics.createBody(entity);
     }
     switch (entity.kind) {
-        .enemy => |enemy| switch (enemy) {
-            .tubloid => entity.stats.init(20, 3, 1, 1, 2),
-            .tubloida => entity.stats.init(20, 3, 1, 0.2, 10),
-            .wizard => entity.stats.init(100, 10, 1, 0.25, 40),
+        .enemy => |enemy| {
+            entity.last_attack = self.elapsed_time;
+            switch (enemy) {
+                .tubloid => entity.stats.init(20, 3, 1, 1, 2),
+                .tubloida => entity.stats.init(20, 3, 1, 0.2, 10),
+                .wizard => entity.stats.init(100, 10, 1, 0.25, 40),
+            }
         },
         .player => entity.stats.init(100, 10, 10, 10, 10),
         else => {},
@@ -75,6 +79,7 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
+    self.elapsed_time = info.elapsed_time;
     self.should_spawm = false;
 
     if (self.should_spawm and info.world.players.items.len != 0) {

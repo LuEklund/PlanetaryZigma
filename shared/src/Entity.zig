@@ -1,12 +1,10 @@
 const std = @import("std");
 const Item = @import("inventory.zig").Item;
 
-pub const Enemy = struct {
-    pub const Kind = enum(u16) {
-        tubloid,
-        tubloida,
-        wizard,
-    };
+pub const EnemyKind = enum(u16) {
+    tubloid,
+    tubloida,
+    wizard,
 };
 
 pub fn hasCollider(kind: Kind) bool {
@@ -17,8 +15,13 @@ pub fn hasCollider(kind: Kind) bool {
 }
 
 pub const ColliderShape = union(enum) {
-    box: struct { half_extent: f32 },
+    box: HalfBoxExtent,
     capsule: struct { half_heigth: f32, radius: f32 },
+    pub const HalfBoxExtent = struct {
+        x: f32,
+        y: f32,
+        z: f32,
+    };
 };
 
 pub fn colliderShape(kind: Kind) ?ColliderShape {
@@ -29,12 +32,9 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
             .tubloid, .tubloida => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
             .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
         },
-        .teleporter, .item => .{ .box = .{ .half_extent = 1 } },
+        .teleporter => .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
+        .item => .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
     };
-}
-
-pub fn hasHealth(kind: Kind) bool {
-    return kind == .player or kind == .enemy;
 }
 
 pub const Kind = union(enum(u16)) {
@@ -45,11 +45,15 @@ pub const Kind = union(enum(u16)) {
 
     teleporter,
 
-    enemy: Enemy.Kind,
+    enemy: EnemyKind,
     item: Item.Kind,
 
     pub fn eql(kind: Kind, other_kind: Kind) bool {
         return std.meta.eql(kind, other_kind);
+    }
+
+    pub fn hasHealth(kind: Kind) bool {
+        return kind == .enemy or kind == .player;
     }
 
     pub fn expectsModel(kind: Kind) bool {
