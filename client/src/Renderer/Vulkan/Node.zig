@@ -1,5 +1,3 @@
-const Node = @This();
-
 const std = @import("std");
 const nz = @import("shared").numz;
 
@@ -12,11 +10,11 @@ rotation: nz.quat.Hamiltonian(f32) = .identity,
 skin_id: ?usize = null,
 model_matrix: nz.Mat4x4(f32) = undefined,
 
-pub fn deinit(self: *Node, gpa: std.mem.Allocator) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.children.deinit(gpa);
 }
 
-pub fn getLocalMatrix(self: *const Node) nz.Mat4x4(f32) {
+pub fn getLocalMatrix(self: *const @This()) nz.Mat4x4(f32) {
     return nz.Mat4x4(f32).translate(self.translation)
         .mul(self.rotation.toMat4x4())
         .mul(.scale(self.scale));

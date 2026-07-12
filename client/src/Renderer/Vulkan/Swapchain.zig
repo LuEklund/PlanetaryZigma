@@ -1,5 +1,3 @@
-const Swapchain = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
@@ -20,7 +18,7 @@ extent: c.VkExtent3D,
 draw_image: Image,
 depth_image: Image,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !Swapchain {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !@This() {
     const present_mode = try getPresentMode(gpa, physical_device, surface);
     const surface_format = try surface.getFormat(gpa, physical_device);
     const swapchain = try create(physical_device, device, surface, surface_format, present_mode, width, height);
@@ -82,7 +80,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     };
 }
 
-pub fn deinit(self: *Swapchain, vma: Vma, device: Device) void {
+pub fn deinit(self: *@This(), vma: Vma, device: Device) void {
     self.draw_image.deinit(vma, device);
     self.depth_image.deinit(vma, device);
 
@@ -130,7 +128,7 @@ fn create(
 }
 
 pub fn recreate(
-    self: *Swapchain,
+    self: *@This(),
     gpa: std.mem.Allocator,
     vma: Vma,
     physical_device: PhysicalDevice,

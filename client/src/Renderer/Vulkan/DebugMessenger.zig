@@ -1,5 +1,3 @@
-const DebugMessenger = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const Instance = @import("Instance.zig");
@@ -17,7 +15,7 @@ pub const Config = struct {
     } = .{},
 };
 
-pub fn init(instance: Instance, config: Config) !DebugMessenger {
+pub fn init(instance: Instance, config: Config) !@This() {
     var message_severity: u32 = 0;
     if (config.severities.verbose) message_severity |= c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     if (config.severities.warning) message_severity |= c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
@@ -44,7 +42,7 @@ pub fn init(instance: Instance, config: Config) !DebugMessenger {
     return .{ .handle = messenger };
 }
 
-pub fn deinit(self: DebugMessenger, instance: Instance) void {
+pub fn deinit(self: @This(), instance: Instance) void {
     ext.vkDestroyDebugUtilsMessengerEXT(instance.handle, self.handle, null);
 }
 

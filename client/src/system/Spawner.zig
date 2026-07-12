@@ -1,5 +1,3 @@
-const Spawner = @This();
-
 const std = @import("std");
 const system = @import("../system.zig");
 const shared = @import("shared");
@@ -13,7 +11,7 @@ pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 
-pub fn init(self: *Spawner, gpa: std.mem.Allocator, world: *system.World) !void {
+pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void {
     self.* = .{
         .gpa = gpa,
         .world = world,
@@ -23,13 +21,13 @@ pub fn init(self: *Spawner, gpa: std.mem.Allocator, world: *system.World) !void 
     };
 }
 
-pub fn deinit(self: *Spawner) void {
+pub fn deinit(self: *@This()) void {
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
     self.pending_stats.deinit(self.gpa);
 }
 
-pub fn spawn(self: *Spawner, entity_info: shared.net.SpawnEntity) void {
+pub fn spawn(self: *@This(), entity_info: shared.net.SpawnEntity) void {
     self.pending_spawn.appendAssumeCapacity(entity_info);
 }
 
@@ -40,12 +38,12 @@ pub fn applyStat(entity: *system.Entity, command: shared.net.UpdateStat) void {
     }
 }
 
-pub fn depspawn(self: *Spawner, entity_id: u32) !void {
+pub fn depspawn(self: *@This(), entity_id: u32) !void {
     // std.log.debug("despawn ID: {d}", .{entity_id});
     self.pending_despawn.appendAssumeCapacity(entity_id);
 }
 
-pub fn update(self: *Spawner, info: *const system.Info, system_context: *system.Context) !void {
+pub fn update(self: *@This(), info: *const system.Info, system_context: *system.Context) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 

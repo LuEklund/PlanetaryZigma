@@ -1,5 +1,3 @@
-const SkeletonInstance = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const nz = @import("shared").numz;
@@ -35,7 +33,7 @@ pub const JointTransform = struct {
     scale: nz.Vec3(f32),
 };
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !SkeletonInstance {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !@This() {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
     for (model.nodes.items, nodes) |src, *dst| {
         dst.* = src;
@@ -61,7 +59,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !Sk
     return .{ .nodes = nodes, .fade_joints = fade_joints, .fade_time = 0, .model = model, .joint_matrices = joint_matrices, .overlay = null };
 }
 
-pub fn deinit(self: *SkeletonInstance, gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     for (self.nodes) |*node| node.deinit(gpa);
     gpa.free(self.nodes);
     gpa.free(self.fade_joints);
@@ -72,14 +70,14 @@ pub fn deinit(self: *SkeletonInstance, gpa: std.mem.Allocator, vma: Vma) void {
     gpa.free(self.joint_matrices);
 }
 
-pub fn startFade(self: *SkeletonInstance) void {
+pub fn startFade(self: *@This()) void {
     for (self.nodes, self.fade_joints) |node, *pose| {
         pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
     }
     self.fade_time = fade_duration;
 }
 
-pub fn playClip(self: *SkeletonInstance, clip_index: usize) void {
+pub fn playClip(self: *@This(), clip_index: usize) void {
     self.startFade();
     self.player = .{
         .current_time = self.model.clips[clip_index].start,
@@ -87,7 +85,7 @@ pub fn playClip(self: *SkeletonInstance, clip_index: usize) void {
     };
 }
 
-pub fn playOverlay(self: *SkeletonInstance, clip_index: usize) void {
+pub fn playOverlay(self: *@This(), clip_index: usize) void {
     self.startFade();
     self.overlay = .{
         .current_time = self.model.clips[clip_index].start,

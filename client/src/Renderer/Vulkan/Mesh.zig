@@ -1,5 +1,3 @@
-const Mesh = @This();
-
 const std = @import("std");
 const shared = @import("shared");
 const c = @import("vulkan");
@@ -33,7 +31,7 @@ pub fn init(
     vertices: []const VertexType,
     indices: []const u32,
     surfaces: []const GeoSurface,
-) !Mesh {
+) !@This() {
     var vertex_buffer: Buffer = try .init(
         device,
         vma,
@@ -71,7 +69,7 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     self.index_buffer.deinit(vma);
     self.vertex_buffer.deinit(vma);
     gpa.free(self.name);

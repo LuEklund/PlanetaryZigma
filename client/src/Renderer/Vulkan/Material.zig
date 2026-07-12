@@ -1,5 +1,3 @@
-const Material = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const ext = @import("procs.zig").device.ProcTable;
@@ -19,7 +17,7 @@ pub fn init(
     combined_image_sampler_descriptor_size: c.VkDeviceSize,
     sampler: c.VkSampler,
     view_image: c.VkImageView,
-) !Material {
+) !@This() {
     const new_desc_buf = try Buffer.init(
         device,
         vma,
@@ -49,7 +47,7 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *Material, gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     self.buffer.deinit(vma);
     gpa.free(self.name);
 }

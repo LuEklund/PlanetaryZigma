@@ -1,5 +1,3 @@
-const Shader = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
@@ -59,9 +57,9 @@ pub const UiPushConstant = extern struct {
     screnn_size: [2]f32,
 };
 
-pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
+pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) @This() {
     const shader_spec = specs.get(kind);
-    var self: Shader = .{
+    var self: @This() = .{
         .device = device,
         .shader_create_info = .{
             .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
@@ -81,11 +79,11 @@ pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDesc
     return self;
 }
 
-pub fn deinit(self: *Shader) void {
+pub fn deinit(self: *@This()) void {
     ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
 }
 
-pub fn load(self: *Shader, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
+pub fn load(self: *@This(), gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
     var buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &buffer);
     const len: usize = @intCast((try file.stat(io)).size);

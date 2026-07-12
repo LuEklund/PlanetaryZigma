@@ -1,5 +1,3 @@
-const Surface = @This();
-
 const std = @import("std");
 const Instance = @import("Instance.zig");
 const device = @import("device.zig");
@@ -8,11 +6,11 @@ const check = @import("utils.zig").check;
 
 handle: c.VkSurfaceKHR,
 
-pub fn deinit(self: Surface, instance: Instance) void {
+pub fn deinit(self: @This(), instance: Instance) void {
     c.vkDestroySurfaceKHR(instance.handle, self.handle, null);
 }
 
-pub fn getFormat(self: Surface, gpa: std.mem.Allocator, physical_device: device.Physical) !c.VkSurfaceFormatKHR {
+pub fn getFormat(self: @This(), gpa: std.mem.Allocator, physical_device: device.Physical) !c.VkSurfaceFormatKHR {
     var format_count: u32 = 0;
     try check(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device.handle, self.handle, &format_count, null));
 
@@ -30,7 +28,7 @@ pub fn getFormat(self: Surface, gpa: std.mem.Allocator, physical_device: device.
     return chosen_format;
 }
 
-pub fn getExtent(self: Surface, physical_device: device.Physical, width: u32, height: u32) !c.VkExtent2D {
+pub fn getExtent(self: @This(), physical_device: device.Physical, width: u32, height: u32) !c.VkExtent2D {
     var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
     try check(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, self.handle, &capabilities));
 

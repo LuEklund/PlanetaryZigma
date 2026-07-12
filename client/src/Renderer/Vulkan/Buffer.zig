@@ -1,5 +1,3 @@
-const Buffer = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
@@ -12,7 +10,7 @@ device: Device,
 info: Vma.AllocationInfo,
 len: u32,
 
-pub fn init(device: Device, vma: Vma, comptime T: type, amount: usize, vk_buffer_usage: c.VkBufferUsageFlags, vmaalloc_info: Vma.c.VmaAllocationCreateInfo) !Buffer {
+pub fn init(device: Device, vma: Vma, comptime T: type, amount: usize, vk_buffer_usage: c.VkBufferUsageFlags, vmaalloc_info: Vma.c.VmaAllocationCreateInfo) !@This() {
     var buffer_info: Vma.c.VkBufferCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = amount * @sizeOf(T),
@@ -41,11 +39,11 @@ pub fn init(device: Device, vma: Vma, comptime T: type, amount: usize, vk_buffer
     };
 }
 
-pub fn deinit(self: *Buffer, vma: Vma) void {
+pub fn deinit(self: *@This(), vma: Vma) void {
     Vma.c.vmaDestroyBuffer(vma.handle, @ptrCast(self.buffer), self.vma_allocation);
 }
 
-pub fn getGPUAddress(self: *const Buffer) c.VkDeviceAddress {
+pub fn getGPUAddress(self: *const @This()) c.VkDeviceAddress {
     var device_adress_info: c.VkBufferDeviceAddressInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .buffer = self.buffer,
@@ -53,7 +51,7 @@ pub fn getGPUAddress(self: *const Buffer) c.VkDeviceAddress {
     return c.vkGetBufferDeviceAddress(self.device.handle, &device_adress_info);
 }
 
-pub fn copy(self: *Buffer, comptime T: type, data: []const T) void {
+pub fn copy(self: *@This(), comptime T: type, data: []const T) void {
     const size = @sizeOf(T) * data.len;
     std.debug.assert(size <= self.info.size);
     var mapped: [*]u8 = @ptrCast(self.info.pMappedData);

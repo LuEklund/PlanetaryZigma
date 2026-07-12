@@ -1,5 +1,3 @@
-const Vulkan = @This();
-
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -69,8 +67,8 @@ pub const InitOptions = struct {
     },
 };
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*Vulkan {
-    const self = try gpa.create(Vulkan);
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*@This() {
+    const self = try gpa.create(@This());
     self.gpa = gpa;
     self.skeletons = .init(gpa);
 
@@ -117,7 +115,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     return self;
 }
 
-pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
 
     self.resources.deinit(gpa, self.vma, self.device);
@@ -138,12 +136,12 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     self.instance.deinit();
 }
 
-pub fn rebindProcs(self: *Vulkan) void {
+pub fn rebindProcs(self: *@This()) void {
     procs.instance.load(self.instance.handle, null);
     procs.device.load(self.device.handle, null);
 }
 
-pub fn update(self: *Vulkan, info: *const Info) !void {
+pub fn update(self: *@This(), info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // const time = data.delta_time;
@@ -235,7 +233,7 @@ pub fn update(self: *Vulkan, info: *const Info) !void {
     self.current_frame_inflight += 1;
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info) !void {
+pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info) !void {
     const elapsed_time = info.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -311,7 +309,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     // std.debug.print("time: {d}\n", .{self.elapsed_time});
     const tmp: i32 = @intFromFloat(elapsed_time);
     // std.debug.print("fixed-time: {d}\n", .{tmp});
-    if (@mod(tmp, 2) == -1) {
+    if (@mod(tmp, 2) == 1) {
         ext.vkCmdSetPolygonModeEXT(cmd, c.VK_POLYGON_MODE_LINE);
         c.vkCmdSetLineWidth(cmd, 1);
         ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
@@ -541,7 +539,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
 }
 
 fn drawStatic(
-    self: *Vulkan,
+    self: *@This(),
     cmd: c.VkCommandBuffer,
     model: *const Model,
     current_frame: *const FrameData,
@@ -559,7 +557,7 @@ fn drawStatic(
 }
 
 fn drawSkeletal(
-    self: *Vulkan,
+    self: *@This(),
     cmd: c.VkCommandBuffer,
     skeleton: *const SkeletonInstance,
     current_frame: *const FrameData,
@@ -664,7 +662,7 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
 }
 
 fn emitNode(
-    self: *Vulkan,
+    self: *@This(),
     cmd: c.VkCommandBuffer,
     current_frame: *const FrameData,
     mesh: *Mesh,
@@ -701,7 +699,7 @@ fn emitNode(
     }
 }
 
-pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
+pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !void {
     try self.swapchain.recreate(
         gpa,
         self.vma,
@@ -715,7 +713,7 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn attachSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
+pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
@@ -724,7 +722,7 @@ pub fn attachSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: u32, ent
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-pub fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: u32) void {
+pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);

@@ -1,5 +1,3 @@
-const FrameData = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
@@ -33,7 +31,7 @@ pub const GPUScene = extern struct {
     light_color: [4]f32,
 };
 
-pub fn init(vma: Vma, device: Device) !FrameData {
+pub fn init(vma: Vma, device: Device) !@This() {
     var alloc_info: c.VkCommandBufferAllocateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = device.command_pool.handle,
@@ -98,7 +96,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
     };
 }
 
-pub fn deinit(self: *FrameData, vma: Vma, device: Device) void {
+pub fn deinit(self: *@This(), vma: Vma, device: Device) void {
     c.vkDestroySemaphore(device.handle, self.swapchain_semaphore, null);
     c.vkDestroyFence(device.handle, self.render_fence, null);
     c.vkFreeCommandBuffers(device.handle, device.command_pool.handle, 1, &self.command_buffer);

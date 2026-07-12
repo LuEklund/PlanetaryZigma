@@ -1,5 +1,3 @@
-const Ui = @This();
-
 const std = @import("std");
 const c = @import("vulkan");
 const nz = @import("shared").numz;
@@ -131,7 +129,7 @@ pub fn init(
     screen_width: u32,
     screen_heigth: u32,
     default_font: *Font,
-) !Ui {
+) !@This() {
     const ui_index_buffer: Buffer = try .init(
         device,
         vma,
@@ -161,14 +159,14 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *Ui, gpa: std.mem.Allocator, vma: Vma) void {
+pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
     self.index_buffer.deinit(vma);
     self.quads.deinit(gpa);
     self.nodes.deinit(gpa);
     self.names.deinit(gpa);
 }
 
-pub fn start(self: *Ui, mouse_state: MouseState) void {
+pub fn start(self: *@This(), mouse_state: MouseState) void {
     self.hotUpdate();
     // self.activeUpdate();
     self.text_len = 0;
@@ -180,23 +178,23 @@ pub fn start(self: *Ui, mouse_state: MouseState) void {
     self.mouse_state = mouse_state;
 }
 
-pub fn end(self: *Ui) void {
+pub fn end(self: *@This()) void {
     self.resolveLayout();
     self.pushQuads();
 }
 
-pub fn print(self: *Ui, comptime fmt: []const u8, args: anytype) []const u8 {
+pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
     const text = std.fmt.bufPrint(self.writer_buffer_out[self.writer_len..], fmt, args) catch unreachable;
     self.writer_len += text.len;
     return text;
 }
 
-pub fn add(self: *Ui, parent: ?[]const u8, layout: Layout) void {
+pub fn add(self: *@This(), parent: ?[]const u8, layout: Layout) void {
     const parent_id: ?u32 = if (parent) |name| (self.names.get(name) orelse return) else null;
     self.addNode(parent_id, layout);
 }
 
-fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
+fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
     const handle: u32 = @intCast(self.nodes.items.len);
     self.nodes.appendAssumeCapacity(.{
         .id = handle,
@@ -233,7 +231,7 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
     return metrics;
 }
 
-pub fn textSize(self: *const Ui, text: []const u8, size: f32) Size2D {
+pub fn textSize(self: *const @This(), text: []const u8, size: f32) Size2D {
     const scale = size / self.default_font.size;
     const metrics = measureText(&self.default_font.glyphs, text, scale);
     return .{ .width = metrics.width, .heigth = metrics.bottom - metrics.top };
@@ -247,7 +245,7 @@ fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
     };
 }
 
-fn resolveLayout(self: *Ui) void {
+fn resolveLayout(self: *@This()) void {
     // pass 1: sizes (parent before child, so percent resolves against a known parent)
     for (self.nodes.items) |*node| {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
@@ -309,11 +307,11 @@ fn resolveLayout(self: *Ui) void {
     }
 }
 
-fn screenRect(self: *const Ui) Rect {
+fn screenRect(self: *const @This()) Rect {
     return .{ .left = 0, .top = 0, .width = self.screen_width, .heigth = self.screen_heigth };
 }
 
-fn pushQuads(self: *Ui) void {
+fn pushQuads(self: *@This()) void {
     for (self.nodes.items) |node| {
         const rect = node.rect;
         if (node.layout.color.a != 0) {
@@ -363,15 +361,15 @@ fn pushQuads(self: *Ui) void {
 //     const node = self.nodes.items[id];
 // }
 
-pub fn isHot(self: *Ui, name: []const u8) bool {
+pub fn isHot(self: *@This(), name: []const u8) bool {
     return eqlName(name, self.hot_item);
 }
 
-pub fn isActive(self: *Ui, name: []const u8) bool {
+pub fn isActive(self: *@This(), name: []const u8) bool {
     return (eqlName(name, self.hot_item) and self.mouse_state.left_click);
 }
 
-fn hotUpdate(self: *Ui) void {
+fn hotUpdate(self: *@This()) void {
     self.hot_item = null;
     var i = self.nodes.items.len;
     while (i > 0) {
