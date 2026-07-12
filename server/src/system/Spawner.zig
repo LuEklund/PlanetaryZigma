@@ -25,8 +25,8 @@ pending_despawn: std.ArrayList(u32) = .empty,
 
 pub const max_despawn_count: u32 = 1000;
 
-pub fn init(self: *Spawner, gpa: std.mem.Allocator, world: *system.World, physics: *Physics, network_manager: *NetworkManager) !void {
-    self.* = .{
+pub fn init(gpa: std.mem.Allocator, world: *system.World, physics: *Physics, network_manager: *NetworkManager) !Spawner {
+    return .{
         .gpa = gpa,
         .world = world,
         .pending_despawn = try .initCapacity(gpa, max_despawn_count),

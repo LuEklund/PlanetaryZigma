@@ -131,10 +131,10 @@ pub const Context = struct {
     world: *World,
     steam_server: *shared.SteamNet.Server,
     network_manager: NetworkManager,
+    spawner: Spawner,
     health_manager: HealthManager,
     physics: Physics,
     player_controller: PlayerController,
-    spawner: Spawner,
     enemy_manager: EnemyManager,
     item_manager: ItemManager,
     bullet_manager: BulletManager,
@@ -153,22 +153,23 @@ pub const Context = struct {
             .io = data.io,
             .world = data.world,
             .steam_server = data.steam_server,
-            .spawner = undefined,
-            .enemy_manager = undefined,
             .network_manager = undefined,
+            .spawner = undefined,
+            .health_manager = undefined,
             .physics = undefined,
             .player_controller = undefined,
-            .bullet_manager = undefined,
-            .health_manager = undefined,
+            .enemy_manager = undefined,
             .item_manager = undefined,
+            .bullet_manager = undefined,
         };
-        try self.physics.init(data.gpa, data.io);
-        self.bullet_manager = .init(data.gpa, self.world, &self.physics);
-        self.enemy_manager = .init(data.gpa, data.world);
-        try self.network_manager.init(data.gpa, data.io, data.steam_server);
-        try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
-        self.player_controller = .init(&self.physics, &self.spawner);
+        self.network_manager = try .init(data.gpa, data.io, data.steam_server);
+        self.spawner = try .init(data.gpa, data.world, &self.physics, &self.network_manager);
         self.health_manager = .init(&self.network_manager, &self.spawner);
+        self.physics = .init(data.gpa, data.io);
+        self.player_controller = .init(&self.physics, &self.spawner);
+        self.enemy_manager = .init(data.gpa, data.world);
+        // self.item_manager = .init(); TODO: add init for item manager
+        self.bullet_manager = .init(data.gpa, self.world, &self.physics);
 
         // TODO: Move somewhere smarter when know how to move stages.
         try self.spawner.startStage(self.world, &self.physics);

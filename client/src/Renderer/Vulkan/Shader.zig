@@ -4,12 +4,13 @@ const std = @import("std");
 const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
-pub const check = @import("utils.zig").check;
+const check = @import("utils.zig").check;
 
 handle: c.VkShaderEXT = null,
 device: Device,
 shader_create_info: c.VkShaderCreateInfoEXT,
-descriptor_set_layouts: []const c.VkDescriptorSetLayout,
+descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
+descriptor_set_count: u32,
 shader_name: []const u8,
 push_constant_size: u32,
 
@@ -25,6 +26,13 @@ pub const specs: std.EnumArray(Kind, Spec) = .init(.{
     .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
 });
 
+pub const Spec = struct {
+    path: []const u8,
+    push_constant_size: u32,
+    stage_bit: c.VkShaderStageFlagBits,
+    layout: enum { scene_material, ui },
+};
+
 pub const Kind = enum(u16) {
     vert_skinned,
     vert_static,
@@ -35,13 +43,6 @@ pub const Kind = enum(u16) {
     frag_sky,
     frag_mesh,
     frag_debug,
-};
-
-pub const Spec = struct {
-    path: []const u8,
-    push_constant_size: u32,
-    stage_bit: c.VkShaderStageFlagBits,
-    layout: enum { scene_material, ui },
 };
 
 pub const AnimationPushConstant = extern struct {
@@ -60,7 +61,7 @@ pub const UiPushConstant = extern struct {
 
 pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
     const shader_spec = specs.get(kind);
-    return .{
+    var self: Shader = .{
         .device = device,
         .shader_create_info = .{
             .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
@@ -72,8 +73,12 @@ pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDesc
         .shader_name = shader_spec.path,
         .handle = null,
         .push_constant_size = shader_spec.push_constant_size,
-        .descriptor_set_layouts = descriptor_set_layouts,
+        .descriptor_set_count = @intCast(descriptor_set_layouts.len),
+        .descriptor_set_layouts = undefined,
     };
+    std.debug.assert(descriptor_set_layouts.len <= self.descriptor_set_layouts.len);
+    @memcpy(self.descriptor_set_layouts[0..self.descriptor_set_count], descriptor_set_layouts);
+    return self;
 }
 
 pub fn deinit(self: *Shader) void {
@@ -99,8 +104,8 @@ pub fn load(self: *Shader, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File
     } else {
         self.shader_create_info.pushConstantRangeCount = 0;
     }
-    self.shader_create_info.pSetLayouts = self.descriptor_set_layouts.ptr;
-    self.shader_create_info.setLayoutCount = @intCast(self.descriptor_set_layouts.len);
+    self.shader_create_info.pSetLayouts = &self.descriptor_set_layouts;
+    self.shader_create_info.setLayoutCount = self.descriptor_set_count;
     self.shader_create_info.codeSize = len;
     self.shader_create_info.pCode = data.ptr;
     if (self.handle != null) ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);

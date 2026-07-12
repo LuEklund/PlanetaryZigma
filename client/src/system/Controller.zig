@@ -46,9 +46,7 @@ pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
             }
         },
         .mouse_scroll => switch (event.mouse_scroll) {
-            .vertical => |scroll| {
-                self.mouse_wheel = scroll;
-            },
+            .vertical => |scroll| self.mouse_wheel = scroll,
             .horizontal => {},
         },
         .focus => |focused| {
@@ -62,15 +60,10 @@ pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
             self.mouse_pos[1] = motion.y;
         },
         .mouse_button => |button| {
-            if (button.state == .pressed and button.button == .left)
-                self.input_map.keys.mouse_button_left = true
-            else if (button.state == .released and button.button == .left) {
-                self.input_map.keys.mouse_button_left = false;
-            }
-            if (button.state == .pressed and button.button == .right)
-                self.input_map.keys.mouse_button_right = true
-            else if (button.state == .released and button.button == .right) {
-                self.input_map.keys.mouse_button_right = false;
+            switch (button.button) {
+                .left => self.input_map.keys.mouse_button_left = button.state == .pressed,
+                .right => self.input_map.keys.mouse_button_right = button.state == .pressed,
+                else => {},
             }
         },
 

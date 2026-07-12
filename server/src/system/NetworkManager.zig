@@ -44,10 +44,10 @@ pub const Client = struct {
     }
 };
 
-pub fn init(self: *NetworkManager, gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !NetworkManager {
     var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
-    self.* = .{
+    return .{
         .gpa = gpa,
         .io = io,
         .steam_server = net,

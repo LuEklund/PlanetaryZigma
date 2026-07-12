@@ -70,8 +70,8 @@ fn makeWorld() c.b3WorldId {
     return c.b3CreateWorld(&world_def);
 }
 
-pub fn init(self: *Physics, gpa: std.mem.Allocator, io: std.Io) !void {
-    self.* = .{
+pub fn init(gpa: std.mem.Allocator, io: std.Io) Physics {
+    return .{
         .gpa = gpa,
         .io = io,
         .world = makeWorld(),
