@@ -473,7 +473,11 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
             const first_vertex = debug_vertex_count;
             switch (collider_shape) {
                 .capsule => |capsule| try appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
-                .box => |box| try appendBoxLines(debug_vertices, &debug_vertex_count, box.half_extent),
+                .box => |box| try appendBoxLines(
+                    debug_vertices,
+                    &debug_vertex_count,
+                    box,
+                ),
             }
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
@@ -632,15 +636,15 @@ fn appendCapsuleLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, ha
     }
 }
 
-fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, half_extent: f32) !void {
+fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, box: shared.Entity.ColliderShape.HalfBoxExtent) !void {
     const bottom_corners = [4]nz.Vec3(f32){
-        .{ -half_extent, -half_extent, -half_extent },
-        .{ half_extent, -half_extent, -half_extent },
-        .{ half_extent, -half_extent, half_extent },
-        .{ -half_extent, -half_extent, half_extent },
+        .{ -box.x, -box.y, -box.z },
+        .{ box.x, -box.y, -box.z },
+        .{ box.x, -box.y, box.z },
+        .{ -box.x, -box.y, box.z },
     };
     var top_corners = bottom_corners;
-    for (&top_corners) |*corner| corner[1] = half_extent;
+    for (&top_corners) |*corner| corner[1] = box.y;
 
     for (0..4) |corner_index| {
         const next_corner_index = (corner_index + 1) % 4;

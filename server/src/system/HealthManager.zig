@@ -12,13 +12,13 @@ pub fn init(network_manager: *NetworkManager, spawner: *Spawner) @This() {
 }
 
 pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
-    if (!shared.Entity.hasHealth(entity.kind)) return false;
+    if (!entity.kind.hasHealth()) return false;
     if (entity.flags.invinsible) return false;
     return self.addHealth(entity, -amount);
 }
 
 pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
-    if (!shared.Entity.hasHealth(entity.kind)) return false;
+    if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) {
         self.spawner.depspawn(entity.id);

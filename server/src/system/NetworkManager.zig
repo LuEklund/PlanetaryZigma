@@ -295,7 +295,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
 }
 
 fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
-    if (!shared.Entity.hasHealth(entity.kind)) return;
+    if (!entity.kind.hasHealth()) return;
     for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
         const stat = entity.stats.get(stat_kind);
         try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } }, .reliable);

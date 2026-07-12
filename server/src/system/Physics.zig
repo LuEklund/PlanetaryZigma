@@ -151,7 +151,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 fn colliderGroundExtent(collider: Collider) f32 {
     return switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
-            .box => |box| box.half_extent,
+            .box => |box| box.x,
             .capsule => |capsule| capsule.half_heigth + capsule.radius,
         },
         .mesh => 0,
@@ -203,7 +203,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
     switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
             .box => |box| {
-                var hull = c.b3MakeBoxHull(box.half_extent, box.half_extent, box.half_extent);
+                var hull = c.b3MakeBoxHull(box.x, box.y, box.z);
                 _ = c.b3CreateHullShape(body_id, &shape_def, &hull.base);
             },
             .capsule => |capsule| {
