@@ -20,15 +20,292 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
         .right_click = controller.input_map.keys.mouse_button_right,
     });
     if (network_manager.steam_client.server_conn == 0) {
-        serverList(network_manager, ui);
+        info.world.show_menu_scene = true;
+        try mainMenu(info, network_manager, ui, controller);
     } else {
+        info.world.show_menu_scene = false;
         try inGame(info, ui);
     }
 
     ui.end();
 }
 
-fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
+fn mainMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
+    const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
+    const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
+    const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
+    const button_text_size = std.math.clamp(button_height * 0.55, @as(f32, 20), @as(f32, 25));
+    const left = std.math.clamp(ui.screen_width * 0.07, @as(f32, 48), @as(f32, 132));
+    const total_height = button_height * 4 + button_gap * 3;
+    const max_top = @max(@as(f32, 28), ui.screen_heigth - total_height - 28);
+    const top = std.math.clamp((ui.screen_heigth - total_height) * 0.5, @as(f32, 28), max_top);
+    const panel_gap = std.math.clamp(ui.screen_width * 0.025, @as(f32, 24), @as(f32, 48));
+    const panel_left = if (ui.screen_width < 760) left else left + button_width + panel_gap;
+    const panel_top = if (ui.screen_width < 760) top + total_height + 20 else top;
+    const panel_width = @max(@as(f32, 280), ui.screen_width - panel_left - left);
+
+    menuViewportManipulator(info, ui, controller);
+
+    addMainMenuButton(ui, "menu_singleplayer", "Singleplayer", left, top, button_width, button_height, button_text_size, false);
+    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, info.world.menu_screen == .multiplayer);
+    addMainMenuButton(ui, "menu_settings", "Settings", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, info.world.menu_screen == .settings);
+    addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false);
+
+    if (ui.isActive("menu_singleplayer")) {
+        info.world.menu_screen = .main;
+    }
+    if (ui.isActive("menu_multiplayer")) {
+        info.world.menu_screen = .multiplayer;
+        if (!network_manager.server_list.refresh and network_manager.server_list.count == 0) {
+            network_manager.server_list.refresh = true;
+        }
+    }
+    if (ui.isActive("menu_settings")) {
+        info.world.menu_screen = .settings;
+    }
+    if (ui.isActive("menu_quit")) {
+        info.world.request_quit = true;
+    }
+
+    switch (info.world.menu_screen) {
+        .main => menuTuningPanel(info, ui, panel_left, panel_top, panel_width),
+        .multiplayer => try multiplayerPanel(network_manager, ui, panel_left, panel_top, panel_width),
+        .settings => settingsPanel(ui, panel_left, panel_top, panel_width),
+    }
+}
+
+fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool) void {
+    const hot = ui.isHot(name);
+    const bg = if (selected or hot)
+        nz.color.Rgba(f32).new(0.88, 0.55, 0.08, 1)
+    else
+        nz.color.Rgba(f32).new(0.02, 0.025, 0.025, 1);
+    const fg = if (selected or hot)
+        nz.color.Rgba(f32).new(0.02, 0.02, 0.015, 1)
+    else
+        nz.color.Rgba(f32).new(0.94, 0.96, 0.9, 1);
+
+    ui.add(null, .{
+        .name = name,
+        .size = .{ .fixed = .{ .heigth = height, .width = width } },
+        .offset = .{ .left = left, .top = top },
+        .color = bg,
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{ .data = text, .size = text_size, .color = fg },
+    });
+}
+
+fn menuViewportManipulator(info: *const Info, ui: *Ui, controller: *const Controller) void {
+    const tuning = &info.world.menu_tuning;
+    const viewport_active = ui.isActive("menu_viewport") or ui.isActive("menu_bozo_handle");
+    const viewport_hot = ui.isHot("menu_viewport") or ui.isHot("menu_bozo_handle");
+    const mouse_delta: [2]f32 = .{ @floatCast(controller.mouse_delta[0]), @floatCast(controller.mouse_delta[1]) };
+    const wheel: f32 = @floatCast(controller.mouse_wheel);
+    const basis = menuCameraBasis(tuning.*);
+
+    if (ui.isActive("menu_bozo_handle")) tuning.edit_mode = .bozo;
+
+    if (viewport_active) {
+        switch (tuning.edit_mode) {
+            .camera => {
+                tuning.camera_yaw -= mouse_delta[0] * 0.006;
+                tuning.camera_pitch = std.math.clamp(tuning.camera_pitch - mouse_delta[1] * 0.006, -1.2, 0.6);
+            },
+            .planet => {
+                tuning.planet_position += nz.vec.scale(basis.right, mouse_delta[0] * 0.055);
+                tuning.planet_position += nz.vec.scale(basis.up, mouse_delta[1] * 0.055);
+                tuning.camera_target += nz.vec.scale(basis.right, mouse_delta[0] * 0.055);
+                tuning.camera_target += nz.vec.scale(basis.up, mouse_delta[1] * 0.055);
+            },
+            .bozo => {
+                tuning.bozo_screen[0] = std.math.clamp(tuning.bozo_screen[0] + mouse_delta[0] / ui.screen_width, 0.05, 0.95);
+                tuning.bozo_screen[1] = std.math.clamp(tuning.bozo_screen[1] + mouse_delta[1] / ui.screen_heigth, 0.05, 0.95);
+            },
+        }
+    }
+
+    if (viewport_hot and wheel != 0) {
+        switch (tuning.edit_mode) {
+            .camera => tuning.camera_distance = std.math.clamp(tuning.camera_distance * std.math.pow(f32, 0.9, wheel), 18, 95),
+            .planet => {
+                tuning.planet_position += nz.vec.scale(basis.forward, wheel * 1.4);
+                tuning.camera_target += nz.vec.scale(basis.forward, wheel * 1.4);
+            },
+            .bozo => tuning.bozo_surface_offset = std.math.clamp(tuning.bozo_surface_offset + wheel * 0.18, 0.5, 8),
+        }
+    }
+
+    ui.add(null, .{
+        .name = "menu_viewport",
+        .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
+        .color = .new(0, 0, 0, 0),
+    });
+
+    const handle_size: f32 = 18;
+    ui.add(null, .{
+        .name = "menu_bozo_handle",
+        .size = .{ .fixed = .{ .heigth = handle_size, .width = handle_size } },
+        .offset = .{
+            .left = tuning.bozo_screen[0] * ui.screen_width - handle_size * 0.5,
+            .top = tuning.bozo_screen[1] * ui.screen_heigth - handle_size * 0.5,
+        },
+        .color = if (tuning.edit_mode == .bozo or ui.isHot("menu_bozo_handle")) .new(0.88, 0.55, 0.08, 1) else .new(0.94, 0.96, 0.9, 0.86),
+    });
+}
+
+const MenuCameraBasis = struct {
+    forward: nz.Vec3(f32),
+    right: nz.Vec3(f32),
+    up: nz.Vec3(f32),
+};
+
+fn menuCameraBasis(tuning: system.World.MenuTuning) MenuCameraBasis {
+    const pitch = std.math.clamp(tuning.camera_pitch, -1.2, 0.6);
+    const cos_pitch = @cos(pitch);
+    const forward: nz.Vec3(f32) = nz.vec.normalize(@as(nz.Vec3(f32), .{
+        @sin(tuning.camera_yaw) * cos_pitch,
+        @sin(pitch),
+        -@cos(tuning.camera_yaw) * cos_pitch,
+    }));
+    var right = nz.vec.cross(forward, @as(nz.Vec3(f32), .{ 0, 1, 0 }));
+    if (nz.vec.length(right) < 0.001) right = @as(nz.Vec3(f32), .{ 1, 0, 0 });
+    right = nz.vec.normalize(right);
+    const up = nz.vec.normalize(nz.vec.cross(right, forward));
+    return .{ .forward = forward, .right = right, .up = up };
+}
+
+fn menuTuningPanel(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
+    const panel_width = std.math.clamp(width, @as(f32, 280), @as(f32, 420));
+    const tuning = &info.world.menu_tuning;
+    const panel_height: f32 = 128;
+
+    ui.add(null, .{
+        .size = .{ .fixed = .{ .heigth = panel_height, .width = panel_width } },
+        .offset = .{ .left = left, .top = top },
+        .color = .new(0.02, 0.025, 0.025, 0.72),
+    });
+
+    const mode_width = (panel_width - 32) / 3;
+    addModeButton(ui, "menu_mode_camera", "Camera", left + 8, top + 8, mode_width, tuning.edit_mode == .camera);
+    addModeButton(ui, "menu_mode_planet", "Planet", left + 12 + mode_width, top + 8, mode_width, tuning.edit_mode == .planet);
+    addModeButton(ui, "menu_mode_bozo", "Bozo", left + 16 + mode_width * 2, top + 8, mode_width, tuning.edit_mode == .bozo);
+
+    if (ui.isActive("menu_mode_camera")) tuning.edit_mode = .camera;
+    if (ui.isActive("menu_mode_planet")) tuning.edit_mode = .planet;
+    if (ui.isActive("menu_mode_bozo")) tuning.edit_mode = .bozo;
+
+    addReadout(ui, left + 10, top + 44, panel_width - 20, ui.print(
+        "cam yaw {d:.2} pitch {d:.2} dist {d:.1}",
+        .{ tuning.camera_yaw, tuning.camera_pitch, tuning.camera_distance },
+    ));
+    addReadout(ui, left + 10, top + 66, panel_width - 20, ui.print(
+        "planet {d:.1} {d:.1} {d:.1}",
+        .{ tuning.planet_position[0], tuning.planet_position[1], tuning.planet_position[2] },
+    ));
+    addReadout(ui, left + 10, top + 88, panel_width - 20, ui.print(
+        "bozo screen {d:.2} {d:.2} out {d:.2}",
+        .{ tuning.bozo_screen[0], tuning.bozo_screen[1], tuning.bozo_surface_offset },
+    ));
+}
+
+fn addModeButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, active: bool) void {
+    const hot = ui.isHot(name);
+    ui.add(null, .{
+        .name = name,
+        .size = .{ .fixed = .{ .heigth = 26, .width = width } },
+        .offset = .{ .left = left, .top = top },
+        .color = if (active or hot) .new(0.88, 0.55, 0.08, 1) else .new(0.08, 0.085, 0.08, 1),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = text,
+            .size = 16,
+            .color = if (active or hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+        },
+    });
+}
+
+fn addReadout(ui: *Ui, left: f32, top: f32, width: f32, text: []const u8) void {
+    ui.add(null, .{
+        .size = .{ .fixed = .{ .heigth = 18, .width = width } },
+        .offset = .{ .left = left, .top = top },
+        .text = .{ .data = text, .size = 13, .color = .new(0.78, 0.82, 0.76, 1) },
+    });
+}
+
+fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f32, width: f32) !void {
+    const row_height: f32 = 42;
+    const row_gap: f32 = 8;
+    const panel_width = @max(@as(f32, 260), width);
+
+    ui.add(null, .{
+        .name = "menu_refresh",
+        .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+        .offset = .{ .left = left, .top = top },
+        .color = if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{ .data = "Refresh Servers", .size = 26, .color = .new(0.94, 0.96, 0.9, 1) },
+    });
+    if (ui.isActive("menu_refresh") and network_manager.server_list.refresh == false) {
+        network_manager.server_list.refresh = true;
+    }
+
+    if (network_manager.server_list.count == 0) {
+        ui.add(null, .{
+            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+            .offset = .{ .left = left, .top = top + row_height + row_gap },
+            .color = .new(0.02, 0.025, 0.025, 0.62),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .text = .{
+                .data = if (network_manager.server_list.refresh) "Searching for servers" else "No servers found",
+                .size = 24,
+                .color = .new(0.68, 0.72, 0.66, 1),
+            },
+        });
+        return;
+    }
+
+    const max_rows = @min(network_manager.server_list.count, network_manager.server_list.servers.len);
+    for (0..max_rows) |i| {
+        const server = &network_manager.server_list.servers[i];
+        const label = ui.print("{d}", .{server.steam_id});
+        const row_top = top + (row_height + row_gap) * @as(f32, @floatFromInt(i + 1));
+        ui.add(null, .{
+            .name = label,
+            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+            .offset = .{ .left = left, .top = row_top },
+            .color = if (ui.isHot(label)) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .text = .{ .data = label, .size = 24, .color = .new(0.94, 0.96, 0.9, 1) },
+        });
+        if (ui.isActive(label)) {
+            try network_manager.steam_client.connectToServer(server.steam_id);
+            std.log.debug("connect to {d}", .{server.steam_id});
+        }
+    }
+}
+
+fn settingsPanel(ui: *Ui, left: f32, top: f32, width: f32) void {
+    const row_height: f32 = 42;
+    const row_gap: f32 = 8;
+    const panel_width = @max(@as(f32, 260), width);
+    const rows = [_][]const u8{
+        "Mouse Sensitivity",
+        "Fullscreen",
+        "Audio",
+    };
+
+    for (rows, 0..) |row, i| {
+        ui.add(null, .{
+            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+            .offset = .{ .left = left, .top = top + (row_height + row_gap) * @as(f32, @floatFromInt(i)) },
+            .color = .new(0.02, 0.025, 0.025, 0.82),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .text = .{ .data = row, .size = 24, .color = .new(0.94, 0.96, 0.9, 1) },
+        });
+    }
+}
+
+fn serverList(network_manager: *NetworkManager, ui: *Ui) !void {
     ui.add(null, .{
         .name = "root",
         .size = .{ .fixed = .{

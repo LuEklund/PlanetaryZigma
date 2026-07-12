@@ -14,6 +14,7 @@ const Node = @import("Vulkan/Node.zig");
 const Material = @import("Vulkan/Material.zig");
 const gltf = @import("Vulkan/gltf.zig");
 const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
+const AnimationClip = @import("Vulkan/AnimationClip.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
@@ -31,6 +32,7 @@ const check = @import("Vulkan/utils.zig").check;
 pub const Info = system.Info;
 pub const c = @import("vulkan");
 const max_frames_inflight: usize = 3;
+const menu_planet_radius: f32 = 18;
 
 pub const Model = @import("Vulkan/Model.zig");
 
@@ -45,6 +47,7 @@ vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
 skeletons: std.AutoHashMap(u32, SkeletonInstance),
+menu_player: SkeletonInstance,
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
@@ -102,6 +105,10 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
     try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
     try self.resources.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
+    const menu_planet = try shared.Planet(.renderable).init(gpa, 18);
+    defer menu_planet.deinit(gpa);
+    try self.resources.createStaticMesh(gpa, "menu_planet", menu_planet.vertices, menu_planet.indices, .menu_planet);
+    self.menu_player = try .init(gpa, self.vma, self.device, self.resources.models.getPtr(.player));
 
     self.ui = try .init(
         gpa,
@@ -118,6 +125,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
 
+    self.menu_player.deinit(gpa, self.vma);
     self.resources.deinit(gpa, self.vma, self.device);
 
     var it = self.skeletons.valueIterator();
@@ -366,13 +374,17 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         .pStencilAttachment = null,
     };
 
-    const camera = info.world.camera;
     const width: f32 = @floatFromInt(self.swapchain.draw_image.extent.width);
     const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
     const aspect: f32 = width / height;
 
-    const view = getViewMatrix(&camera.transform);
-    var proj = perspective(camera.fov_rad, aspect, 0.01, 1000);
+    const gameplay_camera = info.world.camera;
+    const menu_tuning = info.world.menu_tuning;
+    const menu_camera_transform = menuCameraTransform(menu_tuning);
+    const camera_transform = if (info.world.show_menu_scene) menu_camera_transform else gameplay_camera.transform;
+    const view = getViewMatrix(&camera_transform);
+    const fov_rad: f32 = if (info.world.show_menu_scene) menu_tuning.fov_rad else gameplay_camera.fov_rad;
+    var proj = perspective(fov_rad, aspect, 0.01, 1000);
     const proj_view = proj.mul(view);
 
     const light_time = info.elapsed_time * 0.01;
@@ -381,7 +393,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         .inverse_view_proj = proj_view.inverse().d,
         .global_light_direction = .{ @cos(light_time), @sin(light_time), 0 },
         .time = elapsed_time,
-        .camera_position = camera.transform.position,
+        .camera_position = camera_transform.position,
         .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
             1, 0.5, 0.5, 1,
         },
@@ -409,6 +421,9 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         }
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
+    }
+    if (info.world.show_menu_scene) {
+        try drawMenuScene(self, cmd, current_frame, elapsed_time, camera_transform, aspect, menu_tuning);
     }
 
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
@@ -504,6 +519,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
 
+    ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_FALSE);
     color_blend_enables = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     const blend_eq: c.VkColorBlendEquationEXT = .{
@@ -579,6 +595,214 @@ fn drawSkeletal(
                 0,
         };
         try emitNode(self, cmd, current_frame, mesh, &push);
+    }
+}
+
+fn drawMenuScene(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *const FrameData, elapsed_time: f32, camera_transform: nz.Transform3D(f32), aspect: f32, tuning: World.MenuTuning) !void {
+    const planet_position = tuning.planet_position;
+    const camera_right = camera_transform.rotation.rotateVec(.{ 1, 0, 0 });
+    const roll_axis = nz.vec.normalize(camera_right);
+    const planet_transform: nz.Transform3D(f32) = .{
+        .position = planet_position,
+        .rotation = nz.Quat(f32).angleAxis(elapsed_time * 0.22, roll_axis),
+        .scale = @splat(tuning.planet_scale),
+    };
+
+    const screen_ray = menuRayFromScreen(camera_transform, tuning.fov_rad, aspect, tuning.bozo_screen);
+    const bozo_ray = menuBozoRayToPlanetCenter(screen_ray, planet_transform);
+    const surface = raycastMenuPlanet(bozo_ray.origin, bozo_ray.direction, planet_transform) orelse fallbackMenuPlanetHit(bozo_ray.origin, planet_transform);
+    const planet_up = menuPlanetUp(surface.position, planet_transform);
+    const player_position = surface.position + nz.vec.scale(planet_up, tuning.bozo_surface_offset);
+    const to_camera = camera_transform.position - player_position;
+    const camera_on_tangent = to_camera - nz.vec.scale(planet_up, nz.vec.dot(to_camera, planet_up));
+    const surface_forward_raw = nz.vec.cross(roll_axis, planet_up);
+    const surface_forward = if (nz.vec.length(surface_forward_raw) > 0.001)
+        nz.vec.normalize(surface_forward_raw)
+    else
+        nz.vec.normalize(camera_on_tangent);
+    const player_rotation = nz.Quat(f32).lookAt(surface_forward, planet_up);
+
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
+    const planet_model = self.resources.models.getPtr(.menu_planet);
+    try drawStatic(self, cmd, planet_model, current_frame, planet_transform.toMat4x4().mul(planet_model.offset.toMat4x4()));
+
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
+    updateMenuPlayer(self, elapsed_time);
+    for (self.menu_player.joint_matrices) |*matrices| {
+        matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
+    }
+    const player_transform: nz.Transform3D(f32) = .{
+        .position = player_position,
+        .rotation = player_rotation,
+        .scale = @splat(tuning.player_scale),
+    };
+    const player_model = self.resources.models.getPtr(.player);
+    try drawSkeletal(self, cmd, &self.menu_player, current_frame, player_transform.toMat4x4().mul(player_model.offset.toMat4x4()));
+}
+
+const MenuRay = struct {
+    origin: nz.Vec3(f32),
+    direction: nz.Vec3(f32),
+};
+
+const MenuPlanetHit = struct {
+    position: nz.Vec3(f32),
+    normal: nz.Vec3(f32),
+};
+
+fn menuCameraTransform(tuning: World.MenuTuning) nz.Transform3D(f32) {
+    const pitch = std.math.clamp(tuning.camera_pitch, -1.2, 0.6);
+    const cos_pitch = @cos(pitch);
+    const forward: nz.Vec3(f32) = nz.vec.normalize(@as(nz.Vec3(f32), .{
+        @sin(tuning.camera_yaw) * cos_pitch,
+        @sin(pitch),
+        -@cos(tuning.camera_yaw) * cos_pitch,
+    }));
+    return .{
+        .position = tuning.camera_target - nz.vec.scale(forward, tuning.camera_distance),
+        .rotation = nz.Quat(f32).lookAt(forward, @as(nz.Vec3(f32), .{ 0, 1, 0 })),
+    };
+}
+
+fn menuRayFromScreen(camera_transform: nz.Transform3D(f32), fov_rad: f32, aspect: f32, screen_position: [2]f32) MenuRay {
+    const ndc_x = screen_position[0] * 2 - 1;
+    const ndc_y = 1 - screen_position[1] * 2;
+    const tan_half_fov = @tan(fov_rad * 0.5);
+    const local_direction: nz.Vec3(f32) = nz.vec.normalize(@as(nz.Vec3(f32), .{
+        ndc_x * aspect * tan_half_fov,
+        ndc_y * tan_half_fov,
+        -1,
+    }));
+    return .{
+        .origin = camera_transform.position,
+        .direction = nz.vec.normalize(camera_transform.rotation.rotateVec(local_direction)),
+    };
+}
+
+fn menuBozoRayToPlanetCenter(screen_ray: MenuRay, planet_transform: nz.Transform3D(f32)) MenuRay {
+    const center = planet_transform.position;
+    const center_to_ray_origin = center - screen_ray.origin;
+    const closest_distance = @max(@as(f32, 0), nz.vec.dot(center_to_ray_origin, screen_ray.direction));
+    const closest_point = screen_ray.origin + nz.vec.scale(screen_ray.direction, closest_distance);
+    var radial = closest_point - center;
+    if (nz.vec.length(radial) < 0.001) {
+        radial = screen_ray.origin - center;
+    }
+    radial = nz.vec.normalize(radial);
+
+    const start_radius = menu_planet_radius * planet_transform.scale[0] + 36;
+    const origin = center + nz.vec.scale(radial, start_radius);
+    return .{
+        .origin = origin,
+        .direction = nz.vec.normalize(center - origin),
+    };
+}
+
+fn raycastMenuPlanet(origin: nz.Vec3(f32), direction: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) ?MenuPlanetHit {
+    var distance: f32 = 0.1;
+    for (0..96) |_| {
+        if (distance > 180) return null;
+        const position = origin + nz.vec.scale(direction, distance);
+        const surface_distance = menuPlanetSdf(position, planet_transform);
+        if (@abs(surface_distance) < 0.035) {
+            return .{
+                .position = position,
+                .normal = menuPlanetUp(position, planet_transform),
+            };
+        }
+        distance += @max(surface_distance, 0.05);
+    }
+    return null;
+}
+
+fn fallbackMenuPlanetHit(camera_position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) MenuPlanetHit {
+    const normal = nz.vec.normalize(camera_position - planet_transform.position);
+    const radius = menu_planet_radius * planet_transform.scale[0];
+    const position = planet_transform.position + nz.vec.scale(normal, radius);
+    return .{ .position = position, .normal = normal };
+}
+
+fn menuPlanetUp(position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) nz.Vec3(f32) {
+    return nz.vec.normalize(position - planet_transform.position);
+}
+
+fn menuPlanetSdf(position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) f32 {
+    const scale = planet_transform.scale[0];
+    const inv_rotation = planet_transform.rotation.conjugate();
+    const local_position = nz.vec.scale(inv_rotation.rotateVec(position - planet_transform.position), 1 / scale);
+    return shared.planetSdf(local_position, menu_planet_radius) * scale;
+}
+
+fn menuPlanetNormal(position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) nz.Vec3(f32) {
+    const eps: f32 = 0.15;
+    const x: nz.Vec3(f32) = .{ eps, 0, 0 };
+    const y: nz.Vec3(f32) = .{ 0, eps, 0 };
+    const z: nz.Vec3(f32) = .{ 0, 0, eps };
+    return nz.vec.normalize(@as(nz.Vec3(f32), .{
+        menuPlanetSdf(position + x, planet_transform) - menuPlanetSdf(position - x, planet_transform),
+        menuPlanetSdf(position + y, planet_transform) - menuPlanetSdf(position - y, planet_transform),
+        menuPlanetSdf(position + z, planet_transform) - menuPlanetSdf(position - z, planet_transform),
+    }));
+}
+
+fn updateMenuPlayer(self: *@This(), elapsed_time: f32) void {
+    const model = self.menu_player.model;
+    if (model.clips.len > 0) {
+        const clip_index = model.state_clips.get(.walk);
+        const animation = model.clips[clip_index];
+        const duration = animation.end - animation.start;
+        const animation_time = if (duration > 0) animation.start + @mod(elapsed_time, duration) else animation.start;
+        sampleClip(self.menu_player.nodes, animation, animation_time);
+        if (model.nodes.items.len > 0 and self.menu_player.nodes.len > 0) {
+            self.menu_player.nodes[0].translation = model.nodes.items[0].translation;
+        }
+    }
+    Model.computeMatrices(self.menu_player.nodes);
+    for (model.skins, self.menu_player.joint_matrices) |skin, joint_matrices| {
+        for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices.cpu) |node_index, inverse_bind_matrix, *joint_matrix| {
+            joint_matrix.* = self.menu_player.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
+        }
+    }
+}
+
+fn sampleClip(nodes: []Node, animation: AnimationClip, time: f32) void {
+    for (animation.channels) |*channel| {
+        const sampler = animation.samplers[channel.sampler_index];
+        if (sampler.inputs.len < 2) continue;
+        for (0..sampler.inputs.len - 1) |i| {
+            const sampler_in = sampler.inputs[i];
+            const sampler_in_next = sampler.inputs[i + 1];
+            if (time >= sampler_in and time <= sampler_in_next) {
+                const interpolate_value: f32 = (time - sampler_in) / (sampler_in_next - sampler_in);
+                const node = &nodes[channel.node];
+                const sampler_out = sampler.outputs[i];
+                const sampler_out_next = sampler.outputs[i + 1];
+                switch (channel.path) {
+                    .translation => {
+                        const translation = std.math.lerp(
+                            sampler_out,
+                            sampler_out_next,
+                            @as(nz.Vec4(f32), @splat(interpolate_value)),
+                        );
+                        node.translation = .{ translation[0], translation[1], translation[2] };
+                    },
+                    .rotation => node.rotation = nz.Quat(f32).slerp(
+                        .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
+                        .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
+                        interpolate_value,
+                    ),
+                    .scale => {
+                        const scale = std.math.lerp(
+                            sampler_out,
+                            sampler_out_next,
+                            @as(nz.Vec4(f32), @splat(interpolate_value)),
+                        );
+                        node.scale = .{ scale[0], scale[1], scale[2] };
+                    },
+                }
+            }
+        }
     }
 }
 

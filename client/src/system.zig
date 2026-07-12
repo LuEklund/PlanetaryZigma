@@ -34,6 +34,30 @@ pub const Entity = struct {
 };
 
 pub const World = struct {
+    pub const MenuScreen = enum {
+        main,
+        multiplayer,
+        settings,
+    };
+    pub const MenuEditMode = enum {
+        camera,
+        planet,
+        bozo,
+    };
+    pub const MenuTuning = struct {
+        edit_mode: MenuEditMode = .camera,
+        camera_target: nz.Vec3(f32) = .{ 6, -5, -45 },
+        camera_yaw: f32 = -0.35,
+        camera_pitch: f32 = -0.22,
+        camera_distance: f32 = 50,
+        fov_rad: f32 = 1.25,
+        planet_position: nz.Vec3(f32) = .{ 6, -16, -52 },
+        planet_scale: f32 = 0.75,
+        bozo_screen: [2]f32 = .{ 0.53, 0.49 },
+        bozo_surface_offset: f32 = 3.5,
+        player_scale: f32 = 4.4,
+    };
+
     pub const max_entities: usize = 1024;
     mutex: std.Io.Mutex = .init,
     gpa: std.mem.Allocator,
@@ -45,6 +69,10 @@ pub const World = struct {
     teleporter_id: u32 = 0,
     player_id: u32 = 0,
     planet_radius: f32 = 0,
+    menu_screen: MenuScreen = .main,
+    menu_tuning: MenuTuning = .{},
+    show_menu_scene: bool = true,
+    request_quit: bool = false,
 
     pub fn init(gpa: std.mem.Allocator) !World {
         return .{
@@ -82,6 +110,7 @@ pub const Context = struct {
     network_manager: NetworkManager,
     spawner: Spawner,
     animation: Animation,
+    request_exit: bool = false,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
@@ -104,6 +133,7 @@ pub const Context = struct {
         try self.spawner.init(data.gpa, data.world);
         try self.network_manager.init(data.gpa, data.io, data.steam_client, &self.spawner);
         self.animation = .init(data.gpa);
+        self.request_exit = false;
     }
 
     pub fn deinit(self: *Context) void {
@@ -118,6 +148,7 @@ pub const Context = struct {
         // tracy.frameMark();
         info.world.controller.update();
         try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
+        self.request_exit = self.request_exit or info.world.request_quit;
         try self.renderer.update(info);
         try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();

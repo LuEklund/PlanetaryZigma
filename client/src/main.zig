@@ -107,8 +107,10 @@ pub fn main(init: std.process.Init) !void {
                 },
                 else => {},
             }
+            if (system_context.request_exit) break :main_loop;
         }
         system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null);
+        if (system_context.request_exit) break :main_loop;
 
         if (try watcher.reload(io)) {
             std.log.err("system table updated", .{});
