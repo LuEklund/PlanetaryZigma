@@ -16,17 +16,18 @@ pub const Texture = enum {
     oxygen_tank,
     energy_drink,
 
-    pub fn toInt(self: @This()) u32 {
+    pub fn toInt(self: Texture) u32 {
         return @intFromEnum(self);
     }
 
-    pub fn path(self: @This()) ?[:0]const u8 {
+    pub fn path(self: Texture) ?[:0]const u8 {
+        const root = "assets/textures/";
         return switch (self) {
             .blank, .font_atlas => null,
-            .damage_item => "assets/textures/damage.png",
-            .oxygen_tank => "assets/textures/oxygen_tank.png",
-            .crosshair => "assets/textures/crosshair.png",
-            .energy_drink => "assets/textures/energy_drink.png",
+            .damage_item => root ++ "damage.png",
+            .oxygen_tank => root ++ "oxygen_tank.png",
+            .crosshair => root ++ "crosshair.png",
+            .energy_drink => root ++ "energy_drink.png",
         };
     }
 };
@@ -44,10 +45,40 @@ pub const Quad = struct {
     vertices: [4]Vertex,
 };
 
+writer_buffer_out: [8192]u8 = undefined,
+writer_len: usize = 0,
+index_buffer: Buffer,
+text_buffer: [8192]u8 = undefined,
+text_len: usize = 0,
+quads: std.ArrayList(Quad) = .empty,
+nodes: std.ArrayList(Node) = .empty,
+names: std.StringArrayHashMapUnmanaged(u32) = .empty,
+mouse_state: MouseState = .{},
+screen_width: f32,
+screen_heigth: f32,
+default_font: *Font,
+hot_item: ?[]const u8 = null,
+active_item: ?[]const u8 = null,
+fire_item: ?[]const u8 = null,
+left_click_prev: bool = false,
+pressed: bool = false,
+released: bool = false,
+
+const Node = struct {
+    id: u32,
+    layout: Layout,
+    name: ?[]const u8,
+    parent_id: ?u32,
+    rect: Rect,
+    offset: f32,
+    children_size: f32,
+};
+
 const Position2D = struct {
     left: f32,
     top: f32,
 };
+
 const Size2D = struct {
     width: f32,
     heigth: f32,
@@ -90,35 +121,6 @@ pub const Layout = struct {
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
 };
-
-const Node = struct {
-    id: u32,
-    layout: Layout,
-    name: ?[]const u8,
-    parent_id: ?u32,
-    rect: Rect,
-    offset: f32,
-    children_size: f32,
-};
-
-writter_buffer_out: [8192]u8 = undefined,
-writer_len: usize = 0,
-index_buffer: Buffer,
-text_buffer: [8192]u8 = undefined,
-text_len: usize = 0,
-quads: std.ArrayList(Quad) = .empty,
-nodes: std.ArrayList(Node) = .empty,
-names: std.StringArrayHashMapUnmanaged(u32) = .empty,
-mouse_state: MouseState = .{},
-screen_width: f32,
-screen_heigth: f32,
-default_font: *Font,
-hot_item: ?[]const u8 = null,
-active_item: ?[]const u8 = null,
-fire_item: ?[]const u8 = null,
-left_click_prev: bool = false,
-pressed: bool = false,
-released: bool = false,
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -176,8 +178,13 @@ pub fn start(self: *@This(), mouse_state: MouseState) void {
     self.mouse_state = mouse_state;
 }
 
+pub fn end(self: *@This()) void {
+    self.resolveLayout();
+    self.pushQuads();
+}
+
 pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) []const u8 {
-    const text = std.fmt.bufPrint(self.writter_buffer_out[self.writer_len..], fmt, args) catch unreachable;
+    const text = std.fmt.bufPrint(self.writer_buffer_out[self.writer_len..], fmt, args) catch unreachable;
     self.writer_len += text.len;
     return text;
 }
@@ -208,11 +215,6 @@ fn addNode(self: *@This(), parent_id: ?u32, layout: Layout) void {
 
     if (layout.name) |add_name| self.names.putAssumeCapacity(add_name, handle);
     for (layout.children) |child| self.addNode(handle, child);
-}
-
-pub fn end(self: *@This()) void {
-    self.resolveLayout();
-    self.pushQuads();
 }
 
 const TextMetrics = struct { width: f32, top: f32, bottom: f32 };
@@ -354,7 +356,7 @@ fn pushQuads(self: *@This()) void {
     }
 }
 
-// pub fn clicked(self: *@This(), id: u32) ?*Layout {
+// pub fn clicked(self: *Ui, id: u32) ?*Layout {
 //     if (id >= self.nodes.items.len) return null;
 //     const node = self.nodes.items[id];
 // }
@@ -385,7 +387,7 @@ fn hotUpdate(self: *@This()) void {
     }
 }
 
-// fn activeUpdate(self: *@This()) void {
+// fn activeUpdate(self: *Ui) void {
 //     if (self.hot_item)
 //     if (self.left_click_prev) return;
 // }

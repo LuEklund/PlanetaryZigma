@@ -11,8 +11,10 @@ const nz = shared.numz;
 physics: *Physics,
 spawner: *Spawner,
 
-pub fn init(self: *@This(), physics: *Physics, spawner: *Spawner) !void {
-    self.* = .{ .physics = physics, .spawner = spawner };
+pub const aim_range: f32 = 300;
+
+pub fn init(physics: *Physics, spawner: *Spawner) @This() {
+    return .{ .physics = physics, .spawner = spawner };
 }
 
 pub fn deinit(self: *@This()) void {
@@ -147,8 +149,6 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         }
     }
 }
-
-const aim_range: f32 = 300;
 
 fn aimPoint(self: *@This(), player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);

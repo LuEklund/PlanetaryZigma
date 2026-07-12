@@ -1,5 +1,4 @@
 const shared = @import("shared");
-const tracy = @import("ztracy");
 const yes = @import("yes");
 
 mouse_pos: [2]f64 = .{ 0, 0 },
@@ -13,9 +12,6 @@ free_camera: bool = false,
 f2_held: bool = false,
 
 pub fn update(self: *@This()) void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-
     self.mouse_delta[0] = self.mouse_pos[0] - self.mouse_prev_pos[0];
     self.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
     self.mouse_prev_pos[0] = self.mouse_pos[0];
@@ -48,9 +44,7 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
             }
         },
         .mouse_scroll => switch (event.mouse_scroll) {
-            .vertical => |scroll| {
-                self.mouse_wheel = scroll;
-            },
+            .vertical => |scroll| self.mouse_wheel = scroll,
             .horizontal => {},
         },
         .focus => |focused| {
@@ -64,15 +58,10 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
             self.mouse_pos[1] = motion.y;
         },
         .mouse_button => |button| {
-            if (button.state == .pressed and button.button == .left)
-                self.input_map.keys.mouse_button_left = true
-            else if (button.state == .released and button.button == .left) {
-                self.input_map.keys.mouse_button_left = false;
-            }
-            if (button.state == .pressed and button.button == .right)
-                self.input_map.keys.mouse_button_right = true
-            else if (button.state == .released and button.button == .right) {
-                self.input_map.keys.mouse_button_right = false;
+            switch (button.button) {
+                .left => self.input_map.keys.mouse_button_left = button.state == .pressed,
+                .right => self.input_map.keys.mouse_button_right = button.state == .pressed,
+                else => {},
             }
         },
 

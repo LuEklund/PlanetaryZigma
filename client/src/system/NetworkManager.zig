@@ -8,11 +8,6 @@ const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
-const ServerList = struct {
-    servers: [8]Client.ServerInfo = undefined,
-    count: usize = 0,
-    refresh: bool = true,
-};
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -27,6 +22,12 @@ server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
 server_list: ServerList = .{},
+
+const ServerList = struct {
+    servers: [8]Client.ServerInfo = undefined,
+    count: usize = 0,
+    refresh: bool = true,
+};
 
 pub fn init(
     self: *@This(),

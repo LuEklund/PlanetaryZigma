@@ -12,8 +12,8 @@ physics: *Physics,
 world: *system.World,
 to_despawn: std.ArrayList(u32) = .empty,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World, physics: *Physics) !void {
-    self.* = .{
+pub fn init(gpa: std.mem.Allocator, world: *system.World, physics: *Physics) @This() {
+    return .{
         .gpa = gpa,
         .physics = physics,
         .world = world,

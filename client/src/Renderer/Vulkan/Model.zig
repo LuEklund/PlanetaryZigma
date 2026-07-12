@@ -47,16 +47,20 @@ pub const Kind = enum {
 
     pub fn spec(kind: Kind) Spec {
         const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-        const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera, .scale = @splat(0.1) };
+        const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
             .unknown, .planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
             .player => .{
-                .path = "objects/BenRun.glb",
+                .path = "objects/BenBozo.glb",
                 .offset = player_offset,
                 .skinned = true,
-                .clip_names = .{ .idle = "NlaTrack", .walk = "Walk", .attack = "NlaTrack.001" },
-                .look_node_names = .{ .spine = null, .neck = "mixamorig:Neck", .head = null },
+                .clip_names = .{
+                    .idle = "Idle",
+                    .walk = "Run",
+                    .attack = "shoot",
+                },
+                .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
@@ -69,6 +73,26 @@ pub const Kind = enum {
             .attack_speed => .{ .path = "objects/attack_speed.glb", .skinned = false, .clip_names = null },
         };
     }
+};
+
+surfaces: std.ArrayList(Surface),
+nodes: std.ArrayList(Node),
+clips: []AnimationClip,
+skins: []Skin,
+look_nodes: []usize,
+overlay_mask: ?[]bool,
+state_clips: std.EnumArray(shared.Entity.State, usize),
+offset: nz.Transform3D(f32),
+
+pub const empty: @This() = .{
+    .surfaces = .empty,
+    .nodes = .empty,
+    .clips = &.{},
+    .skins = &.{},
+    .look_nodes = &.{},
+    .overlay_mask = null,
+    .state_clips = .initFill(0),
+    .offset = .{},
 };
 
 const ClipNames = struct {
@@ -97,26 +121,6 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
-surfaces: std.ArrayList(Surface),
-nodes: std.ArrayList(Node),
-clips: []AnimationClip,
-skins: []Skin,
-look_nodes: []usize,
-overlay_mask: ?[]bool,
-state_clips: std.EnumArray(shared.Entity.State, usize),
-offset: nz.Transform3D(f32),
-
-pub const empty: @This() = .{
-    .surfaces = .empty,
-    .nodes = .empty,
-    .clips = &.{},
-    .skins = &.{},
-    .look_nodes = &.{},
-    .overlay_mask = null,
-    .state_clips = .initFill(0),
-    .offset = .{},
-};
-
 pub fn isEmpty(self: *const @This()) bool {
     return self.surfaces.items.len == 0 and self.nodes.items.len == 0;
 }
@@ -137,7 +141,7 @@ pub fn loadGlb(
 ) !void {
     self.clear(gpa);
 
-    var glb = try gltf.readGlb(gpa, io, file);
+    var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
 
     if (spec.skinned) {

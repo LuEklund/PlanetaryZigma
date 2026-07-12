@@ -1,6 +1,4 @@
-const std = @import("std");
 pub const c = @import("vulkan");
-// const vulkanC = @import("vulkan");
 const Instance = @import("Instance.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
@@ -13,7 +11,7 @@ pub const AllocationInfo = c.VmaAllocationInfo;
 handle: c.VmaAllocator = undefined,
 
 pub fn init(instance: Instance, physical_device: PhysicalDevice, device: Device) !@This() {
-    var vma_info: c.VmaAllocatorCreateInfo = .{
+    var create_info: c.VmaAllocatorCreateInfo = .{
         .physicalDevice = @ptrCast(physical_device.handle),
         .device = @ptrCast(device.handle),
         .instance = @ptrCast(instance.handle),
@@ -21,12 +19,10 @@ pub fn init(instance: Instance, physical_device: PhysicalDevice, device: Device)
         .pVulkanFunctions = null,
     };
 
-    var vulkan_mem_alloc: c.VmaAllocator = undefined;
-    try check(c.vmaCreateAllocator(&vma_info, &vulkan_mem_alloc));
+    var allocator: c.VmaAllocator = undefined;
+    try check(c.vmaCreateAllocator(&create_info, &allocator));
 
-    return .{
-        .handle = vulkan_mem_alloc,
-    };
+    return .{ .handle = allocator };
 }
 
 pub fn deinit(self: @This()) void {

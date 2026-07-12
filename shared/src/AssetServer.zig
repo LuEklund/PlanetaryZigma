@@ -15,7 +15,7 @@ pub const Metadata = struct {
 
     pub const Callback = *const fn (*anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) anyerror!void;
 
-    pub fn init(gpa: std.mem.Allocator, io: std.Io, user_data: *anyopaque, file_path: []const u8, callback: Callback) !@This() {
+    pub fn init(gpa: std.mem.Allocator, io: std.Io, user_data: *anyopaque, file_path: []const u8, callback: Callback) !Metadata {
         return .{
             .user_data = user_data,
             .mtime = .now(io, .real),
@@ -23,7 +23,7 @@ pub const Metadata = struct {
             .callback = callback,
         };
     }
-    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) !void {
+    pub fn deinit(self: *Metadata, gpa: std.mem.Allocator) !void {
         gpa.free(self.file_path);
     }
 };

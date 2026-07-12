@@ -8,7 +8,7 @@ pub const Physical = struct {
     max_anisotropy: f32,
     graphics_queue_family_index: u32,
 
-    pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !@This() {
+    pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !Physical {
         var device_count: u32 = 0;
         try check(c.vkEnumeratePhysicalDevices(instance.handle, &device_count, null));
         if (device_count == 0) return error.NoPhysicalDevices;
@@ -55,7 +55,8 @@ pub const Logical = struct {
 
     pub const CommandPool = struct {
         handle: c.VkCommandPool,
-        pub fn init(device: c.VkDevice, queue_family_index: u32) !@This() {
+
+        pub fn init(device: c.VkDevice, queue_family_index: u32) !CommandPool {
             const command_pool_info: c.VkCommandPoolCreateInfo = .{
                 .sType = c.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                 .pNext = null,
@@ -67,12 +68,13 @@ pub const Logical = struct {
             try check(c.vkCreateCommandPool(device, &command_pool_info, null, &command_pool));
             return .{ .handle = command_pool };
         }
-        pub fn deinit(self: @This(), device: Logical) void {
+
+        pub fn deinit(self: CommandPool, device: Logical) void {
             c.vkDestroyCommandPool(device.handle, self.handle, null);
         }
     };
 
-    pub fn init(physical_device: Physical, extensions: []const [*:0]const u8) !@This() {
+    pub fn init(physical_device: Physical, extensions: []const [*:0]const u8) !Logical {
         var extension_count: u32 = undefined;
         try check(c.vkEnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
         var extension_properties: [516]c.VkExtensionProperties = undefined;
@@ -169,14 +171,14 @@ pub const Logical = struct {
         };
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: Logical) void {
         self.command_pool.deinit(self);
         c.vkDestroyFence(self.handle, self.immidiate_fence, null);
         c.vkDestroyDevice(self.handle, null);
     }
 
     pub fn beginImmediateCommand(
-        device: @This(),
+        device: Logical,
     ) !c.VkCommandBuffer {
         var alloc_info: c.VkCommandBufferAllocateInfo = .{
             .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -201,7 +203,7 @@ pub const Logical = struct {
     }
 
     pub fn endImmediateCommand(
-        device: @This(),
+        device: Logical,
         command_buffer: c.VkCommandBuffer,
     ) !void {
         try check(c.vkEndCommandBuffer(command_buffer));

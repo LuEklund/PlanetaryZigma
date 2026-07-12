@@ -172,11 +172,16 @@ fn endReasonName(reason: i32) []const u8 {
 pub fn handlePackets(self: *@This()) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
+    var last_status_log = last_iteration;
     while (true) {
         const now: std.Io.Timestamp = .now(self.io, .real);
         const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
         if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
         last_iteration = now;
+        if (@import("../SteamNet.zig").log_connection_status and self.server_conn != 0 and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
+            last_status_log = now;
+            @import("../SteamNet.zig").logConnectionStatus(steam.SteamNetworkingSockets_SteamAPI(), self.server_conn);
+        }
         try self.io.checkCancel();
         {
             try self.packet_mutex.lock(self.io);
@@ -243,12 +248,6 @@ fn steamPump(self: *@This()) !void {
 
 pub fn recievePackets(self: *@This()) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
-
-    // var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
-    // const r = sock.GetConnectionRealTimeStatus(self.server_conn, &status, &.{});
-    // if (r == .k_EResultOK) {
-    //     std.log.info("ping={d}ms", .{status.m_nPing});
-    // }
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     while (true) {

@@ -2,7 +2,6 @@ const std = @import("std");
 const steam = @import("steamworks");
 const Packets = @import("../SteamNet.zig").Packets;
 
-pub const max_connections: usize = 32;
 connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
@@ -15,6 +14,8 @@ pipe: steam.HSteamPipe,
 gs: steam.ISteamGameServer,
 socket: steam.ISteamNetworkingSockets,
 packets: Packets,
+
+pub const max_connections: usize = 32;
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     if (!steam.Server.SteamInternal_GameServer_Init(
@@ -78,11 +79,18 @@ pub fn deinit(self: *@This()) void {
 pub fn handlePackets(self: *@This()) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
+    var last_status_log = last_iteration;
     while (true) {
         const now: std.Io.Timestamp = .now(self.io, .real);
         const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
         if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
         last_iteration = now;
+        if (@import("../SteamNet.zig").log_connection_status and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
+            last_status_log = now;
+            for (self.connections) |conn| {
+                if (conn != 0) @import("../SteamNet.zig").logConnectionStatus(self.socket, conn);
+            }
+        }
         try self.io.checkCancel();
         {
             try self.packet_mutex.lock(self.io);

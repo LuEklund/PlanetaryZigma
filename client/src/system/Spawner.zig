@@ -20,6 +20,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void 
         .pending_stats = try .initCapacity(gpa, system.World.max_entities),
     };
 }
+
 pub fn deinit(self: *@This()) void {
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);

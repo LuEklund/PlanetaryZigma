@@ -20,24 +20,24 @@ pub const Glb = struct {
     gltf: zgltf.Gltf,
     bin: []const u8,
 
-    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+    pub fn read(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
+        var read_buffer: [4096]u8 = undefined;
+        var reader = file.reader(io, &read_buffer);
+        const content = try reader.interface.allocRemaining(gpa, .unlimited);
+        errdefer gpa.free(content);
+
+        var loaded = try zgltf.parseGlbSlice(gpa, content);
+        errdefer loaded.deinit();
+        const bin = loaded.bin orelse return error.MissingBin;
+
+        return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
+    }
+
+    pub fn deinit(self: *Glb, gpa: std.mem.Allocator) void {
         self.loaded.deinit();
         gpa.free(self.content);
     }
 };
-
-pub fn readGlb(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
-    var read_buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &read_buffer);
-    const content = try reader.interface.allocRemaining(gpa, .unlimited);
-    errdefer gpa.free(content);
-
-    var loaded = try zgltf.parseGlbSlice(gpa, content);
-    errdefer loaded.deinit();
-    const bin = loaded.bin orelse return error.MissingBin;
-
-    return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
-}
 
 pub fn parseScene(
     comptime VertexType: type,
@@ -284,26 +284,30 @@ pub fn parseScene(
                 );
 
                 if (comptime @hasField(VertexType, "joint_indices")) {
-                    const joint_accessor_idx = primitive.attributes.map.get("JOINTS_0") orelse return error.NoJoints;
-                    const joint_accessor = gltf.accessors.?[joint_accessor_idx];
-                    std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
-                    const joint_buffer_view = gltf.bufferViews.?[joint_accessor.bufferView.?];
-                    const joint_offset = (joint_accessor.byteOffset + joint_buffer_view.byteOffset);
-                    const joints = std.mem.bytesAsSlice(
-                        [4]u8,
-                        bin[joint_offset .. joint_offset + joint_accessor.count * @sizeOf([4]u8)],
-                    );
+                    var joints: ?[]const [4]u8 = null;
+                    if (primitive.attributes.map.get("JOINTS_0")) |joint_accessor_idx| {
+                        const joint_accessor = gltf.accessors.?[joint_accessor_idx];
+                        std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
+                        const joint_buffer_view = gltf.bufferViews.?[joint_accessor.bufferView.?];
+                        const joint_offset = (joint_accessor.byteOffset + joint_buffer_view.byteOffset);
+                        joints = std.mem.bytesAsSlice(
+                            [4]u8,
+                            bin[joint_offset .. joint_offset + joint_accessor.count * @sizeOf([4]u8)],
+                        );
+                    }
 
-                    const weights_accessor_idx = primitive.attributes.map.get("WEIGHTS_0") orelse return error.NoWeights;
-                    const weights_accessor = gltf.accessors.?[weights_accessor_idx];
-                    std.debug.assert(weights_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
-                    std.debug.assert(weights_accessor.type == .VEC4);
-                    const weights_buffer_view = gltf.bufferViews.?[weights_accessor.bufferView.?];
-                    const weights_offset = (weights_accessor.byteOffset + weights_buffer_view.byteOffset);
-                    const weights = std.mem.bytesAsSlice(
-                        [4]f32,
-                        bin[weights_offset .. weights_offset + weights_accessor.count * @sizeOf([4]f32)],
-                    );
+                    var weights: ?[]const [4]f32 = null;
+                    if (primitive.attributes.map.get("WEIGHTS_0")) |weights_accessor_idx| {
+                        const weights_accessor = gltf.accessors.?[weights_accessor_idx];
+                        std.debug.assert(weights_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
+                        std.debug.assert(weights_accessor.type == .VEC4);
+                        const weights_buffer_view = gltf.bufferViews.?[weights_accessor.bufferView.?];
+                        const weights_offset = (weights_accessor.byteOffset + weights_buffer_view.byteOffset);
+                        weights = @alignCast(std.mem.bytesAsSlice(
+                            [4]f32,
+                            bin[weights_offset .. weights_offset + weights_accessor.count * @sizeOf([4]f32)],
+                        ));
+                    }
 
                     var dst = try vertices.addManyAsSlice(gpa, pos_accessor.count);
                     for (0..pos_accessor.count) |i| {
@@ -315,12 +319,12 @@ pub fn parseScene(
                             .uv_y = if (uvs) |values| values[i][1] else 0,
                             .joint_indices = blk: {
                                 var joint_indices: [4]i32 = undefined;
-                                inline for (0..4) |j| joint_indices[j] = joints[i][j];
+                                inline for (0..4) |j| joint_indices[j] = if (joints) |joint| joint[i][j] else undefined;
                                 break :blk joint_indices;
                             },
                             .joint_weights = blk: {
                                 var joint_weights: [4]f32 = undefined;
-                                inline for (0..4) |j| joint_weights[j] = weights[i][j];
+                                inline for (0..4) |j| joint_weights[j] = if (weights) |weight| weight[i][j] else -1;
                                 break :blk joint_weights;
                             },
                         };

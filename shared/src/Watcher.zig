@@ -77,7 +77,7 @@ pub fn load(self: *@This(), io: std.Io) !void {
     if (dynlib.lookup(*const fn () void, "systemContextInit") == null) {
         dynlib.close();
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
-        return error.TestSymbolLookup;
+        return error.SystemContextInitSymbolNotFound;
     }
 
     std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};

@@ -6,7 +6,7 @@ const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 
-pub const box = @import("Meshes/box.zig");
+pub const box = @import("Mesh/box.zig");
 
 surfaces: std.ArrayList(GeoSurface),
 index_buffer: Buffer,

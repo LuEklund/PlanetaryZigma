@@ -50,19 +50,26 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
                     },
                 },
             },
-            .{ .name = "buttons", .axis_align = .horizontal, .child_anchor = .{ .x = .center, .y = .center }, .size = .{
-                .percent = .{
-                    .heigth = 0.2,
-                    .width = 1.0,
-                },
-            }, .color = .new(0.1, 0.1, 0.1, 1), .children = &.{
-                .{ .size = .{
-                    .fixed = .{
-                        .heigth = 40,
-                        .width = 100,
+            .{
+                .name = "buttons",
+                .axis_align = .horizontal,
+                .child_anchor = .{ .x = .center, .y = .center },
+                .size = .{
+                    .percent = .{
+                        .heigth = 0.2,
+                        .width = 1.0,
                     },
-                }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = .{ .data = "Refresh" } },
-            } },
+                },
+                .color = .new(0.1, 0.1, 0.1, 1),
+                .children = &.{
+                    .{ .size = .{
+                        .fixed = .{
+                            .heigth = 40,
+                            .width = 100,
+                        },
+                    }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = .{ .data = "Refresh" } },
+                },
+            },
         },
     });
     for (0..network_manager.server_list.count) |i| {

@@ -5,8 +5,8 @@ const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
-const descriptor = @import("desrciptor.zig");
-const pipeline = @import("pipeline.zig");
+const DescriptorLayout = @import("DesrciptorLayout.zig");
+const PipelineLayout = @import("PipelineLayout.zig");
 const Mesh = @import("Mesh.zig");
 const Model = @import("Model.zig");
 const Material = @import("Material.zig");
@@ -23,7 +23,6 @@ const check = @import("utils.zig").check;
 pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
 
-pub const DescriptorLayoutKind = enum { scene, material, ui };
 pub const PipelineLayoutKind = enum { world, ui };
 
 set_size: c.VkDeviceSize,
@@ -35,8 +34,8 @@ materials: std.ArrayList(Material),
 skybox_material_index: usize,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
-descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout),
-pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout),
+descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
+pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 ui_texture_buffer: Buffer,
 font: Font,
 ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
@@ -59,7 +58,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     };
     c.vkGetPhysicalDeviceProperties2(physical_device.handle, &prop2);
 
-    const descriptor_layouts: std.EnumArray(DescriptorLayoutKind, descriptor.Layout) = .init(.{
+    const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
                 .binding = 0,
@@ -88,7 +87,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
     });
 
-    const pipeline_layouts: std.EnumArray(PipelineLayoutKind, pipeline.Layout) = .init(.{
+    const pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout) = .init(.{
         .world = try .init(device, Shader.AnimationPushConstant, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,

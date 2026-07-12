@@ -7,7 +7,6 @@ const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
-const max_despawn_count: u32 = 1000;
 
 gpa: std.mem.Allocator,
 world: *system.World,
@@ -22,14 +21,10 @@ should_spawm: bool = false,
 
 pending_despawn: std.ArrayList(u32) = .empty,
 
-pub fn init(
-    self: *@This(),
-    gpa: std.mem.Allocator,
-    world: *system.World,
-    physics: *Physics,
-    network_manager: *NetworkManager,
-) !void {
-    self.* = .{
+pub const max_despawn_count: u32 = 1000;
+
+pub fn init(gpa: std.mem.Allocator, world: *system.World, physics: *Physics, network_manager: *NetworkManager) !@This() {
+    return .{
         .gpa = gpa,
         .world = world,
         .pending_despawn = try .initCapacity(gpa, max_despawn_count),
@@ -136,11 +131,11 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) self.depspawn(entry.id);
     }
-    const rand = world.prng.random();
+    const random = world.prng.random();
     world.teleporter_id = 0;
     self.should_spawm = true;
     self.network_manager.pending_events.appendAssumeCapacity(.new_stage);
-    world.planet_radius = @intFromFloat(rand.float(f32) * 99 + 1);
+    world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
     // world.planet_radius = 100;
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(self.gpa, world.planet_radius);
@@ -166,7 +161,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             11...15 => .damage,
             else => .health,
         };
-        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), rand);
+        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
         _ = try self.spawn(.{
             .kind = .{ .item = item_kind },
             .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },

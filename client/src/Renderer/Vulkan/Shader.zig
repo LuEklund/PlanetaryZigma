@@ -2,20 +2,33 @@ const std = @import("std");
 const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
-pub const check = @import("utils.zig").check;
+const check = @import("utils.zig").check;
 
-pub const AnimationPushConstant = extern struct {
-    model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
-    joint_matrices_address: c.VkDeviceAddress,
-};
-pub const StaticPushConstant = extern struct {
-    model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
-};
-pub const UiPushConstant = extern struct {
-    vertex_buffer_address: c.VkDeviceAddress,
-    screnn_size: [2]f32,
+handle: c.VkShaderEXT = null,
+device: Device,
+shader_create_info: c.VkShaderCreateInfoEXT,
+descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
+descriptor_set_count: u32,
+shader_name: []const u8,
+push_constant_size: u32,
+
+pub const specs: std.EnumArray(Kind, Spec) = .init(.{
+    .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+    .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+    .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
+    .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
+    .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+    .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+    .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+    .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+    .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+});
+
+pub const Spec = struct {
+    path: []const u8,
+    push_constant_size: u32,
+    stage_bit: c.VkShaderStageFlagBits,
+    layout: enum { scene_material, ui },
 };
 
 pub const Kind = enum(u16) {
@@ -30,32 +43,19 @@ pub const Kind = enum(u16) {
     frag_debug,
 };
 
-pub const Spec = struct {
-    path: []const u8,
-    push_constant_size: u32,
-    stage_bit: c.VkShaderStageFlagBits,
-    layout: enum { scene_material, ui },
+pub const AnimationPushConstant = extern struct {
+    model_matrix: [16]f32,
+    vertex_buffer_address: c.VkDeviceAddress,
+    joint_matrices_address: c.VkDeviceAddress,
 };
-
-pub const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
-    .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
-    .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-});
-
-handle: c.VkShaderEXT = null,
-device: Device,
-shader_create_info: c.VkShaderCreateInfoEXT,
-descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
-descriptor_set_count: u32,
-shader_name: []const u8,
-push_constant_size: u32,
+pub const StaticPushConstant = extern struct {
+    model_matrix: [16]f32,
+    vertex_buffer_address: c.VkDeviceAddress,
+};
+pub const UiPushConstant = extern struct {
+    vertex_buffer_address: c.VkDeviceAddress,
+    screnn_size: [2]f32,
+};
 
 pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) @This() {
     const shader_spec = specs.get(kind);

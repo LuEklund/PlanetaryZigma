@@ -96,6 +96,7 @@ pub fn Planet(kind: PlanetKind) type {
             gpa.free(self.vertices);
             gpa.free(self.indices);
         }
+
         fn makeVertex(position: nz.Vec3(f32), uv: [2]f32, radius: f32) Vertex {
             //logical planet: build navmesh nodes from node_map (reuse the cells + neighbours), don't generate triangles like renderable
             return switch (kind) {

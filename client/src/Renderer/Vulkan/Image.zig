@@ -288,11 +288,7 @@ fn generateMipmaps(self: *@This(), cmd_buffer: c.VkCommandBuffer, image_size: c.
     );
 }
 
-pub fn copyOntoImage(
-    self: @This(),
-    cmd: c.VkCommandBuffer,
-    dest_image: @This(),
-) void {
+pub fn copyOntoImage(self: @This(), cmd: c.VkCommandBuffer, dest_image: @This()) void {
     var blit_region: c.VkImageBlit2 = .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
         .pNext = null,
@@ -346,11 +342,7 @@ pub const Barrier = struct {
 
     base_array_layer: u32 = 0,
 
-    pub fn init(
-        cmd: c.VkCommandBuffer,
-        image: c.VkImage,
-        aspect_mask: c.VkImageAspectFlags,
-    ) @This() {
+    pub fn init(cmd: c.VkCommandBuffer, image: c.VkImage, aspect_mask: c.VkImageAspectFlags) Barrier {
         return .{
             .cmd = cmd,
             .image = image,
@@ -358,7 +350,7 @@ pub const Barrier = struct {
         };
     }
 
-    pub fn transition(self: *@This(), layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
+    pub fn transition(self: *Barrier, layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
         var new: c.VkImageMemoryBarrier = .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             // .srcStageMask = src_stage,
@@ -385,7 +377,7 @@ pub const Barrier = struct {
     }
 
     pub fn transitionMipLevel(
-        self: *@This(),
+        self: *Barrier,
         new_layout: c.VkImageLayout,
         dst_stage: c.VkPipelineStageFlags,
         dst_access: c.VkAccessFlags,
@@ -426,7 +418,7 @@ pub const Barrier = struct {
     }
 };
 
-const DecodeError = error{
+pub const DecodeError = error{
     DataNotSupported,
     FailedToLoadGLTFImage,
     LoadingStbi,
@@ -440,7 +432,7 @@ pub const Decoded = struct {
     nr_channel: i32 = 0,
     err: ?DecodeError = null,
 
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *Decoded) void {
         if (self.pixels != null) stb_image.stbi_image_free(self.pixels);
         self.* = .{};
     }

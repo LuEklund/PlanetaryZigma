@@ -10,16 +10,16 @@ const Backend = switch (builtin.os.tag) {
 pub const DynLib = struct {
     backend: Backend,
 
-    pub fn open(path: []const u8) !@This() {
+    pub fn open(path: []const u8) !DynLib {
         return .{ .backend = try Backend.open(path) };
     }
 
-    pub fn close(self: *@This()) void {
+    pub fn close(self: *DynLib) void {
         if (tracy.enabled) return;
         self.backend.close();
     }
 
-    pub fn lookup(self: *@This(), comptime T: type, name: [:0]const u8) ?T {
+    pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) ?T {
         return self.backend.lookup(T, name);
     }
 };

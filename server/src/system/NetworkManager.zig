@@ -6,30 +6,6 @@ const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
 
-pub const Client = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    steam_server: *shared.SteamNet.Server,
-    conn: shared.SteamNet.Conn,
-    name: []const u8 = "",
-    entity_id: u32 = 0,
-    needs_full_sync: bool = true,
-    command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
-
-    pub fn sendCommand(self: *@This(), writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
-        writer.end = 0;
-        try shared.net.write(shared.net.ServerPacket, command, writer);
-        // std.log.debug("len: {d}", .{writer.buffered().len});
-
-        try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
-    }
-
-    pub fn deinit(self: *@This()) !void {
-        if (self.name.len != 0) self.gpa.free(self.name);
-        try self.command_queue.deinit(self.gpa, self.io);
-    }
-};
-
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
@@ -42,10 +18,34 @@ pending_spawn: std.ArrayList(u32) = .empty,
 pending_despawn: std.ArrayList(u32) = .empty,
 pending_events: std.ArrayList(shared.net.Event) = .empty,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !void {
+pub const Client = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    steam_server: *shared.SteamNet.Server,
+    conn: shared.SteamNet.Conn,
+    name: []const u8 = "",
+    entity_id: u32 = 0,
+    needs_full_sync: bool = true,
+    command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
+
+    pub fn sendCommand(self: *Client, writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
+        writer.end = 0;
+        try shared.net.write(shared.net.ServerPacket, command, writer);
+        // std.log.debug("len: {d}", .{writer.buffered().len});
+
+        try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
+    }
+
+    pub fn deinit(self: *Client) !void {
+        if (self.name.len != 0) self.gpa.free(self.name);
+        try self.command_queue.deinit(self.gpa, self.io);
+    }
+};
+
+pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
     var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
-    self.* = .{
+    return .{
         .gpa = gpa,
         .io = io,
         .steam_server = net,

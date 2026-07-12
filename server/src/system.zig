@@ -84,7 +84,7 @@ pub const World = struct {
     next_id: u32 = 1,
     prng: std.Random.DefaultPrng = .init(0xACE1),
 
-    pub fn init(gpa: std.mem.Allocator) !@This() {
+    pub fn init(gpa: std.mem.Allocator) !World {
         var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
         try entities.ensureTotalCapacity(gpa, max_entities);
 
@@ -95,7 +95,7 @@ pub const World = struct {
             .teleport_bosses = try .initCapacity(gpa, max_entities),
         };
     }
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *World) void {
         for (self.entities.values()) |*entity| {
             entity.deinit(self.gpa);
         }
@@ -104,7 +104,7 @@ pub const World = struct {
         self.teleport_bosses.deinit(self.gpa);
     }
 
-    pub fn spawn(self: *@This()) !*Entity {
+    pub fn spawn(self: *World) !*Entity {
         std.debug.assert(self.entities.entries.len < max_entities);
         const id = self.next_id;
         self.next_id += 1;
@@ -112,11 +112,11 @@ pub const World = struct {
         return self.entities.getPtr(id).?;
     }
 
-    pub fn getPtr(self: *@This(), id: u32) ?*Entity {
+    pub fn getPtr(self: *World, id: u32) ?*Entity {
         return self.entities.getPtr(id);
     }
 
-    pub fn despawn(self: *@This(), id: u32) bool {
+    pub fn despawn(self: *World, id: u32) bool {
         if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
         if (std.mem.indexOfScalar(u32, self.players.items, id)) |i| {
             _ = self.players.swapRemove(i);
@@ -131,10 +131,10 @@ pub const Context = struct {
     world: *World,
     steam_server: *shared.SteamNet.Server,
     network_manager: NetworkManager,
+    spawner: Spawner,
     health_manager: HealthManager,
     physics: Physics,
     player_controller: PlayerController,
-    spawner: Spawner,
     enemy_manager: EnemyManager,
     item_manager: ItemManager,
     bullet_manager: BulletManager,
@@ -147,33 +147,35 @@ pub const Context = struct {
         steam_server: *shared.SteamNet.Server,
     };
 
-    pub fn init(self: *@This(), data: *const Data) !void {
+    pub fn init(self: *Context, data: *const Data) !void {
         self.* = .{
             .gpa = data.gpa,
             .io = data.io,
             .world = data.world,
             .steam_server = data.steam_server,
-            .spawner = undefined,
-            .enemy_manager = undefined,
             .network_manager = undefined,
+            .spawner = undefined,
+            .health_manager = undefined,
             .physics = undefined,
             .player_controller = undefined,
-            .bullet_manager = undefined,
-            .health_manager = undefined,
+            .enemy_manager = undefined,
             .item_manager = undefined,
+            .bullet_manager = undefined,
         };
-        try self.physics.init(data.gpa, data.io);
-        try self.bullet_manager.init(data.gpa, self.world, &self.physics);
-        try self.enemy_manager.init(data.gpa, data.world);
-        try self.network_manager.init(data.gpa, data.io, data.steam_server);
-        try self.spawner.init(data.gpa, data.world, &self.physics, &self.network_manager);
-        try self.player_controller.init(&self.physics, &self.spawner);
-        try self.health_manager.init(&self.network_manager, &self.spawner);
+        self.network_manager = try .init(data.gpa, data.io, data.steam_server);
+        self.spawner = try .init(data.gpa, data.world, &self.physics, &self.network_manager);
+        self.health_manager = .init(&self.network_manager, &self.spawner);
+        self.physics = .init(data.gpa, data.io);
+        self.player_controller = .init(&self.physics, &self.spawner);
+        self.enemy_manager = .init(data.gpa, data.world);
+        // self.item_manager = .init(); TODO: add init for item manager
+        self.bullet_manager = .init(data.gpa, self.world, &self.physics);
 
-        //TODO: Move somewhere smarter when know how to move stages.
+        // TODO: Move somewhere smarter when know how to move stages.
         try self.spawner.startStage(self.world, &self.physics);
     }
-    pub fn deinit(self: *@This()) !void {
+
+    pub fn deinit(self: *Context) !void {
         self.physics.deinit();
         try self.network_manager.deinit();
         try self.enemy_manager.deinit();
@@ -181,7 +183,7 @@ pub const Context = struct {
         self.spawner.deinit();
     }
 
-    pub fn update(self: *@This(), info: *const Info) !void {
+    pub fn update(self: *Context, info: *const Info) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         try self.network_manager.update(info, &self.spawner);
@@ -211,7 +213,8 @@ pub const Context = struct {
         // self.request_exit = true;
         // if (info.elapsed_time > 1) self.request_exit = true;
     }
-    fn reload(self: *@This(), pre_reload: bool) !void {
+
+    fn reload(self: *Context, pre_reload: bool) !void {
         std.log.debug("before-1", .{});
         try self.physics.reload(pre_reload, self.world);
         try self.network_manager.reload(pre_reload);
@@ -230,9 +233,9 @@ pub const ffi = struct {
         systemContextUpdate: *const fn (*Context, data: *const Info) callconv(.c) void,
         systemContextReload: *const fn (*Context, pre_reload: bool) callconv(.c) void,
 
-        pub fn load(dynlib: *shared.DynLib) !@This() {
-            var self: @This() = undefined;
-            inline for (@typeInfo(@This()).@"struct".fields) |field| {
+        pub fn load(dynlib: *shared.DynLib) !Table {
+            var self: Table = undefined;
+            inline for (std.meta.fields(Table)) |field| {
                 std.log.debug("Looking up symbol: {s}", .{field.name});
                 const ptr = dynlib.lookup(field.type, field.name);
                 if (ptr) |p| {

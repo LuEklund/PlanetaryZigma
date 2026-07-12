@@ -6,6 +6,15 @@ const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
 const check = @import("utils.zig").check;
 
+image: Image,
+sampler: c.VkSampler,
+
+device: Device,
+vma: Vma,
+glyphs: [96]Glyph,
+name: []const u8,
+size: f32,
+
 pub const Glyph = struct {
     u0: f32,
     v0: f32,
@@ -18,21 +27,7 @@ pub const Glyph = struct {
     xadvance: f32,
 };
 
-image: Image,
-sampler: c.VkSampler,
-
-device: Device,
-vma: Vma,
-glyphs: [96]Glyph,
-name: []const u8,
-size: f32,
-
-pub fn init(
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    path: []const u8,
-) !@This() {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, path: []const u8) !@This() {
     return .{
         .device = device,
         .vma = vma,

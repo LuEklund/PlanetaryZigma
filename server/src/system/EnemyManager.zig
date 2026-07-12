@@ -12,11 +12,8 @@ const Info = system.Info;
 gpa: std.mem.Allocator,
 world: *system.World,
 
-pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void {
-    self.* = .{
-        .gpa = gpa,
-        .world = world,
-    };
+pub fn init(gpa: std.mem.Allocator, world: *system.World) @This() {
+    return .{ .gpa = gpa, .world = world };
 }
 
 pub fn deinit(self: *@This()) !void {
