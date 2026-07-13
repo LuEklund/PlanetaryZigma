@@ -72,6 +72,7 @@ packet_mutex: std.Io.Mutex = .init,
 
 gpa: std.mem.Allocator,
 io: std.Io,
+user_steam_id: u64,
 server_conn: steam.HSteamNetConnection = 0,
 own_lobby: u64 = 0,
 last_send_result: steam.EResult = .k_EResultOK,
@@ -93,6 +94,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
         .gpa = gpa,
         .handle_packets_future = undefined,
         .io = io,
+        .user_steam_id = steam.SteamUser().GetSteamID(),
         .browser = .{},
     };
 }

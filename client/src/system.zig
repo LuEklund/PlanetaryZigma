@@ -19,57 +19,8 @@ pub const Info = struct {
     world: *World,
 };
 
-pub const Entity = struct {
-    id: u32 = 0,
-    kind: shared.Entity.Kind,
-    teleporter: shared.teleporter.State = .{},
-    inventory: shared.Inventory = .{},
-    stats: shared.Stats = .{},
-
-    update_motion: ?shared.net.UpdateMotion = null,
-    smoothed_moiton_tick: u32 = 0,
-    position_error: nz.Vec3(f32) = @splat(0),
-
-    transform: nz.Transform3D(f32) = .{},
-};
-
-pub const World = struct {
-    pub const max_entities: usize = 1024;
-    mutex: std.Io.Mutex = .init,
-    gpa: std.mem.Allocator,
-    entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    teleporter_bosses: std.ArrayList(u32) = .empty,
-    camera: Camera = .{},
-    controller: Controller = .{},
-    hud: Hud = .{},
-    teleporter_id: u32 = 0,
-    player_id: u32 = 0,
-    planet_radius: f32 = 0,
-
-    pub fn init(gpa: std.mem.Allocator) !World {
-        return .{
-            .gpa = gpa,
-            .teleporter_bosses = try .initCapacity(gpa, max_entities),
-        };
-    }
-    pub fn deinit(self: *World) void {
-        self.entities.deinit(self.gpa);
-        self.teleporter_bosses.deinit(self.gpa);
-    }
-
-    pub fn spawn(self: *World, id: u32) !*Entity {
-        try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
-        return self.entities.getPtr(id).?;
-    }
-
-    pub fn getPtr(self: *World, id: u32) ?*Entity {
-        return self.entities.getPtr(id);
-    }
-
-    pub fn despawn(self: *World, id: u32) bool {
-        return self.entities.swapRemove(id);
-    }
-};
+pub const World = @import("World.zig");
+pub const Entity = World.Entity;
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
@@ -80,7 +31,6 @@ pub const Context = struct {
     asset_server: *AssetServer,
     renderer: Renderer,
     network_manager: NetworkManager,
-    spawner: Spawner,
     animation: Animation,
 
     pub const Data = struct {
@@ -101,15 +51,13 @@ pub const Context = struct {
         self.steam_client = data.steam_client;
         self.asset_server = data.asset_server;
         self.renderer = try .init(data.gpa, data.asset_server, data.platform, data.window);
-        try self.spawner.init(data.gpa, data.world);
-        try self.network_manager.init(data.gpa, data.io, data.steam_client, &self.spawner);
+        try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
     }
 
     pub fn deinit(self: *Context) void {
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
-        self.spawner.deinit();
     }
 
     pub fn update(self: *Context, info: *const Info) !void {
@@ -117,12 +65,12 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
-        try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
+        try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
-        try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();
-        try self.network_manager.update(info, &self.renderer.inner.skeletons);
-        try self.spawner.update(info, self);
+        try self.network_manager.update(info);
+        try Spawner.update(info, self);
+        try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
         for (info.world.entities.values()) |*entity| {

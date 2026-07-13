@@ -1,6 +1,6 @@
 const std = @import("std");
 const root = @import("root.zig");
-const Entity = root.Entity;
+const entity = root.entity;
 
 pub const endian: std.builtin.Endian = .little;
 
@@ -49,13 +49,13 @@ pub const Connect = struct {
 };
 
 pub const Acknowledge = struct {
-    id: u32,
+    id: entity.Id,
     tick: u32,
 };
 
 pub const SpawnEntity = struct {
-    id: u32,
-    kind: Entity.Kind,
+    id: entity.Id,
+    kind: entity.Kind,
     position: @Vector(3, f32) = @splat(0),
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     velocity: @Vector(3, f32) = @splat(0),
@@ -68,7 +68,7 @@ pub const SpawnEntity = struct {
 };
 
 pub const DespawnEntity = struct {
-    id: u32,
+    id: entity.Id,
 };
 
 pub const Input = struct {
@@ -91,7 +91,7 @@ pub const Input = struct {
 };
 
 pub const UpdateMotion = struct {
-    id: u32,
+    id: entity.Id,
     position: @Vector(3, f32),
     velocity: @Vector(3, f32),
     rotation: @Vector(4, f32),
@@ -99,13 +99,13 @@ pub const UpdateMotion = struct {
 };
 
 pub const UpdateTransform = struct {
-    id: u32,
+    id: entity.Id,
     position: @Vector(3, f16),
     rotation: @Vector(4, f16),
 };
 
 pub const UpdateStat = struct {
-    id: u32,
+    id: entity.Id,
     stat_kind: root.Stat.Kind,
     amount: union(enum(u16)) {
         set_current: f16,
@@ -114,7 +114,7 @@ pub const UpdateStat = struct {
 };
 
 pub const UpdateInventory = struct {
-    id: u32,
+    id: entity.Id,
     item_kind: root.Item.Kind,
     set: u8,
 };
@@ -123,7 +123,7 @@ pub const Event = union(enum(u16)) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: void,
-    attack: u32,
+    attack: entity.Id,
 };
 
 // ── Wire format (generic over packet direction) ─────────────────────────────

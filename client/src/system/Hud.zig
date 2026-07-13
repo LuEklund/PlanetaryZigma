@@ -8,8 +8,7 @@ const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 
-pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
-    _ = self;
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -29,6 +28,27 @@ pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManage
 }
 
 fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
+    if (network_manager.host_state != .none) {
+        ui.add(null, .{
+            .name = "root",
+            .size = .{ .fixed = .{
+                .heigth = 500,
+                .width = 400,
+            } },
+            .offset = .{ .left = (ui.screen_width - 400) / 2, .top = (ui.screen_heigth - 500) / 2 },
+            .color = .new(0.5, 0.5, 0.5, 0.8),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .children = &.{
+                .{
+                    .name = "hosting",
+                    .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                    .child_anchor = .{ .x = .center, .y = .center },
+                    .text = .{ .data = "hosting..." },
+                },
+            },
+        });
+        return;
+    }
     ui.add(null, .{
         .name = "root",
         .size = .{ .fixed = .{
@@ -53,6 +73,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
             .{
                 .name = "buttons",
                 .axis_align = .horizontal,
+                .gap = 10,
                 .child_anchor = .{ .x = .center, .y = .center },
                 .size = .{
                     .percent = .{
@@ -68,6 +89,12 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
                             .width = 100,
                         },
                     }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = .{ .data = "Refresh" } },
+                    .{ .size = .{
+                        .fixed = .{
+                            .heigth = 40,
+                            .width = 100,
+                        },
+                    }, .color = if (ui.isHot("host")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "host", .text = .{ .data = "Host" } },
                 },
             },
         },
@@ -90,6 +117,9 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
     }
     if (ui.isActive("refresh") and network_manager.server_list.refresh == false) {
         network_manager.server_list.refresh = true;
+    }
+    if (ui.isActive("host") and network_manager.host_state == .none) {
+        network_manager.host_state = .requested;
     }
 }
 

@@ -1,15 +1,17 @@
 const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
-const HealthManager = @import("system/HealthManager.zig");
-const ItemManager = @import("system/ItemManager.zig");
-const Spawner = @import("system/Spawner.zig");
-const EnemyManager = @import("system/EnemyManager.zig");
+const Director = @import("system/Director.zig");
+const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
-const BulletManager = @import("system/BulletManager.zig");
+
+pub const World = @import("World.zig");
+pub const Entity = World.Entity;
+pub const Camera = World.Camera;
+pub const Controller = World.Controller;
 
 pub const Info = struct {
     tick: u32,
@@ -18,127 +20,15 @@ pub const Info = struct {
     world: *World,
 };
 
-pub const Camera = struct {
-    pub const Mode = enum { follow, free };
-
-    mode: Mode = .follow,
-    yaw_rotation: nz.quat.Hamiltonian(f32) = .identity,
-    pitch: f32 = 0,
-    boom_offset: nz.Vec3(f32) = .{ 0, 0, 0 },
-    transform: nz.Transform3D(f32) = .{},
-};
-
-pub const Controller = struct {
-    input: shared.net.Input = .{},
-};
-
-pub const BulletData = struct {
-    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
-    lifetime: f32 = 5,
-};
-
-pub const Entity = struct {
-    id: u32 = 0,
-    flags: Flags = .{},
-    kind: shared.Entity.Kind = .unknown,
-    owner_id: u32 = 0,
-
-    transform: nz.Transform3D(f32) = .{},
-    velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
-    collider: Physics.Collider = undefined,
-    controller: Controller = .{},
-    camera: Camera = .{},
-    bullet: BulletData = .{},
-    teleporter: shared.teleporter.State = .{},
-    inventory: shared.Inventory = .{},
-    stats: shared.Stats = .{},
-
-    last_attack: f32 = 0,
-
-    pub const Flags = packed struct {
-        invinsible: bool = false,
-        is_teleporter_boss: bool = false,
-    };
-
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (shared.Entity.hasCollider(self.kind)) {
-            switch (self.collider.shape) {
-                .mesh => |*mesh| {
-                    gpa.free(mesh.indices);
-                    gpa.free(mesh.vertices);
-                },
-                .primitive => {},
-            }
-        }
-    }
-};
-
-pub const World = struct {
-    pub const max_entities: usize = 1024;
-    gpa: std.mem.Allocator,
-    entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    players: std.ArrayList(u32) = .empty,
-    teleport_bosses: std.ArrayList(u32) = .empty,
-    teleporter_id: u32 = 0,
-    planet_radius: u32 = 100,
-    next_id: u32 = 1,
-    prng: std.Random.DefaultPrng = .init(0xACE1),
-
-    pub fn init(gpa: std.mem.Allocator) !World {
-        var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
-        try entities.ensureTotalCapacity(gpa, max_entities);
-
-        return .{
-            .gpa = gpa,
-            .entities = entities,
-            .players = try .initCapacity(gpa, 16),
-            .teleport_bosses = try .initCapacity(gpa, max_entities),
-        };
-    }
-    pub fn deinit(self: *World) void {
-        for (self.entities.values()) |*entity| {
-            entity.deinit(self.gpa);
-        }
-        self.entities.deinit(self.gpa);
-        self.players.deinit(self.gpa);
-        self.teleport_bosses.deinit(self.gpa);
-    }
-
-    pub fn spawn(self: *World) !*Entity {
-        std.debug.assert(self.entities.entries.len < max_entities);
-        const id = self.next_id;
-        self.next_id += 1;
-        self.entities.putAssumeCapacity(id, .{ .id = id });
-        return self.entities.getPtr(id).?;
-    }
-
-    pub fn getPtr(self: *World, id: u32) ?*Entity {
-        return self.entities.getPtr(id);
-    }
-
-    pub fn despawn(self: *World, id: u32) bool {
-        if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
-        if (std.mem.indexOfScalar(u32, self.players.items, id)) |i| {
-            _ = self.players.swapRemove(i);
-        }
-        return self.entities.swapRemove(id);
-    }
-};
-
 pub const Context = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     world: *World,
     steam_server: *shared.SteamNet.Server,
     network_manager: NetworkManager,
-    spawner: Spawner,
-    health_manager: HealthManager,
+    director: Director,
     physics: Physics,
-    player_controller: PlayerController,
-    enemy_manager: EnemyManager,
-    item_manager: ItemManager,
-    bullet_manager: BulletManager,
-    request_exit: bool = false,
+    request_exit: bool,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
@@ -153,65 +43,44 @@ pub const Context = struct {
             .io = data.io,
             .world = data.world,
             .steam_server = data.steam_server,
-            .network_manager = undefined,
-            .spawner = undefined,
-            .health_manager = undefined,
-            .physics = undefined,
-            .player_controller = undefined,
-            .enemy_manager = undefined,
-            .item_manager = undefined,
-            .bullet_manager = undefined,
+            .network_manager = try .init(data.gpa, data.io, data.steam_server),
+            .physics = .init(data.gpa, data.io),
+            .director = .{},
+            .request_exit = false,
         };
-        self.network_manager = try .init(data.gpa, data.io, data.steam_server);
-        self.spawner = try .init(data.gpa, data.world, &self.physics, &self.network_manager);
-        self.health_manager = .init(&self.network_manager, &self.spawner);
-        self.physics = .init(data.gpa, data.io);
-        self.player_controller = .init(&self.physics, &self.spawner);
-        self.enemy_manager = .init(data.gpa, data.world);
-        // self.item_manager = .init(); TODO: add init for item manager
-        self.bullet_manager = .init(data.gpa, self.world, &self.physics);
 
         // TODO: Move somewhere smarter when know how to move stages.
-        try self.spawner.startStage(self.world, &self.physics);
+        try self.director.startStage(self.world, &self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
         self.physics.deinit();
         try self.network_manager.deinit();
-        try self.enemy_manager.deinit();
-        self.bullet_manager.deinit();
-        self.spawner.deinit();
     }
 
     pub fn update(self: *Context, info: *const Info) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        try self.network_manager.update(info, &self.spawner);
-        try self.player_controller.update(info, &self.network_manager);
-        try self.enemy_manager.update(info, &self.health_manager, &self.network_manager, &self.spawner);
+        switch (try self.network_manager.update(info)) {
+            .running => {},
+            .host_left => {
+                std.log.info("host disconnected, shutting down", .{});
+                self.request_exit = true;
+            },
+            .host_timeout => {
+                std.log.err("host never connected, shutting down", .{});
+                self.request_exit = true;
+            },
+        }
+        try PlayerController.update(info, &self.physics);
+        gameplay.updateEnemies(info);
+        try self.director.update(info, &self.physics);
         try self.physics.update(info);
-        try self.bullet_manager.update(info, &self.health_manager, &self.spawner);
-        try self.spawner.update(info, &self.physics, &self.network_manager);
-        try self.item_manager.update(info, self);
-
-        const entity = self.world.getPtr(self.world.teleporter_id) orelse return;
-        const teleporter = &entity.teleporter;
-        if (teleporter.charged == teleporter.max_charge) {
-            self.spawner.should_spawm = false;
-            return;
-        }
-        for (self.world.players.items) |player_id| {
-            const player = self.world.getPtr(player_id) orelse continue;
-            if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
-                teleporter.charged += info.delta_time + 100;
-                teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
-            }
-        }
-        self.network_manager.pending_events.appendAssumeCapacity(.{ .teleporter_charge = @floatCast(teleporter.charged) });
-
-        // std.log.debug("time : {d}", .{info.elapsed_time});
-        // self.request_exit = true;
-        // if (info.elapsed_time > 1) self.request_exit = true;
+        gameplay.updateBullets(info, &self.physics);
+        try gameplay.updateItems(info);
+        gameplay.updateTeleporter(info, &self.director);
+        gameplay.updateLifetimes(info);
+        try self.world.flush(&self.physics);
     }
 
     fn reload(self: *Context, pre_reload: bool) !void {

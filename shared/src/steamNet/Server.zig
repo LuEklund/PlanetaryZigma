@@ -4,6 +4,10 @@ const Packets = @import("../SteamNet.zig").Packets;
 
 connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
+host_steam_id: u64,
+host_conn: steam.HSteamNetConnection,
+host_state: HostState,
+
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
 last_send_result: steam.EResult = .k_EResultOK,
@@ -16,8 +20,16 @@ socket: steam.ISteamNetworkingSockets,
 packets: Packets,
 
 pub const max_connections: usize = 32;
+pub const server_file_name = "server_id";
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
+pub const HostState = enum(u8) {
+    none,
+    waiting,
+    connected,
+    left,
+};
+
+pub fn init(gpa: std.mem.Allocator, io: std.Io, host_steam_id: u64) !@This() {
     if (!steam.Server.SteamInternal_GameServer_Init(
         0,
         27016,
@@ -36,7 +48,9 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     gs.SetMapName("default");
     gs.SetPasswordProtected(false);
     gs.LogOnAnonymous();
-    gs.SetProduct("3167780");
+    var product_buf: [16]u8 = undefined;
+    const product = std.fmt.bufPrintZ(&product_buf, "{d}", .{steam.SteamGameServerUtils().GetAppID()}) catch unreachable;
+    gs.SetProduct(product);
     gs.SetAdvertiseServerActive(true);
 
     steam.SteamAPI_ManualDispatch_Init();
@@ -60,6 +74,12 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     const listen = sock.CreateListenSocketP2P(0, &.{});
     if (listen == 0) return error.ListenFailed;
 
+    if (host_steam_id != 0) {
+        var id_buf: [20]u8 = undefined;
+        const id_text = try std.fmt.bufPrint(&id_buf, "{d}", .{gs.GetSteamID()});
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_file_name, .data = id_text });
+    }
+
     return .{
         .gpa = gpa,
         .pipe = pipe,
@@ -68,6 +88,9 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
         .io = io,
         .packets = .{},
         .handle_packets_future = undefined,
+        .host_steam_id = host_steam_id,
+        .host_conn = 0,
+        .host_state = if (host_steam_id == 0) .none else .waiting,
     };
 }
 
@@ -153,7 +176,7 @@ fn steamCallback(
     self: ?*@This(),
     gpa: std.mem.Allocator,
     pipe: steam.HSteamPipe,
-    sock: ?steam.ISteamNetworkingSockets,
+    socket: ?steam.ISteamNetworkingSockets,
 ) !i32 {
     steam.SteamAPI_ManualDispatch_RunFrame(pipe);
     var msg: steam.CallbackMsg_t = undefined;
@@ -163,25 +186,35 @@ fn steamCallback(
             102 => return error.SteamServersConnectFailure,
             1221 => {
                 const data = msg.data() orelse return msg.m_iCallback;
-                const ev = data.SteamNetConnectionStatusChangedCallback;
-                std.log.info("server net state: {s} (conn={d})", .{ @tagName(ev.m_info.m_eState), ev.m_hConn });
-                switch (ev.m_info.m_eState) {
+                const event = data.SteamNetConnectionStatusChangedCallback;
+                std.log.info("server net state: {s} (conn={d})", .{ @tagName(event.m_info.m_eState), event.m_hConn });
+                switch (event.m_info.m_eState) {
                     .k_ESteamNetworkingConnectionState_Connecting => {
-                        if (sock) |s| {
-                            const r = s.AcceptConnection(ev.m_hConn);
-                            std.log.info("AcceptConnection -> {s}", .{@tagName(r)});
+                        if (socket) |sock| {
+                            const result = sock.AcceptConnection(event.m_hConn);
+                            std.log.info("AcceptConnection -> {s}", .{@tagName(result)});
                         }
                     },
                     .k_ESteamNetworkingConnectionState_Connected => {
-                        self.?.addConnection(ev.m_hConn);
-                        try self.?.packets.pushEvent(gpa, .{ .connected = ev.m_hConn });
+                        var remote_identity = event.m_info.m_identityRemote;
+                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id) {
+                            self.?.host_conn = event.m_hConn;
+                            self.?.host_state = .connected;
+                            std.log.info("host connected (conn={d})", .{event.m_hConn});
+                        }
+                        self.?.addConnection(event.m_hConn);
+                        try self.?.packets.pushEvent(gpa, .{ .connected = event.m_hConn });
                     },
                     .k_ESteamNetworkingConnectionState_ClosedByPeer,
                     .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
                     => {
-                        if (sock) |s| _ = s.CloseConnection(ev.m_hConn, 0, "peer-closed", false);
-                        self.?.removeConnection(ev.m_hConn);
-                        try self.?.packets.pushEvent(gpa, .{ .disconnected = ev.m_hConn });
+                        if (socket) |s| _ = s.CloseConnection(event.m_hConn, 0, "peer-closed", false);
+                        if (event.m_hConn == self.?.host_conn) {
+                            self.?.host_state = .left;
+                            std.log.info("host disconnected, shutting down", .{});
+                        }
+                        self.?.removeConnection(event.m_hConn);
+                        try self.?.packets.pushEvent(gpa, .{ .disconnected = event.m_hConn });
                     },
                     else => {},
                 }

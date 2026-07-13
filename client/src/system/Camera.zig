@@ -65,11 +65,9 @@ pub fn update(self: *@This(), info: *const Info) void {
     if (info.world.getPtr(info.world.player_id)) |player| {
         if (nz.vec.length(player.transform.position) > 0.001) {
             const planet_up = nz.vec.normalize(player.transform.position);
-            if (keys.mouse_button_right) {
-                const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
-                self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
-                self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
-            }
+            const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
+            self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
+            self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
             const camera_forward = self.yaw_rotation.rotateVec(.{ 0, 0, -1 });
             const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
             if (nz.vec.length(tangent_forward) > 0.0001) {
