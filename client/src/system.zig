@@ -33,6 +33,7 @@ pub const Context = struct {
     network_manager: NetworkManager,
     animation: Animation,
     request_exit: bool = false,
+    fullscreen_applied: bool = false,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
@@ -55,6 +56,7 @@ pub const Context = struct {
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.request_exit = false;
+        self.fullscreen_applied = false;
     }
 
     pub fn deinit(self: *Context) void {
@@ -62,13 +64,32 @@ pub const Context = struct {
         self.network_manager.deinit();
     }
 
+    pub fn isInGame(self: *const Context) bool {
+        return self.network_manager.server_conn != 0 or self.network_manager.steam_client.server_conn != 0;
+    }
+
     pub fn update(self: *Context, info: *const Info) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         // tracy.frameMark();
+        if (!self.isInGame()) {
+            info.world.pause_menu_open = false;
+            if (info.world.options_menu_return_to_pause) {
+                info.world.options_menu_open = false;
+                info.world.options_menu_return_to_pause = false;
+            }
+        }
         info.world.controller.update();
+        if (info.world.pause_menu_open or info.world.options_menu_open) info.world.controller.resetMouseDelta();
+
+        const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         self.request_exit = self.request_exit or info.world.request_quit;
+        if (paused_for_input or info.world.pause_menu_open or info.world.options_menu_open) {
+            info.world.controller.clearInput();
+            info.world.controller.resetMouseDelta();
+        }
+        try self.applyOptions(info);
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
@@ -96,7 +117,7 @@ pub const Context = struct {
             entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
         }
 
-        info.world.camera.update(info);
+        if (!paused_for_input and !info.world.pause_menu_open and !info.world.options_menu_open) info.world.camera.update(info);
         info.world.controller.mouse_wheel = 0;
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
@@ -104,9 +125,47 @@ pub const Context = struct {
     pub fn eventUpdate(self: *Context, info: *const Info, event: *const yes.Window.Event) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        _ = self;
+        if (info.world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
+            info.world.controller.eventUpdate(event);
+            return;
+        }
+        if (event.* == .key) {
+            const key = event.key;
+            if (key.state == .released and key.sym == .escape and info.world.options_menu_open) {
+                const return_to_pause = info.world.options_menu_return_to_pause and self.isInGame();
+                info.world.options_menu_open = false;
+                info.world.options_menu_return_to_pause = false;
+                info.world.pause_menu_open = return_to_pause;
+                info.world.controller.clearInput();
+                info.world.controller.resetMouseDelta();
+                return;
+            }
+            if (key.state == .released and key.sym == .escape and self.isInGame()) {
+                if (info.world.options_menu_open) {
+                    info.world.options_menu_open = false;
+                    info.world.options_menu_return_to_pause = false;
+                    info.world.pause_menu_open = true;
+                } else if (info.world.pause_menu_open) {
+                    info.world.pause_menu_open = false;
+                } else {
+                    info.world.pause_menu_open = true;
+                }
+                info.world.controller.clearInput();
+                info.world.controller.resetMouseDelta();
+                return;
+            }
+        }
         info.world.controller.eventUpdate(event);
     }
+
+    fn applyOptions(self: *Context, info: *const Info) !void {
+        info.world.camera.fov_rad = info.world.options.fov_rad;
+        if (self.fullscreen_applied != info.world.options.fullscreen) {
+            try self.window.setFullscreen(self.platform, info.world.options.fullscreen);
+            self.fullscreen_applied = info.world.options.fullscreen;
+        }
+    }
+
     fn reload(self: *Context, pre_reload: bool) !void {
         if (pre_reload) {
             std.log.debug("pre-hotreload", .{});

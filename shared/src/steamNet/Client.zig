@@ -139,6 +139,19 @@ pub fn deinit(self: *@This()) void {
     self.packets.deinit(self.gpa);
 }
 
+pub fn disconnect(self: *@This()) void {
+    const sockets = steam.SteamNetworkingSockets_SteamAPI();
+    const conn = self.server_conn;
+    if (conn != 0) {
+        _ = sockets.CloseConnection(conn, 0, "client-main-menu", true);
+        self.server_conn = 0;
+    }
+
+    self.packets.incoming.clearRetainingCapacity();
+    self.packets.outgoing.clearRetainingCapacity();
+    self.packets.events.clearRetainingCapacity();
+}
+
 fn endReasonName(reason: i32) []const u8 {
     return switch (reason) {
         3001 => "Local_OfflineMode",
