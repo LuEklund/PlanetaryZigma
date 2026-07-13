@@ -1,7 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
-const Spawner = @import("Spawner.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
@@ -10,13 +9,14 @@ gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
-last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion),
+last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
-pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
-pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
-pending_spawn: std.ArrayList(u32) = .empty,
-pending_despawn: std.ArrayList(u32) = .empty,
-pending_events: std.ArrayList(shared.net.Event) = .empty,
+
+pub const WireStatus = enum {
+    running,
+    host_left,
+    host_timeout,
+};
 
 pub const Client = struct {
     gpa: std.mem.Allocator,
@@ -24,14 +24,13 @@ pub const Client = struct {
     steam_server: *shared.SteamNet.Server,
     conn: shared.SteamNet.Conn,
     name: []const u8 = "",
-    entity_id: u32 = 0,
+    entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,
     command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
 
     pub fn sendCommand(self: *Client, writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
         writer.end = 0;
         try shared.net.write(shared.net.ServerPacket, command, writer);
-        // std.log.debug("len: {d}", .{writer.buffered().len});
 
         try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
     }
@@ -43,16 +42,13 @@ pub const Client = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
-    var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
+    var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
     return .{
         .gpa = gpa,
         .io = io,
         .steam_server = net,
         .clients = .init(gpa),
-        .pending_stats = try .initCapacity(gpa, 4096),
-        .pending_inventory = try .initCapacity(gpa, 1024),
-        .pending_events = try .initCapacity(gpa, 1024),
         .last_motions = last_motions,
     };
 }
@@ -61,12 +57,7 @@ pub fn deinit(self: *@This()) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
-    self.pending_spawn.deinit(self.gpa);
-    self.pending_despawn.deinit(self.gpa);
     self.pending_motions.deinit(self.gpa);
-    self.pending_inventory.deinit(self.gpa);
-    self.pending_events.deinit(self.gpa);
-    self.pending_stats.deinit(self.gpa);
     self.last_motions.deinit();
 }
 
@@ -77,14 +68,14 @@ pub fn reload(self: *@This(), pre_reload: bool) !void {
     // tear down or rebuild here.
 }
 
-pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
+pub fn update(self: *@This(), info: *const Info) !WireStatus {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const world = info.world;
 
     try self.steam_server.packet_mutex.lock(self.io);
     defer self.steam_server.packet_mutex.unlock(self.io);
-    // std.log.debug("cmd coint: {d}", .{self.steam_server.packets.incoming.items.len});
+
     // 1. Drain Steam lifecycle events into client map.
     for (self.steam_server.packets.events.items) |ev| switch (ev) {
         .connected => |conn| {
@@ -101,7 +92,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != 0) spawner.depspawn(client.entity_id);
+                if (client.entity_id != .none) world.queueDespawn(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 std.log.debug("client disconnected: conn={d}", .{conn});
@@ -135,14 +126,9 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             switch (command) {
                 .connect => |connect| {
                     if (client.name.len == 0) client.name = try self.gpa.dupe(u8, connect.name);
-                    const new_player_entity = try spawner.spawn(.{
+                    const new_player_entity = world.spawn(.{
                         .kind = .player,
                         .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
-                        .collider = .{
-                            .shape = .{ .primitive = shared.Entity.colliderShape(.player).? },
-                            .motion_type = .dynamic,
-                            .object_layer = .moving,
-                        },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         .flags = .{ .invinsible = true },
                     });
@@ -162,14 +148,11 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
                             }, .reliable);
                         }
                     }
-                    std.log.debug("PLAYER SPAWN entity_id={d} body_id={any}", .{
-                        client.entity_id,
-                        new_player_entity.collider.body_id,
-                    });
+                    std.log.debug("PLAYER SPAWN entity_id={d}", .{client.entity_id});
                 },
                 .disconnect => {
-                    if (client.entity_id == 0) continue;
-                    spawner.depspawn(client.entity_id);
+                    if (client.entity_id == .none) continue;
+                    world.queueDespawn(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {
@@ -185,7 +168,7 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
     // 4. Push outbound state to every active client.
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (shared.Entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+        if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();
@@ -230,12 +213,12 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.r;
         }
 
-        // spawns
-        if (client.needs_full_sync) {
+        const did_full_sync = client.needs_full_sync;
+        if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
-                try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
             }
             var motion_it = self.last_motions.valueIterator();
@@ -244,54 +227,41 @@ pub fn update(self: *@This(), info: *const Info, spawner: *Spawner) !void {
             }
             client.needs_full_sync = false;
         } else {
-            for (self.pending_spawn.items) |entity_id| {
-                const entity = world.getPtr(entity_id) orelse continue;
-                try client.sendCommand(writer, .{ .spawn_entity = self.spawnPacket(info, entity) }, .reliable);
-                try sendStats(client, writer, entity);
-            }
             for (self.pending_motions.items) |motion| {
                 try client.sendCommand(writer, .{ .update_motion = motion }, .unreliable_no_delay);
             }
         }
-        // despawns
-        for (self.pending_despawn.items) |id| {
-            try client.sendCommand(
-                writer,
-                .{
-                    .despawn_entity = .{
-                        .id = id,
-                    },
-                },
-                .reliable,
-            );
-        }
-        // stats
-        for (self.pending_stats.items) |update_stat| {
-            try client.sendCommand(writer, .{
-                .update_stat = update_stat,
-            }, .reliable);
-        }
-        // inventory
-        for (self.pending_inventory.items) |update_inventory| {
-            try client.sendCommand(writer, .{
-                .update_inventory = update_inventory,
-            }, .reliable);
-        }
 
-        // events
-        for (self.pending_events.items) |event| {
-            try client.sendCommand(writer, .{
-                .update_event = event,
-            }, .reliable);
-        }
+        for (world.outbox.items) |pending_update| switch (pending_update) {
+            .spawned => |id| {
+                if (did_full_sync) continue;
+                const entity = world.getPtr(id) orelse continue;
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
+                try sendStats(client, writer, entity);
+            },
+            .despawned => |id| {
+                try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
+            },
+            .stat => |update_stat| {
+                try client.sendCommand(writer, .{ .update_stat = update_stat }, .reliable);
+            },
+            .inventory => |update_inventory| {
+                try client.sendCommand(writer, .{ .update_inventory = update_inventory }, .reliable);
+            },
+            .event => |event| {
+                try client.sendCommand(writer, .{ .update_event = event }, .reliable);
+            },
+        };
     }
-    // std.log.debug("cmd size {d}", .{self.steam_server.packets.outgoing.items.len});
-    for (self.pending_despawn.items) |id| _ = self.last_motions.remove(id);
-    self.pending_despawn.clearRetainingCapacity();
-    self.pending_spawn.clearRetainingCapacity();
-    self.pending_stats.clearRetainingCapacity();
-    self.pending_events.clearRetainingCapacity();
-    self.pending_inventory.clearRetainingCapacity();
+    for (world.outbox.items) |pending_update| switch (pending_update) {
+        .despawned => |id| _ = self.last_motions.remove(id),
+        else => {},
+    };
+    world.outbox.clearRetainingCapacity();
+
+    if (self.steam_server.host_state == .left) return .host_left;
+    if (self.steam_server.host_state == .waiting and info.elapsed_time > 60) return .host_timeout;
+    return .running;
 }
 
 fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
@@ -303,8 +273,7 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
-fn spawnPacket(self: *@This(), info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
-    _ = self;
+fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
     return .{
         .id = entity.id,
         .kind = entity.kind,

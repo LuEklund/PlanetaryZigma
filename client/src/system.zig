@@ -19,85 +19,8 @@ pub const Info = struct {
     world: *World,
 };
 
-pub const Entity = struct {
-    id: u32 = 0,
-    kind: shared.Entity.Kind,
-    teleporter: shared.teleporter.State = .{},
-    inventory: shared.Inventory = .{},
-    stats: shared.Stats = .{},
-
-    update_motion: ?shared.net.UpdateMotion = null,
-    smoothed_moiton_tick: u32 = 0,
-    position_error: nz.Vec3(f32) = @splat(0),
-
-    transform: nz.Transform3D(f32) = .{},
-};
-
-pub const World = struct {
-    pub const MenuScreen = enum {
-        main,
-        multiplayer,
-        settings,
-    };
-    pub const MenuEditMode = enum {
-        camera,
-        planet,
-        bozo,
-    };
-    pub const MenuTuning = struct {
-        edit_mode: MenuEditMode = .camera,
-        camera_target: nz.Vec3(f32) = .{ 6, -5, -45 },
-        camera_yaw: f32 = -0.35,
-        camera_pitch: f32 = -0.22,
-        camera_distance: f32 = 50,
-        fov_rad: f32 = 1.25,
-        planet_position: nz.Vec3(f32) = .{ 6, -16, -52 },
-        planet_scale: f32 = 0.75,
-        bozo_screen: [2]f32 = .{ 0.53, 0.49 },
-        bozo_surface_offset: f32 = 3.5,
-        player_scale: f32 = 4.4,
-    };
-
-    pub const max_entities: usize = 1024;
-    mutex: std.Io.Mutex = .init,
-    gpa: std.mem.Allocator,
-    entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty,
-    teleporter_bosses: std.ArrayList(u32) = .empty,
-    camera: Camera = .{},
-    controller: Controller = .{},
-    hud: Hud = .{},
-    teleporter_id: u32 = 0,
-    player_id: u32 = 0,
-    planet_radius: f32 = 0,
-    menu_screen: MenuScreen = .main,
-    menu_tuning: MenuTuning = .{},
-    show_menu_scene: bool = true,
-    request_quit: bool = false,
-
-    pub fn init(gpa: std.mem.Allocator) !World {
-        return .{
-            .gpa = gpa,
-            .teleporter_bosses = try .initCapacity(gpa, max_entities),
-        };
-    }
-    pub fn deinit(self: *World) void {
-        self.entities.deinit(self.gpa);
-        self.teleporter_bosses.deinit(self.gpa);
-    }
-
-    pub fn spawn(self: *World, id: u32) !*Entity {
-        try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
-        return self.entities.getPtr(id).?;
-    }
-
-    pub fn getPtr(self: *World, id: u32) ?*Entity {
-        return self.entities.getPtr(id);
-    }
-
-    pub fn despawn(self: *World, id: u32) bool {
-        return self.entities.swapRemove(id);
-    }
-};
+pub const World = @import("World.zig");
+pub const Entity = World.Entity;
 
 pub const Context = struct {
     gpa: std.mem.Allocator,
@@ -108,7 +31,6 @@ pub const Context = struct {
     asset_server: *AssetServer,
     renderer: Renderer,
     network_manager: NetworkManager,
-    spawner: Spawner,
     animation: Animation,
     request_exit: bool = false,
 
@@ -130,8 +52,7 @@ pub const Context = struct {
         self.steam_client = data.steam_client;
         self.asset_server = data.asset_server;
         self.renderer = try .init(data.gpa, data.asset_server, data.platform, data.window);
-        try self.spawner.init(data.gpa, data.world);
-        try self.network_manager.init(data.gpa, data.io, data.steam_client, &self.spawner);
+        try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.request_exit = false;
     }
@@ -139,7 +60,6 @@ pub const Context = struct {
     pub fn deinit(self: *Context) void {
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
-        self.spawner.deinit();
     }
 
     pub fn update(self: *Context, info: *const Info) !void {
@@ -147,13 +67,13 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
-        try info.world.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
+        try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         self.request_exit = self.request_exit or info.world.request_quit;
         try self.renderer.update(info);
-        try self.animation.update(info, &self.renderer.inner.skeletons);
         try self.asset_server.update();
-        try self.network_manager.update(info, &self.renderer.inner.skeletons);
-        try self.spawner.update(info, self);
+        try self.network_manager.update(info);
+        try Spawner.update(info, self);
+        try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
         for (info.world.entities.values()) |*entity| {

@@ -34,4 +34,4 @@ const inventory = @import("inventory.zig");
 pub const Item = inventory.Item;
 pub const Inventory = inventory.Inventory;
 
-pub const Entity = @import("Entity.zig");
+pub const entity = @import("entity.zig");

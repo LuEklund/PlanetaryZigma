@@ -8,8 +8,7 @@ const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 
-pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
-    _ = self;
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -236,10 +235,12 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     const row_height: f32 = 42;
     const row_gap: f32 = 8;
     const panel_width = @max(@as(f32, 260), width);
+    const button_width = (panel_width - row_gap) * 0.5;
+    const hosting = network_manager.host_state != .none;
 
     ui.add(null, .{
         .name = "menu_refresh",
-        .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
         .color = if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -247,6 +248,21 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     });
     if (ui.isActive("menu_refresh") and network_manager.server_list.refresh == false) {
         network_manager.server_list.refresh = true;
+    }
+    ui.add(null, .{
+        .name = "menu_host",
+        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
+        .offset = .{ .left = left + button_width + row_gap, .top = top },
+        .color = if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = if (hosting) "Hosting..." else "Host",
+            .size = 26,
+            .color = if (hosting or ui.isHot("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+        },
+    });
+    if (ui.isActive("menu_host") and network_manager.host_state == .none) {
+        network_manager.host_state = .requested;
     }
 
     if (network_manager.server_list.count == 0) {
@@ -256,7 +272,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
             .color = .new(0.02, 0.025, 0.025, 0.62),
             .child_anchor = .{ .x = .center, .y = .center },
             .text = .{
-                .data = if (network_manager.server_list.refresh) "Searching for servers" else "No servers found",
+                .data = if (hosting) "Hosting..." else if (network_manager.server_list.refresh) "Searching for servers" else "No servers found",
                 .size = 24,
                 .color = .new(0.68, 0.72, 0.66, 1),
             },
@@ -302,71 +318,6 @@ fn settingsPanel(ui: *Ui, left: f32, top: f32, width: f32) void {
             .child_anchor = .{ .x = .center, .y = .center },
             .text = .{ .data = row, .size = 24, .color = .new(0.94, 0.96, 0.9, 1) },
         });
-    }
-}
-
-fn serverList(network_manager: *NetworkManager, ui: *Ui) !void {
-    ui.add(null, .{
-        .name = "root",
-        .size = .{ .fixed = .{
-            .heigth = 500,
-            .width = 400,
-        } },
-        .offset = .{ .left = (ui.screen_width - 400) / 2, .top = (ui.screen_heigth - 500) / 2 },
-        .color = .new(0.5, 0.5, 0.5, 0.8),
-        .axis_align = .verical,
-        .children = &.{
-            .{
-                .name = "servers",
-                .axis_align = .verical,
-                .color = .grey,
-                .size = .{
-                    .percent = .{
-                        .heigth = 0.8,
-                        .width = 1.0,
-                    },
-                },
-            },
-            .{
-                .name = "buttons",
-                .axis_align = .horizontal,
-                .child_anchor = .{ .x = .center, .y = .center },
-                .size = .{
-                    .percent = .{
-                        .heigth = 0.2,
-                        .width = 1.0,
-                    },
-                },
-                .color = .new(0.1, 0.1, 0.1, 1),
-                .children = &.{
-                    .{ .size = .{
-                        .fixed = .{
-                            .heigth = 40,
-                            .width = 100,
-                        },
-                    }, .color = if (ui.isHot("refresh")) .new(0.2, 0.2, 0.2, 1) else .grey, .name = "refresh", .text = .{ .data = "Refresh" } },
-                },
-            },
-        },
-    });
-    for (0..network_manager.server_list.count) |i| {
-        const server = &network_manager.server_list.servers[i];
-        ui.add("servers", .{
-            .name = &server.id_str,
-            .text = .{ .data = &server.id_str },
-            .size = .{ .percent = .{
-                .heigth = 0.2,
-                .width = 1.0,
-            } },
-            .color = if (ui.isHot(&server.id_str)) .new(0.2, 0.2, 0.2, 1) else .grey,
-        });
-        if (ui.isActive(&server.id_str)) {
-            try network_manager.steam_client.connectToServer(server.steam_id);
-            std.log.debug("connect to {d}", .{server.steam_id});
-        }
-    }
-    if (ui.isActive("refresh") and network_manager.server_list.refresh == false) {
-        network_manager.server_list.refresh = true;
     }
 }
 

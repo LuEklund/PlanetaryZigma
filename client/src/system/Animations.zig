@@ -20,10 +20,16 @@ pub fn init(gpa: std.mem.Allocator) @This() {
     return .{ .gpa = gpa };
 }
 
-pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(u32, SkeletonInstance)) !void {
+pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
+
+    for (info.world.attack_events.items) |id| {
+        const instance = skeletons.getPtr(id) orelse continue;
+        instance.playOverlay(instance.model.state_clips.get(.attack));
+    }
+    info.world.attack_events.clearRetainingCapacity();
 
     // std.log.debug("render ptr {*}, model ptr{*}", .{ self.renderer, models });
     for (info.world.entities.values()) |*entity| {
@@ -32,7 +38,7 @@ pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(u32
         if (model.clips.len == 0) continue;
 
         const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
-        const state: shared.Entity.State = if (speed > 0.5) .walk else .idle;
+        const state: shared.entity.State = if (speed > 0.5) .walk else .idle;
         const clip_index = model.state_clips.get(state);
         if (clip_index != instance.player.active) {
             instance.playClip(clip_index);

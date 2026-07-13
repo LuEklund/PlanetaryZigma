@@ -5,32 +5,6 @@ const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.nz;
 
-gpa: std.mem.Allocator,
-world: *system.World,
-pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
-pending_despawn: std.ArrayList(u32) = .empty,
-pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
-
-pub fn init(self: *@This(), gpa: std.mem.Allocator, world: *system.World) !void {
-    self.* = .{
-        .gpa = gpa,
-        .world = world,
-        .pending_spawn = try .initCapacity(gpa, system.World.max_entities),
-        .pending_despawn = try .initCapacity(gpa, system.World.max_entities),
-        .pending_stats = try .initCapacity(gpa, system.World.max_entities),
-    };
-}
-
-pub fn deinit(self: *@This()) void {
-    self.pending_spawn.deinit(self.gpa);
-    self.pending_despawn.deinit(self.gpa);
-    self.pending_stats.deinit(self.gpa);
-}
-
-pub fn spawn(self: *@This(), entity_info: shared.net.SpawnEntity) void {
-    self.pending_spawn.appendAssumeCapacity(entity_info);
-}
-
 pub fn applyStat(entity: *system.Entity, command: shared.net.UpdateStat) void {
     switch (command.amount) {
         .set_current => |v| entity.stats.setCurrent(command.stat_kind, v),
@@ -38,18 +12,15 @@ pub fn applyStat(entity: *system.Entity, command: shared.net.UpdateStat) void {
     }
 }
 
-pub fn depspawn(self: *@This(), entity_id: u32) !void {
-    // std.log.debug("despawn ID: {d}", .{entity_id});
-    self.pending_despawn.appendAssumeCapacity(entity_id);
-}
-
-pub fn update(self: *@This(), info: *const system.Info, system_context: *system.Context) !void {
+pub fn update(info: *const system.Info, system_context: *system.Context) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+    const world = info.world;
+    const gpa = system_context.gpa;
 
-    for (self.pending_spawn.items) |entity_info| {
-        if (self.world.getPtr(entity_info.id) != null) continue;
-        const entity = try self.world.spawn(entity_info.id);
+    for (world.pending_spawn.items) |entity_info| {
+        if (world.getPtr(entity_info.id) != null) continue;
+        const entity = try world.spawn(entity_info.id);
         entity.* = .{
             .id = entity_info.id,
             .kind = entity_info.kind,
@@ -67,15 +38,15 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
         };
         switch (entity_info.kind) {
             .player => {
-                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
+                try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
-                info.world.planet_radius = @floatFromInt(radius);
-                var planet: shared.Planet(.renderable) = try .init(self.gpa, radius);
-                defer planet.deinit(self.gpa);
+                world.planet_radius = @floatFromInt(radius);
+                var planet: shared.Planet(.renderable) = try .init(gpa, radius);
+                defer planet.deinit(gpa);
                 try system_context.renderer.inner.resources.createStaticMesh(
-                    self.gpa,
+                    gpa,
                     "planet",
                     planet.vertices,
                     planet.indices,
@@ -87,32 +58,32 @@ pub fn update(self: *@This(), info: *const system.Info, system_context: *system.
                 entity.transform.scale = @splat(0.3);
             },
             .teleporter => {
-                info.world.teleporter_id = entity.id;
+                world.teleporter_id = entity.id;
             },
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
                     entity.transform.scale = @splat(5);
-                    info.world.teleporter_bosses.appendAssumeCapacity(entity.id);
+                    world.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
-                try system_context.renderer.inner.attachSkeleton(self.gpa, entity.id, entity_info.kind);
+                try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
             .unknown, .item => {},
         }
     }
-    self.pending_spawn.clearRetainingCapacity();
+    world.pending_spawn.clearRetainingCapacity();
 
-    for (self.pending_stats.items) |command| {
-        if (self.world.getPtr(command.id)) |entity| applyStat(entity, command);
+    for (world.pending_stats.items) |command| {
+        if (world.getPtr(command.id)) |entity| applyStat(entity, command);
     }
-    self.pending_stats.clearRetainingCapacity();
+    world.pending_stats.clearRetainingCapacity();
 
-    for (self.pending_despawn.items) |id| {
-        if (self.world.getPtr(id) == null) continue;
-        system_context.renderer.inner.removeSkeleton(self.gpa, id);
-        if (std.mem.indexOfScalar(u32, info.world.teleporter_bosses.items, id)) |index_of_boss| {
-            _ = info.world.teleporter_bosses.swapRemove(index_of_boss);
+    for (world.pending_despawn.items) |id| {
+        if (world.getPtr(id) == null) continue;
+        system_context.renderer.inner.removeSkeleton(gpa, id);
+        if (std.mem.indexOfScalar(shared.entity.Id, world.teleporter_bosses.items, id)) |index_of_boss| {
+            _ = world.teleporter_bosses.swapRemove(index_of_boss);
         }
-        _ = self.world.despawn(id);
+        _ = world.despawn(id);
     }
-    self.pending_despawn.clearRetainingCapacity();
+    world.pending_despawn.clearRetainingCapacity();
 }

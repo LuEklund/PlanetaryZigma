@@ -25,7 +25,7 @@ pub const Kind = enum {
     damage,
     attack_speed,
 
-    pub fn fromKind(kind: shared.Entity.Kind) Kind {
+    pub fn fromKind(kind: shared.entity.Kind) Kind {
         return switch (kind) {
             .unknown => .unknown,
             .player => .player,
@@ -82,7 +82,7 @@ clips: []AnimationClip,
 skins: []Skin,
 look_nodes: []usize,
 overlay_mask: ?[]bool,
-state_clips: std.EnumArray(shared.Entity.State, usize),
+state_clips: std.EnumArray(shared.entity.State, usize),
 offset: nz.Transform3D(f32),
 
 pub const empty: @This() = .{

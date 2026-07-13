@@ -1,6 +1,11 @@
 const std = @import("std");
 const Item = @import("inventory.zig").Item;
 
+pub const Id = enum(u32) {
+    none = 0,
+    _,
+};
+
 pub const EnemyKind = enum(u16) {
     tubloid,
     tubloida,

@@ -16,8 +16,13 @@ pub fn main(init: std.process.Init) !void {
     const gpa = gpa_impl.allocator();
     const io = init.io;
 
-    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET_STATS") catch false;
-    var steam_server: shared.SteamNet.Server = try .init(gpa, io);
+    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
+
+    var args_iterator = std.process.Args.Iterator.init(init.minimal.args);
+    _ = args_iterator.next();
+    const host_steam_id: u64 = if (args_iterator.next()) |arg| try std.fmt.parseInt(u64, arg, 10) else 0;
+
+    var steam_server: shared.SteamNet.Server = try .init(gpa, io, host_steam_id);
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 

@@ -46,7 +46,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
-skeletons: std.AutoHashMap(u32, SkeletonInstance),
+skeletons: std.AutoHashMap(shared.entity.Id, SkeletonInstance),
 menu_player: SkeletonInstance,
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
@@ -335,7 +335,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetRasterizerDiscardEnableEXT(cmd, c.VK_FALSE);
 
     ext.vkCmdSetRasterizationSamplesEXT(cmd, c.VK_SAMPLE_COUNT_1_BIT);
-    ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_TRUE);
+    ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetStencilTestEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetPrimitiveRestartEnableEXT(cmd, c.VK_FALSE);
@@ -484,7 +484,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
         var debug_vertex_count: u32 = 0;
         for (info.world.entities.values()) |*entity| {
-            const collider_shape = shared.Entity.colliderShape(entity.kind) orelse continue;
+            const collider_shape = shared.entity.colliderShape(entity.kind) orelse continue;
             const first_vertex = debug_vertex_count;
             switch (collider_shape) {
                 .capsule => |capsule| try appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
@@ -860,7 +860,7 @@ fn appendCapsuleLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, ha
     }
 }
 
-fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, box: shared.Entity.ColliderShape.HalfBoxExtent) !void {
+fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, box: shared.entity.ColliderShape.HalfBoxExtent) !void {
     const bottom_corners = [4]nz.Vec3(f32){
         .{ -box.x, -box.y, -box.z },
         .{ box.x, -box.y, -box.z },
@@ -941,7 +941,7 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
+pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
@@ -950,7 +950,7 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, en
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32) void {
+pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
