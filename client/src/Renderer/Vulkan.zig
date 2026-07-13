@@ -327,7 +327,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetRasterizerDiscardEnableEXT(cmd, c.VK_FALSE);
 
     ext.vkCmdSetRasterizationSamplesEXT(cmd, c.VK_SAMPLE_COUNT_1_BIT);
-    ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_TRUE);
+    ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetStencilTestEnableEXT(cmd, c.VK_FALSE);
     ext.vkCmdSetPrimitiveRestartEnableEXT(cmd, c.VK_FALSE);

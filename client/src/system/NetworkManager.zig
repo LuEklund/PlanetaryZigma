@@ -22,6 +22,15 @@ server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
 server_list: ServerList = .{},
+host_state: HostState = .none,
+server_process: ?std.process.Child = null,
+
+pub const HostState = enum(u8) {
+    none,
+    requested,
+    waiting,
+    hosting,
+};
 
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
@@ -45,7 +54,28 @@ pub fn init(
 }
 
 pub fn deinit(self: *@This()) void {
-    _ = self;
+    if (self.server_process) |*child| child.kill(self.io);
+}
+
+fn spawnHostServer(self: *@This()) void {
+    self.host_state = .none;
+    inline for (.{ "../server", "server" }) |dir| {
+        if (std.Io.Dir.cwd().access(self.io, dir, .{})) |_| {
+            std.Io.Dir.cwd().deleteFile(self.io, dir ++ "/" ++ shared.SteamNet.Server.server_file_name) catch {};
+            var host_steam_id_buf: [20]u8 = undefined;
+            const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
+            self.server_process = std.process.spawn(self.io, .{
+                .argv = &.{ "zig-out/bin/server", host_steam_id_text },
+                .cwd = .{ .path = dir },
+            }) catch |err| {
+                std.log.err("spawn host server: {t}", .{err});
+                return;
+            };
+            self.host_state = .waiting;
+            return;
+        } else |_| {}
+    }
+    std.log.err("host: server directory not found", .{});
 }
 
 fn sendConnect(self: *@This()) !void {
@@ -72,6 +102,24 @@ pub fn update(
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
+
+    if (self.host_state == .requested) self.spawnHostServer();
+    if (self.host_state == .waiting) {
+        inline for (.{ "../server", "server" }) |dir| {
+            const id_path = dir ++ "/" ++ shared.SteamNet.Server.server_file_name;
+            var id_buf: [20]u8 = undefined;
+            if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
+                self.host_state = .hosting;
+                std.Io.Dir.cwd().deleteFile(self.io, id_path) catch {};
+                const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
+                if (server_steam_id == 0) {
+                    std.log.err("host: bad server id file", .{});
+                } else if (self.steam_client.server_conn == 0) {
+                    try self.steam_client.connectToServer(server_steam_id);
+                }
+            } else |_| {}
+        }
+    }
 
     // 0. server list update.
     if (self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
