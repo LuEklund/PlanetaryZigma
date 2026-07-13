@@ -12,12 +12,21 @@ pub fn updateEnemies(info: *const Info) void {
     defer tracy_scope.end();
 
     if (info.world.players.items.len == 0) return;
-    const player = info.world.getPtr(info.world.players.getLast()) orelse return;
 
     for (info.world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
+        var closet: f32 = std.math.floatMax(f32);
+        var player: *system.Entity = undefined;
+        for (info.world.players.items) |player_id| {
+            const current_player = info.world.getPtr(player_id) orelse continue;
+            const distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
+            if (distance < closet) {
+                closet = distance;
+                player = current_player;
+            }
+        }
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
@@ -147,6 +156,7 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
     }
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
+        player.flags.invinsible = false;
         if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
             teleporter.charged += info.delta_time + 100;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);

@@ -19,6 +19,7 @@ controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
+stage: u32 = 0,
 
 pub const Entity = struct {
     id: shared.entity.Id = .none,

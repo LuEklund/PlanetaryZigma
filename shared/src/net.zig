@@ -122,7 +122,7 @@ pub const UpdateInventory = struct {
 pub const Event = union(enum(u16)) {
     teleport_start: void,
     teleporter_charge: f16,
-    new_stage: void,
+    new_stage: u32,
     attack: entity.Id,
 };
 
