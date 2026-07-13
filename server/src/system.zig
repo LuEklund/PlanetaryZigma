@@ -1,9 +1,8 @@
 const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
-const ItemManager = @import("system/ItemManager.zig");
 const Director = @import("system/Director.zig");
-const EnemyManager = @import("system/EnemyManager.zig");
+const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
@@ -74,64 +73,14 @@ pub const Context = struct {
             },
         }
         try PlayerController.update(info, &self.physics);
-        try EnemyManager.update(info);
+        gameplay.updateEnemies(info);
         try self.director.update(info, &self.physics);
         try self.physics.update(info);
-        self.bullets(info);
-        try ItemManager.update(info);
-        self.teleporterCharge(info);
-        for (self.world.entities.values()) |*entity| {
-            if (entity.lifetime) |*lifetime| {
-                lifetime.* -= info.delta_time;
-                if (lifetime.* <= 0) self.world.queueDespawn(entity.id);
-            }
-        }
+        gameplay.updateBullets(info, &self.physics);
+        try gameplay.updateItems(info);
+        gameplay.updateTeleporter(info, &self.director);
+        gameplay.updateLifetimes(info);
         try self.world.flush(&self.physics);
-    }
-
-    fn bullets(self: *Context, info: *const Info) void {
-        for (self.world.entities.values()) |*entity| {
-            if (entity.kind != .bullet) continue;
-            const previous_position = entity.transform.position;
-            entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
-            const travel = entity.transform.position - previous_position;
-
-            const ray_hit = Physics.c.b3World_CastRayClosest(
-                self.physics.world,
-                .{ .x = previous_position[0], .y = previous_position[1], .z = previous_position[2] },
-                .{ .x = travel[0], .y = travel[1], .z = travel[2] },
-                Physics.c.b3DefaultQueryFilter(),
-            );
-            if (!ray_hit.hit) continue;
-
-            const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
-            const hit_id: shared.entity.Id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
-            if (hit_id == entity.owner_id) continue;
-
-            const owner_entity = self.world.getPtr(entity.owner_id) orelse continue;
-            const hit_entity = self.world.getPtr(hit_id) orelse continue;
-            if (owner_entity.kind.eql(hit_entity.kind)) continue;
-
-            _ = self.world.removeHealth(hit_entity, entity.stats.get(.damage).current);
-            self.world.queueDespawn(entity.id);
-        }
-    }
-
-    fn teleporterCharge(self: *Context, info: *const Info) void {
-        const entity = self.world.getPtr(self.world.teleporter_id) orelse return;
-        const teleporter = &entity.teleporter;
-        if (teleporter.charged == teleporter.max_charge) {
-            self.director.should_spawm = false;
-            return;
-        }
-        for (self.world.players.items) |player_id| {
-            const player = self.world.getPtr(player_id) orelse continue;
-            if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
-                teleporter.charged += info.delta_time + 100;
-                teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
-            }
-        }
-        self.world.outbox.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
     }
 
     fn reload(self: *Context, pre_reload: bool) !void {

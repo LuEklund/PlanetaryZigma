@@ -9,7 +9,7 @@ credits: f32 = 0,
 salary_per_second: f32 = 1,
 last_salary: f32 = 0,
 enemy_cost: f32 = 10,
-should_spawm: bool = false,
+spawning: bool = false,
 
 pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
@@ -20,9 +20,9 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
         try self.startStage(info.world, physics);
     }
 
-    self.should_spawm = false;
+    self.spawning = false;
 
-    if (self.should_spawm and info.world.players.items.len != 0) {
+    if (self.spawning and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
             self.last_salary = info.elapsed_time;
             self.credits += self.salary_per_second * 10;
@@ -49,7 +49,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     }
     const random = world.prng.random();
     world.teleporter_id = .none;
-    self.should_spawm = true;
+    self.spawning = true;
     world.outbox.appendAssumeCapacity(.{ .event = .new_stage });
     world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
