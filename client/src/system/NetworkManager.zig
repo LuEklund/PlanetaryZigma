@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
@@ -28,12 +29,21 @@ pub const HostState = enum(u8) {
     requested,
     waiting,
     hosting,
+    failed,
 };
 
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
     refresh: bool = true,
+};
+
+const server_exe_name = if (builtin.os.tag == .windows) "server.exe" else "server";
+const server_dir_candidates = [_][]const u8{ "../server", "server", "../../../server" };
+
+const HostServer = struct {
+    dir: []const u8,
+    exe_path: []const u8,
 };
 
 pub fn init(
@@ -53,25 +63,72 @@ pub fn deinit(self: *@This()) void {
     if (self.server_process) |*child| child.kill(self.io);
 }
 
-fn spawnHostServer(self: *@This()) void {
+fn stopHostServer(self: *@This()) void {
+    if (self.server_process) |*child| child.kill(self.io);
+    self.server_process = null;
+}
+
+pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
+    try self.steam_client.packet_mutex.lock(self.io);
+    defer self.steam_client.packet_mutex.unlock(self.io);
+    self.steam_client.disconnect();
+
+    self.stopHostServer();
+    self.server_conn = 0;
+    self.server_tick_estimate = 0;
+    self.server_tick_latest = 0;
+    self.sent_connect = false;
     self.host_state = .none;
-    inline for (.{ "../server", "server" }) |dir| {
-        if (std.Io.Dir.cwd().access(self.io, dir, .{})) |_| {
-            std.Io.Dir.cwd().deleteFile(self.io, dir ++ "/" ++ shared.SteamNet.Server.server_file_name) catch {};
-            var host_steam_id_buf: [20]u8 = undefined;
-            const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
-            self.server_process = std.process.spawn(self.io, .{
-                .argv = &.{ "zig-out/bin/server", host_steam_id_text },
-                .cwd = .{ .path = dir },
-            }) catch |err| {
-                std.log.err("spawn host server: {t}", .{err});
-                return;
-            };
-            self.host_state = .waiting;
-            return;
-        } else |_| {}
+    info.world.clearSession();
+}
+
+fn findHostServer(self: *@This(), dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+    for (server_dir_candidates) |candidate| {
+        var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
+        defer server_dir.close(self.io);
+
+        var exe_rel_buf: [64]u8 = undefined;
+        const exe_rel = std.fmt.bufPrint(&exe_rel_buf, "zig-out/bin/{s}", .{server_exe_name}) catch unreachable;
+        server_dir.access(self.io, exe_rel, .{}) catch continue;
+
+        const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
+        const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
+        return .{
+            .dir = dir_buf[0..dir_len],
+            .exe_path = exe_path_buf[0..exe_path_len],
+        };
     }
-    std.log.err("host: server directory not found", .{});
+    return null;
+}
+
+fn spawnHostServer(self: *@This()) void {
+    var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
+        self.host_state = .failed;
+        std.log.err("host: {s} not found; build the server for this OS first", .{server_exe_name});
+        return;
+    };
+
+    var server_id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const server_id_path = std.fmt.bufPrint(&server_id_path_buf, "{s}/{s}", .{ host_server.dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
+    std.Io.Dir.deleteFileAbsolute(self.io, server_id_path) catch {};
+
+    var host_steam_id_buf: [20]u8 = undefined;
+    const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
+    self.server_process = std.process.spawn(self.io, .{
+        .argv = &.{ host_server.exe_path, host_steam_id_text },
+        .cwd = .{ .path = host_server.dir },
+        .stdin = .ignore,
+        .stdout = .inherit,
+        .stderr = .inherit,
+        .create_no_window = true,
+    }) catch |err| {
+        self.host_state = .failed;
+        std.log.err("spawn host server: {t}", .{err});
+        return;
+    };
+    self.host_state = .waiting;
 }
 
 fn sendConnect(self: *@This()) !void {
@@ -97,8 +154,9 @@ pub fn update(self: *@This(), info: *const Info) !void {
 
     if (self.host_state == .requested) self.spawnHostServer();
     if (self.host_state == .waiting) {
-        inline for (.{ "../server", "server" }) |dir| {
-            const id_path = dir ++ "/" ++ shared.SteamNet.Server.server_file_name;
+        for (server_dir_candidates) |dir| {
+            var id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+            const id_path = std.fmt.bufPrint(&id_path_buf, "{s}/{s}", .{ dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
             var id_buf: [20]u8 = undefined;
             if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
                 self.host_state = .hosting;

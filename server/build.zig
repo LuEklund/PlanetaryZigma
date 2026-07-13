@@ -1,16 +1,7 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // const target = b.standardTargetOptions(.{});
-    //TODO: remove once Zig 0.16.0 works properly with GCC 16.1.1
-    const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 39, .patch = 0 },
-        },
-    });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
@@ -93,11 +84,18 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    //TODO: remove once Zig 0.16.0 works properly with GCC 16.1.1
-    exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));
-    exe.root_module.addRPath(steam_dep.path("steamworks/redistributable_bin/linux64"));
+    if (target.result.os.tag == .linux) {
+        exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));
+        exe.root_module.addRPath(steam_dep.path("steamworks/redistributable_bin/linux64"));
+    }
 
     b.installArtifact(exe);
+    if (target.result.os.tag == .windows) {
+        const install_steam_dll = b.addInstallBinFile(steam_dep.path("steamworks/redistributable_bin/win64/steam_api64.dll"), "steam_api64.dll");
+        const install_ticket_dll = b.addInstallBinFile(steam_dep.path("steamworks/public/steam/lib/win64/sdkencryptedappticket64.dll"), "sdkencryptedappticket64.dll");
+        b.getInstallStep().dependOn(&install_steam_dll.step);
+        b.getInstallStep().dependOn(&install_ticket_dll.step);
+    }
     if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
 
     const run_step = b.step("run", "Run the server");
