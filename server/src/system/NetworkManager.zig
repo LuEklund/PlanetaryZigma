@@ -141,6 +141,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                         .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
                         .reliable,
                     );
+                    try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
                     if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                         if (entity.teleporter.active) {
                             try client.sendCommand(writer, .{
