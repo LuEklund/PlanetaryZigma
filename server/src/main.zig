@@ -51,11 +51,6 @@ pub fn main(init: std.process.Init) !void {
     const time_step: f32 = shared.tick_seconds;
     while (true) {
         if (system_context.request_exit) break;
-        if (steam_server.host_state == .left) break;
-        if (steam_server.host_state == .waiting and elapsed_time > 60) {
-            std.log.err("host never connected, shutting down", .{});
-            break;
-        }
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;

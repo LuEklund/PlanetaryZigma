@@ -2,26 +2,12 @@ const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
-const Spawner = @import("Spawner.zig");
-const BulletManager = @import("BulletManager.zig");
-const NetworkManager = @import("NetworkManager.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-physics: *Physics,
-spawner: *Spawner,
-
 pub const aim_range: f32 = 300;
 
-pub fn init(physics: *Physics, spawner: *Spawner) @This() {
-    return .{ .physics = physics, .spawner = spawner };
-}
-
-pub fn deinit(self: *@This()) void {
-    _ = self;
-}
-
-pub fn update(self: *@This(), info: *const system.Info, network_manager: *NetworkManager) !void {
+pub fn update(info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -32,37 +18,15 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
         const controller = &player.controller;
         const input = &controller.input;
 
-        // std.log.debug("handle input for: {d}", .{player.id});
-        // std.log.debug("pos {any}", .{transform.position});
-
         const planet_up = nz.vec.normalize(transform.position);
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            // try self.spawner.startStage(info.world, self.physics);
-
-            // for (info.world.entities.values()) |entry| {
-            //     if (entry.kind != .player) self.spawner.depspawn(entry.id);
-            // }
-            // try self.spawner.startStage(info.world, self.physics);
-            // _ = try self.spawner.spawn(.{
-            //     .kind = .{ .item = .speed },
-            //     .transform = .{ .position = player.transform.position },
-            //     .collider = .{
-            //         .shape = .{ .primitive = .{ .box = .{ .half_extent = 1 } } },
-            //         .motion_type = .dynamic,
-            //         .object_layer = .planet_only,
-            //     },
-            // });
-            _ = try self.spawner.spawn(.{
+            _ = info.world.spawn(.{
                 .kind = .{ .enemy = .tubloida },
                 .transform = .{ .position = player.transform.position },
-                .collider = .{
-                    .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .tubloida }).? },
-                    .motion_type = .dynamic,
-                    .object_layer = .moving,
-                },
+                .last_attack = info.elapsed_time,
             });
         }
 
@@ -72,20 +36,16 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
                 if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
                     if (!teleporter.active) {
                         teleporter.active = true;
-                        network_manager.pending_events.appendAssumeCapacity(.teleport_start);
-                        _ = try self.spawner.spawn(.{
+                        info.world.outbox.appendAssumeCapacity(.{ .event = .teleport_start });
+                        _ = info.world.spawn(.{
                             .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
-                            .collider = .{
-                                .shape = .{ .primitive = shared.Entity.colliderShape(.{ .enemy = .wizard }).? },
-                                .motion_type = .dynamic,
-                                .object_layer = .moving,
-                            },
                             .flags = .{ .is_teleporter_boss = true },
+                            .last_attack = info.elapsed_time,
                         });
                     } else {
                         if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
-                            try self.spawner.startStage(info.world, self.physics);
+                            info.world.next_stage_requested = true;
                         }
                     }
                 }
@@ -132,29 +92,27 @@ pub fn update(self: *@This(), info: *const system.Info, network_manager: *Networ
 
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
             player.last_attack = info.elapsed_time;
-            const aim_point = self.aimPoint(transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - transform.position);
             const muzzle_velocity = nz.vec.scale(start_direction, 100);
-            const bullet = try self.spawner.spawn(
-                .{
-                    .kind = .bullet,
-                    .owner_id = player.id,
-                    .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
-                    .velocity = muzzle_velocity,
-                    .bullet = .{ .velocity = muzzle_velocity, .lifetime = 1 },
-                },
-            );
+            const bullet = info.world.spawn(.{
+                .kind = .bullet,
+                .owner_id = player.id,
+                .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
+                .velocity = muzzle_velocity,
+                .bullet = .{ .velocity = muzzle_velocity, .lifetime = 1 },
+            });
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
-            network_manager.pending_events.appendAssumeCapacity(.{ .attack = player_id });
+            info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });
         }
     }
 }
 
-fn aimPoint(self: *@This(), player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth + 1.5);
     const translation = nz.vec.scale(camera_forward, aim_range);
-    const result = Physics.c.b3World_CastRayClosest(self.physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
+    const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
     if (result.hit) return Physics.toVec(result.point);
     return ray_start + translation;
 }
