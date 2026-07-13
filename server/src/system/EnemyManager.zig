@@ -47,7 +47,7 @@ pub fn update(info: *const Info) !void {
                         .owner_id = enemy.id,
                         .transform = .{ .position = enemy.transform.position + nz.vec.scale(forward_dir, 1.5), .rotation = player.transform.rotation },
                         .velocity = muzzle_velocity,
-                        .bullet = .{ .velocity = muzzle_velocity, .lifetime = 2 },
+                        .lifetime = 2,
                     });
                     bullet.stats.setCurrent(.damage, damage);
                     info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });

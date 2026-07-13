@@ -100,7 +100,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 .owner_id = player.id,
                 .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
                 .velocity = muzzle_velocity,
-                .bullet = .{ .velocity = muzzle_velocity, .lifetime = 1 },
+                .lifetime = 1,
             });
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
             info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });

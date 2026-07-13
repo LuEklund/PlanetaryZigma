@@ -3,28 +3,26 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
-const Hud = @import("system/Hud.zig");
 
 pub const max_entities: usize = 1024;
 
 mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
-entities: std.AutoArrayHashMapUnmanaged(shared.Entity.Id, Entity) = .empty,
-teleporter_bosses: std.ArrayList(shared.Entity.Id) = .empty,
+entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
+teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
-pending_despawn: std.ArrayList(shared.Entity.Id) = .empty,
+pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
-attack_events: std.ArrayList(shared.Entity.Id) = .empty,
+attack_events: std.ArrayList(shared.entity.Id) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
-hud: Hud = .{},
-teleporter_id: shared.Entity.Id = .none,
-player_id: shared.Entity.Id = .none,
+teleporter_id: shared.entity.Id = .none,
+player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 
 pub const Entity = struct {
-    id: shared.Entity.Id = .none,
-    kind: shared.Entity.Kind,
+    id: shared.entity.Id = .none,
+    kind: shared.entity.Kind,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
@@ -56,15 +54,15 @@ pub fn deinit(self: *@This()) void {
     self.attack_events.deinit(self.gpa);
 }
 
-pub fn spawn(self: *@This(), id: shared.Entity.Id) !*Entity {
+pub fn spawn(self: *@This(), id: shared.entity.Id) !*Entity {
     try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
     return self.entities.getPtr(id).?;
 }
 
-pub fn getPtr(self: *@This(), id: shared.Entity.Id) ?*Entity {
+pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn despawn(self: *@This(), id: shared.Entity.Id) bool {
+pub fn despawn(self: *@This(), id: shared.entity.Id) bool {
     return self.entities.swapRemove(id);
 }

@@ -2,19 +2,17 @@ const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
 const ItemManager = @import("system/ItemManager.zig");
-const Spawner = @import("system/Spawner.zig");
+const Director = @import("system/Director.zig");
 const EnemyManager = @import("system/EnemyManager.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
-const BulletManager = @import("system/BulletManager.zig");
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
-pub const BulletData = World.BulletData;
 
 pub const Info = struct {
     tick: u32,
@@ -29,7 +27,7 @@ pub const Context = struct {
     world: *World,
     steam_server: *shared.SteamNet.Server,
     network_manager: NetworkManager,
-    spawner: Spawner,
+    director: Director,
     physics: Physics,
     request_exit: bool,
 
@@ -48,12 +46,12 @@ pub const Context = struct {
             .steam_server = data.steam_server,
             .network_manager = try .init(data.gpa, data.io, data.steam_server),
             .physics = .init(data.gpa, data.io),
-            .spawner = .{},
+            .director = .{},
             .request_exit = false,
         };
 
         // TODO: Move somewhere smarter when know how to move stages.
-        try self.spawner.startStage(self.world, &self.physics);
+        try self.director.startStage(self.world, &self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
@@ -77,19 +75,53 @@ pub const Context = struct {
         }
         try PlayerController.update(info, &self.physics);
         try EnemyManager.update(info);
-        try self.spawner.update(info, &self.physics);
+        try self.director.update(info, &self.physics);
         try self.physics.update(info);
-        try BulletManager.update(info, &self.physics);
+        self.bullets(info);
         try ItemManager.update(info);
         self.teleporterCharge(info);
+        for (self.world.entities.values()) |*entity| {
+            if (entity.lifetime) |*lifetime| {
+                lifetime.* -= info.delta_time;
+                if (lifetime.* <= 0) self.world.queueDespawn(entity.id);
+            }
+        }
         try self.world.flush(&self.physics);
+    }
+
+    fn bullets(self: *Context, info: *const Info) void {
+        for (self.world.entities.values()) |*entity| {
+            if (entity.kind != .bullet) continue;
+            const previous_position = entity.transform.position;
+            entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
+            const travel = entity.transform.position - previous_position;
+
+            const ray_hit = Physics.c.b3World_CastRayClosest(
+                self.physics.world,
+                .{ .x = previous_position[0], .y = previous_position[1], .z = previous_position[2] },
+                .{ .x = travel[0], .y = travel[1], .z = travel[2] },
+                Physics.c.b3DefaultQueryFilter(),
+            );
+            if (!ray_hit.hit) continue;
+
+            const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
+            const hit_id: shared.entity.Id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
+            if (hit_id == entity.owner_id) continue;
+
+            const owner_entity = self.world.getPtr(entity.owner_id) orelse continue;
+            const hit_entity = self.world.getPtr(hit_id) orelse continue;
+            if (owner_entity.kind.eql(hit_entity.kind)) continue;
+
+            _ = self.world.removeHealth(hit_entity, entity.stats.get(.damage).current);
+            self.world.queueDespawn(entity.id);
+        }
     }
 
     fn teleporterCharge(self: *Context, info: *const Info) void {
         const entity = self.world.getPtr(self.world.teleporter_id) orelse return;
         const teleporter = &entity.teleporter;
         if (teleporter.charged == teleporter.max_charge) {
-            self.spawner.should_spawm = false;
+            self.director.should_spawm = false;
             return;
         }
         for (self.world.players.items) |player_id| {

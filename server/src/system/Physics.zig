@@ -39,7 +39,7 @@ pub const Collider = struct {
         indices: []u32,
         vertices: [][4]f32,
     };
-    shape: union(enum) { primitive: shared.Entity.ColliderShape, mesh: Mesh },
+    shape: union(enum) { primitive: shared.entity.ColliderShape, mesh: Mesh },
     body_id: ?c.b3BodyId = null,
     motion_type: MotionType,
     object_layer: ObjectLayer,
@@ -87,7 +87,7 @@ pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
     } else {
         self.world = makeWorld();
         for (world.entities.values()) |*entity| {
-            if (!shared.Entity.hasCollider(entity.kind)) continue;
+            if (!shared.entity.hasCollider(entity.kind)) continue;
             entity.collider.body_id = null;
             try self.createBody(entity);
         }
@@ -100,7 +100,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 
     // 1. Planet pull per dynamic body: gravity down + keep upright.
     for (info.world.entities.values()) |*entity| {
-        if (!shared.Entity.hasCollider(entity.kind)) continue;
+        if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
         if (entity.collider.motion_type != .dynamic) continue;
 
@@ -138,7 +138,7 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
     c.b3World_Step(self.world, info.delta_time, 4);
 
     for (info.world.entities.values()) |*entity| {
-        if (!shared.Entity.hasCollider(entity.kind)) continue;
+        if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
 
         const pos = c.b3Body_GetPosition(body_id);

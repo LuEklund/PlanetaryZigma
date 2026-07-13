@@ -8,8 +8,7 @@ const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 
-pub fn update(self: *@This(), info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
-    _ = self;
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 

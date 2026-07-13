@@ -9,7 +9,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
-last_motions: std.AutoHashMap(shared.Entity.Id, shared.net.UpdateMotion),
+last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 
 pub const WireStatus = enum {
@@ -24,7 +24,7 @@ pub const Client = struct {
     steam_server: *shared.SteamNet.Server,
     conn: shared.SteamNet.Conn,
     name: []const u8 = "",
-    entity_id: shared.Entity.Id = .none,
+    entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,
     command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
 
@@ -42,7 +42,7 @@ pub const Client = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
-    var last_motions: std.AutoHashMap(shared.Entity.Id, shared.net.UpdateMotion) = .init(gpa);
+    var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
     return .{
         .gpa = gpa,
@@ -168,7 +168,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     // 4. Push outbound state to every active client.
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (shared.Entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+        if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();

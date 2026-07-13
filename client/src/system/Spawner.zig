@@ -80,7 +80,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
     for (world.pending_despawn.items) |id| {
         if (world.getPtr(id) == null) continue;
         system_context.renderer.inner.removeSkeleton(gpa, id);
-        if (std.mem.indexOfScalar(shared.Entity.Id, world.teleporter_bosses.items, id)) |index_of_boss| {
+        if (std.mem.indexOfScalar(shared.entity.Id, world.teleporter_bosses.items, id)) |index_of_boss| {
             _ = world.teleporter_bosses.swapRemove(index_of_boss);
         }
         _ = world.despawn(id);
