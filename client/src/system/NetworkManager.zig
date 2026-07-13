@@ -7,12 +7,10 @@ const World = system.World;
 const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
-const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
 
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_client: *Client,
-spawner: *Spawner,
 /// Active connection to the server (0 = not yet connected). Filled in from
 /// SteamNet.events on the first .connected event.
 server_conn: shared.SteamNet.Conn = 0,
@@ -43,13 +41,11 @@ pub fn init(
     gpa: std.mem.Allocator,
     io: std.Io,
     net: *shared.SteamNet.Client,
-    spawner: *Spawner,
 ) !void {
     self.* = .{
         .gpa = gpa,
         .io = io,
         .steam_client = net,
-        .spawner = spawner,
     };
 }
 
@@ -93,11 +89,7 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(
-    self: *@This(),
-    info: *const Info,
-    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
-) !void {
+pub fn update(self: *@This(), info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
@@ -171,7 +163,7 @@ pub fn update(
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try self.handleCommand(info, parsed, skeletons);
+        try self.handleCommand(info, parsed);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
 
@@ -184,12 +176,11 @@ fn handleCommand(
     self: *@This(),
     info: *const Info,
     command: shared.net.ServerPacket,
-    skeletons: *std.AutoHashMap(u32, SkeletonInstance),
 ) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            self.spawner.spawn(.{ .kind = .player, .id = acknowledge.id, .data = .none });
+            info.world.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -198,12 +189,12 @@ fn handleCommand(
             if (info.world.getPtr(spawn_entity.id) != null) return;
             if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
 
-            self.spawner.spawn(spawn_entity);
+            info.world.pending_spawn.appendAssumeCapacity(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             // Spawner resolves it after spawns are applied, so a spawn+despawn
             // arriving in the same batch can't drop the despawn.
-            try self.spawner.depspawn(despawn_entity.id);
+            info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
@@ -214,7 +205,7 @@ fn handleCommand(
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {
-                self.spawner.pending_stats.appendAssumeCapacity(update_stat_command);
+                info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
             Spawner.applyStat(entity, update_stat_command);
@@ -227,10 +218,9 @@ fn handleCommand(
                 .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                     entity.teleporter.charged = charged;
                 },
-                .new_stage => info.world.teleporter_id = 0,
+                .new_stage => info.world.teleporter_id = .none,
                 .attack => |id| {
-                    const skeleton_animation = skeletons.getPtr(id) orelse return;
-                    skeleton_animation.playOverlay(skeleton_animation.model.state_clips.get(.attack));
+                    info.world.attack_events.appendAssumeCapacity(id);
                 },
             }
         },

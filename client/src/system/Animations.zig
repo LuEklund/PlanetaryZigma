@@ -20,10 +20,16 @@ pub fn init(gpa: std.mem.Allocator) @This() {
     return .{ .gpa = gpa };
 }
 
-pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(u32, SkeletonInstance)) !void {
+pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(shared.Entity.Id, SkeletonInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
+
+    for (info.world.attack_events.items) |id| {
+        const instance = skeletons.getPtr(id) orelse continue;
+        instance.playOverlay(instance.model.state_clips.get(.attack));
+    }
+    info.world.attack_events.clearRetainingCapacity();
 
     // std.log.debug("render ptr {*}, model ptr{*}", .{ self.renderer, models });
     for (info.world.entities.values()) |*entity| {

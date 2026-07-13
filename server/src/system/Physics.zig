@@ -193,7 +193,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
         .angularZ = true,
     };
     body_def.enableSleep = false;
-    body_def.userData = @ptrFromInt(entity.id);
+    body_def.userData = @ptrFromInt(@intFromEnum(entity.id));
     const body_id = c.b3CreateBody(self.world, &body_def);
 
     var shape_def = c.b3DefaultShapeDef();

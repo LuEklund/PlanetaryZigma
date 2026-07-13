@@ -9,7 +9,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
-last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion),
+last_motions: std.AutoHashMap(shared.Entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 
 pub const WireStatus = enum {
@@ -24,7 +24,7 @@ pub const Client = struct {
     steam_server: *shared.SteamNet.Server,
     conn: shared.SteamNet.Conn,
     name: []const u8 = "",
-    entity_id: u32 = 0,
+    entity_id: shared.Entity.Id = .none,
     needs_full_sync: bool = true,
     command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
 
@@ -42,7 +42,7 @@ pub const Client = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
-    var last_motions: std.AutoHashMap(u32, shared.net.UpdateMotion) = .init(gpa);
+    var last_motions: std.AutoHashMap(shared.Entity.Id, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(system.World.max_entities);
     return .{
         .gpa = gpa,
@@ -92,7 +92,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != 0) world.queueDespawn(client.entity_id);
+                if (client.entity_id != .none) world.queueDespawn(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 std.log.debug("client disconnected: conn={d}", .{conn});
@@ -151,7 +151,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                     std.log.debug("PLAYER SPAWN entity_id={d}", .{client.entity_id});
                 },
                 .disconnect => {
-                    if (client.entity_id == 0) continue;
+                    if (client.entity_id == .none) continue;
                     world.queueDespawn(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
@@ -232,7 +232,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             }
         }
 
-        for (world.outbox.items) |fact| switch (fact) {
+        for (world.outbox.items) |pending_update| switch (pending_update) {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
@@ -253,7 +253,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
         };
     }
-    for (world.outbox.items) |fact| switch (fact) {
+    for (world.outbox.items) |pending_update| switch (pending_update) {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };

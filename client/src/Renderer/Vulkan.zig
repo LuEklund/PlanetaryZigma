@@ -44,7 +44,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
-skeletons: std.AutoHashMap(u32, SkeletonInstance),
+skeletons: std.AutoHashMap(shared.Entity.Id, SkeletonInstance),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
@@ -717,7 +717,7 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, entity_kind: shared.Entity.Kind) !void {
+pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.Entity.Id, entity_kind: shared.Entity.Kind) !void {
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
@@ -726,7 +726,7 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32, en
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: u32) void {
+pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.Entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);

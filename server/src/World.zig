@@ -1,26 +1,26 @@
 const std = @import("std");
 const shared = @import("shared");
-const Physics = @import("Physics.zig");
+const Physics = @import("system/Physics.zig");
 const nz = shared.numz;
 
 pub const max_entities: usize = 1024;
 
 gpa: std.mem.Allocator,
-entities: std.AutoArrayHashMapUnmanaged(u32, Entity),
-players: std.ArrayList(u32),
-teleport_bosses: std.ArrayList(u32),
-fresh: std.ArrayList(u32),
-despawn_queue: std.ArrayList(u32),
-outbox: std.ArrayList(Fact),
+entities: std.AutoArrayHashMapUnmanaged(shared.Entity.Id, Entity),
+players: std.ArrayList(shared.Entity.Id),
+teleport_bosses: std.ArrayList(shared.Entity.Id),
+new_spawns: std.ArrayList(shared.Entity.Id),
+pending_despawns: std.ArrayList(shared.Entity.Id),
+outbox: std.ArrayList(PendingUpdate),
 next_stage_requested: bool,
-teleporter_id: u32,
+teleporter_id: shared.Entity.Id,
 planet_radius: u32,
 next_id: u32,
 prng: std.Random.DefaultPrng,
 
-pub const Fact = union(enum) {
-    spawned: u32,
-    despawned: u32,
+pub const PendingUpdate = union(enum) {
+    spawned: shared.Entity.Id,
+    despawned: shared.Entity.Id,
     stat: shared.net.UpdateStat,
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
@@ -46,10 +46,10 @@ pub const BulletData = struct {
 };
 
 pub const Entity = struct {
-    id: u32 = 0,
+    id: shared.Entity.Id = .none,
     flags: Flags = .{},
     kind: shared.Entity.Kind = .unknown,
-    owner_id: u32 = 0,
+    owner_id: shared.Entity.Id = .none,
 
     transform: nz.Transform3D(f32) = .{},
     velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
@@ -86,7 +86,7 @@ pub const Entity = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator) !@This() {
-    var entities: std.AutoArrayHashMapUnmanaged(u32, Entity) = .empty;
+    var entities: std.AutoArrayHashMapUnmanaged(shared.Entity.Id, Entity) = .empty;
     try entities.ensureTotalCapacity(gpa, max_entities);
 
     return .{
@@ -94,11 +94,11 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
         .entities = entities,
         .players = try .initCapacity(gpa, 16),
         .teleport_bosses = try .initCapacity(gpa, max_entities),
-        .fresh = try .initCapacity(gpa, max_entities),
-        .despawn_queue = try .initCapacity(gpa, max_entities),
+        .new_spawns = try .initCapacity(gpa, max_entities),
+        .pending_despawns = try .initCapacity(gpa, max_entities),
         .outbox = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
-        .teleporter_id = 0,
+        .teleporter_id = .none,
         .planet_radius = 100,
         .next_id = 1,
         .prng = .init(0xACE1),
@@ -112,14 +112,14 @@ pub fn deinit(self: *@This()) void {
     self.entities.deinit(self.gpa);
     self.players.deinit(self.gpa);
     self.teleport_bosses.deinit(self.gpa);
-    self.fresh.deinit(self.gpa);
-    self.despawn_queue.deinit(self.gpa);
+    self.new_spawns.deinit(self.gpa);
+    self.pending_despawns.deinit(self.gpa);
     self.outbox.deinit(self.gpa);
 }
 
 pub fn spawn(self: *@This(), entity_info: Entity) *Entity {
     std.debug.assert(self.entities.entries.len < max_entities);
-    const id = self.next_id;
+    const id: shared.Entity.Id = @enumFromInt(self.next_id);
     self.next_id += 1;
     self.entities.putAssumeCapacity(id, entity_info);
     const entity = self.entities.getPtr(id).?;
@@ -134,16 +134,16 @@ pub fn spawn(self: *@This(), entity_info: Entity) *Entity {
         .player => entity.stats.init(100, 10, 10, 10, 10),
         else => {},
     }
-    self.fresh.appendAssumeCapacity(id);
+    self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }
 
-pub fn getPtr(self: *@This(), id: u32) ?*Entity {
+pub fn getPtr(self: *@This(), id: shared.Entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn queueDespawn(self: *@This(), id: u32) void {
-    self.despawn_queue.appendAssumeCapacity(id);
+pub fn queueDespawn(self: *@This(), id: shared.Entity.Id) void {
+    self.pending_despawns.appendAssumeCapacity(id);
 }
 
 pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
@@ -161,7 +161,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
 }
 
 pub fn flush(self: *@This(), physics: *Physics) !void {
-    for (self.fresh.items) |id| {
+    for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.Entity.hasCollider(entity.kind)) {
             if (shared.Entity.colliderShape(entity.kind)) |primitive_shape| {
@@ -175,24 +175,24 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
         }
         self.outbox.appendAssumeCapacity(.{ .spawned = id });
     }
-    self.fresh.clearRetainingCapacity();
+    self.new_spawns.clearRetainingCapacity();
 
-    for (self.despawn_queue.items) |id| {
+    for (self.pending_despawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.Entity.hasCollider(entity.kind)) {
             if (entity.collider.body_id) |body_id| physics.destroyBody(body_id);
         }
-        if (std.mem.indexOfScalar(u32, self.teleport_bosses.items, id)) |boss_index| {
+        if (std.mem.indexOfScalar(shared.Entity.Id, self.teleport_bosses.items, id)) |boss_index| {
             _ = self.teleport_bosses.swapRemove(boss_index);
         }
         entity.deinit(self.gpa);
-        if (std.mem.indexOfScalar(u32, self.players.items, id)) |player_index| {
+        if (std.mem.indexOfScalar(shared.Entity.Id, self.players.items, id)) |player_index| {
             _ = self.players.swapRemove(player_index);
         }
         _ = self.entities.swapRemove(id);
         self.outbox.appendAssumeCapacity(.{ .despawned = id });
     }
-    self.despawn_queue.clearRetainingCapacity();
+    self.pending_despawns.clearRetainingCapacity();
 }
 
 fn motionType(kind: shared.Entity.Kind) Physics.MotionType {

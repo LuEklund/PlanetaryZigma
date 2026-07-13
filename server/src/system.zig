@@ -10,7 +10,7 @@ const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const BulletManager = @import("system/BulletManager.zig");
 
-pub const World = @import("system/World.zig");
+pub const World = @import("World.zig");
 pub const Entity = World.Entity;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;

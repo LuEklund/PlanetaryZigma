@@ -34,7 +34,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         if (!ray_hit.hit) continue;
 
         const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
-        const hit_id: u32 = @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)));
+        const hit_id: shared.Entity.Id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
         if (hit_id == entity.owner_id) continue;
 
         const owner_entity = info.world.getPtr(entity.owner_id) orelse continue;

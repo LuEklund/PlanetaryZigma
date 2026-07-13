@@ -48,7 +48,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         if (entry.kind != .player) world.queueDespawn(entry.id);
     }
     const random = world.prng.random();
-    world.teleporter_id = 0;
+    world.teleporter_id = .none;
     self.should_spawm = true;
     world.outbox.appendAssumeCapacity(.{ .event = .new_stage });
     world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
