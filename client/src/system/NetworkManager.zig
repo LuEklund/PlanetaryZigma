@@ -218,7 +218,10 @@ fn handleCommand(
                 .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                     entity.teleporter.charged = charged;
                 },
-                .new_stage => info.world.teleporter_id = .none,
+                .new_stage => |new_stage| {
+                    info.world.teleporter_id = .none;
+                    info.world.stage = new_stage;
+                },
                 .attack => |id| {
                     info.world.attack_events.appendAssumeCapacity(id);
                 },

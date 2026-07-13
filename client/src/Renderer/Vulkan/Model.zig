@@ -69,8 +69,8 @@ pub const Kind = enum {
             .wizard => .{ .path = "objects/Wizard.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = null, .walk = "Walking", .attack = "Summon" } },
             .health => .{ .path = "objects/oxigen_tank.glb", .skinned = false, .clip_names = null },
             .speed => .{ .path = "objects/energy_drink.glb", .skinned = false, .clip_names = null },
-            .damage => .{ .path = "objects/damage.glb", .skinned = false, .clip_names = null },
-            .attack_speed => .{ .path = "objects/attack_speed.glb", .skinned = false, .clip_names = null },
+            .damage => .{ .path = "objects/gun.glb", .skinned = false, .clip_names = null },
+            .attack_speed => .{ .path = "objects/pickaxe2.glb", .skinned = false, .clip_names = null },
         };
     }
 };

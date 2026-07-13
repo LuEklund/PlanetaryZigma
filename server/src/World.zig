@@ -15,7 +15,8 @@ outbox: std.ArrayList(PendingUpdate),
 next_stage_requested: bool,
 teleporter_id: shared.entity.Id,
 planet_radius: u32,
-next_id: u32,
+next_entity_id: u32,
+next_stage: u32,
 prng: std.Random.DefaultPrng,
 
 pub const PendingUpdate = union(enum) {
@@ -95,7 +96,8 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
         .next_stage_requested = false,
         .teleporter_id = .none,
         .planet_radius = 100,
-        .next_id = 1,
+        .next_entity_id = 1,
+        .next_stage = 0,
         .prng = .init(0xACE1),
     };
 }
@@ -114,8 +116,8 @@ pub fn deinit(self: *@This()) void {
 
 pub fn spawn(self: *@This(), entity_info: Entity) *Entity {
     std.debug.assert(self.entities.entries.len < max_entities);
-    const id: shared.entity.Id = @enumFromInt(self.next_id);
-    self.next_id += 1;
+    const id: shared.entity.Id = @enumFromInt(self.next_entity_id);
+    self.next_entity_id += 1;
     self.entities.putAssumeCapacity(id, entity_info);
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
