@@ -48,6 +48,8 @@ swapchain: Swapchain,
 resources: *Resources,
 skeletons: std.AutoHashMap(shared.entity.Id, SkeletonInstance),
 menu_player: SkeletonInstance,
+menu_player_trace_distance: f32,
+menu_player_trace_initialized: bool,
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
@@ -109,6 +111,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     defer menu_planet.deinit(gpa);
     try self.resources.createStaticMesh(gpa, "menu_planet", menu_planet.vertices, menu_planet.indices, .menu_planet);
     self.menu_player = try .init(gpa, self.vma, self.device, self.resources.models.getPtr(.player));
+    self.menu_player_trace_distance = 0;
+    self.menu_player_trace_initialized = false;
 
     self.ui = try .init(
         gpa,
@@ -423,7 +427,9 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
     }
     if (info.world.show_menu_scene) {
-        try drawMenuScene(self, cmd, current_frame, elapsed_time, camera_transform, aspect, menu_tuning);
+        try drawMenuScene(self, cmd, current_frame, elapsed_time, info.delta_time, camera_transform, aspect, menu_tuning);
+    } else {
+        self.menu_player_trace_initialized = false;
     }
 
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
@@ -598,7 +604,7 @@ fn drawSkeletal(
     }
 }
 
-fn drawMenuScene(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *const FrameData, elapsed_time: f32, camera_transform: nz.Transform3D(f32), aspect: f32, tuning: World.MenuTuning) !void {
+fn drawMenuScene(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *const FrameData, elapsed_time: f32, delta_time: f32, camera_transform: nz.Transform3D(f32), aspect: f32, tuning: World.MenuTuning) !void {
     const planet_position = tuning.planet_position;
     const camera_right = camera_transform.rotation.rotateVec(.{ 1, 0, 0 });
     const roll_axis = nz.vec.normalize(camera_right);
@@ -611,8 +617,15 @@ fn drawMenuScene(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *const F
     const screen_ray = menuRayFromScreen(camera_transform, tuning.fov_rad, aspect, tuning.bozo_screen);
     const bozo_ray = menuBozoRayToPlanetCenter(screen_ray, planet_transform);
     const surface = raycastMenuPlanet(bozo_ray.origin, bozo_ray.direction, planet_transform) orelse fallbackMenuPlanetHit(bozo_ray.origin, planet_transform);
-    const planet_up = menuPlanetUp(surface.position, planet_transform);
-    const player_position = surface.position + nz.vec.scale(planet_up, tuning.bozo_surface_offset);
+    if (!self.menu_player_trace_initialized) {
+        self.menu_player_trace_distance = surface.distance;
+        self.menu_player_trace_initialized = true;
+    }
+    const trace_decay = std.math.pow(f32, 1e-5, delta_time);
+    self.menu_player_trace_distance = std.math.lerp(self.menu_player_trace_distance, surface.distance, 1.0 - trace_decay);
+    const traced_position = bozo_ray.origin + nz.vec.scale(bozo_ray.direction, self.menu_player_trace_distance);
+    const planet_up = menuPlanetUp(traced_position, planet_transform);
+    const player_position = traced_position + nz.vec.scale(planet_up, tuning.bozo_surface_offset);
     const to_camera = camera_transform.position - player_position;
     const camera_on_tangent = to_camera - nz.vec.scale(planet_up, nz.vec.dot(to_camera, planet_up));
     const surface_forward_raw = nz.vec.cross(roll_axis, planet_up);
@@ -649,6 +662,7 @@ const MenuRay = struct {
 const MenuPlanetHit = struct {
     position: nz.Vec3(f32),
     normal: nz.Vec3(f32),
+    distance: f32,
 };
 
 fn menuCameraTransform(tuning: World.MenuTuning) nz.Transform3D(f32) {
@@ -709,6 +723,7 @@ fn raycastMenuPlanet(origin: nz.Vec3(f32), direction: nz.Vec3(f32), planet_trans
             return .{
                 .position = position,
                 .normal = menuPlanetUp(position, planet_transform),
+                .distance = distance,
             };
         }
         distance += @max(surface_distance, 0.05);
@@ -720,7 +735,7 @@ fn fallbackMenuPlanetHit(camera_position: nz.Vec3(f32), planet_transform: nz.Tra
     const normal = nz.vec.normalize(camera_position - planet_transform.position);
     const radius = menu_planet_radius * planet_transform.scale[0];
     const position = planet_transform.position + nz.vec.scale(normal, radius);
-    return .{ .position = position, .normal = normal };
+    return .{ .position = position, .normal = normal, .distance = nz.vec.length(position - camera_position) };
 }
 
 fn menuPlanetUp(position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32)) nz.Vec3(f32) {
