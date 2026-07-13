@@ -339,11 +339,19 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         });
 
         const inventory_width: f32 = ui.screen_width * 0.8;
-        // const inventory_heigth: f32 = ui.screen_heigth * 0.07;
+        const inventory_heigth: f32 = 60;
         ui.add(null, .{
+            .name = "HUD",
+            .axis_align = .verical,
+            .offset = .{ .top = 60, .left = ui.screen_width / 2 - inventory_width / 2 },
+            // .child_anchor = .{ .x = .end, .y = .end },
+            .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
+        });
+
+        ui.add("HUD", .{
             .name = "inventory",
-            .offset = .{ .top = ui.screen_heigth * 0.05, .left = ui.screen_width / 2 - inventory_width / 2 },
-            .size = .{ .percent = .{ .width = 0.8, .heigth = 0.07 } },
+            // .child_anchor = .{ .y = .end, .x = .end },
+            .size = .{ .fixed = .{ .width = inventory_width, .heigth = inventory_heigth } },
             .color = .new(0.5, 0.5, 0.5, 0.4),
             .axis_align = .horizontal,
             .gap = 10,
@@ -353,16 +361,18 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             if (amount == 0) continue;
             const amount_text = ui.print("{d}", .{amount});
             ui.add("inventory", .{
-                .size = .{ .percent = .{
-                    .heigth = 1,
-                    .width = 0.1,
+                .size = .{ .fixed = .{
+                    .heigth = inventory_heigth,
+                    .width = inventory_heigth,
                 } },
+
                 .color = .new(1, 1, 1, 1),
                 .name = ui.print("{t}", .{item_kind}),
                 .texture = switch (item_kind) {
                     .health => .oxygen_tank,
                     .speed => .energy_drink,
-                    .damage, .attack_speed => .damage_item,
+                    .damage => .damage_item,
+                    .attack_speed => .pickaxe,
                 },
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
@@ -374,6 +384,18 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 }},
             });
         }
+        ui.add(
+            "HUD",
+            .{
+                .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
+                .name = "info",
+            },
+        );
+        ui.add("info", .{
+            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
+            .text = .{ .data = ui.print("Stage: {d}", .{info.world.stage}) },
+        });
+
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
@@ -490,11 +512,10 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     }
                 } else {
                     ui.add(
-                        null,
+                        "info",
                         .{
-                            .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
+                            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
                             .text = .{ .data = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}) },
-                            .offset = .{ .top = ui.screen_heigth / 10, .left = ui.screen_width * 0.05 },
                         },
                     );
                 }

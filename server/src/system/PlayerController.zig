@@ -23,11 +23,17 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            _ = info.world.spawn(.{
-                .kind = .{ .enemy = .tubloida },
-                .transform = .{ .position = player.transform.position },
-                .last_attack = info.elapsed_time,
-            });
+            _ = info.world.spawn(
+                .{
+                    .kind = .{ .item = .damage },
+                    .transform = player.transform,
+                },
+            );
+            // _ = info.world.spawn(.{
+            //     .kind = .{ .enemy = .tubloida },
+            //     .transform = .{ .position = player.transform.position },
+            //     .last_attack = info.elapsed_time,
+            // });
         }
 
         if (player.controller.input.keys.e) {

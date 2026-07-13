@@ -49,6 +49,7 @@ menu_screen: MenuScreen = .main,
 menu_tuning: MenuTuning = .{},
 show_menu_scene: bool = true,
 request_quit: bool = false,
+stage: u32 = 0,
 
 pub const Entity = struct {
     id: shared.entity.Id = .none,

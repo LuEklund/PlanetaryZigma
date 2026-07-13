@@ -15,6 +15,7 @@ pub const Texture = enum {
     crosshair,
     oxygen_tank,
     energy_drink,
+    pickaxe,
 
     pub fn toInt(self: Texture) u32 {
         return @intFromEnum(self);
@@ -28,6 +29,7 @@ pub const Texture = enum {
             .oxygen_tank => root ++ "oxygen_tank.png",
             .crosshair => root ++ "crosshair.png",
             .energy_drink => root ++ "energy_drink.png",
+            .pickaxe => root ++ "pickaxe.png",
         };
     }
 };

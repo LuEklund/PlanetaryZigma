@@ -44,13 +44,14 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
 }
 
 pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
+    world.next_stage += 1;
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);
     }
     const random = world.prng.random();
     world.teleporter_id = .none;
     self.spawning = true;
-    world.outbox.appendAssumeCapacity(.{ .event = .new_stage });
+    world.outbox.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
     world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
