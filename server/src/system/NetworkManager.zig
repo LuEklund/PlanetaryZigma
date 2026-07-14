@@ -91,7 +91,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != .none) world.queueDespawn(client.entity_id);
+                if (client.entity_id != .none) world.queueRemove(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 std.log.debug("client disconnected: conn={d}", .{conn});
@@ -148,7 +148,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
-                    world.queueDespawn(client.entity_id);
+                    world.queueRemove(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {
@@ -163,6 +163,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
+        if (entity.flags.is_dead) continue;
         if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
 
         const position = entity.transform.position;
@@ -212,9 +213,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
+                if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
+                try sendInventory(client, writer, entity);
             }
             var motion_it = self.last_motions.valueIterator();
             while (motion_it.next()) |motion| {
@@ -233,6 +236,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
+                try sendInventory(client, writer, entity);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
@@ -268,7 +272,17 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
+fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+    if (entity.kind != .player) return;
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        const count = entity.inventory.get(item_kind);
+        if (count == 0) continue;
+        try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+    }
+}
+
 fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,

@@ -11,6 +11,7 @@ teleporter_bosses: shared.CappedList(shared.entity.Id) = .empty,
 pending_spawn: shared.CappedList(shared.net.SpawnEntity) = .empty,
 pending_despawn: shared.CappedList(shared.entity.Id) = .empty,
 pending_stats: shared.CappedList(shared.net.UpdateStat) = .empty,
+pending_inventory: shared.CappedList(shared.net.UpdateInventory) = .empty,
 attack_events: shared.CappedList(shared.entity.Id) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
@@ -40,6 +41,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_stats = try .initCapacity(gpa, shared.max_entities),
+        .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
     };
 }
@@ -50,6 +52,7 @@ pub fn deinit(self: *@This()) void {
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
     self.pending_stats.deinit(self.gpa);
+    self.pending_inventory.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
 }
 
