@@ -16,13 +16,19 @@ pub fn PacketQueue(comptime Packet: type) type {
     };
 }
 
+// ── Packets, split by direction ─────────────────────────────────────────────
+// Each side only ever receives one direction, so its switch over the packet is
+// naturally exhaustive (no `else` swallowing a forgotten variant). Opcode spaces
+// are independent because direction is known from the socket.
 
+/// client → server
 pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
     input: Input,
 };
 
+/// server → client
 pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
@@ -34,6 +40,7 @@ pub const ServerPacket = union(enum) {
     update_inventory: UpdateInventory,
 };
 
+// ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const Connect = struct {
     name_len: u16,
