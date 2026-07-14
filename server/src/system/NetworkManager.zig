@@ -43,7 +43,7 @@ pub const Client = struct {
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
     var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
-    try last_motions.ensureTotalCapacity(system.World.max_entities);
+    try last_motions.ensureTotalCapacity(shared.max_entities);
     return .{
         .gpa = gpa,
         .io = io,
@@ -76,7 +76,6 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     try self.steam_server.packet_mutex.lock(self.io);
     defer self.steam_server.packet_mutex.unlock(self.io);
 
-    // 1. Drain Steam lifecycle events into client map.
     for (self.steam_server.packets.events.items) |ev| switch (ev) {
         .connected => |conn| {
             const gop = try self.clients.getOrPut(conn);
@@ -101,7 +100,6 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     };
     self.steam_server.packets.events.clearRetainingCapacity();
 
-    // 2. Drain incoming bytes into the matching client's command queue.
     for (self.steam_server.packets.incoming.items) |*msg| {
         const client = self.clients.getPtr(msg.conn) orelse continue;
         var msg_reader: std.Io.Reader = .fixed(&msg.bytes);
@@ -114,7 +112,6 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     }
     self.steam_server.packets.incoming.clearRetainingCapacity();
 
-    // 3. Process per-client command queues.
     var fixed_writer_buffer: [1024]u8 = undefined;
     var fix_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
     const writer = &fix_writer;
@@ -130,11 +127,10 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                         .kind = .player,
                         .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
                         .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                        .flags = .{ .invinsible = true },
-                    });
+                    }) catch continue;
 
                     client.entity_id = new_player_entity.id;
-                    info.world.players.appendAssumeCapacity(client.entity_id);
+                    info.world.players.append(client.entity_id);
 
                     try client.sendCommand(
                         writer,
@@ -165,7 +161,6 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         client.command_queue.commands.clearRetainingCapacity();
     }
 
-    // 4. Push outbound state to every active client.
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
         if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;

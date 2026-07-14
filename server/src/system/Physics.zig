@@ -98,7 +98,6 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    // 1. Planet pull per dynamic body: gravity down + keep upright.
     for (info.world.entities.values()) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;

@@ -10,7 +10,6 @@ dir_path: []const u8,
 source_name: []const u8,
 mtime: std.Io.Timestamp,
 copy_id: u64,
-// ring of the last 10 loaded libs, kept mapped (never closed mid-run) so old versions stay callable
 versions: [25]?DynLib,
 version_count: u64,
 
@@ -88,7 +87,6 @@ pub fn load(self: *@This(), io: std.Io) !void {
     self.version_count += 1;
 }
 
-// the DynLib in ring slot n (0..9), or null if nothing loaded there yet
 pub fn version(self: *@This(), n: usize) ?*DynLib {
     if (n >= self.versions.len) return null;
     if (self.versions[n]) |*lib| return lib;

@@ -1,17 +1,16 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const shared = @import("shared");
 const Physics = @import("system/Physics.zig");
 const nz = shared.numz;
 
-pub const max_entities: usize = 1024;
-
 gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity),
-players: std.ArrayList(shared.entity.Id),
-teleport_bosses: std.ArrayList(shared.entity.Id),
-new_spawns: std.ArrayList(shared.entity.Id),
-pending_despawns: std.ArrayList(shared.entity.Id),
-outbox: std.ArrayList(PendingUpdate),
+players: shared.CappedList(shared.entity.Id),
+teleport_bosses: shared.CappedList(shared.entity.Id),
+new_spawns: shared.CappedList(shared.entity.Id),
+pending_despawns: shared.CappedList(shared.entity.Id),
+outbox: shared.CappedList(PendingUpdate),
 next_stage_requested: bool,
 teleporter_id: shared.entity.Id,
 planet_radius: u32,
@@ -83,15 +82,15 @@ pub const Entity = struct {
 
 pub fn init(gpa: std.mem.Allocator) !@This() {
     var entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty;
-    try entities.ensureTotalCapacity(gpa, max_entities);
+    try entities.ensureTotalCapacity(gpa, shared.max_entities);
 
     return .{
         .gpa = gpa,
         .entities = entities,
         .players = try .initCapacity(gpa, 16),
-        .teleport_bosses = try .initCapacity(gpa, max_entities),
-        .new_spawns = try .initCapacity(gpa, max_entities),
-        .pending_despawns = try .initCapacity(gpa, max_entities),
+        .teleport_bosses = try .initCapacity(gpa, shared.max_entities),
+        .new_spawns = try .initCapacity(gpa, shared.max_entities),
+        .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .outbox = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
         .teleporter_id = .none,
@@ -114,14 +113,25 @@ pub fn deinit(self: *@This()) void {
     self.outbox.deinit(self.gpa);
 }
 
-pub fn spawn(self: *@This(), entity_info: Entity) *Entity {
-    std.debug.assert(self.entities.entries.len < max_entities);
+pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
+
+pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
+    if (self.entities.entries.len >= shared.max_entities) {
+        if (builtin.mode == .Debug) @panic("spawn: world full");
+        return error.SpawnMaxSize;
+    }
+    if (entity_info.kind == .enemy and !entity_info.flags.is_teleporter_boss and self.enemyCount() >= shared.max_enemies) {
+        return error.MaxEnemies;
+    }
+    if (builtin.mode != .Debug and entity_info.kind == .player and self.players.items.len >= shared.max_players) {
+        return error.MaxPlayers;
+    }
     const id: shared.entity.Id = @enumFromInt(self.next_entity_id);
     self.next_entity_id += 1;
     self.entities.putAssumeCapacity(id, entity_info);
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
-    if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
+    if (entity.flags.is_teleporter_boss) self.teleport_bosses.append(id);
     switch (entity.kind) {
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => entity.stats.init(20, 3, 1, 1, 2),
@@ -131,8 +141,16 @@ pub fn spawn(self: *@This(), entity_info: Entity) *Entity {
         .player => entity.stats.init(100, 10, 10, 10, 10),
         else => {},
     }
-    self.new_spawns.appendAssumeCapacity(id);
+    self.new_spawns.append(id);
     return entity;
+}
+
+pub fn enemyCount(self: *const @This()) usize {
+    var count: usize = 0;
+    for (self.entities.values()) |*entity| {
+        if (entity.kind == .enemy) count += 1;
+    }
+    return count;
 }
 
 pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
@@ -140,7 +158,7 @@ pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
 }
 
 pub fn queueDespawn(self: *@This(), id: shared.entity.Id) void {
-    self.pending_despawns.appendAssumeCapacity(id);
+    self.pending_despawns.append(id);
 }
 
 pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
@@ -153,7 +171,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
-    self.outbox.appendAssumeCapacity(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
+    self.outbox.append(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
     return true;
 }
 
@@ -170,7 +188,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             }
             try physics.createBody(entity);
         }
-        self.outbox.appendAssumeCapacity(.{ .spawned = id });
+        self.outbox.append(.{ .spawned = id });
     }
     self.new_spawns.clearRetainingCapacity();
 
@@ -187,7 +205,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             _ = self.players.swapRemove(player_index);
         }
         _ = self.entities.swapRemove(id);
-        self.outbox.appendAssumeCapacity(.{ .despawned = id });
+        self.outbox.append(.{ .despawned = id });
     }
     self.pending_despawns.clearRetainingCapacity();
 }

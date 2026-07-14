@@ -11,7 +11,8 @@ pub fn build(b: *std.Build) void {
             .glibc_version = .{ .major = 2, .minor = 39, .patch = 0 },
         },
     });
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const ztracy = ztracy_dep.module("ztracy");
@@ -20,7 +21,6 @@ pub fn build(b: *std.Build) void {
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
 
-    // Box3D: vendored C sources compiled here, header translated to a module.
     const box3d_lib = b.addLibrary(.{
         .name = "box3d",
         .linkage = .static,

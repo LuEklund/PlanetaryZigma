@@ -11,10 +11,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_client: *Client,
-/// Active connection to the server (0 = not yet connected). Filled in from
-/// SteamNet.events on the first .connected event.
 server_conn: shared.SteamNet.Conn = 0,
-/// Whether we've sent the "connect" handshake on the current server_conn.
 server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
@@ -113,7 +110,6 @@ pub fn update(self: *@This(), info: *const Info) !void {
         }
     }
 
-    // 0. server list update.
     if (self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
         self.steam_client.browser.list.refresh_state = .request;
     } else if (self.steam_client.browser.list.refresh_state == .done) {
@@ -127,7 +123,6 @@ pub fn update(self: *@This(), info: *const Info) !void {
         self.server_list.count = self.steam_client.browser.list.count;
     }
 
-    // 1. Drain lifecycle events.
     for (self.steam_client.packets.events.items) |ev| switch (ev) {
         .connected => |conn| {
             self.server_conn = conn;
@@ -142,12 +137,10 @@ pub fn update(self: *@This(), info: *const Info) !void {
     };
     self.steam_client.packets.events.clearRetainingCapacity();
 
-    // 2. Handshake once per fresh connection.
     if (self.server_conn != 0 and !self.sent_connect) {
         try self.sendConnect();
         self.sent_connect = true;
     }
-    // 3. Send our input.
     if (self.server_conn != 0) {
         var input = info.world.controller.input_map;
         if (info.world.controller.free_camera) input.keys = .{};
@@ -155,7 +148,6 @@ pub fn update(self: *@This(), info: *const Info) !void {
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
-    // 4. Drain inbound commands.
     for (self.steam_client.packets.incoming.items) |*msg| {
         var msg_reader: std.Io.Reader = .fixed(&msg.bytes);
         const reader = &msg_reader;
@@ -180,21 +172,22 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            info.world.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .none });
+            info.world.pending_spawn.append(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id) != null) return;
-            if (spawn_entity.kind == .unknown) @panic("unknown entity type... wtf");
+            if (spawn_entity.kind == .unknown) {
+                std.log.err("spawn with unknown entity kind, ignoring", .{});
+                return;
+            }
 
-            info.world.pending_spawn.appendAssumeCapacity(spawn_entity);
+            info.world.pending_spawn.append(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
-            // Spawner resolves it after spawns are applied, so a spawn+despawn
-            // arriving in the same batch can't drop the despawn.
-            info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
+            info.world.pending_despawn.append(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
@@ -205,7 +198,7 @@ fn handleCommand(
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {
-                info.world.pending_stats.appendAssumeCapacity(update_stat_command);
+                info.world.pending_stats.append(update_stat_command);
                 return;
             };
             Spawner.applyStat(entity, update_stat_command);
@@ -223,7 +216,7 @@ fn handleCommand(
                     info.world.stage = new_stage;
                 },
                 .attack => |id| {
-                    info.world.attack_events.appendAssumeCapacity(id);
+                    info.world.attack_events.append(id);
                 },
             }
         },
