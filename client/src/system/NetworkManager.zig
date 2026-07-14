@@ -172,7 +172,6 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            info.world.pending_spawn.append(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -217,6 +216,9 @@ fn handleCommand(
                 },
                 .attack => |id| {
                     info.world.attack_events.append(id);
+                },
+                .rocket_impact => |position| {
+                    info.world.spawnRocketExplosion(position);
                 },
             }
         },

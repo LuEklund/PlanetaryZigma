@@ -7,6 +7,9 @@ const Physics = @import("Physics.zig");
 const Director = @import("Director.zig");
 const Info = system.Info;
 
+const rocket_explosion_radius: f32 = 8;
+const rocket_damage_multiplier: f32 = 1.5;
+
 pub fn updateEnemies(info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -53,7 +56,7 @@ pub fn updateEnemies(info: *const Info) !void {
                     enemy.last_attack = info.elapsed_time;
                     const muzzle_velocity = nz.vec.scale(forward_dir, 50);
                     const bullet = try info.world.spawn(.{
-                        .kind = .bullet,
+                        .kind = .projectile_cube,
                         .owner_id = enemy.id,
                         .transform = .{ .position = enemy.transform.position + nz.vec.scale(forward_dir, 1.5), .rotation = player.transform.rotation },
                         .velocity = muzzle_velocity,
@@ -89,9 +92,9 @@ pub fn updateEnemies(info: *const Info) !void {
     }
 }
 
-pub fn updateBullets(info: *const Info, physics: *Physics) void {
+pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .bullet) continue;
+        const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
         entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
@@ -103,6 +106,7 @@ pub fn updateBullets(info: *const Info, physics: *Physics) void {
             Physics.c.b3DefaultQueryFilter(),
         );
         if (!ray_hit.hit) continue;
+        const impact_position = Physics.toVec(ray_hit.point);
 
         const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
         const hit_id: shared.entity.Id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
@@ -112,8 +116,29 @@ pub fn updateBullets(info: *const Info, physics: *Physics) void {
         const hit_entity = info.world.getPtr(hit_id) orelse continue;
         if (owner_entity.kind.eql(hit_entity.kind)) continue;
 
-        _ = info.world.removeHealth(hit_entity, entity.stats.get(.damage).current);
+        switch (projectile_kind) {
+            .cube => _ = info.world.removeHealth(hit_entity, entity.stats.get(.damage).current),
+            .rocket => {
+                damageRocketImpact(info, owner_entity, impact_position, entity.stats.get(.damage).current);
+                info.world.outbox.append(.{ .event = .{ .rocket_impact = impact_position } });
+            },
+        }
         info.world.queueDespawn(entity.id);
+    }
+}
+
+fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32), base_damage: f32) void {
+    for (info.world.entities.values()) |*candidate| {
+        if (!candidate.kind.hasHealth()) continue;
+        if (candidate.id == owner_entity.id) continue;
+        if (owner_entity.kind.eql(candidate.kind)) continue;
+
+        const distance = nz.vec.distance(candidate.transform.position, impact_position);
+        if (distance > rocket_explosion_radius) continue;
+
+        const falloff = 1.0 - distance / rocket_explosion_radius;
+        const damage = base_damage * rocket_damage_multiplier * (0.5 + falloff * 0.5);
+        _ = info.world.removeHealth(candidate, damage);
     }
 }
 

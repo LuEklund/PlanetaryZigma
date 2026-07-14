@@ -102,7 +102,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
     try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
-    try self.resources.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
+    try self.resources.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies, .cube_projectile);
+    try self.resources.createStaticMesh(gpa, "explosion_particle", Mesh.explosion_particle.verticies, Mesh.explosion_particle.indicies, .explosion_particle);
 
     self.ui = try .init(
         gpa,
@@ -398,6 +399,18 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         if (model.isEmpty() or model.isSkinned()) continue;
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawStatic(self, cmd, model, current_frame, base_matrix);
+    }
+    {
+        const model = self.resources.models.getPtr(.explosion_particle);
+        if (!model.isEmpty()) {
+            for (info.world.particles.items) |particle| {
+                const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
+                const scale = particle.scale * lifetime_fraction;
+                var transform: nz.Transform3D(f32) = .{ .position = particle.position };
+                transform.scale = @splat(scale);
+                try drawStatic(self, cmd, model, current_frame, transform.toMat4x4());
+            }
+        }
     }
 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));

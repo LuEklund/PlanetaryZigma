@@ -163,7 +163,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+        if (!tracksMotion(entity)) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();
@@ -215,10 +215,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
-            }
-            var motion_it = self.last_motions.valueIterator();
-            while (motion_it.next()) |motion| {
-                try client.sendCommand(writer, .{ .update_motion = motion.* }, .reliable);
+                if (tracksMotion(entity)) {
+                    try client.sendCommand(writer, .{ .update_motion = motionPacket(info, entity) }, .reliable);
+                }
             }
             client.needs_full_sync = false;
         } else {
@@ -268,6 +267,20 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
+fn tracksMotion(entity: *const system.Entity) bool {
+    return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
+}
+
+fn motionPacket(info: *const Info, entity: *const system.Entity) shared.net.UpdateMotion {
+    return .{
+        .id = entity.id,
+        .position = entity.transform.position,
+        .velocity = entity.velocity,
+        .rotation = entity.transform.rotation.toVec(),
+        .tick = info.tick,
+    };
+}
+
 fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
     return .{
         .id = entity.id,
@@ -279,7 +292,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.Spawn
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .unknown, .bullet, .player, .teleporter, .item => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .player, .teleporter, .item => .none,
         },
     };
 }

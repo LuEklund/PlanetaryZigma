@@ -6,6 +6,10 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 
 pub const aim_range: f32 = 300;
+const rocket_speed: f32 = 65;
+const bullet_speed: f32 = 100;
+const rocket_lifetime: f32 = 2.5;
+const bullet_lifetime: f32 = 1;
 
 pub fn update(info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
@@ -98,15 +102,21 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             player.last_attack = info.elapsed_time;
             const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - transform.position);
-            const muzzle_velocity = nz.vec.scale(start_direction, 100);
-            const bullet = try info.world.spawn(.{
-                .kind = .bullet,
+            const rocket_chance = @min(
+                @as(f32, @floatFromInt(player.inventory.get(.rocket))) *
+                    shared.Item.Kind.rocket.getAttributeValues().rocket_chance,
+                1.0,
+            );
+            const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;
+            const projectile_velocity = nz.vec.scale(start_direction, if (fires_rocket) rocket_speed else bullet_speed);
+            const projectile = try info.world.spawn(.{
+                .kind = if (fires_rocket) .projectile_rocket else .projectile_cube,
                 .owner_id = player.id,
-                .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
-                .velocity = muzzle_velocity,
-                .lifetime = 1,
+                .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = camera_rotation },
+                .velocity = projectile_velocity,
+                .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
             });
-            bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
+            projectile.stats.setCurrent(.damage, player.stats.get(.damage).current);
             info.world.outbox.append(.{ .event = .{ .attack = player_id } });
         }
     }

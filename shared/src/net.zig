@@ -22,14 +22,31 @@ pub fn PacketQueue(comptime Packet: type) type {
 // are independent because direction is known from the socket.
 
 /// client → server
-pub const ClientPacket = union(enum) {
+pub const ClientPacketTag = enum(u16) {
+    connect = 0,
+    disconnect = 1,
+    input = 2,
+};
+
+pub const ClientPacket = union(ClientPacketTag) {
     connect: Connect,
     disconnect: void,
     input: Input,
 };
 
 /// server → client
-pub const ServerPacket = union(enum) {
+pub const ServerPacketTag = enum(u16) {
+    acknowledge = 0,
+    spawn_entity = 1,
+    despawn_entity = 2,
+    update_motion = 3,
+    server_tick = 4,
+    update_stat = 5,
+    update_event = 6,
+    update_inventory = 7,
+};
+
+pub const ServerPacket = union(ServerPacketTag) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
     despawn_entity: DespawnEntity,
@@ -59,11 +76,19 @@ pub const SpawnEntity = struct {
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     velocity: @Vector(3, f32) = @splat(0),
     tick: u32 = 0,
-    data: union(enum(u16)) {
-        none: void,
-        planet_radius: u32,
-        is_teleporter_boss: void,
-    },
+    data: SpawnEntityData,
+};
+
+pub const SpawnEntityDataTag = enum(u16) {
+    none = 0,
+    planet_radius = 1,
+    is_teleporter_boss = 2,
+};
+
+pub const SpawnEntityData = union(SpawnEntityDataTag) {
+    none: void,
+    planet_radius: u32,
+    is_teleporter_boss: void,
 };
 
 pub const DespawnEntity = struct {
@@ -106,10 +131,17 @@ pub const UpdateTransform = struct {
 pub const UpdateStat = struct {
     id: entity.Id,
     stat_kind: root.Stat.Kind,
-    amount: union(enum(u16)) {
-        set_current: f16,
-        set_max: f16,
-    },
+    amount: UpdateStatAmount,
+};
+
+pub const UpdateStatAmountTag = enum(u16) {
+    set_current = 0,
+    set_max = 1,
+};
+
+pub const UpdateStatAmount = union(UpdateStatAmountTag) {
+    set_current: f16,
+    set_max: f16,
 };
 
 pub const UpdateInventory = struct {
@@ -118,11 +150,20 @@ pub const UpdateInventory = struct {
     set: u8,
 };
 
-pub const Event = union(enum(u16)) {
+pub const EventTag = enum(u16) {
+    teleport_start = 0,
+    teleporter_charge = 1,
+    new_stage = 2,
+    attack = 3,
+    rocket_impact = 4,
+};
+
+pub const Event = union(EventTag) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
     attack: entity.Id,
+    rocket_impact: @Vector(3, f32),
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {
