@@ -414,6 +414,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     color_blend_enables = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
     {
         const model = self.resources.models.getPtr(.explosion_particle);
         if (!model.isEmpty()) {
@@ -438,6 +439,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
     ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_TRUE);
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
     for (info.world.entities.values()) |*entity| {

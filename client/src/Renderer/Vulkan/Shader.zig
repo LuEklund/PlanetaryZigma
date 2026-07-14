@@ -20,6 +20,7 @@ pub const specs: std.EnumArray(Kind, Spec) = .init(.{
     .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
     .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
     .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+    .frag_particle = .{ .path = "shaders/particle.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
     .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
     .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
 });
@@ -40,6 +41,7 @@ pub const Kind = enum(u16) {
     frag_ui,
     frag_sky,
     frag_mesh,
+    frag_particle,
     frag_debug,
 };
 
