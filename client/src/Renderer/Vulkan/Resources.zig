@@ -22,6 +22,8 @@ const check = @import("utils.zig").check;
 
 pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
+const explosion_particle_material_name: []const u8 = "explosion_particle";
+const explosion_particle_texture_size: u32 = 32;
 
 pub const PipelineLayoutKind = enum { world, ui };
 
@@ -229,6 +231,89 @@ fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: s
 }
 
 pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
+    try self.createStaticMeshWithMaterial(gpa, name, vertices, indices, model_kind, null);
+}
+
+pub fn createExplosionParticleResources(self: *@This(), gpa: std.mem.Allocator) !void {
+    var texture = try Image.init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{
+            .width = explosion_particle_texture_size,
+            .height = explosion_particle_texture_size,
+            .depth = 1,
+        },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer texture.deinit(self.vma, self.device);
+
+    var pixels: [explosion_particle_texture_size * explosion_particle_texture_size * 4]u8 = undefined;
+    fillExplosionParticleTexture(&pixels);
+    try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
+
+    const material = try Material.init(
+        gpa,
+        explosion_particle_material_name,
+        self.device,
+        self.vma,
+        self.set_size,
+        self.combined_image_sampler_descriptor_size,
+        self.samplers.items[0],
+        texture.vk_imageview,
+    );
+    errdefer {
+        var material_copy = material;
+        material_copy.deinit(gpa, self.vma);
+    }
+
+    try self.images.append(gpa, texture);
+    try self.materials.append(gpa, material);
+    try self.createStaticMeshWithMaterial(
+        gpa,
+        "explosion_particle",
+        Mesh.explosion_particle.verticies,
+        Mesh.explosion_particle.indicies,
+        .explosion_particle,
+        self.materials.items.len - 1,
+    );
+}
+
+fn fillExplosionParticleTexture(pixels: *[explosion_particle_texture_size * explosion_particle_texture_size * 4]u8) void {
+    const size_f: f32 = @floatFromInt(explosion_particle_texture_size);
+    const center = (size_f - 1.0) * 0.5;
+    const radius = center;
+    for (0..explosion_particle_texture_size) |y| {
+        for (0..explosion_particle_texture_size) |x| {
+            const x_f: f32 = @floatFromInt(x);
+            const y_f: f32 = @floatFromInt(y);
+            const dx = (x_f - center) / radius;
+            const dy = (y_f - center) / radius;
+            const distance = @sqrt(dx * dx + dy * dy);
+            const core = std.math.clamp(1.0 - distance, 0.0, 1.0);
+            const alpha = core * core;
+            const heat = @sqrt(core);
+            const pixel_index = (y * explosion_particle_texture_size + x) * 4;
+            pixels[pixel_index + 0] = 255;
+            pixels[pixel_index + 1] = @intFromFloat(70.0 + 165.0 * heat);
+            pixels[pixel_index + 2] = @intFromFloat(12.0 + 36.0 * core);
+            pixels[pixel_index + 3] = @intFromFloat(alpha * 255.0);
+        }
+    }
+}
+
+fn createStaticMeshWithMaterial(
+    self: *@This(),
+    gpa: std.mem.Allocator,
+    name: []const u8,
+    vertices: []const Mesh.StaticVertex,
+    indices: []const u32,
+    model_kind: Model.Kind,
+    material_index: ?usize,
+) !void {
     const existing_index = for (self.meshes.items, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.name, name)) break index;
     } else null;
@@ -245,7 +330,7 @@ pub fn createStaticMesh(self: *@This(), gpa: std.mem.Allocator, name: []const u8
         &.{.{
             .index_start = 0,
             .index_count = @intCast(indices.len),
-            .material_index = null,
+            .material_index = material_index,
         }},
     );
     const mesh_id = if (existing_index) |index| blk: {
