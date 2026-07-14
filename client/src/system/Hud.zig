@@ -191,11 +191,16 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .{
                 .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
                 .name = "info",
+                .axis_align = .verical,
             },
         );
         ui.add("info", .{
             .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
             .text = .{ .data = ui.print("Stage: {d}", .{info.world.stage}) },
+        });
+        ui.add("info", .{
+            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
+            .text = .{ .data = ui.print("Currency: {d}", .{10}) },
         });
 
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
