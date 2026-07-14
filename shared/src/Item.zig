@@ -3,7 +3,7 @@ const Item = @This();
 const std = @import("std");
 const nz = @import("numz");
 
-name: @EnumLiteral(),
+id: @EnumLiteral(),
 modifiers: struct {
     health: f32 = 0.0,
     speed: f32 = 0.0,
@@ -17,7 +17,7 @@ pub const Kind = e: {
 
     var field_names: [items.len][]const u8 = undefined;
     var field_values: [items.len]TagInt = undefined;
-    for (items, 0..) |item, i| field_names[i] = @tagName(item.name);
+    for (items, 0..) |item, i| field_names[i] = @tagName(item.id);
     for (0..items.len) |i| field_values[i] = i;
 
     break :e @Enum(TagInt, .exhaustive, &field_names, &field_values);
@@ -33,27 +33,27 @@ pub const Texture = struct {
 
 pub const items: []const Item = &.{
     .{
-        .name = .oxygen_tank,
+        .id = .oxygen_tank,
         .modifiers = .{
             .health = 90.0,
         },
     },
     .{
-        .name = .gun,
+        .id = .gun,
         .modifiers = .{
             .damage = 1.5,
         },
     },
     .{
-        .name = .energy_drink,
+        .id = .energy_drink,
         .modifiers = .{
             .speed = 0.75,
         },
     },
     .{
-        .name = .pickaxe,
+        .id = .pickaxe,
         .modifiers = .{
-            .attack_speeed = 0.2,
+            .attack_speed = 0.2,
         },
     },
 };
@@ -71,3 +71,33 @@ pub const textures: std.EnumArray(Kind, Texture) = .init(.{
     .energy_drink = .{ .path = "items/energy_drink.png" },
     .pickaxe = .{ .path = "items/pickaxe.png" },
 });
+
+pub fn get(kind: Kind) Item {
+    return items[@intFromEnum(kind)];
+}
+
+pub fn name(self: Item) [:0]const u8 {
+    inline for (items) |item| if (self.id == item.id) {
+        const snake = @tagName(item.id);
+
+        const title = title: {
+            var buffer: [snake.len + 1:0]u8 = undefined;
+
+            var upper = true;
+            for (snake, 0..) |c, i| if (c == '_') {
+                buffer[i] = ' ';
+                upper = true;
+            } else {
+                buffer[i] = if (upper) std.ascii.toUpper(c) else c;
+                upper = false;
+            };
+
+            buffer[snake.len] = 0;
+            break :title buffer;
+        };
+
+        return &title;
+    };
+
+    unreachable;
+}

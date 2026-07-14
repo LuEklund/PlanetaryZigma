@@ -132,10 +132,10 @@ pub fn handlePackets(self: *@This()) !void {
 pub fn recievePackets(self: *@This()) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
-        if (conn == 0) continue;
+        if (conn == 0) continue;connection
         var status: steam.SteamNetConnectionRealTimeStatus_t = undefined;
         _ = self.socket.GetConnectionRealTimeStatus(conn, &status, &.{});
-
+connection
         // std.debug.print("\rpending_unrel: {}, pending_rel: {}, ping: {}, quality: {d:.2}, out_Bps: {d:.0}\n", .{
         //     status.m_cbPendingUnreliable,
         //     status.m_cbPendingReliable,
