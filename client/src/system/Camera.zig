@@ -19,6 +19,23 @@ free_speed: f32 = 30,
 pub const sensitivity: f32 = 0.02;
 pub const camera_padding: f32 = 0.5;
 pub const arm_ease_speed: f32 = 4;
+pub const near: f32 = 0.01;
+pub const far: f32 = 1000;
+
+pub fn viewProj(self: *const @This(), aspect: f32) nz.Mat4x4(f32) {
+    const inv_rotation = self.transform.rotation.conjugate().toMat4x4();
+    const inv_translation = nz.Mat4x4(f32).translate(-self.transform.position);
+    const view = inv_rotation.mul(inv_translation);
+
+    const f = 1.0 / std.math.tan(self.fov_rad / 2.0);
+    const proj: nz.Mat4x4(f32) = .new(.{
+        f / aspect, 0,  0,                           0,
+        0,          -f, 0,                           0, // flip Y for Vulkan
+        0,          0,  far / (near - far),          -1,
+        0,          0,  (far * near) / (near - far), 0,
+    });
+    return proj.mul(view);
+}
 
 pub fn update(self: *@This(), info: *const Info) void {
     const tracy_scope = tracy.zone(@src());

@@ -372,9 +372,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
     const aspect: f32 = width / height;
 
-    const view = getViewMatrix(&camera.transform);
-    var proj = perspective(camera.fov_rad, aspect, 0.01, 1000);
-    const proj_view = proj.mul(view);
+    const proj_view = camera.viewProj(aspect);
 
     const light_time = info.elapsed_time * 0.01;
     var scene_data: FrameData.GPUScene = .{
@@ -732,23 +730,6 @@ pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
     }
-}
-
-fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
-    const inv_rotation = transform.rotation.conjugate().toMat4x4();
-    const inv_translation = nz.Mat4x4(f32).translate(-transform.position);
-
-    return inv_rotation.mul(inv_translation);
-}
-
-fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    const f = 1.0 / std.math.tan(fovy_rad / 2.0);
-    return .new(.{
-        f / aspect, 0, 0, 0,
-        0, -f, 0, 0, // flip Y for Vulkan
-        0, 0, far / (near - far),          -1, // <- note near-far here
-        0, 0, (far * near) / (near - far), 0,
-    });
 }
 
 fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {

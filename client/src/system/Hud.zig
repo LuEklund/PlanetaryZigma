@@ -438,10 +438,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
 fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
     if (width <= 0 or heigth <= 0) return null;
 
-    const aspect = width / heigth;
-    const view = getViewMatrix(&camera.transform);
-    const proj = perspective(camera.fov_rad, aspect, 0.01, 1000);
-    const clip = proj.mul(view).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
+    const clip = camera.viewProj(width / heigth).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
     if (clip[3] <= 0.001) return null;
 
     const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
@@ -450,22 +447,6 @@ fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32
         (ndc[0] * 0.5 + 0.5) * width,
         (ndc[1] * 0.5 + 0.5) * heigth,
     };
-}
-
-fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
-    const inv_rotation = transform.rotation.conjugate().toMat4x4();
-    const inv_translation = nz.Mat4x4(f32).translate(-transform.position);
-    return inv_rotation.mul(inv_translation);
-}
-
-fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    const f = 1.0 / std.math.tan(fovy_rad / 2.0);
-    return .new(.{
-        f / aspect, 0,  0,                           0,
-        0,          -f, 0,                           0,
-        0,          0,  far / (near - far),          -1,
-        0,          0,  (far * near) / (near - far), 0,
-    });
 }
 
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
