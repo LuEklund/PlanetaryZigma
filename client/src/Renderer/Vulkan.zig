@@ -409,38 +409,6 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         try drawStatic(self, cmd, model, current_frame, base_matrix);
     }
 
-    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
-    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
-    color_blend_enables = c.VK_TRUE;
-    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
-    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
-    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
-    {
-        const model = self.resources.models.getPtr(.explosion_particle);
-        if (!model.isEmpty()) {
-            for (info.world.particles.items) |particle| {
-                const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
-                const scale = particle.scale * lifetime_fraction;
-                var transform: nz.Transform3D(f32) = .{ .position = particle.position };
-                const camera_delta = camera.transform.position - particle.position;
-                const camera_distance = nz.vec.length(camera_delta);
-                const card_forward: nz.Vec3(f32) = if (camera_distance > 0.001)
-                    nz.vec.scale(camera_delta, 1.0 / camera_distance)
-                else
-                    .{ 0, 0, -1 };
-                const camera_up = camera.transform.rotation.rotateVec(.{ 0, 1, 0 });
-                transform.rotation = nz.Quat(f32).lookAt(card_forward, camera_up);
-                transform.scale = @splat(scale);
-                try drawStatic(self, cmd, model, current_frame, transform.toMat4x4());
-            }
-        }
-    }
-    color_blend_enables = c.VK_FALSE;
-    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
-    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
-    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_TRUE);
-    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
-
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
@@ -486,6 +454,34 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
+
+    color_blend_enables = c.VK_TRUE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
+    {
+        const model = self.resources.models.getPtr(.explosion_particle);
+        if (!model.isEmpty()) {
+            for (info.world.particles.items) |particle| {
+                const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
+                const scale = particle.scale * lifetime_fraction;
+                var transform: nz.Transform3D(f32) = .{ .position = particle.position };
+                const camera_delta = camera.transform.position - particle.position;
+                const camera_distance = nz.vec.length(camera_delta);
+                const card_forward: nz.Vec3(f32) = if (camera_distance > 0.001)
+                    nz.vec.scale(camera_delta, 1.0 / camera_distance)
+                else
+                    .{ 0, 0, -1 };
+                const camera_up = camera.transform.rotation.rotateVec(.{ 0, 1, 0 });
+                transform.rotation = nz.Quat(f32).lookAt(card_forward, camera_up);
+                transform.scale = @splat(scale);
+                try drawStatic(self, cmd, model, current_frame, transform.toMat4x4());
+            }
+        }
+    }
+    color_blend_enables = c.VK_FALSE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
 
     if (info.world.controller.debug_draw_colliders) {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
