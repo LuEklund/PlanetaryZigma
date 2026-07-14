@@ -8,7 +8,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
-clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
+clients: std.AutoHashMap(shared.SteamNet.Connection, Client),
 last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 
@@ -22,7 +22,7 @@ pub const Client = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
-    conn: shared.SteamNet.Conn,
+    conn: shared.SteamNet.Connection,
     name: []const u8 = "",
     entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,

@@ -19,7 +19,7 @@ pub const SendFlags = enum(i32) {
 };
 
 pub const Message = struct {
-    connection: Connection,
+    conn: Connection,
     flags: SendFlags = .reliable,
     len: u32,
     bytes: [max_msg_bytes]u8 = undefined,
@@ -66,14 +66,14 @@ pub const Packets = struct {
 
     pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
-        var msg: Message = .{ .connection = conn, .len = len };
+        var msg: Message = .{ .conn = conn, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.incoming.append(gpa, msg);
     }
 
     pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8, flags: SendFlags) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
-        var msg: Message = .{ .connection = conn, .flags = flags, .len = len };
+        var msg: Message = .{ .conn = conn, .flags = flags, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.outgoing.append(gpa, msg);
     }

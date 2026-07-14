@@ -11,7 +11,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_client: *Client,
-server_conn: shared.SteamNet.Conn = 0,
+server_conn: shared.SteamNet.Connection = 0,
 server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,

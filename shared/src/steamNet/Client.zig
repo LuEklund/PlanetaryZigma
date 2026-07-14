@@ -271,10 +271,10 @@ pub fn sendPackets(self: *@This()) !void {
     if (self.packets.outgoing.items.len == 0) return;
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
-        var message_number: i64 = 0;connection
+        var message_number: i64 = 0;
         const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
         if (result != self.last_send_result) {
-            self.last_send_result = result;connection
+            self.last_send_result = result;
             std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
         }
     }
