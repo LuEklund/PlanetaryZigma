@@ -73,7 +73,7 @@ pub const Context = struct {
             },
         }
         try PlayerController.update(info, &self.physics);
-        gameplay.updateEnemies(info);
+        try gameplay.updateEnemies(info);
         try self.director.update(info, &self.physics);
         try self.physics.update(info);
         gameplay.updateBullets(info, &self.physics);

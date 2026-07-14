@@ -2,7 +2,8 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
 
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
@@ -145,7 +146,6 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
-    // Hot-reload dev loop: rebuild only the .so, skip the 7s exe. Pair with `zig build lib --watch`.
     const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
     lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
 }

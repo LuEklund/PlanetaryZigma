@@ -63,7 +63,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
                     entity.transform.scale = @splat(5);
-                    world.teleporter_bosses.appendAssumeCapacity(entity.id);
+                    world.teleporter_bosses.append(entity.id);
                 }
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
@@ -83,6 +83,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         if (std.mem.indexOfScalar(shared.entity.Id, world.teleporter_bosses.items, id)) |index_of_boss| {
             _ = world.teleporter_bosses.swapRemove(index_of_boss);
         }
+        if (id == world.player_id) world.controller.free_camera = true;
         _ = world.despawn(id);
     }
     world.pending_despawn.clearRetainingCapacity();

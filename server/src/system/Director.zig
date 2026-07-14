@@ -6,7 +6,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 
 credits: f32 = 0,
-salary_per_second: f32 = 1,
+salary_per_second: f32 = 2,
 last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 spawning: bool = false,
@@ -20,12 +20,10 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
         try self.startStage(info.world, physics);
     }
 
-    self.spawning = false;
-
     if (self.spawning and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
             self.last_salary = info.elapsed_time;
-            self.credits += self.salary_per_second * 10;
+            self.credits += self.salary_per_second;
         }
         const rand = info.world.prng.random();
         const x = rand.float(f32) * 2 - 1;
@@ -33,12 +31,13 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
         const z = rand.float(f32) * 2 - 1;
         const vector_direction: nz.Vec3(f32) = .{ x, y, z };
         if (self.credits >= self.enemy_cost) {
-            self.credits -= self.enemy_cost;
-            _ = info.world.spawn(.{
+            if (info.world.spawn(.{
                 .kind = .{ .enemy = .tubloid },
                 .transform = .{ .position = vector_direction },
                 .last_attack = info.elapsed_time,
-            });
+            })) |_| {
+                self.credits -= self.enemy_cost;
+            } else |_| {}
         }
     }
 }
@@ -51,11 +50,11 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     const random = world.prng.random();
     world.teleporter_id = .none;
     self.spawning = true;
-    world.outbox.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = @intFromFloat(random.float(f32) * 99 + 1);
+    world.outbox.append(.{ .event = .{ .new_stage = world.next_stage } });
+    world.planet_radius = @intFromFloat(random.float(f32) * 98 + 2);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
-    _ = world.spawn(.{
+    _ = try world.spawn(.{
         .kind = .planet,
         .transform = .{},
         .collider = .{
@@ -80,30 +79,31 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             else => .health,
         };
         const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        _ = world.spawn(.{
+        _ = try world.spawn(.{
             .kind = .{ .item = item_kind },
             .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },
         });
     }
 
     var teleport_position: ?nz.Vec3(f32) = null;
-    while (teleport_position == null) {
+    for (0..10) |_| {
         teleport_position = physics.getSurfacePoint(world, .{ 0, 100, 0 });
-    } else {
-        const teleporter = world.spawn(.{
-            .kind = .teleporter,
-            .transform = .{ .position = teleport_position.? },
-        });
-        const teleport_planet_up = nz.vec.normalize(teleport_position.?);
-        const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
-        const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
-        teleporter.transform.rotation = if (dot < 0.9999) blk: {
-            const axis = if (dot > -0.9999)
-                nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
-            else
-                nz.Vec3(f32){ 1, 0, 0 };
-            break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
-        } else .identity;
-        world.teleporter_id = teleporter.id;
+        if (teleport_position != null) break;
     }
+    const teleporter_position = teleport_position orelse nz.Vec3(f32){ 0, @floatFromInt(world.planet_radius), 0 };
+    const teleporter = try world.spawn(.{
+        .kind = .teleporter,
+        .transform = .{ .position = teleporter_position },
+    });
+    const teleport_planet_up = nz.vec.normalize(teleporter_position);
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
+    teleporter.transform.rotation = if (dot < 0.9999) blk: {
+        const axis = if (dot > -0.9999)
+            nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
+        else
+            nz.Vec3(f32){ 1, 0, 0 };
+        break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
+    } else .identity;
+    world.teleporter_id = teleporter.id;
 }
