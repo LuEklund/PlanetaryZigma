@@ -351,65 +351,66 @@ pub const Watcher = struct {
     };
 };
 
-pub fn main(in2it: std.process.Init) !void {
-    const gpa = in2it.gpa;
-    const io = in2it.io;
+// NOTE: This is an example for Lucas
+// pub fn main(in2it: std.process.Init) !void {
+//     const gpa = in2it.gpa;
+//     const io = in2it.io;
 
-    var asset_server: AssetServer = try .init(gpa, io);
-    defer asset_server.deinit();
+//     var asset_server: AssetServer = try .init(gpa, io);
+//     defer asset_server.deinit();
 
-    var my_custom_loader: MyCustomLoader = .init(asset_server, "stuff", &.{
-        "bob1.txt",
-        "bob2.txt",
-    });
+//     var my_custom_loader: MyCustomLoader = .init(asset_server, "stuff", &.{
+//         "bob1.txt",
+//         "bob2.txt",
+//     });
 
-    try asset_server.addLoader(&my_custom_loader.interface);
+//     try asset_server.addLoader(&my_custom_loader.interface);
 
-    try asset_server.load();
-    defer asset_server.unload();
+//     try asset_server.load();
+//     defer asset_server.unload();
 
-    std.log.warn("stuff: {d}", .{my_custom_loader.stuff});
+//     std.log.warn("stuff: {d}", .{my_custom_loader.stuff});
 
-    while (true) {
-        try asset_server.reloadChangedAssets();
-    }
-}
+//     while (true) {
+//         try asset_server.reloadChangedAssets();
+//     }
+// }
 
-pub const MyCustomLoader = struct {
-    interface: Loader,
-    stuff: u8 = 0,
+// pub const MyCustomLoader = struct {
+//     interface: Loader,
+//     stuff: u8 = 0,
 
-    pub fn init(asset_server: AssetServer, root_path: [:0]const u8, files: []const []const u8) MyCustomLoader {
-        return .{
-            .interface = .{
-                .gpa = asset_server.gpa,
-                .io = asset_server.io,
-                .root_path = root_path,
-                .files = files,
-                .vtable = &.{
-                    .load = MyCustomLoader.load,
-                    .unload = MyCustomLoader.unload,
-                },
-            },
-        };
-    }
+//     pub fn init(asset_server: AssetServer, root_path: [:0]const u8, files: []const []const u8) MyCustomLoader {
+//         return .{
+//             .interface = .{
+//                 .gpa = asset_server.gpa,
+//                 .io = asset_server.io,
+//                 .root_path = root_path,
+//                 .files = files,
+//                 .vtable = &.{
+//                     .load = MyCustomLoader.load,
+//                     .unload = MyCustomLoader.unload,
+//                 },
+//             },
+//         };
+//     }
 
-    pub fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
-        const self: *MyCustomLoader = @fieldParentPtr("interface", loader);
+//     pub fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+//         const self: *MyCustomLoader = @fieldParentPtr("interface", loader);
 
-        const io = loader.io;
-        const file_path = loader.files[index];
-        const file = try err_file;
+//         const io = loader.io;
+//         const file_path = loader.files[index];
+//         const file = try err_file;
 
-        var buffer: [1024]u8 = undefined;
-        const len = try file.readPositionalAll(io, &buffer, 0);
-        std.log.info("loaded: {s} {d}", .{ file_path, index });
-        std.debug.print("{s}\n", .{buffer[0..len]});
-        self.stuff += 1;
-    }
+//         var buffer: [1024]u8 = undefined;
+//         const len = try file.readPositionalAll(io, &buffer, 0);
+//         std.log.info("loaded: {s} {d}", .{ file_path, index });
+//         std.debug.print("{s}\n", .{buffer[0..len]});
+//         self.stuff += 1;
+//     }
 
-    pub fn unload(loader: *Loader, index: usize) void {
-        const file_name = loader.files[index];
-        std.log.info("unloaded \"{s}\" {d}", .{ file_name, index });
-    }
-};
+//     pub fn unload(loader: *Loader, index: usize) void {
+//         const file_name = loader.files[index];
+//         std.log.info("unloaded \"{s}\" {d}", .{ file_name, index });
+//     }
+// };
