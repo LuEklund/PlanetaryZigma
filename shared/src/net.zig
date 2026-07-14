@@ -47,6 +47,11 @@ pub const Connect = struct {
     name: []const u8,
 };
 
+pub const PlayerName = struct {
+    name_len: u16,
+    name: []const u8,
+};
+
 pub const Acknowledge = struct {
     id: entity.Id,
     tick: u32,
@@ -63,6 +68,7 @@ pub const SpawnEntity = struct {
         none: void,
         planet_radius: u32,
         is_teleporter_boss: void,
+        player_name: PlayerName,
     },
 };
 
@@ -157,10 +163,10 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .int => try writer.writeInt(T, value, endian),
         .float => |float| try writer.writeInt(@Int(.signed, float.bits), @bitCast(value), endian),
         .pointer => |pointer| {
-            if (pointer.child == u8)
-                try writer.writeAll(value)
-            else
-                try writer.writeSliceEndian(pointer.child, value, endian);
+            if (pointer.child == u8) {
+                try writer.writeAll(value);
+                try writer.splatByteAll(0, (4 - (value.len % 4)) % 4);
+            } else try writer.writeSliceEndian(pointer.child, value, endian);
         },
         .array => |array| if (array.child == u8)
             try writer.writeAll(&value)

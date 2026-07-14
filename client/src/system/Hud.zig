@@ -19,7 +19,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
         .right_click = controller.input_map.keys.mouse_button_right,
     });
     if (network_manager.steam_client.server_conn == 0) {
-        serverList(network_manager, ui);
+        try serverList(network_manager, ui);
     } else {
         try inGame(info, ui);
     }
@@ -27,15 +27,20 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
     ui.end();
 }
 
-fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
+fn serverList(network_manager: *NetworkManager, ui: *Ui) !void {
+    const root_width: f32 = 560;
+    const root_heigth: f32 = 660;
+    const server_list_heigth: f32 = 540;
+    const button_heigth: f32 = root_heigth - server_list_heigth;
+
     if (network_manager.host_state != .none) {
         ui.add(null, .{
             .name = "root",
             .size = .{ .fixed = .{
-                .heigth = 500,
-                .width = 400,
+                .heigth = root_heigth,
+                .width = root_width,
             } },
-            .offset = .{ .left = (ui.screen_width - 400) / 2, .top = (ui.screen_heigth - 500) / 2 },
+            .offset = .{ .left = (ui.screen_width - root_width) / 2, .top = (ui.screen_heigth - root_heigth) / 2 },
             .color = .new(0.5, 0.5, 0.5, 0.8),
             .child_anchor = .{ .x = .center, .y = .center },
             .children = &.{
@@ -52,35 +57,26 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
     ui.add(null, .{
         .name = "root",
         .size = .{ .fixed = .{
-            .heigth = 500,
-            .width = 400,
+            .heigth = root_heigth,
+            .width = root_width,
         } },
-        .offset = .{ .left = (ui.screen_width - 400) / 2, .top = (ui.screen_heigth - 500) / 2 },
+        .offset = .{ .left = (ui.screen_width - root_width) / 2, .top = (ui.screen_heigth - root_heigth) / 2 },
         .color = .new(0.5, 0.5, 0.5, 0.8),
         .axis_align = .verical,
         .children = &.{
             .{
                 .name = "servers",
                 .axis_align = .verical,
+                .gap = 6,
                 .color = .grey,
-                .size = .{
-                    .percent = .{
-                        .heigth = 0.8,
-                        .width = 1.0,
-                    },
-                },
+                .size = .{ .fixed = .{ .heigth = server_list_heigth, .width = root_width } },
             },
             .{
                 .name = "buttons",
                 .axis_align = .horizontal,
                 .gap = 10,
                 .child_anchor = .{ .x = .center, .y = .center },
-                .size = .{
-                    .percent = .{
-                        .heigth = 0.2,
-                        .width = 1.0,
-                    },
-                },
+                .size = .{ .fixed = .{ .heigth = button_heigth, .width = root_width } },
                 .color = .new(0.1, 0.1, 0.1, 1),
                 .children = &.{
                     .{ .size = .{
@@ -101,16 +97,46 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
     });
     for (0..network_manager.server_list.count) |i| {
         const server = &network_manager.server_list.servers[i];
+        const id = serverId(server);
+        const title = clippedText(ui, serverTitle(server), 42);
+        const tags = serverTags(server);
+        const host = tagValue(tags, "host");
+        const players = tagValue(tags, "players");
+        const host_text = if (host.len == 0)
+            "Host: unknown"
+        else
+            ui.print("Host: {s}", .{clippedText(ui, host, 36)});
+        const player_text = if (players.len == 0)
+            ui.print("Players: {d}/{d}", .{ @max(server.player_count, 0), @max(server.max_players, 0) })
+        else
+            ui.print("Players: {s}", .{clippedText(ui, players, 54)});
+
         ui.add("servers", .{
-            .name = &server.id_str,
-            .text = .{ .data = &server.id_str },
-            .size = .{ .percent = .{
-                .heigth = 0.2,
-                .width = 1.0,
-            } },
-            .color = if (ui.isHot(&server.id_str)) .new(0.2, 0.2, 0.2, 1) else .grey,
+            .name = id,
+            .axis_align = .verical,
+            .gap = 2,
+            .child_anchor = .{ .x = .start, .y = .center },
+            .size = .{ .fixed = .{ .heigth = 60, .width = root_width } },
+            .color = if (ui.isHot(id)) .new(0.2, 0.2, 0.2, 1) else .grey,
+            .children = &.{
+                .{
+                    .size = .{ .fixed = .{ .heigth = 22, .width = root_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = title, .size = 20 },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = root_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = host_text, .size = 14, .color = .new(0.9, 0.9, 0.9, 1) },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = root_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = player_text, .size = 14, .color = .new(0.9, 0.9, 0.9, 1) },
+                },
+            },
         });
-        if (ui.isActive(&server.id_str)) {
+        if (ui.isActive(id)) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.debug("connect to {d}", .{server.steam_id});
         }
@@ -123,8 +149,44 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) void {
     }
 }
 
+fn serverId(server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const id = std.mem.sliceTo(server.id_str[0..], 0);
+    return if (id.len == 0) server.id_str[0..] else id;
+}
+
+fn serverTitle(server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const title = std.mem.sliceTo(server.name[0..], 0);
+    return if (title.len == 0) serverId(server) else title;
+}
+
+fn serverTags(server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    return std.mem.sliceTo(server.game_tags[0..], 0);
+}
+
+fn tagValue(tags: []const u8, comptime key: []const u8) []const u8 {
+    var rest = tags;
+    while (rest.len != 0) {
+        const separator_index = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
+        const part = rest[0..separator_index];
+        if (part.len > key.len and std.mem.eql(u8, part[0..key.len], key) and part[key.len] == '=') {
+            return part[key.len + 1 ..];
+        }
+        if (separator_index == rest.len) break;
+        rest = rest[separator_index + 1 ..];
+    }
+    return "";
+}
+
+fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
+    if (text.len <= max_len) return text;
+    if (max_len <= 3) return text[0..max_len];
+    return ui.print("{s}...", .{text[0 .. max_len - 3]});
+}
+
 fn inGame(info: *const Info, ui: *Ui) !void {
     if (info.world.getPtr(info.world.player_id)) |player| {
+        addNameTags(info, ui);
+
         const health = player.stats.get(.health);
         const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 50;
@@ -324,4 +386,93 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             }
         }
     }
+}
+
+fn addNameTags(info: *const Info, ui: *Ui) void {
+    const label_size: f32 = 18;
+    const padding_x: f32 = 8;
+    const padding_y: f32 = 3;
+
+    for (info.world.entities.values()) |*entity| {
+        if (entity.kind != .player) continue;
+
+        const name = if (entity.player_name.len != 0)
+            entity.player_name
+        else
+            ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
+
+        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
+            nz.vec.normalize(entity.transform.position)
+        else
+            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
+        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
+        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        const text_size = ui.textSize(name, label_size);
+        const tag_width = text_size.width + padding_x * 2;
+        const tag_heigth = text_size.heigth + padding_y * 2;
+
+        ui.add(null, .{
+            .offset = .{
+                .left = screen[0] - tag_width / 2,
+                .top = screen[1] - tag_heigth - 4,
+            },
+            .size = .{ .fixed = .{
+                .width = tag_width,
+                .heigth = tag_heigth,
+            } },
+            .color = .new(0, 0, 0, 0.45),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .children = &.{.{
+                .size = .{ .fixed = text_size },
+                .text = .{
+                    .data = name,
+                    .size = label_size,
+                    .color = .new(1, 1, 1, 0.95),
+                },
+            }},
+        });
+    }
+}
+
+fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
+    if (width <= 0 or heigth <= 0) return null;
+
+    const aspect = width / heigth;
+    const view = getViewMatrix(&camera.transform);
+    const proj = perspective(camera.fov_rad, aspect, 0.01, 1000);
+    const clip = proj.mul(view).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
+    if (clip[3] <= 0.001) return null;
+
+    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
+    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
+    return .{
+        (ndc[0] * 0.5 + 0.5) * width,
+        (ndc[1] * 0.5 + 0.5) * heigth,
+    };
+}
+
+fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
+    const inv_rotation = transform.rotation.conjugate().toMat4x4();
+    const inv_translation = nz.Mat4x4(f32).translate(-transform.position);
+    return inv_rotation.mul(inv_translation);
+}
+
+fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
+    const f = 1.0 / std.math.tan(fovy_rad / 2.0);
+    return .new(.{
+        f / aspect, 0,  0,                           0,
+        0,          -f, 0,                           0,
+        0,          0,  far / (near - far),          -1,
+        0,          0,  (far * near) / (near - far), 0,
+    });
+}
+
+fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+    const segment = tag_position - camera_position;
+    const segment_len_sq = nz.vec.dot(segment, segment);
+    if (segment_len_sq <= 0.0001) return false;
+    const t = std.math.clamp(-nz.vec.dot(camera_position, segment) / segment_len_sq, 0, 1);
+    const closest = camera_position + nz.vec.scale(segment, t);
+    return nz.vec.length(closest) < planet_radius + 0.2;
 }

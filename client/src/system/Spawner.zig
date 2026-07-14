@@ -17,9 +17,13 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
     defer tracy_scope.end();
     const world = info.world;
     const gpa = system_context.gpa;
+    defer clearPendingSpawns(world);
 
     for (world.pending_spawn.items) |entity_info| {
-        if (world.getPtr(entity_info.id) != null) continue;
+        if (world.getPtr(entity_info.id)) |entity| {
+            try applySpawnData(world, entity, entity_info);
+            continue;
+        }
         const entity = try world.spawn(entity_info.id);
         entity.* = .{
             .id = entity_info.id,
@@ -36,6 +40,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                 .tick = entity_info.tick,
             },
         };
+        try applySpawnData(world, entity, entity_info);
         switch (entity_info.kind) {
             .player => {
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
@@ -70,8 +75,6 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
             .unknown, .item => {},
         }
     }
-    world.pending_spawn.clearRetainingCapacity();
-
     for (world.pending_stats.items) |command| {
         if (world.getPtr(command.id)) |entity| applyStat(entity, command);
     }
@@ -87,4 +90,23 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         _ = world.despawn(id);
     }
     world.pending_despawn.clearRetainingCapacity();
+}
+
+fn clearPendingSpawns(world: *system.World) void {
+    for (world.pending_spawn.items) |entity_info| {
+        switch (entity_info.data) {
+            .player_name => |player_name| if (player_name.name.len != 0) world.gpa.free(player_name.name),
+            .none, .planet_radius, .is_teleporter_boss => {},
+        }
+    }
+    world.pending_spawn.clearRetainingCapacity();
+}
+
+pub fn applySpawnData(world: *system.World, entity: *system.Entity, entity_info: shared.net.SpawnEntity) !void {
+    switch (entity_info.data) {
+        .player_name => |player_name| {
+            if (entity.kind == .player) try world.setPlayerName(entity, player_name.name);
+        },
+        .none, .planet_radius, .is_teleporter_boss => {},
+    }
 }

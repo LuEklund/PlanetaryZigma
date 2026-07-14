@@ -18,6 +18,8 @@ pub const tick_seconds: f32 = 0.0167;
 pub const max_entities: usize = 1024;
 pub const max_enemies: usize = 100;
 pub const max_players: usize = 4;
+pub const max_player_name_len: usize = 32;
+pub const default_player_name: []const u8 = "Player";
 
 pub fn CappedList(comptime T: type) type {
     return struct {

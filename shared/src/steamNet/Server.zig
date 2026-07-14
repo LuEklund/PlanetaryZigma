@@ -94,9 +94,48 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, host_steam_id: u64) !@This() {
     };
 }
 
+pub fn updateSessionMetadata(self: *@This(), max_players: usize, host_name: []const u8, player_names: []const []const u8) void {
+    self.gs.SetMaxPlayerCount(@intCast(max_players));
+
+    const host = if (host_name.len == 0) "Unknown" else host_name;
+
+    var server_name_buf: [64]u8 = undefined;
+    const server_name = std.fmt.bufPrintZ(&server_name_buf, "{s}'s Session", .{host}) catch
+        std.fmt.bufPrintZ(&server_name_buf, "Planetary Zigma", .{}) catch unreachable;
+    self.gs.SetServerName(server_name);
+
+    var tags_buf: [128]u8 = @splat(0);
+    writeSessionTags(&tags_buf, host, player_names) catch {};
+    self.gs.SetGameTags(&tags_buf[0]);
+}
+
 pub fn deinit(self: *@This()) void {
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
+}
+
+fn writeSessionTags(buffer: *[128]u8, host_name: []const u8, player_names: []const []const u8) !void {
+    var writer: std.Io.Writer = .fixed(buffer[0 .. buffer.len - 1]);
+    try writer.writeAll("host=");
+    try writeTagValue(&writer, host_name);
+    try writer.writeAll(";players=");
+    if (player_names.len == 0) {
+        try writer.writeAll("none");
+        return;
+    }
+    for (player_names, 0..) |player_name, i| {
+        if (i != 0) try writer.writeAll(", ");
+        try writeTagValue(&writer, player_name);
+    }
+}
+
+fn writeTagValue(writer: *std.Io.Writer, value: []const u8) !void {
+    for (value) |char| {
+        try writer.writeByte(switch (char) {
+            0...31, 127, ';', ',' => ' ',
+            else => char,
+        });
+    }
 }
 
 pub fn handlePackets(self: *@This()) !void {
