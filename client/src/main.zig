@@ -18,6 +18,8 @@ pub fn main(init: std.process.Init) !void {
     const gpa = if (builtin.mode == .Debug) gpa_impl.allocator() else gpa_impl;
     const io = init.io;
 
+    if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
+
     const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
     shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
     var steam_client: shared.SteamNet.Client = try .init(gpa, io);
@@ -80,7 +82,10 @@ pub fn main(init: std.process.Init) !void {
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         accumlated_time += delta_time;
-        if (accumlated_time < time_step) continue;
+        if (accumlated_time < time_step) {
+            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
+            continue;
+        }
         accumlated_time -= time_step;
         while (try window.poll(desktop)) |event| {
             const options_was_open = world.options_menu_open;

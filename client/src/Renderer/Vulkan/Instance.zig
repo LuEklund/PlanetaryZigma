@@ -7,7 +7,10 @@ handle: c.VkInstance,
 pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, layers: []const [*:0]const u8) !@This() {
     var version: u32 = undefined;
     try check(c.vkEnumerateInstanceVersion(&version));
-    if (c.VK_API_VERSION_MAJOR(version) < 1 or c.VK_API_VERSION_MINOR(version) < 3) return error.DynamicRenderingUnsupported;
+    if (c.VK_API_VERSION_MAJOR(version) < 1 or c.VK_API_VERSION_MINOR(version) < 3) {
+        std.log.err("this game needs Vulkan 1.3+, your driver reports {d}.{d} — please update your graphics drivers", .{ c.VK_API_VERSION_MAJOR(version), c.VK_API_VERSION_MINOR(version) });
+        return error.DynamicRenderingUnsupported;
+    }
 
     var count: u32 = undefined;
     try check(c.vkEnumerateInstanceExtensionProperties(null, &count, null));
@@ -19,8 +22,6 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, 
 
     var found: usize = 0;
 
-    std.debug.print("amount: {d}\n", .{count});
-
     for (enum_extensions) |enum_extension| {
         const extension_name_len = std.mem.findScalar(u8, enum_extension.extensionName[0..], 0).?;
         for (required_extensions) |required_extension| {
@@ -29,7 +30,10 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, 
             found += 1;
         }
     }
-    if (found < required_extensions.len) return error.ExtensionsNotFound;
+    if (found < required_extensions.len) {
+        std.log.err("your Vulkan driver is missing required instance extensions — please update your graphics drivers", .{});
+        return error.ExtensionsNotFound;
+    }
 
     const instane_create_info: *const c.VkInstanceCreateInfo = &.{
         .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,

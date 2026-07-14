@@ -44,7 +44,7 @@ pub fn load(self: *@This(), gpa: std.mem.Allocator, io: std.Io, file: std.Io.Fil
     var reader = file.reader(io, &read_buffer);
     const content = try reader.interface.allocRemaining(gpa, .unlimited);
     defer gpa.free(content);
-    std.debug.print("size:  {d}\n", .{content.len});
+    std.log.debug("font file size: {d}", .{content.len});
 
     const atlas_w: usize = 512;
     const atlas_h: usize = 512;

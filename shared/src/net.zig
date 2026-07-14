@@ -4,7 +4,6 @@ const entity = root.entity;
 
 pub const endian: std.builtin.Endian = .little;
 
-/// Queue of packets of one direction. Server holds a ClientPacket queue per client.
 pub fn PacketQueue(comptime Packet: type) type {
     return struct {
         commands: std.ArrayList(Packet) = .empty,
@@ -126,7 +125,6 @@ pub const Event = union(enum(u16)) {
     attack: entity.Id,
 };
 
-// ── Wire format (generic over packet direction) ─────────────────────────────
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {
     switch (self) {
         inline else => |payload, tag| {
@@ -138,7 +136,7 @@ pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void 
 
 pub fn parse(comptime Packet: type, reader: *std.Io.Reader) !Packet {
     const Opcode = std.meta.Tag(Packet);
-    const opcode: Opcode = @enumFromInt(try reader.takeInt(u16, endian));
+    const opcode = std.enums.fromInt(Opcode, try reader.takeInt(u16, endian)) orelse return error.InvalidOpcode;
     switch (opcode) {
         inline else => |tag| return try parseFromOpcode(Packet, reader, tag),
     }

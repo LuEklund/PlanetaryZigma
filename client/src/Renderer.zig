@@ -34,17 +34,21 @@ pub fn update(self: *@This(), info: *const Info) !void {
     try self.inner.update(info);
 }
 
+const debug_instance_extensions = if (builtin.mode == .Debug)
+    [_][*:0]const u8{Vulkan.c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME}
+else
+    [_][*:0]const u8{};
+
 pub fn resize(self: *@This(), gpa: std.mem.Allocator, window: *yes.Window) !void {
     try self.inner.resize(gpa, window.size.width, window.size.height);
 }
 
 pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !@This() {
     const extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
-        .windows => &.{
-            Vulkan.c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        .windows => &(debug_instance_extensions ++ [_][*:0]const u8{
             "VK_KHR_surface",
             "VK_KHR_win32_surface",
-        },
+        }),
         .macos => &.{
             "VK_KHR_surface",
             "VK_MVK_macos_surface",
@@ -57,17 +61,15 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: y
             "VK_KHR_surface",
             "VK_KHR_android_surface",
         } else switch (window.native(desktop)) {
-            .wayland => &.{
-                Vulkan.c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            .wayland => &(debug_instance_extensions ++ [_][*:0]const u8{
                 Vulkan.c.VK_KHR_SURFACE_EXTENSION_NAME,
                 Vulkan.c.VK_KHR_DISPLAY_EXTENSION_NAME,
 
                 "VK_KHR_surface",
                 "VK_KHR_display",
                 "VK_KHR_wayland_surface",
-            },
-            .x => &.{
-                Vulkan.c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            }),
+            .x => &(debug_instance_extensions ++ [_][*:0]const u8{
                 Vulkan.c.VK_KHR_SURFACE_EXTENSION_NAME,
                 Vulkan.c.VK_KHR_DISPLAY_EXTENSION_NAME,
 
@@ -75,7 +77,7 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: y
                 "VK_KHR_display",
                 "VK_KHR_xlib_surface",
                 "VK_KHR_xcb_surface",
-            },
+            }),
             else => &.{},
         },
         else => &.{},
@@ -90,9 +92,9 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: y
         },
         .instance = .{
             .extensions = extensions,
-            .layers = &.{
+            .layers = if (builtin.mode == .Debug) &.{
                 "VK_LAYER_KHRONOS_validation",
-            },
+            } else &.{},
         },
         .device = .{
             .extensions = &.{

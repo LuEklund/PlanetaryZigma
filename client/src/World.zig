@@ -4,8 +4,6 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 
-pub const max_entities: usize = 1024;
-
 pub const MenuScreen = enum {
     main,
     multiplayer,
@@ -79,11 +77,11 @@ pub const MenuTuning = struct {
 mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
-teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
-pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
-pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
-attack_events: std.ArrayList(shared.entity.Id) = .empty,
+teleporter_bosses: shared.CappedList(shared.entity.Id) = .empty,
+pending_spawn: shared.CappedList(shared.net.SpawnEntity) = .empty,
+pending_despawn: shared.CappedList(shared.entity.Id) = .empty,
+pending_stats: shared.CappedList(shared.net.UpdateStat) = .empty,
+attack_events: shared.CappedList(shared.entity.Id) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
@@ -116,11 +114,11 @@ pub const Entity = struct {
 pub fn init(gpa: std.mem.Allocator) !@This() {
     return .{
         .gpa = gpa,
-        .teleporter_bosses = try .initCapacity(gpa, max_entities),
-        .pending_spawn = try .initCapacity(gpa, max_entities),
-        .pending_despawn = try .initCapacity(gpa, max_entities),
-        .pending_stats = try .initCapacity(gpa, max_entities),
-        .attack_events = try .initCapacity(gpa, max_entities),
+        .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
+        .pending_spawn = try .initCapacity(gpa, shared.max_entities),
+        .pending_despawn = try .initCapacity(gpa, shared.max_entities),
+        .pending_stats = try .initCapacity(gpa, shared.max_entities),
+        .attack_events = try .initCapacity(gpa, shared.max_entities),
     };
 }
 

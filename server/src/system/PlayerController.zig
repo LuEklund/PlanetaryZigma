@@ -23,7 +23,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             player.last_attack = info.elapsed_time;
-            _ = info.world.spawn(
+            _ = try info.world.spawn(
                 .{
                     .kind = .{ .item = .damage },
                     .transform = player.transform,
@@ -42,8 +42,8 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
                     if (!teleporter.active) {
                         teleporter.active = true;
-                        info.world.outbox.appendAssumeCapacity(.{ .event = .teleport_start });
-                        _ = info.world.spawn(.{
+                        info.world.outbox.append(.{ .event = .teleport_start });
+                        _ = try info.world.spawn(.{
                             .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
                             .flags = .{ .is_teleporter_boss = true },
@@ -67,7 +67,6 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const move_right = nz.vec.normalize(nz.vec.cross(move_fwd, planet_up));
         camera.yaw_rotation = .lookAt(move_fwd, planet_up);
 
-        // --- Apply to body ---
         if (player.collider.body_id) |id| {
             var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
             if (input.keys.w) dir += move_fwd;
@@ -84,7 +83,6 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
             Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
 
-            // Body yaw tracks camera yaw (pitch stays on the camera only).
             Physics.setRotation(id, camera.yaw_rotation);
             transform.rotation = camera.yaw_rotation;
 
@@ -102,7 +100,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - transform.position);
             const muzzle_velocity = nz.vec.scale(start_direction, 100);
-            const bullet = info.world.spawn(.{
+            const bullet = try info.world.spawn(.{
                 .kind = .bullet,
                 .owner_id = player.id,
                 .transform = .{ .position = player.transform.position + nz.vec.scale(start_direction, 1.5), .rotation = player.transform.rotation },
@@ -110,7 +108,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 .lifetime = 1,
             });
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
-            info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });
+            info.world.outbox.append(.{ .event = .{ .attack = player_id } });
         }
     }
 }

@@ -13,15 +13,21 @@ pub fn main(init: std.process.Init) !void {
     defer {
         if (builtin.mode == .Debug) _ = gpa_impl.deinit();
     }
-    const gpa = gpa_impl.allocator();
+    const gpa = if (builtin.mode == .Debug) gpa_impl.allocator() else gpa_impl;
     const io = init.io;
+
+    if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "server.log");
 
     shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
 
     var args_iterator = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
     defer args_iterator.deinit();
     _ = args_iterator.next();
-    const host_steam_id: u64 = if (args_iterator.next()) |arg| try std.fmt.parseInt(u64, arg, 10) else 0;
+    var host_steam_id: u64 = 0;
+    while (args_iterator.next()) |arg| {
+        host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
+        break;
+    }
 
     var steam_server: shared.SteamNet.Server = try .init(gpa, io, host_steam_id);
     defer steam_server.deinit();
@@ -55,7 +61,10 @@ pub fn main(init: std.process.Init) !void {
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;
-        if (loop_time_tracker < time_step) continue;
+        if (loop_time_tracker < time_step) {
+            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
+            continue;
+        }
         tick += 1;
         elapsed_time += time_step;
         loop_time_tracker -= time_step;

@@ -82,7 +82,7 @@ pub const Logical = struct {
         check_ext: for (extensions) |extension| {
             for (extension_properties[0..extension_count]) |cmp_ext|
                 if (std.mem.eql(u8, std.mem.span(extension), std.mem.sliceTo(&cmp_ext.extensionName, 0))) continue :check_ext;
-            std.log.err("Missing Device extention: {s}", .{extension});
+            std.log.err("your GPU/driver does not support the required Vulkan feature {s} — please update your graphics drivers; if that does not help, your GPU may be too old for this game", .{extension});
             return error.MissingDeviceExtension;
         }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const shared = @import("shared");
 const nz = shared.numz;
 const AssetServer = shared.AssetServer;
@@ -39,7 +40,7 @@ pub const Model = @import("Vulkan/Model.zig");
 gpa: std.mem.Allocator,
 
 instance: Instance,
-debug_messenger: DebugMessenger,
+debug_messenger: ?DebugMessenger,
 surface: Surface,
 physical_device: PhysicalDevice,
 device: Device,
@@ -79,14 +80,14 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
     self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
     procs.instance.load(self.instance.handle, null);
-    self.debug_messenger = try .init(self.instance, .{
+    self.debug_messenger = if (builtin.mode == .Debug) try .init(self.instance, .{
         .severities = if (try std.process.Environ.contains(.empty, gpa, "RENDERDOC_CAPFILE")) .{} else .{
             .warning = true,
             .verbose = true,
             .@"error" = true,
             .info = true,
         },
-    });
+    }) else null;
     self.surface = if (options.surface.init != null and options.surface.data != null) .{
         .handle = @ptrCast(try options.surface.init.?(self.instance.handle, options.surface.data.?)),
     } else return error.configSurface;
@@ -144,7 +145,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.vma.deinit();
     self.device.deinit();
     self.surface.deinit(self.instance);
-    self.debug_messenger.deinit(self.instance);
+    if (self.debug_messenger) |debug_messenger| debug_messenger.deinit(self.instance);
     self.instance.deinit();
 }
 

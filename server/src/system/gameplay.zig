@@ -7,7 +7,7 @@ const Physics = @import("Physics.zig");
 const Director = @import("Director.zig");
 const Info = system.Info;
 
-pub fn updateEnemies(info: *const Info) void {
+pub fn updateEnemies(info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -52,7 +52,7 @@ pub fn updateEnemies(info: *const Info) void {
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     const muzzle_velocity = nz.vec.scale(forward_dir, 50);
-                    const bullet = info.world.spawn(.{
+                    const bullet = try info.world.spawn(.{
                         .kind = .bullet,
                         .owner_id = enemy.id,
                         .transform = .{ .position = enemy.transform.position + nz.vec.scale(forward_dir, 1.5), .rotation = player.transform.rotation },
@@ -60,7 +60,7 @@ pub fn updateEnemies(info: *const Info) void {
                         .lifetime = 2,
                     });
                     bullet.stats.setCurrent(.damage, damage);
-                    info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .tubloid => {
@@ -69,7 +69,7 @@ pub fn updateEnemies(info: *const Info) void {
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     if (!info.world.removeHealth(player, damage)) std.log.debug("did not take damage", .{});
-                    info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .wizard => {
@@ -81,8 +81,8 @@ pub fn updateEnemies(info: *const Info) void {
                         .kind = .{ .enemy = .tubloid },
                         .transform = .{ .position = player.transform.position },
                         .last_attack = info.elapsed_time,
-                    });
-                    info.world.outbox.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    }) catch {};
+                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
         }
@@ -129,7 +129,7 @@ pub fn updateItems(info: *const Info) !void {
             const item_count = player.inventory.add(item_kind, 1);
             player.stats.gain(item_kind, 1);
             player.stats.refresh(player.inventory);
-            info.world.outbox.appendAssumeCapacity(.{ .inventory = .{
+            info.world.outbox.append(.{ .inventory = .{
                 .id = player_id,
                 .item_kind = item_kind,
                 .set = item_count,
@@ -137,8 +137,8 @@ pub fn updateItems(info: *const Info) !void {
             for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
                 if (item_kind.getAttributeValues().get(stat_kind) == 0) continue;
                 const stat = player.stats.get(stat_kind);
-                info.world.outbox.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
-                info.world.outbox.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });
+                info.world.outbox.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
+                info.world.outbox.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });
             }
 
             info.world.queueDespawn(entity.id);
@@ -156,13 +156,12 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
     }
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
-        player.flags.invinsible = false;
         if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
             teleporter.charged += info.delta_time + 100;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
-    info.world.outbox.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    info.world.outbox.append(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
 }
 
 pub fn updateLifetimes(info: *const Info) void {
