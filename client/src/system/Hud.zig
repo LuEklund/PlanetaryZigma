@@ -48,20 +48,28 @@ fn mainMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void 
     const panel_left = if (ui.screen_width < 760) left else left + button_width + panel_gap;
     const panel_top = if (ui.screen_width < 760) top + total_height + 20 else top;
     const panel_width = @max(@as(f32, 280), ui.screen_width - panel_left - left);
+    const steam_logged_on = network_manager.steam_logged_on;
+    const singleplayer_hosting = network_manager.host_intent == .singleplayer and
+        (network_manager.host_state == .requested or network_manager.host_state == .waiting or network_manager.host_state == .hosting);
+    const singleplayer_failed = network_manager.host_intent == .singleplayer and network_manager.host_state == .failed;
+    const singleplayer_text = if (singleplayer_hosting) "Starting..." else if (singleplayer_failed) "Start Failed" else "Singleplayer";
 
-    addMainMenuButton(ui, "menu_singleplayer", "Singleplayer", left, top, button_width, button_height, button_text_size, false);
-    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, info.world.menu_screen == .multiplayer);
-    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, info.world.options_menu_open);
-    addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false);
+    addMainMenuButton(ui, "menu_singleplayer", singleplayer_text, left, top, button_width, button_height, button_text_size, singleplayer_hosting, true);
+    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, info.world.menu_screen == .multiplayer, steam_logged_on);
+    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, info.world.options_menu_open, true);
+    addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false, true);
 
     if (ui.isActive("menu_singleplayer")) {
         info.world.menu_screen = .main;
+        network_manager.requestHost(.singleplayer);
     }
-    if (ui.isActive("menu_multiplayer")) {
+    if (steam_logged_on and ui.isActive("menu_multiplayer")) {
         info.world.menu_screen = .multiplayer;
         if (!network_manager.server_list.refresh and network_manager.server_list.count == 0) {
             network_manager.server_list.refresh = true;
         }
+    } else if (!steam_logged_on and ui.isActive("menu_multiplayer")) {
+        info.world.menu_screen = .multiplayer;
     }
     if (ui.isActive("menu_settings")) {
         info.world.menu_screen = .main;
@@ -78,13 +86,17 @@ fn mainMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void 
     }
 }
 
-fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool) void {
-    const hot = ui.isHot(name);
-    const bg = if (selected or hot)
+fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool, enabled: bool) void {
+    const hot = enabled and ui.isHot(name);
+    const bg = if (!enabled)
+        nz.color.Rgba(f32).new(0.045, 0.048, 0.045, 1)
+    else if (selected or hot)
         nz.color.Rgba(f32).new(0.88, 0.55, 0.08, 1)
     else
         nz.color.Rgba(f32).new(0.02, 0.025, 0.025, 1);
-    const fg = if (selected or hot)
+    const fg = if (!enabled)
+        nz.color.Rgba(f32).new(0.44, 0.46, 0.42, 1)
+    else if (selected or hot)
         nz.color.Rgba(f32).new(0.02, 0.02, 0.015, 1)
     else
         nz.color.Rgba(f32).new(0.94, 0.96, 0.9, 1);
@@ -106,32 +118,33 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     const button_width = (panel_width - row_gap) * 0.5;
     const hosting = network_manager.host_state == .requested or network_manager.host_state == .waiting or network_manager.host_state == .hosting;
     const host_failed = network_manager.host_state == .failed;
+    const steam_logged_on = network_manager.steam_logged_on;
 
     ui.add(null, .{
         .name = "menu_refresh",
         .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
-        .color = if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
+        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{ .data = "Refresh Servers", .size = 26, .color = .new(0.94, 0.96, 0.9, 1) },
+        .text = .{ .data = "Refresh Servers", .size = 26, .color = if (steam_logged_on) .new(0.94, 0.96, 0.9, 1) else .new(0.44, 0.46, 0.42, 1) },
     });
-    if (ui.isActive("menu_refresh") and network_manager.server_list.refresh == false) {
+    if (steam_logged_on and ui.isActive("menu_refresh") and network_manager.server_list.refresh == false) {
         network_manager.server_list.refresh = true;
     }
     ui.add(null, .{
         .name = "menu_host",
         .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
         .offset = .{ .left = left + button_width + row_gap, .top = top },
-        .color = if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
-            .data = if (hosting) "Hosting..." else if (host_failed) "Host Failed" else "Host",
+            .data = if (!steam_logged_on) "Steam Offline" else if (hosting) "Hosting..." else if (host_failed) "Host Failed" else "Host",
             .size = 26,
-            .color = if (hosting or ui.isHot("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (!steam_logged_on) .new(0.44, 0.46, 0.42, 1) else if (hosting or ui.isHot("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
-    if (ui.isActive("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed)) {
-        network_manager.host_state = .requested;
+    if (ui.isActive("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline)) {
+        network_manager.requestHost(.multiplayer);
     }
 
     if (network_manager.server_list.count == 0) {
@@ -141,7 +154,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
             .color = .new(0.02, 0.025, 0.025, 0.62),
             .child_anchor = .{ .x = .center, .y = .center },
             .text = .{
-                .data = if (hosting) "Hosting..." else if (network_manager.server_list.refresh) "Searching for servers" else "No servers found",
+                .data = if (!steam_logged_on) "Steam is offline" else if (hosting) "Hosting..." else if (network_manager.server_list.refresh) "Searching for servers" else "No servers found",
                 .size = 24,
                 .color = .new(0.68, 0.72, 0.66, 1),
             },
