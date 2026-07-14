@@ -702,6 +702,11 @@ fn emitNode(
     }
 }
 
+pub fn aspectRatio(self: *const @This()) f32 {
+    const extent = self.swapchain.draw_image.extent;
+    return @as(f32, @floatFromInt(extent.width)) / @as(f32, @floatFromInt(extent.height));
+}
+
 pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !void {
     try self.swapchain.recreate(
         gpa,
