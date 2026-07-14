@@ -26,15 +26,15 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var cross_platform: yes.Platform.Cross = try .init(gpa, io, init.minimal);
-    defer cross_platform.deinit();
-    const platform = cross_platform.platform();
+    var cross_desktop: yes.Desktop.Cross = try .init(gpa, io, init.minimal);
+    defer cross_desktop.deinit();
+    const desktop = cross_desktop.desktop();
 
-    var cross_window: yes.Platform.Cross.Window = .empty(platform);
-    const window = cross_window.interface(platform);
+    var cross_window: yes.Desktop.Cross.Window = .empty(desktop);
+    const window = cross_window.interface(desktop);
     const window_size: yes.Window.Size = .{ .width = 854, .height = 480 };
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
-    try window.open(platform, .{
+    try window.open(desktop, .{
         .title = "PlanetaryZigma",
         .size = window_size,
         .resize_policy = .{ .specified = .{
@@ -43,7 +43,7 @@ pub fn main(init: std.process.Init) !void {
         .surface_type = .vulkan,
     });
     window_zone.end();
-    defer window.close(platform);
+    defer window.close(desktop);
 
     var asset_server = try shared.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
@@ -62,7 +62,7 @@ pub fn main(init: std.process.Init) !void {
     system_table.systemContextInit(&system_context, &system.Context.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
-        .platform = platform,
+        .desktop = desktop,
         .window = window,
         .io = io,
         .world = &world,
@@ -82,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
         accumlated_time += delta_time;
         if (accumlated_time < time_step) continue;
         accumlated_time -= time_step;
-        while (try window.poll(platform)) |event| {
+        while (try window.poll(desktop)) |event| {
             const options_was_open = world.options_menu_open;
             system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event);
             switch (event) {

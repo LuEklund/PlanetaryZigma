@@ -25,7 +25,7 @@ pub const Entity = World.Entity;
 pub const Context = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    platform: yes.Platform,
+    desktop: yes.Desktop,
     window: *yes.Window,
     steam_client: *shared.SteamNet.Client,
     asset_server: *AssetServer,
@@ -34,11 +34,12 @@ pub const Context = struct {
     animation: Animation,
     request_exit: bool = false,
     fullscreen_applied: bool = false,
+    cursor_mode_applied: yes.Window.Property.CursorMode = .normal,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
         io: std.Io,
-        platform: yes.Platform,
+        desktop: yes.Desktop,
         window: *yes.Window,
         asset_server: *AssetServer,
         world: *World,
@@ -48,18 +49,20 @@ pub const Context = struct {
     pub fn init(self: *Context, data: Data) !void {
         self.gpa = data.gpa;
         self.io = data.io;
-        self.platform = data.platform;
+        self.desktop = data.desktop;
         self.window = data.window;
         self.steam_client = data.steam_client;
         self.asset_server = data.asset_server;
-        self.renderer = try .init(data.gpa, data.asset_server, data.platform, data.window);
+        self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.request_exit = false;
         self.fullscreen_applied = false;
+        self.cursor_mode_applied = .normal;
     }
 
     pub fn deinit(self: *Context) void {
+        self.window.setCursorMode(self.desktop, .normal) catch {};
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
     }
@@ -118,6 +121,7 @@ pub const Context = struct {
         }
 
         if (!paused_for_input and !info.world.pause_menu_open and !info.world.options_menu_open) info.world.camera.update(info);
+        info.world.controller.resetMouseDelta();
         info.world.controller.mouse_wheel = 0;
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
@@ -161,8 +165,16 @@ pub const Context = struct {
     fn applyOptions(self: *Context, info: *const Info) !void {
         info.world.camera.fov_rad = info.world.options.fov_rad;
         if (self.fullscreen_applied != info.world.options.fullscreen) {
-            try self.window.setFullscreen(self.platform, info.world.options.fullscreen);
+            const mode: yes.Window.Mode = if (info.world.options.fullscreen) .fullscreen else .windowed;
+            try self.window.setMode(self.desktop, mode);
             self.fullscreen_applied = info.world.options.fullscreen;
+        }
+        const wants_cursor_lock = self.isInGame() and !info.world.pause_menu_open and !info.world.options_menu_open and self.window.focused;
+        const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .locked else .normal;
+        if (self.cursor_mode_applied != cursor_mode) {
+            try self.window.setCursorMode(self.desktop, cursor_mode);
+            self.cursor_mode_applied = cursor_mode;
+            info.world.controller.resetMouseDelta();
         }
     }
 

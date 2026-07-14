@@ -109,8 +109,6 @@ debug_draw_colliders: bool = false,
 free_camera: bool = false,
 
 pub fn update(self: *@This()) void {
-    self.mouse_delta[0] = self.mouse_pos[0] - self.mouse_prev_pos[0];
-    self.mouse_delta[1] = self.mouse_pos[1] - self.mouse_prev_pos[1];
     self.mouse_prev_pos[0] = self.mouse_pos[0];
     self.mouse_prev_pos[1] = self.mouse_pos[1];
 }
@@ -163,6 +161,8 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
         .mouse_motion => |motion| {
             self.mouse_pos[0] = motion.x;
             self.mouse_pos[1] = motion.y;
+            self.mouse_delta[0] += motion.dx;
+            self.mouse_delta[1] += motion.dy;
         },
         .mouse_button => |button| {
             const pressed = button.state == .pressed;
