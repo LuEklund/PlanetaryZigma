@@ -175,7 +175,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .speed => .energy_drink,
                     .damage => .damage_item,
                     .attack_speed => .pickaxe,
-                    .rocket => .damage_item,
+                    .rocket => .rocket_item,
                 },
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{

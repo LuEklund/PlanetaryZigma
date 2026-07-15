@@ -13,7 +13,7 @@ pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
-particles: shared.ArrayList(Particle) = .empty,
+particles: std.ArrayList(Particle) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
@@ -83,10 +83,10 @@ pub fn despawn(self: *@This(), id: shared.entity.Id) bool {
 }
 
 fn appendParticle(self: *@This(), particle: Particle) void {
-    if (self.particles.items.len >= self.particles.buffer.len and self.particles.items.len > 0) {
+    if (self.particles.items.len >= self.particles.capacity and self.particles.items.len > 0) {
         _ = self.particles.swapRemove(0);
     }
-    self.particles.append(particle);
+    self.particles.appendAssumeCapacity(particle);
 }
 
 fn particleSurfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {

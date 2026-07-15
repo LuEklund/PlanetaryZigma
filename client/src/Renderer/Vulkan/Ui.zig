@@ -12,6 +12,7 @@ pub const Texture = enum {
     blank,
     font_atlas,
     damage_item,
+    rocket_item,
     crosshair,
     oxygen_tank,
     energy_drink,
@@ -30,6 +31,7 @@ pub const Texture = enum {
             .crosshair => root ++ "crosshair.png",
             .energy_drink => root ++ "energy_drink.png",
             .pickaxe => root ++ "pickaxe.png",
+            .rocket_item => root ++ "Rocket.png",
         };
     }
 };
