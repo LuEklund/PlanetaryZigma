@@ -8,7 +8,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
-clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
+clients: std.AutoHashMap(shared.SteamNet.Connection, Client),
 last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 session_metadata_dirty: bool = true,
@@ -23,7 +23,7 @@ pub const Client = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
-    conn: shared.SteamNet.Conn,
+    conn: shared.SteamNet.Connection,
     name: []const u8 = "",
     entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,
@@ -92,7 +92,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != .none) world.queueDespawn(client.entity_id);
+                if (client.entity_id != .none) world.queueRemove(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 self.session_metadata_dirty = true;
@@ -155,7 +155,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
-                    world.queueDespawn(client.entity_id);
+                    world.queueRemove(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {
@@ -174,6 +174,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
+        if (entity.flags.is_dead) continue;
         if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
 
         const position = entity.transform.position;
@@ -223,9 +224,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
+                if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendStats(client, writer, entity);
+                try sendInventory(client, writer, entity);
             }
             var motion_it = self.last_motions.valueIterator();
             while (motion_it.next()) |motion| {
@@ -244,6 +247,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendStats(client, writer, entity);
+                try sendInventory(client, writer, entity);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
@@ -279,7 +283,17 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
+fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+    if (entity.kind != .player) return;
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        const count = entity.inventory.get(item_kind);
+        if (count == 0) continue;
+        try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+    }
+}
+
 fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
+    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,
