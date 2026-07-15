@@ -1,19 +1,39 @@
 const std = @import("std");
 
+const ServerArtifacts = struct {
+    exe: *std.Build.Step.Compile,
+    system: *std.Build.Step.Compile,
+    steam_dep: *std.Build.Dependency,
+    ztracy_dep: *std.Build.Dependency,
+};
+
 pub fn build(b: *std.Build) void {
-    // const target = b.standardTargetOptions(.{});
-    //TODO: remove once Zig 0.16.0 works properly with GCC 16.1.1
-    const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 39, .patch = 0 },
-        },
-    });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
     if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
+
+    const artifacts = addServerArtifacts(b, target, optimize, tracy_enable);
+    installServerArtifacts(b, b.getInstallStep(), artifacts, target, tracy_enable);
+
+    const windows_step = b.step("windows", "Build Windows server artifacts used by the hosted client");
+    const windows_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows });
+    const windows_artifacts = addServerArtifacts(b, windows_target, optimize, tracy_enable);
+    installServerArtifacts(b, windows_step, windows_artifacts, windows_target, tracy_enable);
+
+    const run_step = b.step("run", "Run the server");
+    const run_cmd = b.addRunArtifact(artifacts.exe);
+    run_step.dependOn(&run_cmd.step);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_cmd.addArgs(args);
+}
+
+fn addServerArtifacts(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    tracy_enable: bool,
+) ServerArtifacts {
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const ztracy = ztracy_dep.module("ztracy");
 
@@ -73,11 +93,11 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
         .linkage = .dynamic,
+        .use_lld = true,
+        .use_llvm = true,
     });
 
     system.root_module.linkLibrary(box3d_lib);
-
-    b.installArtifact(system);
 
     const exe = b.addExecutable(.{
         .name = "server",
@@ -92,17 +112,44 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztracy", .module = ztracy },
             },
         }),
+        .use_lld = true,
+        .use_llvm = true,
     });
-    //TODO: remove once Zig 0.16.0 works properly with GCC 16.1.1
-    exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));
-    exe.root_module.addRPath(steam_dep.path("steamworks/redistributable_bin/linux64"));
 
-    b.installArtifact(exe);
-    if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
+    if (target.result.os.tag != .windows) {
+        exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));
+        exe.root_module.addRPath(steam_dep.path("steamworks/redistributable_bin/linux64"));
+    }
 
-    const run_step = b.step("run", "Run the server");
-    const run_cmd = b.addRunArtifact(exe);
-    run_step.dependOn(&run_cmd.step);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    return .{
+        .exe = exe,
+        .system = system,
+        .steam_dep = steam_dep,
+        .ztracy_dep = ztracy_dep,
+    };
+}
+
+fn installServerArtifacts(
+    b: *std.Build,
+    step: *std.Build.Step,
+    artifacts: ServerArtifacts,
+    target: std.Build.ResolvedTarget,
+    tracy_enable: bool,
+) void {
+    step.dependOn(&b.addInstallArtifact(artifacts.system, .{}).step);
+    step.dependOn(&b.addInstallArtifact(artifacts.exe, .{}).step);
+    if (tracy_enable) {
+        step.dependOn(&b.addInstallArtifact(artifacts.ztracy_dep.artifact("tracy"), .{}).step);
+    }
+
+    if (target.result.os.tag == .windows) {
+        step.dependOn(&b.addInstallBinFile(
+            artifacts.steam_dep.path("steamworks/redistributable_bin/win64/steam_api64.dll"),
+            "steam_api64.dll",
+        ).step);
+        step.dependOn(&b.addInstallBinFile(
+            artifacts.steam_dep.path("steamworks/public/steam/lib/win64/sdkencryptedappticket64.dll"),
+            "sdkencryptedappticket64.dll",
+        ).step);
+    }
 }

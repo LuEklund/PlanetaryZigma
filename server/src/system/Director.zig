@@ -11,6 +11,21 @@ last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 spawning: bool = false,
 
+const StageItemSpawn = struct {
+    kind: shared.Item.Kind,
+    count: u32,
+};
+
+const stage_item_spawns = [_]StageItemSpawn{
+    .{ .kind = .attack_speed, .count = 5 },
+    .{ .kind = .speed, .count = 4 },
+    .{ .kind = .damage, .count = 4 },
+    .{ .kind = .rocket, .count = 40 },
+    .{ .kind = .health, .count = 3 },
+};
+
+const item_surface_offset: f32 = 1.2;
+
 pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -82,18 +97,12 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         world.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
     }
 
-    for (0..20) |i| {
-        const item_kind: shared.Item.Kind = switch (i) {
-            0...5 => .attack_speed,
-            6...10 => .speed,
-            11...15 => .damage,
-            else => .health,
-        };
-        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        _ = try world.spawn(.{
-            .kind = .{ .item = item_kind },
-            .transform = .{ .position = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)) + 10) },
-        });
+    for (stage_item_spawns) |spawn_spec| {
+        const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
+        for (0..random_spawn_count) |_| {
+            const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            try spawnItem(world, physics, spawn_spec.kind, vector_direction);
+        }
     }
 
     var teleport_position: ?nz.Vec3(f32) = null;
@@ -117,4 +126,34 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
     } else .identity;
     world.teleporter_id = teleporter.id;
+}
+
+fn spawnItem(world: *system.World, physics: *Physics, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
+    const transform = itemSurfaceTransform(world, physics, vector_direction);
+    const item = try world.spawn(.{
+        .kind = .{ .item = kind },
+        .transform = transform,
+    });
+    std.log.debug("spawn item {t} id={d}", .{ kind, item.id });
+}
+
+fn itemSurfaceTransform(world: *system.World, physics: *Physics, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
+    const fallback_surface = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)));
+    const surface = physics.getSurfacePoint(world, vector_direction) orelse fallback_surface;
+    const planet_up = nz.vec.normalize(surface);
+    return .{
+        .position = surface + nz.vec.scale(planet_up, item_surface_offset),
+        .rotation = alignUpToPlanet(planet_up),
+    };
+}
+
+fn alignUpToPlanet(planet_up: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, planet_up), -1.0, 1.0);
+    if (dot >= 0.9999) return .identity;
+    const axis = if (dot > -0.9999)
+        nz.vec.normalize(nz.vec.cross(default_up, planet_up))
+    else
+        nz.Vec3(f32){ 1, 0, 0 };
+    return nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
 }

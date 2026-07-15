@@ -217,6 +217,9 @@ fn handleCommand(
                 .attack => |id| {
                     info.world.attack_events.appendAssumeCapacity(id);
                 },
+                .rocket_impact => |position| {
+                    info.world.spawnRocketExplosion(position);
+                },
             }
         },
         .update_inventory => |inventory| {

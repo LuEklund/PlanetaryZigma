@@ -226,14 +226,14 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
     self.pending_despawns.clearRetainingCapacity();
 }
 
-fn motionType(kind: shared.entity.Kind) Physics.MotionType {
+pub fn motionType(kind: shared.entity.Kind) Physics.MotionType {
     return switch (kind) {
-        .teleporter, .planet => .static,
+        .teleporter, .planet, .item => .static,
         else => .dynamic,
     };
 }
 
-fn objectLayer(kind: shared.entity.Kind) Physics.ObjectLayer {
+pub fn objectLayer(kind: shared.entity.Kind) Physics.ObjectLayer {
     return switch (kind) {
         .teleporter, .planet => .non_moving,
         .item => .planet_only,

@@ -20,6 +20,7 @@ layout(set = 1, binding = 0) uniform sampler2D texSampler;
 
 void main() {
   float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.4);
-  out_frag_color = vec4((texture(texSampler, in_uv).xyz * in_color.xyz * diff) * scene_data.light_color.xyz, 1);
+  vec4 tex = texture(texSampler, in_uv);
+  out_frag_color = vec4((tex.xyz * in_color.xyz * diff) * scene_data.light_color.xyz, tex.a * in_color.a);
   // out_frag_color = vec4(in_color.xyz * diff * scene_data.light_color.xyz, 1);
 }

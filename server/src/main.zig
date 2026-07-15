@@ -20,7 +20,8 @@ pub fn main(init: std.process.Init) !void {
 
     shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
 
-    var args_iterator = std.process.Args.Iterator.init(init.minimal.args);
+    var args_iterator = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
+    defer args_iterator.deinit();
     _ = args_iterator.next();
     var host_steam_id: u64 = 0;
     while (args_iterator.next()) |arg| {

@@ -58,8 +58,11 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                 );
                 std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
-            .bullet => {
+            .projectile_cube => {
                 entity.transform.scale = @splat(0.3);
+            },
+            .projectile_rocket => {
+                entity.transform.scale = @splat(0.9);
             },
             .teleporter => {
                 world.teleporter_id = entity.id;
@@ -71,7 +74,14 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                 }
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
-            .unknown, .item => {},
+            .item => |item_kind| {
+                std.log.debug("client spawn item {t} id={d} pos={any}", .{ item_kind, entity.id, entity.transform.position });
+                switch (item_kind) {
+                    .rocket => entity.transform.scale = @splat(1.8),
+                    else => {},
+                }
+            },
+            .unknown => {},
         }
     }
     world.pending_spawn.clearRetainingCapacity();

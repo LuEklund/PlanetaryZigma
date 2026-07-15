@@ -65,6 +65,7 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
+        info.world.updateParticles(info.delta_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
         try self.asset_server.update();
