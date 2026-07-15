@@ -27,7 +27,7 @@ pub fn Planet(kind: PlanetKind) type {
             var indices: std.ArrayList(u32) = .empty;
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
-            const bound: f32 = radius_float + noise_amplitude + cell_margin;
+            const bound: f32 = @ceil(radius_float + noise_amplitude + cell_margin);
             try buildNodeMap(gpa, &node_map, radius_float, bound);
 
             if (kind == .logical) {

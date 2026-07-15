@@ -124,7 +124,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
             .cube => _ = info.world.removeHealth(hit_entity, entity.stats.get(.damage).current),
             .rocket => {
                 damageRocketImpact(info, owner_entity, impact_position, entity.stats.get(.damage).current);
-                info.world.outbox.append(.{ .event = .{ .rocket_impact = impact_position } });
+                info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .rocket_impact = impact_position } });
             },
         }
         info.world.queueDespawn(entity.id);
