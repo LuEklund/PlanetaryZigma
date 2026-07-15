@@ -42,7 +42,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
                     if (!teleporter.active) {
                         teleporter.active = true;
-                        info.world.client_updates.append(.{ .event = .teleport_start });
+                        info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                         _ = try info.world.spawn(.{
                             .kind = .{ .enemy = .wizard },
                             .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
@@ -107,7 +107,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 .lifetime = 1,
             });
             bullet.stats.setCurrent(.damage, player.stats.get(.damage).current);
-            info.world.client_updates.append(.{ .event = .{ .attack = player_id } });
+            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });
         }
     }
 }

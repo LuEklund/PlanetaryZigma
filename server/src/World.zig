@@ -6,11 +6,11 @@ const nz = shared.numz;
 
 gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity),
-players: shared.CappedList(shared.entity.Id),
-teleport_bosses: shared.CappedList(shared.entity.Id),
-new_spawns: shared.CappedList(shared.entity.Id),
-pending_despawns: shared.CappedList(PendingDespawn),
-client_updates: shared.CappedList(ClientUpdate),
+players: std.ArrayList(shared.entity.Id),
+teleport_bosses: std.ArrayList(shared.entity.Id),
+new_spawns: std.ArrayList(shared.entity.Id),
+pending_despawns: std.ArrayList(PendingDespawn),
+client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
 teleporter_id: shared.entity.Id,
 planet_radius: u32,
@@ -137,7 +137,7 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
     self.entities.putAssumeCapacity(id, entity_info);
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
-    if (entity.flags.is_teleporter_boss) self.teleport_bosses.append(id);
+    if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
     switch (entity.kind) {
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => entity.stats.init(20, 3, 1, 1, 2),
@@ -147,7 +147,7 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
         .player => entity.stats.init(100, 10, 10, 10, 10),
         else => {},
     }
-    self.new_spawns.append(id);
+    self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }
 
@@ -164,11 +164,11 @@ pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
 }
 
 pub fn queueDespawn(self: *@This(), id: shared.entity.Id) void {
-    self.pending_despawns.append(.{ .id = id, .remove = false });
+    self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = false });
 }
 
 pub fn queueRemove(self: *@This(), id: shared.entity.Id) void {
-    self.pending_despawns.append(.{ .id = id, .remove = true });
+    self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
 pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
@@ -181,7 +181,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
-    self.client_updates.append(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
+    self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
     return true;
 }
 
@@ -198,7 +198,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             }
             try physics.createBody(entity);
         }
-        self.client_updates.append(.{ .spawned = id });
+        self.client_updates.appendAssumeCapacity(.{ .spawned = id });
     }
     self.new_spawns.clearRetainingCapacity();
 
@@ -221,7 +221,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);
         }
-        self.client_updates.append(.{ .despawned = despawn.id });
+        self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
     self.pending_despawns.clearRetainingCapacity();
 }
