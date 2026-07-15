@@ -130,7 +130,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                     }) catch continue;
 
                     client.entity_id = new_player_entity.id;
-                    info.world.players.append(client.entity_id);
+                    info.world.players.appendAssumeCapacity(client.entity_id);
 
                     try client.sendCommand(
                         writer,

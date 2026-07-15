@@ -29,45 +29,6 @@ pub const max_entities: usize = 1024;
 pub const max_enemies: usize = 100;
 pub const max_players: usize = 4;
 
-pub fn CappedList(comptime T: type) type {
-    return struct {
-        items: []T = &.{},
-        buffer: []T = &.{},
-
-        pub const empty: @This() = .{};
-
-        pub fn initCapacity(gpa: std.mem.Allocator, capacity: usize) !@This() {
-            const buffer = try gpa.alloc(T, capacity);
-            return .{ .items = buffer[0..0], .buffer = buffer };
-        }
-
-        pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
-            gpa.free(self.buffer);
-        }
-
-        pub fn append(self: *@This(), item: T) void {
-            if (self.items.len >= self.buffer.len) {
-                if (builtin.mode == .Debug) @panic("CappedList full: " ++ @typeName(T));
-                std.log.err("append dropped: CappedList({s}) full ({d})", .{ @typeName(T), self.buffer.len });
-                return;
-            }
-            self.buffer[self.items.len] = item;
-            self.items.len += 1;
-        }
-
-        pub fn swapRemove(self: *@This(), index: usize) T {
-            const removed = self.items[index];
-            self.items[index] = self.items[self.items.len - 1];
-            self.items.len -= 1;
-            return removed;
-        }
-
-        pub fn clearRetainingCapacity(self: *@This()) void {
-            self.items.len = 0;
-        }
-    };
-}
-
 pub fn redirectStderrToFile(io: std.Io, path: []const u8) void {
     const file = std.Io.Dir.cwd().createFile(io, path, .{}) catch return;
     switch (builtin.os.tag) {
