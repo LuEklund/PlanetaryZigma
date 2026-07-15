@@ -65,7 +65,7 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         info.world.controller.update();
-        try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, self.renderer.inner.aspectRatio());
+        try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);

@@ -8,7 +8,7 @@ const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller, aspect: f32) !void {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -21,7 +21,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
     if (network_manager.steam_client.server_conn == 0) {
         try serverList(network_manager, ui);
     } else {
-        try inGame(info, ui, aspect);
+        try inGame(info, ui);
     }
 
     ui.end();
@@ -183,9 +183,9 @@ fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
     return ui.print("{s}...", .{text[0 .. max_len - 3]});
 }
 
-fn inGame(info: *const Info, ui: *Ui, aspect: f32) !void {
+fn inGame(info: *const Info, ui: *Ui) !void {
     if (info.world.getPtr(info.world.player_id)) |player| {
-        addNameTags(info, ui, aspect);
+        addNameTags(info, ui);
 
         const health = player.stats.get(.health);
         const healthbar_width: f32 = 200 * health.current / health.max;
@@ -393,7 +393,7 @@ fn inGame(info: *const Info, ui: *Ui, aspect: f32) !void {
     }
 }
 
-fn addNameTags(info: *const Info, ui: *Ui, aspect: f32) void {
+fn addNameTags(info: *const Info, ui: *Ui) void {
     const label_size: f32 = 18;
     const padding_x: f32 = 8;
     const padding_y: f32 = 3;
@@ -412,7 +412,7 @@ fn addNameTags(info: *const Info, ui: *Ui, aspect: f32) void {
             entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
         if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
-        const screen = worldToScreen(info.world.camera, tag_position, aspect, ui.screen_width, ui.screen_heigth) orelse continue;
+        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
         const text_size = ui.textSize(name, label_size);
         const tag_width = text_size.width + padding_x * 2;
         const tag_heigth = text_size.heigth + padding_y * 2;
@@ -440,9 +440,10 @@ fn addNameTags(info: *const Info, ui: *Ui, aspect: f32) void {
     }
 }
 
-fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), aspect: f32, width: f32, heigth: f32) ?[2]f32 {
-    if (width <= 0 or heigth <= 0 or aspect <= 0) return null;
+fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
+    if (width <= 0 or heigth <= 0) return null;
 
+    const aspect = width / heigth;
     const clip = camera.viewProj(aspect).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
     if (clip[3] <= 0.001) return null;
 
