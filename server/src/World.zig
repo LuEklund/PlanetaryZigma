@@ -10,7 +10,7 @@ players: shared.CappedList(shared.entity.Id),
 teleport_bosses: shared.CappedList(shared.entity.Id),
 new_spawns: shared.CappedList(shared.entity.Id),
 pending_despawns: shared.CappedList(PendingDespawn),
-outbox: shared.CappedList(PendingUpdate),
+client_updates: shared.CappedList(ClientUpdate),
 next_stage_requested: bool,
 teleporter_id: shared.entity.Id,
 planet_radius: u32,
@@ -23,7 +23,7 @@ pub const PendingDespawn = struct {
     remove: bool,
 };
 
-pub const PendingUpdate = union(enum) {
+pub const ClientUpdate = union(enum) {
     spawned: shared.entity.Id,
     despawned: shared.entity.Id,
     stat: shared.net.UpdateStat,
@@ -97,7 +97,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
         .teleport_bosses = try .initCapacity(gpa, shared.max_entities),
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
-        .outbox = try .initCapacity(gpa, 8192),
+        .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
         .teleporter_id = .none,
         .planet_radius = 100,
@@ -116,7 +116,7 @@ pub fn deinit(self: *@This()) void {
     self.teleport_bosses.deinit(self.gpa);
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
-    self.outbox.deinit(self.gpa);
+    self.client_updates.deinit(self.gpa);
 }
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
@@ -181,7 +181,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
-    self.outbox.append(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
+    self.client_updates.append(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
     return true;
 }
 
@@ -198,7 +198,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             }
             try physics.createBody(entity);
         }
-        self.outbox.append(.{ .spawned = id });
+        self.client_updates.append(.{ .spawned = id });
     }
     self.new_spawns.clearRetainingCapacity();
 
@@ -221,7 +221,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);
         }
-        self.outbox.append(.{ .despawned = despawn.id });
+        self.client_updates.append(.{ .despawned = despawn.id });
     }
     self.pending_despawns.clearRetainingCapacity();
 }

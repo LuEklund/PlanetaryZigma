@@ -50,7 +50,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     const random = world.prng.random();
     world.teleporter_id = .none;
     self.spawning = true;
-    world.outbox.append(.{ .event = .{ .new_stage = world.next_stage } });
+    world.client_updates.append(.{ .event = .{ .new_stage = world.next_stage } });
     world.planet_radius = @intFromFloat(random.float(f32) * 98 + 2);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
@@ -79,7 +79,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         player.stats.setCurrent(.health, player.stats.get(.health).max);
         try physics.createBody(player);
         world.players.append(player.id);
-        world.outbox.append(.{ .spawned = player.id });
+        world.client_updates.append(.{ .spawned = player.id });
     }
 
     for (0..20) |i| {
