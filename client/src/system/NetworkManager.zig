@@ -172,6 +172,7 @@ fn handleCommand(
     switch (command) {
         .acknowledge => |acknowledge| {
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+            info.world.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .none });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -182,10 +183,10 @@ fn handleCommand(
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            info.world.pending_spawn.append(spawn_entity);
+            info.world.pending_spawn.appendAssumeCapacity(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
-            info.world.pending_despawn.append(despawn_entity.id);
+            info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
@@ -196,7 +197,7 @@ fn handleCommand(
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {
-                info.world.pending_stats.append(update_stat_command);
+                info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
             Spawner.applyStat(entity, update_stat_command);
@@ -214,7 +215,7 @@ fn handleCommand(
                     info.world.stage = new_stage;
                 },
                 .attack => |id| {
-                    info.world.attack_events.append(id);
+                    info.world.attack_events.appendAssumeCapacity(id);
                 },
                 .rocket_impact => |position| {
                     info.world.spawnRocketExplosion(position);
@@ -223,7 +224,7 @@ fn handleCommand(
         },
         .update_inventory => |inventory| {
             const entity = info.world.getPtr(inventory.id) orelse {
-                info.world.pending_inventory.append(inventory);
+                info.world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
             entity.inventory.set(inventory.item_kind, inventory.set);

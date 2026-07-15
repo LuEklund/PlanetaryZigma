@@ -70,7 +70,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
                     entity.transform.scale = @splat(5);
-                    world.teleporter_bosses.append(entity.id);
+                    world.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
