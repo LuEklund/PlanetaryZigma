@@ -16,6 +16,7 @@ pub const Action = enum {
     attack,
     aim,
     free_camera,
+    debug_colliders,
 };
 
 pub const bindable_actions = [_]Action{
@@ -30,14 +31,17 @@ pub const bindable_actions = [_]Action{
     .attack,
     .aim,
     .free_camera,
+    .debug_colliders,
 };
 
 pub const Binding = union(enum) {
+    none,
     key: KeySym,
     mouse: MouseButton,
 
     pub fn eql(self: Binding, other: Binding) bool {
         return switch (self) {
+            .none => false,
             .key => |key| switch (other) {
                 .key => |other_key| other_key == key,
                 else => false,
@@ -62,6 +66,7 @@ pub const Bindings = struct {
     attack: Binding = .{ .mouse = .left },
     aim: Binding = .{ .mouse = .right },
     free_camera: Binding = .{ .key = .f1 },
+    debug_colliders: Binding = .{ .key = .f2 },
 
     pub fn get(self: *const Bindings, action: Action) Binding {
         return switch (action) {
@@ -76,6 +81,7 @@ pub const Bindings = struct {
             .attack => self.attack,
             .aim => self.aim,
             .free_camera => self.free_camera,
+            .debug_colliders => self.debug_colliders,
         };
     }
 
@@ -92,6 +98,7 @@ pub const Bindings = struct {
             .attack => self.attack = binding,
             .aim => self.aim = binding,
             .free_camera => self.free_camera = binding,
+            .debug_colliders => self.debug_colliders = binding,
         }
     }
 };
@@ -105,6 +112,7 @@ mouse_button_right: bool = false,
 input_map: shared.net.Input = .{},
 bindings: Bindings = .{},
 rebinding_action: ?Action = null,
+suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 
@@ -134,7 +142,12 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
             const pressed = key.state == .pressed;
             if (pressed) {
                 if (self.rebinding_action) |action| {
-                    if (key.sym != .escape) self.bindings.set(action, .{ .key = key.sym });
+                    if (key.sym == .escape) {
+                        self.bindings.set(action, .none);
+                        self.suppress_escape_release = true;
+                    } else {
+                        self.bindings.set(action, .{ .key = key.sym });
+                    }
                     self.rebinding_action = null;
                     self.clearInput();
                     return;
@@ -205,6 +218,9 @@ fn applyAction(self: *@This(), action: Action, pressed: bool) void {
         .free_camera => {
             if (pressed) self.free_camera = !self.free_camera;
         },
+        .debug_colliders => {
+            if (pressed) self.debug_draw_colliders = !self.debug_draw_colliders;
+        },
     }
 }
 
@@ -221,11 +237,13 @@ pub fn actionLabel(action: Action) []const u8 {
         .attack => "Attack",
         .aim => "Aim",
         .free_camera => "Free Camera",
+        .debug_colliders => "Debug Colliders",
     };
 }
 
 pub fn bindingLabel(binding: Binding) []const u8 {
     return switch (binding) {
+        .none => "Unbound",
         .key => |key| keyLabel(key),
         .mouse => |button| mouseLabel(button),
     };

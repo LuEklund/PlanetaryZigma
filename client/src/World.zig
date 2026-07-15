@@ -12,8 +12,6 @@ pub const MenuScreen = enum {
 pub const OptionsTab = enum {
     gameplay,
     keyboard_mouse,
-    controller,
-    audio,
     video,
     graphics,
 };
@@ -24,20 +22,12 @@ pub const Options = struct {
     show_crosshair: bool = true,
     mouse_sensitivity: f32 = 1.0,
     invert_y: bool = false,
-    controller_enabled: bool = false,
-    controller_vibration: bool = true,
-    master_volume: u8 = 100,
     fullscreen: bool = false,
     fov_rad: f32 = 1.5,
 
     pub fn cycleMouseSensitivity(self: *Options) void {
         const values = [_]f32{ 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
         self.mouse_sensitivity = cycleF32(values, self.mouse_sensitivity);
-    }
-
-    pub fn cycleMasterVolume(self: *Options) void {
-        const values = [_]u8{ 0, 25, 50, 75, 100 };
-        self.master_volume = cycleU8(values, self.master_volume);
     }
 
     pub fn cycleFov(self: *Options) void {
@@ -48,13 +38,6 @@ pub const Options = struct {
     fn cycleF32(comptime values: anytype, current: f32) f32 {
         for (values, 0..) |value, i| {
             if (@abs(value - current) < 0.001) return values[(i + 1) % values.len];
-        }
-        return values[0];
-    }
-
-    fn cycleU8(comptime values: anytype, current: u8) u8 {
-        for (values, 0..) |value, i| {
-            if (value == current) return values[(i + 1) % values.len];
         }
         return values[0];
     }

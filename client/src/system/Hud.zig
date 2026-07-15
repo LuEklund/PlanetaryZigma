@@ -241,7 +241,8 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
     const title_height: f32 = 52;
     const tab_gap: f32 = 6;
     const tab_height: f32 = 36;
-    const tab_width = (content_width - tab_gap * 5) / 6;
+    const tabs = [_]system.World.OptionsTab{ .gameplay, .keyboard_mouse, .video, .graphics };
+    const tab_width = (content_width - tab_gap * @as(f32, @floatFromInt(tabs.len - 1))) / @as(f32, @floatFromInt(tabs.len));
     const tabs_top = top + padding + title_height;
     const body_top = tabs_top + tab_height + 18;
     const body_height = panel_height - (body_top - top) - padding - 48;
@@ -263,7 +264,6 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
         .text = .{ .data = "Options", .size = 34, .color = .new(0.94, 0.96, 0.9, 1) },
     });
 
-    const tabs = [_]system.World.OptionsTab{ .gameplay, .keyboard_mouse, .controller, .audio, .video, .graphics };
     for (tabs, 0..) |tab, i| {
         const tab_left = content_left + (tab_width + tab_gap) * @as(f32, @floatFromInt(i));
         addOptionsTab(ui, tab, info.world.options.tab == tab, tab_left, tabs_top, tab_width, tab_height);
@@ -273,8 +273,6 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
     switch (info.world.options.tab) {
         .gameplay => optionsGameplay(info, ui, content_left, body_top, content_width),
         .keyboard_mouse => optionsKeyboardMouse(info, ui, content_left, body_top, content_width),
-        .controller => optionsController(info, ui, content_left, body_top, content_width),
-        .audio => optionsAudio(info, ui, content_left, body_top, content_width),
         .video => optionsVideo(info, ui, content_left, body_top, content_width),
         .graphics => optionsGraphics(info, ui, content_left, body_top, content_width),
     }
@@ -325,28 +323,6 @@ fn optionsKeyboardMouse(info: *const Info, ui: *Ui, left: f32, top: f32, width: 
             info.world.controller.rebinding_action = action;
             info.world.controller.clearInput();
         }
-    }
-}
-
-fn optionsController(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
-    const diagram_height: f32 = 185;
-    addControllerDiagram(ui, left, top, width, diagram_height);
-
-    const row_height: f32 = 38;
-    const row_gap: f32 = 8;
-    const rows_top = top + diagram_height + 14;
-    if (addOptionToggle(ui, "options_controller_input", "Controller Input", boolText(info.world.options.controller_enabled), left, rows_top, width, row_height)) {
-        info.world.options.controller_enabled = !info.world.options.controller_enabled;
-    }
-    if (addOptionToggle(ui, "options_controller_vibration", "Vibration", boolText(info.world.options.controller_vibration), left, rows_top + (row_height + row_gap), width, row_height)) {
-        info.world.options.controller_vibration = !info.world.options.controller_vibration;
-    }
-}
-
-fn optionsAudio(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
-    const row_height: f32 = 44;
-    if (addOptionToggle(ui, "options_master_volume", "Master Volume", ui.print("{d}%", .{info.world.options.master_volume}), left, top, width, row_height)) {
-        info.world.options.cycleMasterVolume();
     }
 }
 
@@ -465,47 +441,6 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     return next;
 }
 
-fn addControllerDiagram(ui: *Ui, left: f32, top: f32, width: f32, height: f32) void {
-    const body_left = left + width * 0.12;
-    const body_top = top + 12;
-    const body_width = width * 0.76;
-    const body_height = height - 24;
-    ui.add(null, .{
-        .size = .{ .fixed = .{ .width = body_width, .heigth = body_height } },
-        .offset = .{ .left = body_left, .top = body_top },
-        .color = .new(0.035, 0.04, 0.038, 0.82),
-    });
-    addControllerButtonLabel(ui, "LT", "Aim", body_left + 30, body_top + 12, 82, 28);
-    addControllerButtonLabel(ui, "LB", "Down", body_left + 122, body_top + 12, 82, 28);
-    addControllerButtonLabel(ui, "RB", "Attack", body_left + body_width - 204, body_top + 12, 82, 28);
-    addControllerButtonLabel(ui, "RT", "Attack", body_left + body_width - 112, body_top + 12, 82, 28);
-    addControllerButtonLabel(ui, "L Stick", "Move", body_left + 58, body_top + 70, 92, 40);
-    addControllerButtonLabel(ui, "D-Pad", "Items", body_left + 170, body_top + 82, 82, 36);
-    addControllerButtonLabel(ui, "Select", "Map", body_left + body_width * 0.5 - 92, body_top + 72, 72, 30);
-    addControllerButtonLabel(ui, "Start", "Pause", body_left + body_width * 0.5 + 20, body_top + 72, 72, 30);
-    addControllerButtonLabel(ui, "R Stick", "Camera", body_left + body_width - 152, body_top + 70, 92, 40);
-    addControllerButtonLabel(ui, "Y", "Reload", body_left + body_width - 118, body_top + 52, 34, 28);
-    addControllerButtonLabel(ui, "X", "Interact", body_left + body_width - 154, body_top + 84, 34, 28);
-    addControllerButtonLabel(ui, "B", "Cancel", body_left + body_width - 82, body_top + 84, 34, 28);
-    addControllerButtonLabel(ui, "A", "Jump", body_left + body_width - 118, body_top + 116, 34, 28);
-}
-
-fn addControllerButtonLabel(ui: *Ui, button: []const u8, mapping: []const u8, left: f32, top: f32, width: f32, height: f32) void {
-    ui.add(null, .{
-        .size = .{ .fixed = .{ .width = width, .heigth = height } },
-        .offset = .{ .left = left, .top = top },
-        .color = .new(0.08, 0.085, 0.08, 1),
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{ .data = button, .size = 16, .color = .new(0.94, 0.96, 0.9, 1) },
-    });
-    ui.add(null, .{
-        .size = .{ .fixed = .{ .width = width + 18, .heigth = 20 } },
-        .offset = .{ .left = left - 9, .top = top + height + 2 },
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{ .data = mapping, .size = 13, .color = .new(0.68, 0.72, 0.66, 1) },
-    });
-}
-
 fn bindingRowName(action: Controller.Action) []const u8 {
     return switch (action) {
         .move_forward => "bind_move_forward",
@@ -519,6 +454,7 @@ fn bindingRowName(action: Controller.Action) []const u8 {
         .attack => "bind_attack",
         .aim => "bind_aim",
         .free_camera => "bind_free_camera",
+        .debug_colliders => "bind_debug_colliders",
     };
 }
 
@@ -526,8 +462,6 @@ fn optionsTabName(tab: system.World.OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "options_tab_gameplay",
         .keyboard_mouse => "options_tab_keyboard_mouse",
-        .controller => "options_tab_controller",
-        .audio => "options_tab_audio",
         .video => "options_tab_video",
         .graphics => "options_tab_graphics",
     };
@@ -537,8 +471,6 @@ fn optionsTabLabel(tab: system.World.OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "Gameplay",
         .keyboard_mouse => "Keyboard-Mouse",
-        .controller => "Controller",
-        .audio => "Audio",
         .video => "Video",
         .graphics => "Graphics",
     };

@@ -136,6 +136,10 @@ pub const Context = struct {
         }
         if (event.* == .key) {
             const key = event.key;
+            if (key.state == .released and key.sym == .escape and info.world.controller.suppress_escape_release) {
+                info.world.controller.suppress_escape_release = false;
+                return;
+            }
             if (key.state == .released and key.sym == .escape and info.world.options_menu_open) {
                 const return_to_pause = info.world.options_menu_return_to_pause and self.isInGame();
                 info.world.options_menu_open = false;
