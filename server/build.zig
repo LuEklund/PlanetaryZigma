@@ -8,16 +8,7 @@ const ServerArtifacts = struct {
 };
 
 pub fn build(b: *std.Build) void {
-    // const target = b.standardTargetOptions(.{});
-    //TODO: remove once Zig 0.16.0 works properly with GCC 16.1.1
-    const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 39, .patch = 0 },
-        },
-    });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
     if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
@@ -102,6 +93,8 @@ fn addServerArtifacts(
             .link_libc = true,
         }),
         .linkage = .dynamic,
+        .use_lld = true,
+        .use_llvm = true,
     });
 
     system.root_module.linkLibrary(box3d_lib);
@@ -119,6 +112,8 @@ fn addServerArtifacts(
                 .{ .name = "ztracy", .module = ztracy },
             },
         }),
+        .use_lld = true,
+        .use_llvm = true,
     });
 
     if (target.result.os.tag != .windows) {
