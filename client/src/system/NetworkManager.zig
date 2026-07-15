@@ -11,7 +11,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_client: *Client,
-server_conn: shared.SteamNet.Conn = 0,
+server_conn: shared.SteamNet.Connection = 0,
 server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
@@ -182,7 +182,6 @@ fn handleCommand(
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-
             info.world.pending_spawn.append(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
@@ -223,7 +222,10 @@ fn handleCommand(
             }
         },
         .update_inventory => |inventory| {
-            const entity = info.world.getPtr(inventory.id) orelse return;
+            const entity = info.world.getPtr(inventory.id) orelse {
+                info.world.pending_inventory.append(inventory);
+                return;
+            };
             entity.inventory.set(inventory.item_kind, inventory.set);
         },
     }

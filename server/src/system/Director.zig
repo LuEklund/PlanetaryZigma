@@ -86,6 +86,17 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     // the teleporter placement raycast below needs the planet body to exist
     try world.flush(physics);
 
+    for (world.entities.values()) |*player| {
+        if (player.kind != .player or !player.flags.is_dead) continue;
+        player.flags.is_dead = false;
+        player.transform.position = .{ 0, @as(f32, @floatFromInt(world.planet_radius)) + 10, 0 };
+        player.velocity = .{ 0, 0, 0 };
+        player.stats.setCurrent(.health, player.stats.get(.health).max);
+        try physics.createBody(player);
+        world.players.append(player.id);
+        world.outbox.append(.{ .spawned = player.id });
+    }
+
     for (stage_item_spawns) |spawn_spec| {
         const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
         for (0..random_spawn_count) |_| {

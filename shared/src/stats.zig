@@ -4,6 +4,10 @@ const Item = inventory.Item;
 const Inventory = inventory.Inventory;
 
 pub const Stat = struct {
+    current: f32 = 0,
+    base_max: f32 = 0,
+    max: f32 = 0,
+
     pub const Kind = enum(u16) {
         health = 0,
         speed = 1,
@@ -11,10 +15,6 @@ pub const Stat = struct {
         attack_speed = 3,
         range = 4,
     };
-
-    current: f32 = 0,
-    base_max: f32 = 0,
-    max: f32 = 0,
 };
 
 pub const Stats = struct {

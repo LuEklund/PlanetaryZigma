@@ -39,6 +39,10 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         switch (entity_info.kind) {
             .player => {
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
+                if (entity_info.id == world.player_id) {
+                    world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+                    world.controller.free_camera = false;
+                }
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
@@ -86,6 +90,11 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         if (world.getPtr(command.id)) |entity| applyStat(entity, command);
     }
     world.pending_stats.clearRetainingCapacity();
+
+    for (world.pending_inventory.items) |command| {
+        if (world.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
+    }
+    world.pending_inventory.clearRetainingCapacity();
 
     for (world.pending_despawn.items) |id| {
         if (world.getPtr(id) == null) continue;
