@@ -102,7 +102,7 @@ const Rect = struct {
 };
 
 pub const Layout = struct {
-    pub const AxisAlign = enum(u8) { horizontal, verical };
+    pub const AxisAlign = enum(u8) { horizontal, vertical };
     pub const Anchor = enum(u8) { start, center, end };
     pub const Size = union(enum) {
         fixed: Size2D,
@@ -276,7 +276,7 @@ fn resolveLayout(self: *@This()) void {
         const parent = &self.nodes.items[parent_id];
         parent.children_size += parent.layout.gap + switch (parent.layout.axis_align) {
             .horizontal => child.rect.width,
-            .verical => child.rect.heigth,
+            .vertical => child.rect.heigth,
         };
     }
 
@@ -298,7 +298,7 @@ fn resolveLayout(self: *@This()) void {
             }
             parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
                 .horizontal => node.rect.width,
-                .verical => node.rect.heigth,
+                .vertical => node.rect.heigth,
             };
         }
 
@@ -306,7 +306,7 @@ fn resolveLayout(self: *@This()) void {
         const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
         node.offset = switch (node.layout.axis_align) {
             .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent),
-            .verical => startOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
+            .vertical => startOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
         };
     }
 }
