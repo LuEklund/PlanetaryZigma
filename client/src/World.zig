@@ -20,7 +20,6 @@ pub const OptionsTab = enum {
 
 pub const Options = struct {
     tab: OptionsTab = .gameplay,
-    auto_sprint: bool = false,
     show_hud_stats: bool = true,
     show_crosshair: bool = true,
     mouse_sensitivity: f32 = 1.0,

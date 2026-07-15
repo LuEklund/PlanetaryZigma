@@ -78,12 +78,11 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             if (input.keys.d) dir += move_right;
             if (input.keys.a) dir -= move_right;
 
-            const base_speed = player.stats.get(.speed).current;
-            const wants_sprint = input.keys.l_shift and nz.vec.length(dir) > 0.0001;
-            const speed = if (wants_sprint) base_speed * 1.6 else base_speed;
+            const speed = player.stats.get(.speed).current;
 
             var vertical: f32 = 0;
             if (input.keys.space) vertical += speed;
+            if (input.keys.l_shift) vertical -= speed;
 
             Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
 

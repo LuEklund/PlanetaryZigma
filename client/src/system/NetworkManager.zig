@@ -250,7 +250,6 @@ pub fn update(self: *@This(), info: *const Info) !void {
     }
     if (self.server_conn != 0) {
         var input = info.world.controller.input_map;
-        if (info.world.options.auto_sprint and (input.keys.w or input.keys.s or input.keys.a or input.keys.d)) input.keys.l_shift = true;
         if (info.world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});

@@ -293,13 +293,10 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
 fn optionsGameplay(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
     const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_auto_sprint", "Auto Sprint", boolText(info.world.options.auto_sprint), left, top, width, row_height)) {
-        info.world.options.auto_sprint = !info.world.options.auto_sprint;
-    }
-    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(info.world.options.show_hud_stats), left, top + (row_height + row_gap), width, row_height)) {
+    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(info.world.options.show_hud_stats), left, top, width, row_height)) {
         info.world.options.show_hud_stats = !info.world.options.show_hud_stats;
     }
-    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(info.world.options.show_crosshair), left, top + (row_height + row_gap) * 2, width, row_height)) {
+    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(info.world.options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
         info.world.options.show_crosshair = !info.world.options.show_crosshair;
     }
 }
@@ -479,7 +476,7 @@ fn addControllerDiagram(ui: *Ui, left: f32, top: f32, width: f32, height: f32) v
         .color = .new(0.035, 0.04, 0.038, 0.82),
     });
     addControllerButtonLabel(ui, "LT", "Aim", body_left + 30, body_top + 12, 82, 28);
-    addControllerButtonLabel(ui, "LB", "Sprint", body_left + 122, body_top + 12, 82, 28);
+    addControllerButtonLabel(ui, "LB", "Down", body_left + 122, body_top + 12, 82, 28);
     addControllerButtonLabel(ui, "RB", "Attack", body_left + body_width - 204, body_top + 12, 82, 28);
     addControllerButtonLabel(ui, "RT", "Attack", body_left + body_width - 112, body_top + 12, 82, 28);
     addControllerButtonLabel(ui, "L Stick", "Move", body_left + 58, body_top + 70, 92, 40);
@@ -516,7 +513,7 @@ fn bindingRowName(action: Controller.Action) []const u8 {
         .move_left => "bind_move_left",
         .move_right => "bind_move_right",
         .jump => "bind_jump",
-        .sprint => "bind_sprint",
+        .move_down => "bind_move_down",
         .reload => "bind_reload",
         .interact => "bind_interact",
         .attack => "bind_attack",
