@@ -22,31 +22,14 @@ pub fn PacketQueue(comptime Packet: type) type {
 // are independent because direction is known from the socket.
 
 /// client → server
-pub const ClientPacketTag = enum(u16) {
-    connect = 0,
-    disconnect = 1,
-    input = 2,
-};
-
-pub const ClientPacket = union(ClientPacketTag) {
+pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
     input: Input,
 };
 
 /// server → client
-pub const ServerPacketTag = enum(u16) {
-    acknowledge = 0,
-    spawn_entity = 1,
-    despawn_entity = 2,
-    update_motion = 3,
-    server_tick = 4,
-    update_stat = 5,
-    update_event = 6,
-    update_inventory = 7,
-};
-
-pub const ServerPacket = union(ServerPacketTag) {
+pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
     despawn_entity: DespawnEntity,
@@ -79,13 +62,7 @@ pub const SpawnEntity = struct {
     data: SpawnEntityData,
 };
 
-pub const SpawnEntityDataTag = enum(u16) {
-    none = 0,
-    planet_radius = 1,
-    is_teleporter_boss = 2,
-};
-
-pub const SpawnEntityData = union(SpawnEntityDataTag) {
+pub const SpawnEntityData = union(enum) {
     none: void,
     planet_radius: u32,
     is_teleporter_boss: void,
@@ -134,12 +111,7 @@ pub const UpdateStat = struct {
     amount: UpdateStatAmount,
 };
 
-pub const UpdateStatAmountTag = enum(u16) {
-    set_current = 0,
-    set_max = 1,
-};
-
-pub const UpdateStatAmount = union(UpdateStatAmountTag) {
+pub const UpdateStatAmount = union(enum) {
     set_current: f16,
     set_max: f16,
 };
@@ -150,15 +122,7 @@ pub const UpdateInventory = struct {
     set: u8,
 };
 
-pub const EventTag = enum(u16) {
-    teleport_start = 0,
-    teleporter_charge = 1,
-    new_stage = 2,
-    attack = 3,
-    rocket_impact = 4,
-};
-
-pub const Event = union(EventTag) {
+pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
@@ -222,7 +186,7 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .@"enum" => |@"enum"| try writer.writeInt(@"enum".tag_type, @intFromEnum(value), endian),
         .@"union" => switch (value) {
             inline else => |payload, tag| {
-                try writer.writeInt(@typeInfo(@TypeOf(tag)).@"enum".tag_type, @intFromEnum(tag), endian);
+                try writer.writeInt(u16, @intFromEnum(tag), endian);
                 try marshal(writer, payload);
             },
         },
@@ -306,9 +270,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         .@"union" => |u| {
             const Tag = u.tag_type orelse @compileError("can only deserialize tagged unions");
-            switch (try reader.takeEnum(Tag, endian)) {
-                inline else => |tag| {
-                    const name = @tagName(tag);
+            const tag = std.enums.fromInt(Tag, try reader.takeInt(u16, endian)) orelse return error.InvalidTag;
+            switch (tag) {
+                inline else => |t| {
+                    const name = @tagName(t);
                     return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name), deserialize_slices));
                 },
             }

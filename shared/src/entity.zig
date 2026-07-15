@@ -47,18 +47,7 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
     };
 }
 
-pub const KindTag = enum(u16) {
-    unknown = 0,
-    player = 1,
-    planet = 2,
-    projectile_cube = 3,
-    teleporter = 4,
-    enemy = 5,
-    item = 6,
-    projectile_rocket = 7,
-};
-
-pub const Kind = union(KindTag) {
+pub const Kind = union(enum) {
     unknown,
     player,
     planet,
