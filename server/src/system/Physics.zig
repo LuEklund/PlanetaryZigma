@@ -88,6 +88,11 @@ pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
         self.world = makeWorld();
         for (world.entities.values()) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
+            if (shared.entity.colliderShape(entity.kind)) |primitive_shape| {
+                entity.collider.shape = .{ .primitive = primitive_shape };
+            }
+            entity.collider.motion_type = system.World.motionType(entity.kind);
+            entity.collider.object_layer = system.World.objectLayer(entity.kind);
             entity.collider.body_id = null;
             try self.createBody(entity);
         }

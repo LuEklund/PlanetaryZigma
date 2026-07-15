@@ -62,11 +62,11 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) !void {
         } },
         .offset = .{ .left = (ui.screen_width - root_width) / 2, .top = (ui.screen_heigth - root_heigth) / 2 },
         .color = .new(0.5, 0.5, 0.5, 0.8),
-        .axis_align = .verical,
+        .axis_align = .vertical,
         .children = &.{
             .{
                 .name = "servers",
-                .axis_align = .verical,
+                .axis_align = .vertical,
                 .gap = 6,
                 .color = .grey,
                 .size = .{ .fixed = .{ .heigth = server_list_heigth, .width = root_width } },
@@ -113,7 +113,7 @@ fn serverList(network_manager: *NetworkManager, ui: *Ui) !void {
 
         ui.add("servers", .{
             .name = id,
-            .axis_align = .verical,
+            .axis_align = .vertical,
             .gap = 2,
             .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .heigth = 60, .width = root_width } },
@@ -206,7 +206,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         const inventory_heigth: f32 = 60;
         ui.add(null, .{
             .name = "HUD",
-            .axis_align = .verical,
+            .axis_align = .vertical,
             .offset = .{ .top = 60, .left = ui.screen_width / 2 - inventory_width / 2 },
             // .child_anchor = .{ .x = .end, .y = .end },
             .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
@@ -237,6 +237,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .speed => .energy_drink,
                     .damage => .damage_item,
                     .attack_speed => .pickaxe,
+                    .rocket => .rocket_item,
                 },
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
@@ -253,7 +254,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .{
                 .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
                 .name = "info",
-                .axis_align = .verical,
+                .axis_align = .vertical,
             },
         );
         ui.add("info", .{
@@ -314,7 +315,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .offset = .{ .top = ui.screen_heigth - stats_box_heigth, .left = ui.screen_width - stats_box_width },
             .size = .{ .fixed = .{ .width = stats_box_width, .heigth = stats_box_heigth } },
             .color = .new(0.5, 0.5, 0.5, 0.7),
-            .axis_align = .verical,
+            .axis_align = .vertical,
             // .child_anchor = .{ .x = .end, .y = .start },
             .gap = 10,
         });

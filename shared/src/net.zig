@@ -64,12 +64,14 @@ pub const SpawnEntity = struct {
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     velocity: @Vector(3, f32) = @splat(0),
     tick: u32 = 0,
-    data: union(enum(u16)) {
-        none: void,
-        planet_radius: u32,
-        is_teleporter_boss: void,
-        player_name: PlayerName,
-    },
+    data: SpawnEntityData,
+};
+
+pub const SpawnEntityData = union(enum) {
+    none: void,
+    planet_radius: u32,
+    is_teleporter_boss: void,
+    player_name: PlayerName,
 };
 
 pub const DespawnEntity = struct {
@@ -112,10 +114,12 @@ pub const UpdateTransform = struct {
 pub const UpdateStat = struct {
     id: entity.Id,
     stat_kind: root.Stat.Kind,
-    amount: union(enum(u16)) {
-        set_current: f16,
-        set_max: f16,
-    },
+    amount: UpdateStatAmount,
+};
+
+pub const UpdateStatAmount = union(enum) {
+    set_current: f16,
+    set_max: f16,
 };
 
 pub const UpdateInventory = struct {
@@ -124,11 +128,12 @@ pub const UpdateInventory = struct {
     set: u8,
 };
 
-pub const Event = union(enum(u16)) {
+pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
     attack: entity.Id,
+    rocket_impact: @Vector(3, f32),
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {
@@ -187,7 +192,7 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .@"enum" => |@"enum"| try writer.writeInt(@"enum".tag_type, @intFromEnum(value), endian),
         .@"union" => switch (value) {
             inline else => |payload, tag| {
-                try writer.writeInt(@typeInfo(@TypeOf(tag)).@"enum".tag_type, @intFromEnum(tag), endian);
+                try writer.writeInt(u16, @intFromEnum(tag), endian);
                 try marshal(writer, payload);
             },
         },
@@ -271,9 +276,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         .@"union" => |u| {
             const Tag = u.tag_type orelse @compileError("can only deserialize tagged unions");
-            switch (try reader.takeEnum(Tag, endian)) {
-                inline else => |tag| {
-                    const name = @tagName(tag);
+            const tag = std.enums.fromInt(Tag, try reader.takeInt(u16, endian)) orelse return error.InvalidTag;
+            switch (tag) {
+                inline else => |t| {
+                    const name = @tagName(t);
                     return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name), deserialize_slices));
                 },
             }

@@ -136,7 +136,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                     }) catch continue;
 
                     client.entity_id = new_player_entity.id;
-                    info.world.players.append(client.entity_id);
+                    info.world.players.appendAssumeCapacity(client.entity_id);
                     self.session_metadata_dirty = true;
 
                     try client.sendCommand(
@@ -174,8 +174,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (entity.flags.is_dead) continue;
-        if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+        if (!tracksMotion(entity)) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();
@@ -229,10 +228,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
-            }
-            var motion_it = self.last_motions.valueIterator();
-            while (motion_it.next()) |motion| {
-                try client.sendCommand(writer, .{ .update_motion = motion.* }, .reliable);
+                if (tracksMotion(entity)) {
+                    try client.sendCommand(writer, .{ .update_motion = motionPacket(info, entity) }, .reliable);
+                }
             }
             client.needs_full_sync = false;
         } else {
@@ -241,7 +239,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             }
         }
 
-        for (world.outbox.items) |pending_update| switch (pending_update) {
+        for (world.client_updates.items) |client_update| switch (client_update) {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
@@ -263,11 +261,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
         };
     }
-    for (world.outbox.items) |pending_update| switch (pending_update) {
+    for (world.client_updates.items) |client_update| switch (client_update) {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
-    world.outbox.clearRetainingCapacity();
+    world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
     if (self.steam_server.host_state == .waiting and info.elapsed_time > 60) return .host_timeout;
@@ -281,6 +279,21 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
         try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } }, .reliable);
         try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } }, .reliable);
     }
+}
+
+fn tracksMotion(entity: *const system.Entity) bool {
+    if (entity.flags.is_dead) return false;
+    return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
+}
+
+fn motionPacket(info: *const Info, entity: *const system.Entity) shared.net.UpdateMotion {
+    return .{
+        .id = entity.id,
+        .position = entity.transform.position,
+        .velocity = entity.velocity,
+        .rotation = entity.transform.rotation.toVec(),
+        .tick = info.tick,
+    };
 }
 
 fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
@@ -305,7 +318,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .bullet, .teleporter, .item => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item => .none,
         },
     };
 }

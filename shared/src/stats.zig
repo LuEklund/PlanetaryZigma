@@ -9,11 +9,11 @@ pub const Stat = struct {
     max: f32 = 0,
 
     pub const Kind = enum(u16) {
-        health,
-        speed,
-        damage,
-        attack_speed,
-        range,
+        health = 0,
+        speed = 1,
+        damage = 2,
+        attack_speed = 3,
+        range = 4,
     };
 };
 

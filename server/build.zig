@@ -93,6 +93,8 @@ fn addServerArtifacts(
             .link_libc = true,
         }),
         .linkage = .dynamic,
+        .use_lld = true,
+        .use_llvm = true,
     });
 
     system.root_module.linkLibrary(box3d_lib);
@@ -110,6 +112,8 @@ fn addServerArtifacts(
                 .{ .name = "ztracy", .module = ztracy },
             },
         }),
+        .use_lld = true,
+        .use_llvm = true,
     });
 
     if (target.result.os.tag != .windows) {

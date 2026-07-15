@@ -205,7 +205,7 @@ fn handleCommand(
             try self.queueSpawn(info.world, spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
-            info.world.pending_despawn.append(despawn_entity.id);
+            info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
@@ -216,7 +216,7 @@ fn handleCommand(
         },
         .update_stat => |update_stat_command| {
             const entity = info.world.getPtr(update_stat_command.id) orelse {
-                info.world.pending_stats.append(update_stat_command);
+                info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
             Spawner.applyStat(entity, update_stat_command);
@@ -234,13 +234,16 @@ fn handleCommand(
                     info.world.stage = new_stage;
                 },
                 .attack => |id| {
-                    info.world.attack_events.append(id);
+                    info.world.attack_events.appendAssumeCapacity(id);
+                },
+                .rocket_impact => |position| {
+                    info.world.spawnRocketExplosion(position);
                 },
             }
         },
         .update_inventory => |inventory| {
             const entity = info.world.getPtr(inventory.id) orelse {
-                info.world.pending_inventory.append(inventory);
+                info.world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
             entity.inventory.set(inventory.item_kind, inventory.set);
@@ -249,7 +252,7 @@ fn handleCommand(
 }
 
 fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntity) !void {
-    if (world.pending_spawn.items.len >= world.pending_spawn.buffer.len) return error.PendingSpawnFull;
+    if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
 
     var queued_spawn = spawn_entity;
     switch (spawn_entity.data) {
@@ -262,5 +265,5 @@ fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntit
         },
         .none, .planet_radius, .is_teleporter_boss => {},
     }
-    world.pending_spawn.append(queued_spawn);
+    world.pending_spawn.appendAssumeCapacity(queued_spawn);
 }
