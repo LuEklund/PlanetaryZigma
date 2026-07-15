@@ -107,7 +107,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
     try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
-    try self.resources.createStaticMesh(gpa, "bullet", Mesh.box.verticies, Mesh.box.indicies, .bullet);
+    try self.resources.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies, .cube_projectile);
+    try self.resources.createExplosionParticleResources(gpa);
     const menu_planet = try shared.Planet(.renderable).init(gpa, 18);
     defer menu_planet.deinit(gpa);
     try self.resources.createStaticMesh(gpa, "menu_planet", menu_planet.vertices, menu_planet.indices, .menu_planet);
@@ -350,6 +351,14 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 
     var color_blend_enables: c.VkBool32 = c.VK_FALSE;
     const color_blend_component_flags: c.VkColorComponentFlags = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT;
+    const alpha_blend_eq: c.VkColorBlendEquationEXT = .{
+        .srcColorBlendFactor = c.VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = c.VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = c.VK_BLEND_OP_ADD,
+    };
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorWriteMaskEXT(cmd, 0, 1, &color_blend_component_flags);
 
@@ -467,6 +476,34 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 
+    color_blend_enables = c.VK_TRUE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
+    bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
+    {
+        const model = self.resources.models.getPtr(.explosion_particle);
+        if (!model.isEmpty()) {
+            for (info.world.particles.items) |particle| {
+                const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
+                const scale = particle.scale * lifetime_fraction;
+                var transform: nz.Transform3D(f32) = .{ .position = particle.position };
+                const camera_delta = camera_transform.position - particle.position;
+                const camera_distance = nz.vec.length(camera_delta);
+                const card_forward: nz.Vec3(f32) = if (camera_distance > 0.001)
+                    nz.vec.scale(camera_delta, 1.0 / camera_distance)
+                else
+                    .{ 0, 0, -1 };
+                const camera_up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
+                transform.rotation = nz.Quat(f32).lookAt(card_forward, camera_up);
+                transform.scale = @splat(scale);
+                try drawStatic(self, cmd, model, current_frame, transform.toMat4x4());
+            }
+        }
+    }
+    color_blend_enables = c.VK_FALSE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+
     if (info.world.controller.debug_draw_colliders) {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
         const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_debug).handle, self.resources.shaders.get(.frag_debug).handle };
@@ -529,15 +566,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     ext.vkCmdSetAlphaToCoverageEnableEXT(cmd, c.VK_FALSE);
     color_blend_enables = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
-    const blend_eq: c.VkColorBlendEquationEXT = .{
-        .srcColorBlendFactor = c.VK_BLEND_FACTOR_SRC_ALPHA,
-        .dstColorBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-        .colorBlendOp = c.VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-        .alphaBlendOp = c.VK_BLEND_OP_ADD,
-    };
-    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &blend_eq);
+    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
     const ui_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,

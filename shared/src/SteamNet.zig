@@ -9,7 +9,7 @@ pub const Client = @import("steamNet/Client.zig");
 pub const max_msg_bytes: usize = 1024;
 pub const local_server_port: u16 = 27018;
 
-pub const Conn = u32;
+pub const Connection = u32;
 
 pub const SendFlags = enum(i32) {
     unreliable = steam.k_nSteamNetworkingSend_Unreliable,
@@ -26,7 +26,7 @@ pub fn allowIpWithoutAuthOption() steam.SteamNetworkingConfigValue_t {
 }
 
 pub const Message = struct {
-    conn: Conn,
+    conn: Connection,
     flags: SendFlags = .reliable,
     len: u32,
     bytes: [max_msg_bytes]u8 = undefined,
@@ -37,8 +37,8 @@ pub const Message = struct {
 };
 
 pub const Event = union(enum) {
-    connected: Conn,
-    disconnected: Conn,
+    connected: Connection,
+    disconnected: Connection,
 };
 
 pub var log_connection_status: bool = false;
@@ -71,14 +71,14 @@ pub const Packets = struct {
         self.events.deinit(gpa);
     }
 
-    pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Conn, bytes: []const u8) !void {
+    pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.incoming.append(gpa, msg);
     }
 
-    pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Conn, bytes: []const u8, flags: SendFlags) !void {
+    pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8, flags: SendFlags) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .flags = flags, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);

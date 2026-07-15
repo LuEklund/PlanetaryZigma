@@ -15,7 +15,7 @@ pub const Kind = enum {
     player,
     planet,
     menu_planet,
-    bullet,
+    cube_projectile,
     teleporter,
     tubloid,
     tubloida,
@@ -24,13 +24,16 @@ pub const Kind = enum {
     speed,
     damage,
     attack_speed,
+    rocket,
+    explosion_particle,
 
     pub fn fromKind(kind: shared.entity.Kind) Kind {
         return switch (kind) {
             .unknown => .unknown,
             .player => .player,
             .planet => .planet,
-            .bullet => .bullet,
+            .projectile_cube => .cube_projectile,
+            .projectile_rocket => .rocket,
             .teleporter => .teleporter,
             .enemy => |enemy_kind| switch (enemy_kind) {
                 .tubloid => .tubloid,
@@ -42,6 +45,7 @@ pub const Kind = enum {
                 .speed => .speed,
                 .damage => .damage,
                 .attack_speed => .attack_speed,
+                .rocket => .rocket,
             },
         };
     }
@@ -51,7 +55,7 @@ pub const Kind = enum {
         const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
-            .unknown, .planet, .menu_planet, .bullet => .{ .path = null, .skinned = false, .clip_names = null },
+            .unknown, .planet, .menu_planet, .cube_projectile, .explosion_particle => .{ .path = null, .skinned = false, .clip_names = null },
             .player => .{
                 .path = "objects/BenBozo.glb",
                 .offset = player_offset,
@@ -72,6 +76,7 @@ pub const Kind = enum {
             .speed => .{ .path = "objects/energy_drink.glb", .skinned = false, .clip_names = null },
             .damage => .{ .path = "objects/gun.glb", .skinned = false, .clip_names = null },
             .attack_speed => .{ .path = "objects/pickaxe2.glb", .skinned = false, .clip_names = null },
+            .rocket => .{ .path = "objects/rocket.glb", .skinned = false, .clip_names = null },
         };
     }
 };

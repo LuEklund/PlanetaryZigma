@@ -8,7 +8,7 @@ const nz = shared.numz;
 gpa: std.mem.Allocator,
 io: std.Io,
 steam_server: *shared.SteamNet.Server,
-clients: std.AutoHashMap(shared.SteamNet.Conn, Client),
+clients: std.AutoHashMap(shared.SteamNet.Connection, Client),
 last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
 
@@ -22,7 +22,7 @@ pub const Client = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
-    conn: shared.SteamNet.Conn,
+    conn: shared.SteamNet.Connection,
     name: []const u8 = "",
     entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,
@@ -91,7 +91,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != .none) world.queueDespawn(client.entity_id);
+                if (client.entity_id != .none) world.queueRemove(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 std.log.debug("client disconnected: conn={d}", .{conn});
@@ -130,7 +130,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                     }) catch continue;
 
                     client.entity_id = new_player_entity.id;
-                    info.world.players.append(client.entity_id);
+                    info.world.players.appendAssumeCapacity(client.entity_id);
 
                     try client.sendCommand(
                         writer,
@@ -149,7 +149,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
-                    world.queueDespawn(client.entity_id);
+                    world.queueRemove(client.entity_id);
                     std.log.debug("player disconnect", .{});
                 },
                 .input => {
@@ -164,7 +164,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     self.pending_motions.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        if (shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static) continue;
+        if (!tracksMotion(entity)) continue;
 
         const position = entity.transform.position;
         const rotation = entity.transform.rotation.toVec();
@@ -213,13 +213,14 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
+                if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
-            }
-            var motion_it = self.last_motions.valueIterator();
-            while (motion_it.next()) |motion| {
-                try client.sendCommand(writer, .{ .update_motion = motion.* }, .reliable);
+                try sendInventory(client, writer, entity);
+                if (tracksMotion(entity)) {
+                    try client.sendCommand(writer, .{ .update_motion = motionPacket(info, entity) }, .reliable);
+                }
             }
             client.needs_full_sync = false;
         } else {
@@ -228,12 +229,13 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             }
         }
 
-        for (world.outbox.items) |pending_update| switch (pending_update) {
+        for (world.client_updates.items) |client_update| switch (client_update) {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
                 try sendStats(client, writer, entity);
+                try sendInventory(client, writer, entity);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
@@ -249,11 +251,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
         };
     }
-    for (world.outbox.items) |pending_update| switch (pending_update) {
+    for (world.client_updates.items) |client_update| switch (client_update) {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
-    world.outbox.clearRetainingCapacity();
+    world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
     if (self.steam_server.host_state == .waiting and info.elapsed_time > 60) return .host_timeout;
@@ -269,7 +271,32 @@ fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Enti
     }
 }
 
+fn tracksMotion(entity: *const system.Entity) bool {
+    if (entity.flags.is_dead) return false;
+    return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
+}
+
+fn motionPacket(info: *const Info, entity: *const system.Entity) shared.net.UpdateMotion {
+    return .{
+        .id = entity.id,
+        .position = entity.transform.position,
+        .velocity = entity.velocity,
+        .rotation = entity.transform.rotation.toVec(),
+        .tick = info.tick,
+    };
+}
+
+fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+    if (entity.kind != .player) return;
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        const count = entity.inventory.get(item_kind);
+        if (count == 0) continue;
+        try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+    }
+}
+
 fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,
@@ -280,7 +307,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.Spawn
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .unknown, .bullet, .player, .teleporter, .item => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .player, .teleporter, .item => .none,
         },
     };
 }

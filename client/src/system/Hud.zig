@@ -161,7 +161,6 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
         });
         return;
     }
-
     const max_rows = @min(network_manager.server_list.count, network_manager.server_list.servers.len);
     for (0..max_rows) |i| {
         const server = &network_manager.server_list.servers[i];
@@ -202,7 +201,7 @@ fn pauseMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void
         .size = .{ .fixed = .{ .width = panel_width, .heigth = panel_height } },
         .offset = .{ .left = left, .top = top },
         .color = .new(0.02, 0.025, 0.025, 0.92),
-        .axis_align = .verical,
+        .axis_align = .vertical,
         .child_anchor = .{ .x = .center, .y = .center },
         .gap = row_gap,
     });
@@ -604,7 +603,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
         const inventory_heigth: f32 = 60;
         ui.add(null, .{
             .name = "HUD",
-            .axis_align = .verical,
+            .axis_align = .vertical,
             .offset = .{ .top = 60, .left = ui.screen_width / 2 - inventory_width / 2 },
             // .child_anchor = .{ .x = .end, .y = .end },
             .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
@@ -635,6 +634,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                     .speed => .energy_drink,
                     .damage => .damage_item,
                     .attack_speed => .pickaxe,
+                    .rocket => .rocket_item,
                 },
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
@@ -651,11 +651,16 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .{
                 .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
                 .name = "info",
+                .axis_align = .vertical,
             },
         );
         ui.add("info", .{
             .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
             .text = .{ .data = ui.print("Stage: {d}", .{info.world.stage}) },
+        });
+        ui.add("info", .{
+            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
+            .text = .{ .data = ui.print("Currency: {d}", .{10}) },
         });
 
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
@@ -710,7 +715,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 .offset = .{ .top = ui.screen_heigth - stats_box_heigth, .left = ui.screen_width - stats_box_width },
                 .size = .{ .fixed = .{ .width = stats_box_width, .heigth = stats_box_heigth } },
                 .color = .new(0.5, 0.5, 0.5, 0.7),
-                .axis_align = .verical,
+                .axis_align = .vertical,
                 // .child_anchor = .{ .x = .end, .y = .start },
                 .gap = 10,
             });

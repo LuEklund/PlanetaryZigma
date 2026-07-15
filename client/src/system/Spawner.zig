@@ -39,6 +39,10 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         switch (entity_info.kind) {
             .player => {
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
+                if (entity_info.id == world.player_id) {
+                    world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+                    world.controller.free_camera = false;
+                }
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
@@ -54,8 +58,11 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                 );
                 std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
-            .bullet => {
+            .projectile_cube => {
                 entity.transform.scale = @splat(0.3);
+            },
+            .projectile_rocket => {
+                entity.transform.scale = @splat(0.9);
             },
             .teleporter => {
                 world.teleporter_id = entity.id;
@@ -63,11 +70,18 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
                     entity.transform.scale = @splat(5);
-                    world.teleporter_bosses.append(entity.id);
+                    world.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
-            .unknown, .item => {},
+            .item => |item_kind| {
+                std.log.debug("client spawn item {t} id={d} pos={any}", .{ item_kind, entity.id, entity.transform.position });
+                switch (item_kind) {
+                    .rocket => entity.transform.scale = @splat(1.8),
+                    else => {},
+                }
+            },
+            .unknown => {},
         }
     }
     world.pending_spawn.clearRetainingCapacity();
@@ -76,6 +90,11 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         if (world.getPtr(command.id)) |entity| applyStat(entity, command);
     }
     world.pending_stats.clearRetainingCapacity();
+
+    for (world.pending_inventory.items) |command| {
+        if (world.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
+    }
+    world.pending_inventory.clearRetainingCapacity();
 
     for (world.pending_despawn.items) |id| {
         if (world.getPtr(id) == null) continue;

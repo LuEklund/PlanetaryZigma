@@ -86,6 +86,7 @@ pub const Context = struct {
         if (info.world.pause_menu_open or info.world.options_menu_open) info.world.controller.resetMouseDelta();
 
         const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
+        info.world.updateParticles(info.delta_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         self.request_exit = self.request_exit or info.world.request_quit;
         if (paused_for_input or info.world.pause_menu_open or info.world.options_menu_open) {

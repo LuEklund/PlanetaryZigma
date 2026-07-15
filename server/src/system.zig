@@ -76,7 +76,7 @@ pub const Context = struct {
         try gameplay.updateEnemies(info);
         try self.director.update(info, &self.physics);
         try self.physics.update(info);
-        gameplay.updateBullets(info, &self.physics);
+        gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);
         gameplay.updateTeleporter(info, &self.director);
         gameplay.updateLifetimes(info);
