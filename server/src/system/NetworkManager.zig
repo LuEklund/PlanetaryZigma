@@ -230,7 +230,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             }
         }
 
-        for (world.outbox.items) |pending_update| switch (pending_update) {
+        for (world.client_updates.items) |client_update| switch (client_update) {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
@@ -252,11 +252,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
         };
     }
-    for (world.outbox.items) |pending_update| switch (pending_update) {
+    for (world.client_updates.items) |client_update| switch (client_update) {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
-    world.outbox.clearRetainingCapacity();
+    world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
     if (self.steam_server.host_state == .waiting and info.elapsed_time > 60) return .host_timeout;

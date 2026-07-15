@@ -60,7 +60,7 @@ pub fn updateEnemies(info: *const Info) !void {
                         .lifetime = 2,
                     });
                     bullet.stats.setCurrent(.damage, damage);
-                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
+                    info.world.client_updates.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .tubloid => {
@@ -69,7 +69,7 @@ pub fn updateEnemies(info: *const Info) !void {
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     if (!info.world.removeHealth(player, damage)) std.log.debug("did not take damage", .{});
-                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
+                    info.world.client_updates.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .wizard => {
@@ -82,7 +82,7 @@ pub fn updateEnemies(info: *const Info) !void {
                         .transform = .{ .position = player.transform.position },
                         .last_attack = info.elapsed_time,
                     }) catch {};
-                    info.world.outbox.append(.{ .event = .{ .attack = enemy.id } });
+                    info.world.client_updates.append(.{ .event = .{ .attack = enemy.id } });
                 }
             },
         }
@@ -129,7 +129,7 @@ pub fn updateItems(info: *const Info) !void {
             const item_count = player.inventory.add(item_kind, 1);
             player.stats.gain(item_kind, 1);
             player.stats.refresh(player.inventory);
-            info.world.outbox.append(.{ .inventory = .{
+            info.world.client_updates.append(.{ .inventory = .{
                 .id = player_id,
                 .item_kind = item_kind,
                 .set = item_count,
@@ -137,8 +137,8 @@ pub fn updateItems(info: *const Info) !void {
             for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
                 if (item_kind.getAttributeValues().get(stat_kind) == 0) continue;
                 const stat = player.stats.get(stat_kind);
-                info.world.outbox.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
-                info.world.outbox.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });
+                info.world.client_updates.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
+                info.world.client_updates.append(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });
             }
 
             info.world.queueDespawn(entity.id);
@@ -161,7 +161,7 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
-    info.world.outbox.append(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    info.world.client_updates.append(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
 }
 
 pub fn updateLifetimes(info: *const Info) void {
