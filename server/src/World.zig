@@ -216,7 +216,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
     }
     self.new_spawns.clearRetainingCapacity();
 
-    var players_recived_currency = false;
+    var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
@@ -230,13 +230,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             entity.flags.is_dead = true;
             entity.velocity = .{ 0, 0, 0 };
         } else {
-            if (entity.kind == .enemy) {
-                for (self.players.items) |player_id| {
-                    const player = self.getPtr(player_id) orelse continue;
-                    player.currency += entity.currency;
-                    players_recived_currency = true;
-                }
-            }
+            if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
             }
@@ -245,8 +239,9 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
-    if (players_recived_currency) for (self.players.items) |player_id| {
+    if (currency_reward > 0) for (self.players.items) |player_id| {
         const player = self.getPtr(player_id) orelse continue;
+        player.currency += currency_reward;
         self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
     };
 

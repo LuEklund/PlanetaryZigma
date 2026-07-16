@@ -75,6 +75,7 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
         .connect => |connect| connect: {
             const name = try gpa.dupe(u8, connect.name);
             break :connect .{ .connect = .{
+                .protocol_version = connect.protocol_version,
                 .name_len = @intCast(name.len),
                 .name = name,
             } };
@@ -158,6 +159,11 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         for (client.command_queue.commands.items) |command| {
             switch (command) {
                 .connect => |connect| {
+                    if (connect.protocol_version != shared.net.protocol_version) {
+                        std.log.warn("rejecting client conn={d}: protocol {d} != server {d}", .{ client.conn, connect.protocol_version, shared.net.protocol_version });
+                        _ = self.steam_server.socket.CloseConnection(client.conn, 0, "protocol version mismatch", false);
+                        continue;
+                    }
                     var player_name_changed = false;
                     var name_buf: [shared.max_player_name_len]u8 = undefined;
                     const name = sanitizePlayerName(&name_buf, connect.name);
@@ -264,6 +270,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
+        if (client.entity_id == .none) continue;
 
         try client.sendCommand(writer, .{ .server_tick = info.tick }, .unreliable_no_delay);
 
@@ -425,7 +432,7 @@ fn updateAdvertisedSession(self: *@This()) void {
     }
 
     if (host_name.len == 0 and player_count != 0) host_name = player_names[0];
-    self.steam_server.updateSessionMetadata(shared.max_players, host_name, player_names[0..player_count]);
+    self.steam_server.updateSessionMetadata(shared.max_players, shared.net.protocol_version, host_name, player_names[0..player_count]);
     self.session_metadata_dirty = false;
 }
 

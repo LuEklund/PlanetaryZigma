@@ -45,9 +45,41 @@ pub const ServerPacket = union(enum) {
 // ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const Connect = struct {
+    protocol_version: u32,
     name_len: u16,
     name: []const u8,
 };
+
+// Comptime fingerprint of the entire wire format. Changes if and only if the
+// structural layout reachable from ClientPacket/ServerPacket changes;
+pub const protocol_version: u32 = version: {
+    @setEvalBranchQuota(100_000);
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+};
+
+fn protocolDescription(comptime T: type) []const u8 {
+    return switch (@typeInfo(T)) {
+        .optional => |optional| "?" ++ protocolDescription(optional.child),
+        .pointer => |pointer| "[]" ++ protocolDescription(pointer.child),
+        .array => |array| std.fmt.comptimePrint("[{d}]", .{array.len}) ++ protocolDescription(array.child),
+        .@"enum" => |@"enum"| description: {
+            var description: []const u8 = "e" ++ @typeName(@"enum".tag_type) ++ "{";
+            for (@"enum".fields) |field| description = description ++ field.name ++ ",";
+            break :description description ++ "}";
+        },
+        .@"struct" => |@"struct"| description: {
+            var description: []const u8 = "s{";
+            for (@"struct".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        .@"union" => |@"union"| description: {
+            var description: []const u8 = "u{";
+            for (@"union".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        else => @typeName(T),
+    };
+}
 
 pub const PlayerName = struct {
     name_len: u16,

@@ -26,7 +26,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
         info.world.show_menu_scene = false;
         try inGame(info, network_manager, ui);
         if (info.world.pause_menu_open) {
-            try pauseMenu(info, network_manager, ui);
+            try pauseMenu(info, ui);
         } else if (info.world.options_menu_open) {
             optionsMenu(info, ui);
         }
@@ -167,15 +167,22 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     for (0..max_rows) |i| {
         const server = &network_manager.server_list.servers[i];
         const id = serverId(ui, server);
-        const title = clippedText(ui, serverTitle(ui, server), 42);
         const tags = serverTags(server);
         const host = tagValue(tags, "host");
         const players = tagValue(tags, "players");
+        const server_version_text = tagValue(tags, "ver");
+        const bad_version = server_version_text.len != 0 and (std.fmt.parseInt(u32, server_version_text, 10) catch 0) != shared.net.protocol_version;
+        const title = if (bad_version)
+            ui.print("BAD VERSION - {s}", .{clippedText(ui, serverTitle(ui, server), 28)})
+        else
+            clippedText(ui, serverTitle(ui, server), 42);
         const host_text = if (host.len == 0)
             "Host: unknown"
         else
             ui.print("Host: {s}", .{clippedText(ui, host, 36)});
-        const player_text = if (players.len == 0)
+        const player_text = if (bad_version)
+            "Incompatible version"
+        else if (players.len == 0)
             ui.print("Players: {d}/{d}", .{ @max(server.player_count, 0), @max(server.max_players, 0) })
         else
             ui.print("Players: {s}", .{clippedText(ui, players, 54)});
@@ -189,7 +196,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
             .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
-            .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
             .children = &.{
                 .{
                     .size = .{ .fixed = .{ .heigth = 24, .width = panel_width } },
@@ -208,14 +215,14 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
                 },
             },
         });
-        if (ui.isActive(id)) {
+        if (ui.isActive(id) and !bad_version) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.debug("connect to {d}", .{server.steam_id});
         }
     }
 }
 
-fn pauseMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
+fn pauseMenu(info: *const Info, ui: *Ui) !void {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
     const button_height = std.math.clamp(ui.screen_heigth * 0.058, @as(f32, 40), @as(f32, 52));
     const row_gap: f32 = 10;
@@ -258,7 +265,7 @@ fn pauseMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void
         info.world.options_menu_return_to_pause = true;
     }
     if (ui.isActive("pause_main_menu")) {
-        try network_manager.returnToMainMenu(info);
+        info.world.request_main_menu = true;
     }
 }
 

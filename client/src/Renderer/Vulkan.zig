@@ -134,10 +134,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.menu_player.deinit(gpa, self.vma);
     self.resources.deinit(gpa, self.vma, self.device);
 
-    var it = self.skeletons.valueIterator();
-    while (it.next()) |skeleton| {
-        skeleton.deinit(gpa, self.vma);
-    }
+    self.clearSkeletons(gpa);
     self.skeletons.deinit();
 
     self.ui.deinit(gpa, self.vma);
@@ -986,7 +983,23 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+pub fn drainRenderCommands(self: *@This(), gpa: std.mem.Allocator, world: *World) !void {
+    for (world.render_outbox.items) |command| switch (command) {
+        .entity_spawned => |spawned| try self.ensureSkeleton(gpa, spawned.id, spawned.kind),
+        .entity_despawned => |id| self.removeSkeleton(gpa, id),
+        .planet_spawned => |radius| try self.buildPlanet(gpa, radius),
+    };
+    world.render_outbox.clearRetainingCapacity();
+}
+
+fn buildPlanet(self: *@This(), gpa: std.mem.Allocator, radius: u32) !void {
+    var planet: shared.Planet(.renderable) = try .init(gpa, radius);
+    defer planet.deinit(gpa);
+    try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices, .planet);
+}
+
+fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+    if (self.skeletons.contains(entity_id)) return;
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
@@ -995,11 +1008,17 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
+fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
     }
+}
+
+fn clearSkeletons(self: *@This(), gpa: std.mem.Allocator) void {
+    var it = self.skeletons.valueIterator();
+    while (it.next()) |skeleton| skeleton.deinit(gpa, self.vma);
+    self.skeletons.clearRetainingCapacity();
 }
 
 fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {

@@ -5,8 +5,8 @@ const nz = shared.numz;
 const yes = @import("yes");
 const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
-const Spawner = @import("system/Spawner.zig");
 const Animation = @import("system/Animations.zig");
+const motion = @import("system/motion.zig");
 pub const Renderer = @import("Renderer.zig");
 
 pub const Camera = @import("system/Camera.zig");
@@ -88,6 +88,10 @@ pub const Context = struct {
         const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
         info.world.updateParticles(info.delta_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
+        if (info.world.request_main_menu) {
+            info.world.request_main_menu = false;
+            try self.network_manager.returnToMainMenu(info);
+        }
         self.request_exit = self.request_exit or info.world.request_quit;
         if (paused_for_input or info.world.pause_menu_open or info.world.options_menu_open) {
             info.world.controller.clearInput();
@@ -97,29 +101,12 @@ pub const Context = struct {
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
-        try Spawner.update(info, self);
+        try info.world.flush();
+        try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
-        for (info.world.entities.values()) |*entity| {
-            const motion = entity.update_motion orelse continue;
-            const motion_time = @as(f32, @floatFromInt(motion.tick)) * shared.tick_seconds;
-            const age = server_time - motion_time;
-            const target = motion.position + nz.vec.scale(motion.velocity, age);
-
-            if (motion.tick != entity.smoothed_moiton_tick) {
-                entity.position_error = entity.transform.position - target;
-                entity.smoothed_moiton_tick = motion.tick;
-            }
-
-            const error_decay = std.math.pow(f32, 1e-5, info.delta_time);
-            entity.position_error = nz.vec.scale(entity.position_error, error_decay);
-            entity.transform.position = target + entity.position_error;
-
-            const target_rotation = nz.Quat(f32).fromVec(motion.rotation);
-            const rotation_decay = std.math.pow(f32, 1e-5, info.delta_time);
-            entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
-        }
+        motion.evaluate(info, server_time);
 
         if (!paused_for_input and !info.world.pause_menu_open and !info.world.options_menu_open) info.world.camera.update(info);
         info.world.controller.resetMouseDelta();

@@ -5,7 +5,6 @@ const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
 const World = system.World;
-const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 
@@ -158,7 +157,7 @@ fn spawnHostServer(self: *@This()) void {
 
 fn sendConnect(self: *@This()) !void {
     const name = self.playerDisplayName();
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = @intCast(name.len), .name = name } };
+    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .name_len = @intCast(name.len), .name = name } };
     try self.sendCommand(cmd, .reliable);
 }
 
@@ -236,6 +235,7 @@ pub fn update(self: *@This(), info: *const Info) !void {
             self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
             @memset(&self.server_list.servers[i].id_str, 0);
             _ = try std.fmt.bufPrint(&self.server_list.servers[i].id_str, "{d}", .{self.server_list.servers[i].steam_id});
+            std.log.info("browser server[{d}] my_ver={d} tags=\"{s}\"", .{ i, shared.net.protocol_version, std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0) });
         }
         self.server_list.count = self.steam_client.browser.list.count;
     }
@@ -302,7 +302,7 @@ fn handleCommand(
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id)) |entity| {
-                try Spawner.applySpawnData(info.world, entity, spawn_entity);
+                try info.world.applySpawnData(entity, spawn_entity);
                 return;
             }
             if (spawn_entity.kind == .unknown) {
@@ -326,7 +326,7 @@ fn handleCommand(
                 info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            Spawner.applyStat(entity, update_stat_command);
+            World.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {

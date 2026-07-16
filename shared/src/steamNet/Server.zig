@@ -133,7 +133,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !@This() {
     };
 }
 
-pub fn updateSessionMetadata(self: *@This(), max_players: usize, host_name: []const u8, player_names: []const []const u8) void {
+pub fn updateSessionMetadata(self: *@This(), max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
     self.gs.SetMaxPlayerCount(@intCast(max_players));
 
     const host = if (host_name.len == 0) "Unknown" else host_name;
@@ -144,7 +144,7 @@ pub fn updateSessionMetadata(self: *@This(), max_players: usize, host_name: []co
     self.gs.SetServerName(server_name);
 
     var tags_buf: [128]u8 = @splat(0);
-    writeSessionTags(&tags_buf, host, player_names) catch {};
+    writeSessionTags(&tags_buf, protocol_version, host, player_names) catch {};
     self.gs.SetGameTags(&tags_buf[0]);
 }
 
@@ -154,8 +154,9 @@ pub fn deinit(self: *@This()) void {
     self.packets.deinit(self.gpa);
 }
 
-fn writeSessionTags(buffer: *[128]u8, host_name: []const u8, player_names: []const []const u8) !void {
+fn writeSessionTags(buffer: *[128]u8, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) !void {
     var writer: std.Io.Writer = .fixed(buffer[0 .. buffer.len - 1]);
+    try writer.print("ver={d};", .{protocol_version});
     try writer.writeAll("host=");
     try writeTagValue(&writer, host_name);
     try writer.writeAll(";players=");
