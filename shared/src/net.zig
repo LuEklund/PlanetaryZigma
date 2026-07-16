@@ -45,9 +45,46 @@ pub const ServerPacket = union(enum) {
 // ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const Connect = struct {
+    protocol_version: u32,
     name_len: u16,
     name: []const u8,
 };
+
+// Comptime fingerprint of the entire wire format. Changes if and only if the
+// structural layout reachable from ClientPacket/ServerPacket changes;
+pub const protocol_version: u32 = version: {
+    @setEvalBranchQuota(100_000);
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+};
+
+fn protocolDescription(comptime T: type) []const u8 {
+    return switch (@typeInfo(T)) {
+        .void => "v",
+        .bool => "b",
+        .int => |int| std.fmt.comptimePrint("{c}{d}", .{ @as(u8, if (int.signedness == .signed) 'i' else 'u'), int.bits }),
+        .float => |float| std.fmt.comptimePrint("f{d}", .{float.bits}),
+        .optional => |optional| "?" ++ protocolDescription(optional.child),
+        .array => |array| std.fmt.comptimePrint("[{d}]", .{array.len}) ++ protocolDescription(array.child),
+        .vector => |vector| std.fmt.comptimePrint("@{d}", .{vector.len}) ++ protocolDescription(vector.child),
+        .pointer => |pointer| "[]" ++ protocolDescription(pointer.child),
+        .@"enum" => |@"enum"| description: {
+            var description: []const u8 = "e" ++ protocolDescription(@"enum".tag_type) ++ "{";
+            for (@"enum".fields) |field| description = description ++ field.name ++ std.fmt.comptimePrint("={d},", .{field.value});
+            break :description description ++ "}";
+        },
+        .@"struct" => |@"struct"| description: {
+            var description: []const u8 = "s{";
+            for (@"struct".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        .@"union" => |@"union"| description: {
+            var description: []const u8 = "u{";
+            for (@"union".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        else => @compileError("protocol fingerprint: unhandled type " ++ @typeName(T)),
+    };
+}
 
 pub const PlayerName = struct {
     name_len: u16,

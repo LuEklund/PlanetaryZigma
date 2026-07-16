@@ -158,7 +158,7 @@ fn spawnHostServer(self: *@This()) void {
 
 fn sendConnect(self: *@This()) !void {
     const name = self.playerDisplayName();
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = @intCast(name.len), .name = name } };
+    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .name_len = @intCast(name.len), .name = name } };
     try self.sendCommand(cmd, .reliable);
 }
 
