@@ -255,7 +255,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
 
 pub fn motionType(kind: shared.entity.Kind) Physics.MotionType {
     return switch (kind) {
-        .teleporter, .planet, .item => .static,
+        .teleporter, .planet, .item, .lootbox => .static,
         else => .dynamic,
     };
 }
