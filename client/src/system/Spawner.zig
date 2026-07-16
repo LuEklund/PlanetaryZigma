@@ -89,6 +89,13 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
             .unknown => {},
         }
     }
+    for (world.pending_player_names.items) |player_name| {
+        if (world.getPtr(player_name.id)) |entity| {
+            if (entity.kind == .player) try world.setPlayerName(entity, player_name.name);
+        }
+    }
+    world.clearPendingPlayerNames();
+
     for (world.pending_stats.items) |command| {
         if (world.getPtr(command.id)) |entity| applyStat(entity, command);
     }

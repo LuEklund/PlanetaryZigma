@@ -118,41 +118,59 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     var fix_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
     const writer = &fix_writer;
 
+    var sync_all_clients = false;
+    var player_name_update_ids: [shared.max_players]shared.entity.Id = undefined;
+    var player_name_update_count: usize = 0;
     var it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
         for (client.command_queue.commands.items) |command| {
             switch (command) {
                 .connect => |connect| {
-                    if (client.name.len == 0) {
-                        var name_buf: [shared.max_player_name_len]u8 = undefined;
-                        const name = sanitizePlayerName(&name_buf, connect.name);
-                        client.name = try self.gpa.dupe(u8, if (name.len == 0) shared.default_player_name else name);
+                    var player_name_changed = false;
+                    var name_buf: [shared.max_player_name_len]u8 = undefined;
+                    const name = sanitizePlayerName(&name_buf, connect.name);
+                    const display_name = if (name.len == 0) shared.default_player_name else name;
+                    if (!std.mem.eql(u8, client.name, display_name)) {
+                        if (client.name.len != 0) self.gpa.free(client.name);
+                        client.name = try self.gpa.dupe(u8, display_name);
+                        self.session_metadata_dirty = true;
+                        sync_all_clients = true;
+                        player_name_changed = true;
                     }
-                    const new_player_entity = world.spawn(.{
-                        .kind = .player,
-                        .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
-                        .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                    }) catch continue;
 
-                    client.entity_id = new_player_entity.id;
-                    info.world.players.appendAssumeCapacity(client.entity_id);
-                    self.session_metadata_dirty = true;
+                    if (client.entity_id == .none) {
+                        const new_player_entity = world.spawn(.{
+                            .kind = .player,
+                            .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
+                            .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
+                        }) catch continue;
 
-                    try client.sendCommand(
-                        writer,
-                        .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
-                        .reliable,
-                    );
-                    try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
-                    if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                        if (entity.teleporter.active) {
-                            try client.sendCommand(writer, .{
-                                .update_event = .teleport_start,
-                            }, .reliable);
+                        client.entity_id = new_player_entity.id;
+                        info.world.players.appendAssumeCapacity(client.entity_id);
+                        self.session_metadata_dirty = true;
+                        sync_all_clients = true;
+                        player_name_changed = true;
+
+                        try client.sendCommand(
+                            writer,
+                            .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
+                            .reliable,
+                        );
+                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
+                        if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                            if (entity.teleporter.active) {
+                                try client.sendCommand(writer, .{
+                                    .update_event = .teleport_start,
+                                }, .reliable);
+                            }
                         }
+                        std.log.debug("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
                     }
-                    std.log.debug("PLAYER SPAWN entity_id={d}", .{client.entity_id});
+                    if (player_name_changed and client.entity_id != .none and player_name_update_count < player_name_update_ids.len) {
+                        player_name_update_ids[player_name_update_count] = client.entity_id;
+                        player_name_update_count += 1;
+                    }
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
@@ -168,6 +186,8 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         }
         client.command_queue.commands.clearRetainingCapacity();
     }
+
+    if (sync_all_clients) self.markAllClientsForFullSync();
 
     if (self.session_metadata_dirty) {
         self.updateAdvertisedSession();
@@ -266,6 +286,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
+    for (player_name_update_ids[0..player_name_update_count]) |id| {
+        try self.broadcastPlayerName(writer, id, self.nameForEntity(id));
+    }
     world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
@@ -330,6 +353,25 @@ fn nameForEntity(self: *@This(), entity_id: shared.entity.Id) []const u8 {
         if (client.entity_id == entity_id and client.name.len != 0) return client.name;
     }
     return shared.default_player_name;
+}
+
+fn markAllClientsForFullSync(self: *@This()) void {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        client.needs_full_sync = true;
+    }
+}
+
+fn broadcastPlayerName(self: *@This(), writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        if (client.entity_id == .none) continue;
+        try client.sendCommand(writer, .{ .update_player_name = .{
+            .id = entity_id,
+            .name_len = @intCast(name.len),
+            .name = name,
+        } }, .reliable);
+    }
 }
 
 fn updateAdvertisedSession(self: *@This()) void {

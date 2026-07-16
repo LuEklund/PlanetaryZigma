@@ -38,6 +38,7 @@ pub const ServerPacket = union(enum) {
     update_stat: UpdateStat,
     update_event: Event,
     update_inventory: UpdateInventory,
+    update_player_name: PlayerNameUpdate,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -48,6 +49,12 @@ pub const Connect = struct {
 };
 
 pub const PlayerName = struct {
+    name_len: u16,
+    name: []const u8,
+};
+
+pub const PlayerNameUpdate = struct {
+    id: entity.Id,
     name_len: u16,
     name: []const u8,
 };

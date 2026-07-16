@@ -353,6 +353,13 @@ fn handleCommand(
             };
             entity.inventory.set(inventory.item_kind, inventory.set);
         },
+        .update_player_name => |player_name| {
+            const entity = info.world.getPtr(player_name.id) orelse {
+                try self.queuePlayerName(info.world, player_name);
+                return;
+            };
+            if (entity.kind == .player) try info.world.setPlayerName(entity, player_name.name);
+        },
     }
 }
 
@@ -371,4 +378,15 @@ fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntit
         .none, .planet_radius, .is_teleporter_boss => {},
     }
     world.pending_spawn.appendAssumeCapacity(queued_spawn);
+}
+
+fn queuePlayerName(self: *@This(), world: *World, player_name: shared.net.PlayerNameUpdate) !void {
+    if (world.pending_player_names.items.len >= world.pending_player_names.capacity) return error.PendingPlayerNameFull;
+
+    const name = try self.gpa.dupe(u8, player_name.name);
+    world.pending_player_names.appendAssumeCapacity(.{
+        .id = player_name.id,
+        .name_len = @intCast(name.len),
+        .name = name,
+    });
 }
