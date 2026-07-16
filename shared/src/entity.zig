@@ -49,14 +49,16 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
 
 pub const Kind = union(enum) {
     unknown,
+
     player,
-    planet,
-    projectile_cube,
-
-    teleporter,
-
     enemy: EnemyKind,
     item: Item.Kind,
+
+    planet,
+    teleporter,
+    loot_box,
+
+    projectile_cube,
     projectile_rocket,
 
     pub fn eql(kind: Kind, other_kind: Kind) bool {

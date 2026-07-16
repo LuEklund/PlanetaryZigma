@@ -50,7 +50,7 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
                 const surface = shared.planetSurfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
-                    .kind = .{ .enemy = .tubloid },
+                    .kind = .{ .enemy = .tubloida },
                     .transform = .{ .position = spawn_position },
                     .last_attack = info.elapsed_time,
                 })) |_| {

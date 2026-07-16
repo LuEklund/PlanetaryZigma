@@ -296,6 +296,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try client.sendCommand(writer, .{ .set_currency = .{ .id = entity.id, .amount = entity.currency } }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
@@ -310,6 +311,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
             .event => |event| {
                 try client.sendCommand(writer, .{ .update_event = event }, .reliable);
+            },
+            .currency => |currency| {
+                try client.sendCommand(writer, .{ .set_currency = .{ .amount = currency.amount, .id = currency.id } }, .reliable);
             },
         };
     }
