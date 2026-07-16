@@ -175,6 +175,7 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .int => try writer.writeInt(T, value, endian),
         .float => |float| try writer.writeInt(@Int(.signed, float.bits), @bitCast(value), endian),
         .pointer => |pointer| {
+            comptime std.debug.assert(pointer.size == .slice);
             if (pointer.child == u8) {
                 try writer.writeAll(value);
                 try writer.splatByteAll(0, (4 - (value.len % 4)) % 4);
