@@ -12,9 +12,9 @@ const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Inner = *Vulkan;
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: yes.Platform, window: *yes.Window) !@This() {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !@This() {
     return switch (builtin.os.tag) {
-        else => initVulkan(gpa, asset_server, platform, window),
+        else => initVulkan(gpa, asset_server, desktop, window),
     };
 }
 
@@ -34,16 +34,16 @@ pub fn update(self: *@This(), info: *const Info) !void {
     try self.inner.update(info);
 }
 
-pub fn resize(self: *@This(), gpa: std.mem.Allocator, window: *yes.Window) !void {
-    try self.inner.resize(gpa, window.size.width, window.size.height);
-}
-
 const debug_instance_extensions = if (builtin.mode == .Debug)
     [_][*:0]const u8{Vulkan.c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME}
 else
     [_][*:0]const u8{};
 
-pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: yes.Platform, window: *yes.Window) !@This() {
+pub fn resize(self: *@This(), gpa: std.mem.Allocator, window: *yes.Window) !void {
+    try self.inner.resize(gpa, window.size.width, window.size.height);
+}
+
+pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !@This() {
     const extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
         .windows => &(debug_instance_extensions ++ [_][*:0]const u8{
             "VK_KHR_surface",
@@ -60,7 +60,7 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: 
         .linux, .freebsd, .netbsd, .openbsd => if (builtin.abi == .android) &.{
             "VK_KHR_surface",
             "VK_KHR_android_surface",
-        } else switch (window.native(platform)) {
+        } else switch (window.native(desktop)) {
             .wayland => &(debug_instance_extensions ++ [_][*:0]const u8{
                 Vulkan.c.VK_KHR_SURFACE_EXTENSION_NAME,
                 Vulkan.c.VK_KHR_DISPLAY_EXTENSION_NAME,
@@ -69,7 +69,7 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: 
                 "VK_KHR_display",
                 "VK_KHR_wayland_surface",
             }),
-            .x11 => &(debug_instance_extensions ++ [_][*:0]const u8{
+            .x => &(debug_instance_extensions ++ [_][*:0]const u8{
                 Vulkan.c.VK_KHR_SURFACE_EXTENSION_NAME,
                 Vulkan.c.VK_KHR_DISPLAY_EXTENSION_NAME,
 
@@ -83,7 +83,7 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: 
         else => &.{},
     };
 
-    var yes_surface_create_user_data: YesSurfaceCreateUserData = .{ .platform = platform, .window = window };
+    var yes_surface_create_user_data: YesSurfaceCreateUserData = .{ .desktop = desktop, .window = window };
 
     const vulkan_renderer: *Vulkan = try .init(gpa, asset_server, .{
         .surface = .{
@@ -114,10 +114,10 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, platform: 
 }
 
 const YesSurfaceCreateUserData = struct {
-    platform: yes.Platform,
+    desktop: yes.Desktop,
     window: *yes.Window,
 };
 
 fn createVulkanSurface(instance: *Vulkan.c.VkInstance, user_data: *const YesSurfaceCreateUserData) !Vulkan.c.VkSurfaceKHR {
-    return @ptrCast(try yes.vulkan.createSurface(user_data.platform, user_data.window, @ptrCast(instance), null, @ptrCast(&Vulkan.c.vkGetInstanceProcAddr)));
+    return @ptrCast(try yes.vulkan.createSurface(user_data.desktop, user_data.window, @ptrCast(instance), null, @ptrCast(&Vulkan.c.vkGetInstanceProcAddr)));
 }
