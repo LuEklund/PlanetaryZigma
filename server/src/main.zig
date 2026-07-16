@@ -24,12 +24,21 @@ pub fn main(init: std.process.Init) !void {
     defer args_iterator.deinit();
     _ = args_iterator.next();
     var host_steam_id: u64 = 0;
+    var server_mode: shared.SteamNet.Server.Mode = .steam_p2p;
     while (args_iterator.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--local-singleplayer")) {
+            server_mode = .local_singleplayer;
+            host_steam_id = 0;
+            continue;
+        }
         host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
         break;
     }
 
-    var steam_server: shared.SteamNet.Server = try .init(gpa, io, host_steam_id);
+    var steam_server: shared.SteamNet.Server = try .init(gpa, io, .{
+        .mode = server_mode,
+        .host_steam_id = host_steam_id,
+    });
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
