@@ -270,6 +270,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
+        if (client.entity_id == .none) continue;
 
         try client.sendCommand(writer, .{ .server_tick = info.tick }, .unreliable_no_delay);
 
@@ -431,7 +432,7 @@ fn updateAdvertisedSession(self: *@This()) void {
     }
 
     if (host_name.len == 0 and player_count != 0) host_name = player_names[0];
-    self.steam_server.updateSessionMetadata(shared.max_players, host_name, player_names[0..player_count]);
+    self.steam_server.updateSessionMetadata(shared.max_players, shared.net.protocol_version, host_name, player_names[0..player_count]);
     self.session_metadata_dirty = false;
 }
 

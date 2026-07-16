@@ -171,11 +171,15 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
         const tags = serverTags(server);
         const host = tagValue(tags, "host");
         const players = tagValue(tags, "players");
+        const server_version_text = tagValue(tags, "ver");
+        const bad_version = server_version_text.len != 0 and (std.fmt.parseInt(u32, server_version_text, 10) catch 0) != shared.net.protocol_version;
         const host_text = if (host.len == 0)
             "Host: unknown"
         else
             ui.print("Host: {s}", .{clippedText(ui, host, 36)});
-        const player_text = if (players.len == 0)
+        const player_text = if (bad_version)
+            "Incompatible version"
+        else if (players.len == 0)
             ui.print("Players: {d}/{d}", .{ @max(server.player_count, 0), @max(server.max_players, 0) })
         else
             ui.print("Players: {s}", .{clippedText(ui, players, 54)});
@@ -189,7 +193,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
             .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
-            .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
             .children = &.{
                 .{
                     .size = .{ .fixed = .{ .heigth = 24, .width = panel_width } },
@@ -208,7 +212,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
                 },
             },
         });
-        if (ui.isActive(id)) {
+        if (ui.isActive(id) and !bad_version) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.debug("connect to {d}", .{server.steam_id});
         }
