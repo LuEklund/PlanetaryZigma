@@ -150,7 +150,7 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
                 entity.stats.init(20, 3, 1, 0.2, 10);
                 entity.currency = 7;
             },
-            .wizard => {
+            .bloorpLord => {
                 entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40);
                 entity.currency = 100;
             },

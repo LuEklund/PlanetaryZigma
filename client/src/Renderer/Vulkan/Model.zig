@@ -19,13 +19,14 @@ pub const Kind = enum {
     teleporter,
     tubloid,
     tubloida,
-    wizard,
+    bloorpLord,
     health,
     speed,
     damage,
     attack_speed,
     rocket,
     explosion_particle,
+    lootbox,
 
     pub fn fromKind(kind: shared.entity.Kind) Kind {
         return switch (kind) {
@@ -35,10 +36,11 @@ pub const Kind = enum {
             .projectile_cube => .cube_projectile,
             .projectile_rocket => .rocket,
             .teleporter => .teleporter,
+            .lootbox => .lootbox,
             .enemy => |enemy_kind| switch (enemy_kind) {
                 .tubloid => .tubloid,
                 .tubloida => .tubloida,
-                .wizard => .wizard,
+                .bloorpLord => .bloorpLord,
             },
             .item => |item_kind| switch (item_kind) {
                 .health => .health,
@@ -71,12 +73,17 @@ pub const Kind = enum {
             .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
             .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
-            .wizard => .{ .path = "objects/Wizard.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = null, .walk = "Walking", .attack = "Summon" } },
+            .bloorpLord => .{ .path = "objects/BloorpLord.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{
+                .idle = "Idle",
+                .walk = "Walking",
+                .attack = "Spawn_Enemy",
+            } },
             .health => .{ .path = "objects/oxigen_tank.glb", .skinned = false, .clip_names = null },
             .speed => .{ .path = "objects/energy_drink.glb", .skinned = false, .clip_names = null },
             .damage => .{ .path = "objects/gun.glb", .skinned = false, .clip_names = null },
             .attack_speed => .{ .path = "objects/pickaxe2.glb", .skinned = false, .clip_names = null },
             .rocket => .{ .path = "objects/rocket.glb", .skinned = false, .clip_names = null },
+            .lootbox => .{ .path = "objects/lootbox.glb", .skinned = false, .clip_names = null },
         };
     }
 };

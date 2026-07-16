@@ -79,14 +79,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                 }
                 try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
-            .item => |item_kind| {
-                std.log.debug("client spawn item {t} id={d} pos={any}", .{ item_kind, entity.id, entity.transform.position });
-                switch (item_kind) {
-                    .rocket => entity.transform.scale = @splat(1.8),
-                    else => {},
-                }
-            },
-            .unknown => {},
+            .unknown, .item, .lootbox => {},
         }
     }
     for (world.pending_player_names.items) |player_name| {

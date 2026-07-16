@@ -377,7 +377,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
         },
     };
 }
