@@ -38,6 +38,7 @@ pub const Client = struct {
 
     pub fn deinit(self: *Client) !void {
         if (self.name.len != 0) self.gpa.free(self.name);
+        clearClientCommands(self.gpa, self);
         try self.command_queue.deinit(self.gpa, self.io);
     }
 };
@@ -67,6 +68,34 @@ pub fn reload(self: *@This(), pre_reload: bool) !void {
     _ = pre_reload;
     // Steam connection state lives in main.zig and survives reload; nothing to
     // tear down or rebuild here.
+}
+
+fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
+    return switch (packet) {
+        .connect => |connect| connect: {
+            const name = try gpa.dupe(u8, connect.name);
+            break :connect .{ .connect = .{
+                .name_len = @intCast(name.len),
+                .name = name,
+            } };
+        },
+        .disconnect => .disconnect,
+        .input => |input| .{ .input = input },
+    };
+}
+
+fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
+    switch (packet.*) {
+        .connect => |connect| if (connect.name.len != 0) gpa.free(connect.name),
+        .disconnect, .input => {},
+    }
+}
+
+fn clearClientCommands(gpa: std.mem.Allocator, client: *Client) void {
+    for (client.command_queue.commands.items) |*command| {
+        freeClientPacket(gpa, command);
+    }
+    client.command_queue.commands.clearRetainingCapacity();
 }
 
 pub fn update(self: *@This(), info: *const Info) !WireStatus {
@@ -110,7 +139,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try client.command_queue.commands.append(self.gpa, parsed);
+        var queued_packet = try cloneClientPacket(self.gpa, parsed);
+        errdefer freeClientPacket(self.gpa, &queued_packet);
+        try client.command_queue.commands.append(self.gpa, queued_packet);
     }
     self.steam_server.packets.incoming.clearRetainingCapacity();
 
@@ -184,7 +215,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 },
             }
         }
-        client.command_queue.commands.clearRetainingCapacity();
+        clearClientCommands(self.gpa, client);
     }
 
     if (sync_all_clients) self.markAllClientsForFullSync();
