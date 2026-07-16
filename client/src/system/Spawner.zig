@@ -17,7 +17,7 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
     defer tracy_scope.end();
     const world = info.world;
     const gpa = system_context.gpa;
-    defer clearPendingSpawns(world);
+    defer world.clearPendingSpawns();
 
     for (world.pending_spawn.items) |entity_info| {
         if (world.getPtr(entity_info.id)) |entity| {
@@ -43,7 +43,6 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         try applySpawnData(world, entity, entity_info);
         switch (entity_info.kind) {
             .player => {
-                try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
                 if (entity_info.id == world.player_id) {
                     world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
                     world.controller.free_camera = false;
@@ -77,7 +76,6 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
                     entity.transform.scale = @splat(5);
                     world.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
-                try system_context.renderer.inner.attachSkeleton(gpa, entity.id, entity_info.kind);
             },
             .unknown, .item, .lootbox => {},
         }
@@ -101,7 +99,6 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
 
     for (world.pending_despawn.items) |id| {
         if (world.getPtr(id) == null) continue;
-        system_context.renderer.inner.removeSkeleton(gpa, id);
         if (std.mem.indexOfScalar(shared.entity.Id, world.teleporter_bosses.items, id)) |index_of_boss| {
             _ = world.teleporter_bosses.swapRemove(index_of_boss);
         }
@@ -109,16 +106,6 @@ pub fn update(info: *const system.Info, system_context: *system.Context) !void {
         _ = world.despawn(id);
     }
     world.pending_despawn.clearRetainingCapacity();
-}
-
-fn clearPendingSpawns(world: *system.World) void {
-    for (world.pending_spawn.items) |entity_info| {
-        switch (entity_info.data) {
-            .player_name => |player_name| if (player_name.name.len != 0) world.gpa.free(player_name.name),
-            .none, .planet_radius, .is_teleporter_boss => {},
-        }
-    }
-    world.pending_spawn.clearRetainingCapacity();
 }
 
 pub fn applySpawnData(world: *system.World, entity: *system.Entity, entity_info: shared.net.SpawnEntity) !void {

@@ -88,6 +88,10 @@ pub const Context = struct {
         const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
         info.world.updateParticles(info.delta_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
+        if (info.world.request_main_menu) {
+            info.world.request_main_menu = false;
+            try self.network_manager.returnToMainMenu(info);
+        }
         self.request_exit = self.request_exit or info.world.request_quit;
         if (paused_for_input or info.world.pause_menu_open or info.world.options_menu_open) {
             info.world.controller.clearInput();
@@ -98,6 +102,7 @@ pub const Context = struct {
         try self.asset_server.update();
         try self.network_manager.update(info);
         try Spawner.update(info, self);
+        try self.renderer.inner.reconcileSkeletons(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

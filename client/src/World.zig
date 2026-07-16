@@ -80,6 +80,7 @@ pause_menu_open: bool = false,
 options_menu_open: bool = false,
 options_menu_return_to_pause: bool = false,
 request_quit: bool = false,
+request_main_menu: bool = false,
 stage: u32 = 0,
 prng: std.Random.DefaultPrng,
 
@@ -146,9 +147,10 @@ pub fn deinit(self: *@This()) void {
 }
 
 pub fn clearSession(self: *@This()) void {
+    for (self.entities.values()) |*entity| entity.deinit(self.gpa);
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
-    self.pending_spawn.clearRetainingCapacity();
+    self.clearPendingSpawns();
     self.pending_despawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
@@ -168,6 +170,16 @@ pub fn clearSession(self: *@This()) void {
     self.options_menu_open = false;
     self.options_menu_return_to_pause = false;
     self.stage = 0;
+}
+
+pub fn clearPendingSpawns(self: *@This()) void {
+    for (self.pending_spawn.items) |entity_info| {
+        switch (entity_info.data) {
+            .player_name => |player_name| if (player_name.name.len != 0) self.gpa.free(player_name.name),
+            .none, .planet_radius, .is_teleporter_boss => {},
+        }
+    }
+    self.pending_spawn.clearRetainingCapacity();
 }
 
 pub fn spawn(self: *@This(), id: shared.entity.Id) !*Entity {

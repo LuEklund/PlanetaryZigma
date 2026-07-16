@@ -134,10 +134,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.menu_player.deinit(gpa, self.vma);
     self.resources.deinit(gpa, self.vma, self.device);
 
-    var it = self.skeletons.valueIterator();
-    while (it.next()) |skeleton| {
-        skeleton.deinit(gpa, self.vma);
-    }
+    self.clearSkeletons(gpa);
     self.skeletons.deinit();
 
     self.ui.deinit(gpa, self.vma);
@@ -986,7 +983,24 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+pub fn reconcileSkeletons(self: *@This(), gpa: std.mem.Allocator, world: *World) !void {
+    var reap: [shared.max_entities]shared.entity.Id = undefined;
+    var reap_count: usize = 0;
+    var it = self.skeletons.iterator();
+    while (it.next()) |entry| {
+        const id = entry.key_ptr.*;
+        const backed = if (world.getPtr(id)) |entity| self.isSkinnedKind(entity.kind) else false;
+        if (!backed) {
+            reap[reap_count] = id;
+            reap_count += 1;
+        }
+    }
+    for (reap[0..reap_count]) |id| self.removeSkeleton(gpa, id);
+    for (world.entities.values()) |*entity| try self.ensureSkeleton(gpa, entity.id, entity.kind);
+}
+
+fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+    if (self.skeletons.contains(entity_id)) return;
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
@@ -995,11 +1009,21 @@ pub fn attachSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-pub fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
+fn isSkinnedKind(self: *@This(), entity_kind: shared.entity.Kind) bool {
+    return self.resources.models.getPtr(.fromKind(entity_kind)).isSkinned();
+}
+
+fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
     }
+}
+
+fn clearSkeletons(self: *@This(), gpa: std.mem.Allocator) void {
+    var it = self.skeletons.valueIterator();
+    while (it.next()) |skeleton| skeleton.deinit(gpa, self.vma);
+    self.skeletons.clearRetainingCapacity();
 }
 
 fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {

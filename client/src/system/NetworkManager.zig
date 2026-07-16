@@ -236,6 +236,7 @@ pub fn update(self: *@This(), info: *const Info) !void {
             self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
             @memset(&self.server_list.servers[i].id_str, 0);
             _ = try std.fmt.bufPrint(&self.server_list.servers[i].id_str, "{d}", .{self.server_list.servers[i].steam_id});
+            std.log.info("browser server[{d}] my_ver={d} tags=\"{s}\"", .{ i, shared.net.protocol_version, std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0) });
         }
         self.server_list.count = self.steam_client.browser.list.count;
     }
