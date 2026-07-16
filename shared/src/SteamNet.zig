@@ -7,6 +7,7 @@ pub const Client = @import("steamNet/Client.zig");
 /// Mirrors steam.HSteamNetConnection (u32). Defined locally so the dynlib
 /// doesn't need to import the steamworks package.
 pub const max_msg_bytes: usize = 1024;
+pub const local_server_port: u16 = 27018;
 
 pub const Connection = u32;
 
@@ -17,6 +18,12 @@ pub const SendFlags = enum(i32) {
     reliable = steam.k_nSteamNetworkingSend_Reliable,
     reliable_no_nagle = steam.k_nSteamNetworkingSend_ReliableNoNagle,
 };
+
+pub fn allowIpWithoutAuthOption() steam.SteamNetworkingConfigValue_t {
+    var option: steam.SteamNetworkingConfigValue_t = undefined;
+    option.SetInt32(.k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1);
+    return option;
+}
 
 pub const Message = struct {
     conn: Connection,

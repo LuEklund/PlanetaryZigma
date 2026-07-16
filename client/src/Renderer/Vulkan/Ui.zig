@@ -171,15 +171,20 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma) void {
 }
 
 pub fn start(self: *@This(), mouse_state: MouseState) void {
+    const left_click_prev = self.mouse_state.left_click;
+    self.mouse_state = mouse_state;
     self.hotUpdate();
     // self.activeUpdate();
+    if (mouse_state.left_click and !left_click_prev) self.active_item = self.hot_item;
+    if (!mouse_state.left_click) self.active_item = null;
     self.text_len = 0;
     self.writer_len = 0;
-    self.left_click_prev = mouse_state.left_click;
+    self.left_click_prev = left_click_prev;
+    self.pressed = mouse_state.left_click and !left_click_prev;
+    self.released = !mouse_state.left_click and left_click_prev;
     self.nodes.clearRetainingCapacity();
     self.quads.clearRetainingCapacity();
     self.names.clearRetainingCapacity();
-    self.mouse_state = mouse_state;
 }
 
 pub fn end(self: *@This()) void {
@@ -371,6 +376,14 @@ pub fn isHot(self: *@This(), name: []const u8) bool {
 
 pub fn isActive(self: *@This(), name: []const u8) bool {
     return (eqlName(name, self.hot_item) and self.mouse_state.left_click);
+}
+
+pub fn isClicked(self: *@This(), name: []const u8) bool {
+    return (eqlName(name, self.hot_item) and self.pressed);
+}
+
+pub fn isDragging(self: *@This(), name: []const u8) bool {
+    return (eqlName(name, self.active_item) and self.mouse_state.left_click);
 }
 
 fn hotUpdate(self: *@This()) void {

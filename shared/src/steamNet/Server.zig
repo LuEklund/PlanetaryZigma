@@ -1,12 +1,14 @@
 const std = @import("std");
 const steam = @import("steamworks");
 const Packets = @import("../SteamNet.zig").Packets;
+const SteamNet = @import("../SteamNet.zig");
 
 connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
 host_steam_id: u64,
 host_conn: steam.HSteamNetConnection,
 host_state: HostState,
+mode: Mode,
 
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
@@ -17,10 +19,21 @@ io: std.Io,
 pipe: steam.HSteamPipe,
 gs: steam.ISteamGameServer,
 socket: steam.ISteamNetworkingSockets,
+listen_socket: steam.HSteamListenSocket,
 packets: Packets,
 
 pub const max_connections: usize = 32;
 pub const server_file_name = "server_id";
+
+pub const Mode = enum(u8) {
+    steam_p2p,
+    local_singleplayer,
+};
+
+pub const InitOptions = struct {
+    mode: Mode = .steam_p2p,
+    host_steam_id: u64 = 0,
+};
 
 pub const HostState = enum(u8) {
     none,
@@ -29,13 +42,17 @@ pub const HostState = enum(u8) {
     left,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, host_steam_id: u64) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !@This() {
+    const server_mode: steam.EServerMode = switch (options.mode) {
+        .steam_p2p => .eServerModeAuthentication,
+        .local_singleplayer => .eServerModeNoAuthentication,
+    };
     if (!steam.Server.SteamInternal_GameServer_Init(
         0,
         27016,
         27017,
         steam.STEAMGAMESERVER_QUERY_PORT_SHARED,
-        steam.EServerMode.eServerModeAuthentication,
+        server_mode,
         "1.0.0.0",
     )) @panic("failed to init steam game server");
 
@@ -47,37 +64,57 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, host_steam_id: u64) !@This() {
     gs.SetServerName("Planetary Zigma");
     gs.SetMapName("default");
     gs.SetPasswordProtected(false);
-    gs.LogOnAnonymous();
     var product_buf: [16]u8 = undefined;
     const product = std.fmt.bufPrintZ(&product_buf, "{d}", .{steam.SteamGameServerUtils().GetAppID()}) catch unreachable;
     gs.SetProduct(product);
-    gs.SetAdvertiseServerActive(true);
+    gs.SetAdvertiseServerActive(options.mode == .steam_p2p);
 
     steam.SteamAPI_ManualDispatch_Init();
     const pipe = steam.SteamGameServer_GetHSteamPipe();
 
-    var connected = false;
-    var deadline: u32 = 0;
-    while (!connected and deadline < 1000) : (deadline += 1) {
-        switch (try steamCallback(null, gpa, pipe, null)) {
-            101 => connected = true,
-            else => {},
-        }
+    if (options.mode == .steam_p2p) {
+        gs.LogOnAnonymous();
 
-        try io.sleep(.{ .nanoseconds = std.time.ns_per_s }, .real);
+        var connected = false;
+        var deadline: u32 = 0;
+        while (!connected and deadline < 1000) : (deadline += 1) {
+            switch (try steamCallback(null, gpa, pipe, null)) {
+                101 => connected = true,
+                else => {},
+            }
+
+            try io.sleep(.{ .nanoseconds = std.time.ns_per_s }, .real);
+        }
+        if (!connected) return error.LogonTimeout;
     }
-    if (!connected) return error.LogonTimeout;
 
     std.log.info("\nSTEAM_ID {d}\n", .{gs.GetSteamID()});
 
     const sock = steam.SteamGameServerNetworkingSockets_SteamAPI();
-    const listen = sock.CreateListenSocketP2P(0, &.{});
+    const listen = switch (options.mode) {
+        .steam_p2p => sock.CreateListenSocketP2P(0, &.{}),
+        .local_singleplayer => listen: {
+            var address: steam.SteamNetworkingIPAddr = undefined;
+            address.Clear();
+            address.SetIPv4(0x7f000001, SteamNet.local_server_port);
+            const option = SteamNet.allowIpWithoutAuthOption();
+            break :listen sock.CreateListenSocketIP(&address, &.{option});
+        },
+    };
     if (listen == 0) return error.ListenFailed;
 
-    if (host_steam_id != 0) {
-        var id_buf: [20]u8 = undefined;
-        const id_text = try std.fmt.bufPrint(&id_buf, "{d}", .{gs.GetSteamID()});
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_file_name, .data = id_text });
+    switch (options.mode) {
+        .steam_p2p => if (options.host_steam_id != 0) {
+            var id_buf: [20]u8 = undefined;
+            const id_text = try std.fmt.bufPrint(&id_buf, "{d}", .{gs.GetSteamID()});
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_file_name, .data = id_text });
+        },
+        .local_singleplayer => {
+            var id_buf: [20]u8 = undefined;
+            const id_text = try std.fmt.bufPrint(&id_buf, "local:{d}", .{SteamNet.local_server_port});
+            std.log.info("local singleplayer listening on localhost:{d}", .{SteamNet.local_server_port});
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_file_name, .data = id_text });
+        },
     }
 
     return .{
@@ -85,12 +122,14 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, host_steam_id: u64) !@This() {
         .pipe = pipe,
         .gs = gs,
         .socket = sock,
+        .listen_socket = listen,
         .io = io,
         .packets = .{},
         .handle_packets_future = undefined,
-        .host_steam_id = host_steam_id,
+        .host_steam_id = options.host_steam_id,
         .host_conn = 0,
-        .host_state = if (host_steam_id == 0) .none else .waiting,
+        .host_state = if (options.host_steam_id != 0 or options.mode == .local_singleplayer) .waiting else .none,
+        .mode = options.mode,
     };
 }
 
@@ -110,6 +149,7 @@ pub fn updateSessionMetadata(self: *@This(), max_players: usize, host_name: []co
 }
 
 pub fn deinit(self: *@This()) void {
+    if (self.listen_socket != 0) _ = self.socket.CloseListenSocket(self.listen_socket);
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
 }
@@ -240,6 +280,10 @@ fn steamCallback(
                             self.?.host_conn = event.m_hConn;
                             self.?.host_state = .connected;
                             std.log.info("host connected (conn={d})", .{event.m_hConn});
+                        } else if (self.?.mode == .local_singleplayer and self.?.host_conn == 0) {
+                            self.?.host_conn = event.m_hConn;
+                            self.?.host_state = .connected;
+                            std.log.info("local host connected (conn={d})", .{event.m_hConn});
                         }
                         self.?.addConnection(event.m_hConn);
                         try self.?.packets.pushEvent(gpa, .{ .connected = event.m_hConn });

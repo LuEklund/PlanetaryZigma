@@ -19,6 +19,8 @@ render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
 server_list: ServerList = .{},
 host_state: HostState = .none,
+host_intent: HostIntent = .none,
+steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
 
 pub const HostState = enum(u8) {
@@ -26,12 +28,28 @@ pub const HostState = enum(u8) {
     requested,
     waiting,
     hosting,
+    failed,
+    steam_offline,
+};
+
+pub const HostIntent = enum(u8) {
+    none,
+    singleplayer,
+    multiplayer,
 };
 
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
     count: usize = 0,
     refresh: bool = true,
+};
+
+const server_exe_name = if (builtin.os.tag == .windows) "server.exe" else "server";
+const server_dir_candidates = [_][]const u8{ "../server", "server", "../../../server" };
+
+const HostServer = struct {
+    dir: []const u8,
+    exe_path: []const u8,
 };
 
 pub fn init(
@@ -44,6 +62,7 @@ pub fn init(
         .gpa = gpa,
         .io = io,
         .steam_client = net,
+        .steam_logged_on = net.isLoggedOn(),
     };
 }
 
@@ -51,26 +70,89 @@ pub fn deinit(self: *@This()) void {
     if (self.server_process) |*child| child.kill(self.io);
 }
 
-fn spawnHostServer(self: *@This()) void {
+fn stopHostServer(self: *@This()) void {
+    if (self.server_process) |*child| child.kill(self.io);
+    self.server_process = null;
+}
+
+pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
+    try self.steam_client.packet_mutex.lock(self.io);
+    defer self.steam_client.packet_mutex.unlock(self.io);
+    self.steam_client.disconnect();
+
+    self.stopHostServer();
+    self.server_conn = 0;
+    self.server_tick_estimate = 0;
+    self.server_tick_latest = 0;
+    self.sent_connect = false;
     self.host_state = .none;
-    inline for (.{ "../server", "server" }) |dir| {
-        if (std.Io.Dir.cwd().access(self.io, dir, .{})) |_| {
-            std.Io.Dir.cwd().deleteFile(self.io, dir ++ "/" ++ shared.SteamNet.Server.server_file_name) catch {};
-            var host_steam_id_buf: [20]u8 = undefined;
-            const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
-            const server_exe = if (builtin.os.tag == .windows) "zig-out/bin/server.exe" else "zig-out/bin/server";
-            self.server_process = std.process.spawn(self.io, .{
-                .argv = &.{ server_exe, host_steam_id_text },
-                .cwd = .{ .path = dir },
-            }) catch |err| {
-                std.log.err("spawn host server: {t}", .{err});
-                return;
-            };
-            self.host_state = .waiting;
-            return;
-        } else |_| {}
+    self.host_intent = .none;
+    info.world.clearSession();
+}
+
+pub fn requestHost(self: *@This(), intent: HostIntent) void {
+    if (intent == .multiplayer and !self.steam_logged_on) {
+        self.host_state = .steam_offline;
+        self.host_intent = intent;
+        return;
     }
-    std.log.err("host: server directory not found", .{});
+    if (self.host_state == .none or self.host_state == .failed or self.host_state == .steam_offline) {
+        self.host_state = .requested;
+        self.host_intent = intent;
+    }
+}
+
+fn findHostServer(self: *@This(), dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+    for (server_dir_candidates) |candidate| {
+        var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
+        defer server_dir.close(self.io);
+
+        var exe_rel_buf: [64]u8 = undefined;
+        const exe_rel = std.fmt.bufPrint(&exe_rel_buf, "zig-out/bin/{s}", .{server_exe_name}) catch unreachable;
+        server_dir.access(self.io, exe_rel, .{}) catch continue;
+
+        const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
+        const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
+        return .{
+            .dir = dir_buf[0..dir_len],
+            .exe_path = exe_path_buf[0..exe_path_len],
+        };
+    }
+    return null;
+}
+
+fn spawnHostServer(self: *@This()) void {
+    var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
+        self.host_state = .failed;
+        std.log.err("host: {s} not found; build the server for this OS first", .{server_exe_name});
+        return;
+    };
+
+    var server_id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const server_id_path = std.fmt.bufPrint(&server_id_path_buf, "{s}/{s}", .{ host_server.dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
+    std.Io.Dir.deleteFileAbsolute(self.io, server_id_path) catch {};
+
+    var host_steam_id_buf: [20]u8 = undefined;
+    const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
+    const argv: []const []const u8 = if (self.host_intent == .singleplayer)
+        &.{ host_server.exe_path, "--local-singleplayer" }
+    else
+        &.{ host_server.exe_path, host_steam_id_text };
+    self.server_process = std.process.spawn(self.io, .{
+        .argv = argv,
+        .cwd = .{ .path = host_server.dir },
+        .stdin = .ignore,
+        .stdout = .inherit,
+        .stderr = .inherit,
+        .create_no_window = true,
+    }) catch |err| {
+        self.host_state = .failed;
+        std.log.err("spawn host server: {t}", .{err});
+        return;
+    };
+    self.host_state = .waiting;
 }
 
 fn sendConnect(self: *@This()) !void {
@@ -102,25 +184,48 @@ pub fn update(self: *@This(), info: *const Info) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
+    self.steam_logged_on = self.steam_client.isLoggedOn();
+    if (!self.steam_logged_on) {
+        self.server_list.refresh = false;
+        self.server_list.count = 0;
+        if (self.host_intent == .multiplayer and (self.host_state == .requested or self.host_state == .waiting or self.host_state == .hosting)) {
+            self.stopHostServer();
+            self.host_state = .steam_offline;
+        }
+    } else if (self.host_state == .steam_offline) {
+        self.host_state = .none;
+        self.host_intent = .none;
+    }
+
     if (self.host_state == .requested) self.spawnHostServer();
     if (self.host_state == .waiting) {
-        inline for (.{ "../server", "server" }) |dir| {
-            const id_path = dir ++ "/" ++ shared.SteamNet.Server.server_file_name;
+        for (server_dir_candidates) |dir| {
+            var id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+            const id_path = std.fmt.bufPrint(&id_path_buf, "{s}/{s}", .{ dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
             var id_buf: [20]u8 = undefined;
             if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
                 self.host_state = .hosting;
                 std.Io.Dir.cwd().deleteFile(self.io, id_path) catch {};
-                const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
-                if (server_steam_id == 0) {
-                    std.log.err("host: bad server id file", .{});
+                if (std.mem.startsWith(u8, id_text, "local:")) {
+                    const port = std.fmt.parseInt(u16, id_text["local:".len..], 10) catch 0;
+                    if (port == 0) {
+                        std.log.err("host: bad local server file", .{});
+                    } else if (self.steam_client.server_conn == 0) {
+                        try self.steam_client.connectToLocalServer(port);
+                    }
                 } else if (self.steam_client.server_conn == 0) {
-                    try self.steam_client.connectToServer(server_steam_id);
+                    const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
+                    if (server_steam_id == 0) {
+                        std.log.err("host: bad server id file", .{});
+                    } else {
+                        try self.steam_client.connectToServer(server_steam_id);
+                    }
                 }
             } else |_| {}
         }
     }
 
-    if (self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
+    if (self.steam_logged_on and self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
         self.steam_client.browser.list.refresh_state = .request;
     } else if (self.steam_client.browser.list.refresh_state == .done) {
         self.server_list.refresh = false;

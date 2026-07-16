@@ -1,6 +1,7 @@
 const std = @import("std");
 const steam = @import("steamworks");
-const Packets = @import("../SteamNet.zig").Packets;
+const SteamNet = @import("../SteamNet.zig");
+const Packets = SteamNet.Packets;
 const ServerListResponse = steam.ISteamMatchmakingServerListResponse;
 
 pub const ServerInfo = extern struct {
@@ -149,6 +150,24 @@ pub fn deinit(self: *@This()) void {
 
     steam.SteamAPI_Shutdown();
     self.packets.deinit(self.gpa);
+}
+
+pub fn disconnect(self: *@This()) void {
+    const sockets = steam.SteamNetworkingSockets_SteamAPI();
+    const conn = self.server_conn;
+    if (conn != 0) {
+        _ = sockets.CloseConnection(conn, 0, "client-main-menu", true);
+        self.server_conn = 0;
+    }
+
+    self.packets.incoming.clearRetainingCapacity();
+    self.packets.outgoing.clearRetainingCapacity();
+    self.packets.events.clearRetainingCapacity();
+}
+
+pub fn isLoggedOn(self: *const @This()) bool {
+    _ = self;
+    return steam.SteamUser().BLoggedOn();
 }
 
 fn endReasonName(reason: i32) []const u8 {
@@ -304,4 +323,18 @@ pub fn connectToServer(self: *@This(), steam_id: u64) !void {
     }
     self.server_conn = conn;
     std.log.info("ConnectP2P({d}) -> {d}", .{ steam_id, conn });
+}
+
+pub fn connectToLocalServer(self: *@This(), port: u16) !void {
+    var address: steam.SteamNetworkingIPAddr = undefined;
+    address.Clear();
+    address.SetIPv4(0x7f000001, port);
+    const option = SteamNet.allowIpWithoutAuthOption();
+    const conn = steam.SteamNetworkingSockets_SteamAPI().ConnectByIPAddress(&address, &.{option});
+    if (conn == 0) {
+        std.log.err("ConnectByIPAddress(localhost:{d}) failed", .{port});
+        return;
+    }
+    self.server_conn = conn;
+    std.log.info("ConnectByIPAddress(localhost:{d}) -> {d}", .{ port, conn });
 }

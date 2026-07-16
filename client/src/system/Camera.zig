@@ -43,8 +43,10 @@ pub fn update(self: *@This(), info: *const Info) void {
 
     const controller = &info.world.controller;
     const keys = controller.input_map.keys;
-    const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * sensitivity);
-    const delta_pitch: f32 = @floatCast(-controller.mouse_delta[1] * sensitivity);
+    const mouse_sensitivity = sensitivity * info.world.options.mouse_sensitivity;
+    const pitch_direction: f64 = if (info.world.options.invert_y) 1 else -1;
+    const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * mouse_sensitivity);
+    const delta_pitch: f32 = @floatCast(controller.mouse_delta[1] * pitch_direction * mouse_sensitivity);
     const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
 
     if (controller.free_camera) {
