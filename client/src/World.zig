@@ -88,6 +88,7 @@ pub const Entity = struct {
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
+    currency: u32 = 0,
 
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,

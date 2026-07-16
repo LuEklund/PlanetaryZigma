@@ -61,6 +61,7 @@ pub const Entity = struct {
     controller: Controller = .{},
     camera: Camera = .{},
     lifetime: ?f32 = null,
+    currency: u32 = 0,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
