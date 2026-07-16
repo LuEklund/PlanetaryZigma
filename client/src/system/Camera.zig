@@ -30,7 +30,7 @@ pub fn update(self: *@This(), info: *const Info) void {
     const pitch_direction: f64 = if (info.world.options.invert_y) 1 else -1;
     const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * mouse_sensitivity);
     const delta_pitch: f32 = @floatCast(controller.mouse_delta[1] * pitch_direction * mouse_sensitivity);
-    const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
+    const pitch_limit: f32 = std.math.degreesToRadians(80);
 
     if (controller.free_camera) {
         self.free_speed = std.math.clamp(self.free_speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(controller.mouse_wheel))), 1, 1000);

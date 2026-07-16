@@ -41,18 +41,22 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
             self.credits += self.salary_per_second;
         }
         const rand = info.world.prng.random();
-        const x = rand.float(f32) * 2 - 1;
-        const y = rand.float(f32) * 2 - 1;
-        const z = rand.float(f32) * 2 - 1;
-        const vector_direction: nz.Vec3(f32) = .{ x, y, z };
         if (self.credits >= self.enemy_cost) {
-            if (info.world.spawn(.{
-                .kind = .{ .enemy = .tubloid },
-                .transform = .{ .position = vector_direction },
-                .last_attack = info.elapsed_time,
-            })) |_| {
-                self.credits -= self.enemy_cost;
-            } else |_| {}
+            const player_index = rand.uintLessThan(usize, info.world.players.items.len);
+            if (info.world.getPtr(info.world.players.items[player_index])) |player| {
+                const radius_float: f32 = @floatFromInt(info.world.planet_radius);
+                const max_distance = radius_float * (std.math.pi / 2.0);
+                const min_distance = @min(15.0, max_distance * 0.5);
+                const surface = shared.planetSurfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
+                const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+                if (info.world.spawn(.{
+                    .kind = .{ .enemy = .tubloid },
+                    .transform = .{ .position = spawn_position },
+                    .last_attack = info.elapsed_time,
+                })) |_| {
+                    self.credits -= self.enemy_cost;
+                } else |_| {}
+            }
         }
     }
 }
@@ -66,7 +70,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = @intFromFloat(random.float(f32) * 98 + 2);
+    world.planet_radius = random.intRangeAtMost(u32, shared.planet_min_radius, 100);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
     _ = try world.spawn(.{
@@ -83,34 +87,35 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
             .object_layer = .non_moving,
         },
     });
-    // the teleporter placement raycast below needs the planet body to exist
     try world.flush(physics);
 
+    const player_spawn_surface = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
+    const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
     for (world.entities.values()) |*player| {
-        if (player.kind != .player or !player.flags.is_dead) continue;
-        player.flags.is_dead = false;
-        player.transform.position = .{ 0, @as(f32, @floatFromInt(world.planet_radius)) + 10, 0 };
+        if (player.kind != .player) continue;
+        player.transform.position = player_spawn_position;
         player.velocity = .{ 0, 0, 0 };
-        player.stats.setCurrent(.health, player.stats.get(.health).max);
-        try physics.createBody(player);
-        world.players.appendAssumeCapacity(player.id);
-        world.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
+        if (player.flags.is_dead) {
+            player.flags.is_dead = false;
+            player.stats.setCurrent(.health, player.stats.get(.health).max);
+            try physics.createBody(player);
+            world.players.appendAssumeCapacity(player.id);
+            world.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
+        } else if (player.collider.body_id) |body_id| {
+            Physics.setPosition(body_id, player_spawn_position);
+            Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
+        }
     }
 
     for (stage_item_spawns) |spawn_spec| {
         const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
         for (0..random_spawn_count) |_| {
             const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            try spawnItem(world, physics, spawn_spec.kind, vector_direction);
+            try spawnItem(world, spawn_spec.kind, vector_direction);
         }
     }
 
-    var teleport_position: ?nz.Vec3(f32) = null;
-    for (0..10) |_| {
-        teleport_position = physics.getSurfacePoint(world, .{ 0, 100, 0 });
-        if (teleport_position != null) break;
-    }
-    const teleporter_position = teleport_position orelse nz.Vec3(f32){ 0, @floatFromInt(world.planet_radius), 0 };
+    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
     const teleporter = try world.spawn(.{
         .kind = .teleporter,
         .transform = .{ .position = teleporter_position },
@@ -128,8 +133,8 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
     world.teleporter_id = teleporter.id;
 }
 
-fn spawnItem(world: *system.World, physics: *Physics, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
-    const transform = itemSurfaceTransform(world, physics, vector_direction);
+fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
+    const transform = itemSurfaceTransform(world, vector_direction);
     const item = try world.spawn(.{
         .kind = .{ .item = kind },
         .transform = transform,
@@ -137,9 +142,8 @@ fn spawnItem(world: *system.World, physics: *Physics, kind: shared.Item.Kind, ve
     std.log.debug("spawn item {t} id={d}", .{ kind, item.id });
 }
 
-fn itemSurfaceTransform(world: *system.World, physics: *Physics, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
-    const fallback_surface = nz.vec.scale(vector_direction, @as(f32, @floatFromInt(world.planet_radius)));
-    const surface = physics.getSurfacePoint(world, vector_direction) orelse fallback_surface;
+fn itemSurfaceTransform(world: *system.World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
+    const surface = shared.planetSurfacePoint(vector_direction, @floatFromInt(world.planet_radius));
     const planet_up = nz.vec.normalize(surface);
     return .{
         .position = surface + nz.vec.scale(planet_up, item_surface_offset),

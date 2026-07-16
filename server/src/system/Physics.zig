@@ -110,13 +110,11 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
-            const result = self.samplePlanetRandomSurfacePoint(info.world);
-            if (result) |const_point| {
-                var point = const_point;
-                point += nz.vec.scale(nz.vec.normalize(point), 5);
-                c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
-                c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
-            }
+            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
+            var point = shared.planetSurfacePoint(direction, @floatFromInt(info.world.planet_radius));
+            point += nz.vec.scale(nz.vec.normalize(point), 5);
+            c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
+            c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
@@ -305,23 +303,3 @@ pub fn moveTowardsOnPlanet(
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
 }
 
-pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
-    const random = world.prng.random();
-    const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    // radius * 2 starts inside the terrain on tiny planets (mesh min radius + noise)
-    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) + 10);
-    const translation = nz.vec.scale(origin, -2.0);
-
-    const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
-    if (!result.hit) return null;
-    return toVec(result.point);
-}
-
-pub fn getSurfacePoint(self: *@This(), world: *system.World, from_point: nz.Vec3(f32)) ?nz.Vec3(f32) {
-    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) + 10);
-    const translation = nz.vec.scale(origin, -2.0);
-
-    const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
-    if (!result.hit) return null;
-    return toVec(result.point);
-}

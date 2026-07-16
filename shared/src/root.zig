@@ -5,7 +5,10 @@ pub const numz = @import("numz");
 pub const net = @import("net.zig");
 pub const PlanetKind = @import("planet.zig").PlanetKind;
 pub const Planet = @import("planet.zig").Planet;
+pub const planet_min_radius = @import("planet.zig").min_radius;
 pub const planetSdf = @import("planet.zig").sdf;
+pub const planetSurfacePoint = @import("planet.zig").surfacePoint;
+pub const planetSurfacePointNear = @import("planet.zig").surfacePointNear;
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
