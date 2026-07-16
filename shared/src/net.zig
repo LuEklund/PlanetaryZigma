@@ -38,11 +38,23 @@ pub const ServerPacket = union(enum) {
     update_stat: UpdateStat,
     update_event: Event,
     update_inventory: UpdateInventory,
+    update_player_name: PlayerNameUpdate,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const Connect = struct {
+    name_len: u16,
+    name: []const u8,
+};
+
+pub const PlayerName = struct {
+    name_len: u16,
+    name: []const u8,
+};
+
+pub const PlayerNameUpdate = struct {
+    id: entity.Id,
     name_len: u16,
     name: []const u8,
 };
@@ -66,6 +78,7 @@ pub const SpawnEntityData = union(enum) {
     none: void,
     planet_radius: u32,
     is_teleporter_boss: void,
+    player_name: PlayerName,
 };
 
 pub const DespawnEntity = struct {
@@ -162,10 +175,11 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .int => try writer.writeInt(T, value, endian),
         .float => |float| try writer.writeInt(@Int(.signed, float.bits), @bitCast(value), endian),
         .pointer => |pointer| {
-            if (pointer.child == u8)
-                try writer.writeAll(value)
-            else
-                try writer.writeSliceEndian(pointer.child, value, endian);
+            comptime std.debug.assert(pointer.size == .slice);
+            if (pointer.child == u8) {
+                try writer.writeAll(value);
+                try writer.splatByteAll(0, (4 - (value.len % 4)) % 4);
+            } else try writer.writeSliceEndian(pointer.child, value, endian);
         },
         .array => |array| if (array.child == u8)
             try writer.writeAll(&value)

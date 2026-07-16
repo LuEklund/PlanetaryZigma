@@ -157,9 +157,17 @@ fn spawnHostServer(self: *@This()) void {
 }
 
 fn sendConnect(self: *@This()) !void {
-    const name = "lucas";
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = name.len, .name = name } };
+    const name = self.playerDisplayName();
+    const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = @intCast(name.len), .name = name } };
     try self.sendCommand(cmd, .reliable);
+}
+
+fn playerDisplayName(self: *const @This()) []const u8 {
+    const steam_name = std.mem.trim(u8, self.steam_client.personaName(), " \t\r\n");
+    return if (steam_name.len == 0)
+        shared.default_player_name
+    else
+        steam_name[0..@min(steam_name.len, shared.max_player_name_len)];
 }
 
 pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
@@ -225,8 +233,8 @@ pub fn update(self: *@This(), info: *const Info) !void {
         self.server_list.refresh = false;
         self.steam_client.browser.list.refresh_state = .idle;
         for (0..self.steam_client.browser.list.count) |i| {
-            @memcpy(self.server_list.servers[i].name[0..], self.steam_client.browser.list.servers[i].name[0..]);
-            self.server_list.servers[i].steam_id = self.steam_client.browser.list.servers[i].steam_id;
+            self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
+            @memset(&self.server_list.servers[i].id_str, 0);
             _ = try std.fmt.bufPrint(&self.server_list.servers[i].id_str, "{d}", .{self.server_list.servers[i].steam_id});
         }
         self.server_list.count = self.steam_client.browser.list.count;
@@ -256,9 +264,14 @@ pub fn update(self: *@This(), info: *const Info) !void {
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
+    if (info.world.getPtr(info.world.player_id)) |player| {
+        if (player.kind == .player and player.player_name.len == 0) {
+            try info.world.setPlayerName(player, self.playerDisplayName());
+        }
+    }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     for (self.steam_client.packets.incoming.items) |*msg| {
-        var msg_reader: std.Io.Reader = .fixed(&msg.bytes);
+        var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
         const parsed = shared.net.parse(shared.net.ServerPacket, reader) catch |err| {
             std.log.err("parse packet: {s}", .{@errorName(err)});
@@ -280,19 +293,23 @@ fn handleCommand(
 ) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
+            const name = self.playerDisplayName();
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            info.world.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .none });
+            try self.queueSpawn(info.world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .{ .name_len = @intCast(name.len), .name = name } } });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
         },
         .spawn_entity => |spawn_entity| {
-            if (info.world.getPtr(spawn_entity.id) != null) return;
+            if (info.world.getPtr(spawn_entity.id)) |entity| {
+                try Spawner.applySpawnData(info.world, entity, spawn_entity);
+                return;
+            }
             if (spawn_entity.kind == .unknown) {
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            info.world.pending_spawn.appendAssumeCapacity(spawn_entity);
+            try self.queueSpawn(info.world, spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
@@ -338,5 +355,40 @@ fn handleCommand(
             };
             entity.inventory.set(inventory.item_kind, inventory.set);
         },
+        .update_player_name => |player_name| {
+            const entity = info.world.getPtr(player_name.id) orelse {
+                try self.queuePlayerName(info.world, player_name);
+                return;
+            };
+            if (entity.kind == .player) try info.world.setPlayerName(entity, player_name.name);
+        },
     }
+}
+
+fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntity) !void {
+    if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
+
+    var queued_spawn = spawn_entity;
+    switch (spawn_entity.data) {
+        .player_name => |player_name| {
+            const name = try self.gpa.dupe(u8, player_name.name);
+            queued_spawn.data = .{ .player_name = .{
+                .name_len = @intCast(name.len),
+                .name = name,
+            } };
+        },
+        .none, .planet_radius, .is_teleporter_boss => {},
+    }
+    world.pending_spawn.appendAssumeCapacity(queued_spawn);
+}
+
+fn queuePlayerName(self: *@This(), world: *World, player_name: shared.net.PlayerNameUpdate) !void {
+    if (world.pending_player_names.items.len >= world.pending_player_names.capacity) return error.PendingPlayerNameFull;
+
+    const name = try self.gpa.dupe(u8, player_name.name);
+    world.pending_player_names.appendAssumeCapacity(.{
+        .id = player_name.id,
+        .name_len = @intCast(name.len),
+        .name = name,
+    });
 }

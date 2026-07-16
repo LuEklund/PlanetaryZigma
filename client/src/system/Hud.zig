@@ -112,7 +112,8 @@ fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top
 }
 
 fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f32, width: f32) !void {
-    const row_height: f32 = 42;
+    const button_height: f32 = 42;
+    const row_height: f32 = 64;
     const row_gap: f32 = 8;
     const panel_width = @max(@as(f32, 260), width);
     const button_width = (panel_width - row_gap) * 0.5;
@@ -122,7 +123,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
 
     ui.add(null, .{
         .name = "menu_refresh",
-        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
+        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -133,7 +134,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     }
     ui.add(null, .{
         .name = "menu_host",
-        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
+        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
         .offset = .{ .left = left + button_width + row_gap, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -149,8 +150,8 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
 
     if (network_manager.server_list.count == 0) {
         ui.add(null, .{
-            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
-            .offset = .{ .left = left, .top = top + row_height + row_gap },
+            .size = .{ .fixed = .{ .heigth = button_height, .width = panel_width } },
+            .offset = .{ .left = left, .top = top + button_height + row_gap },
             .color = .new(0.02, 0.025, 0.025, 0.62),
             .child_anchor = .{ .x = .center, .y = .center },
             .text = .{
@@ -161,20 +162,53 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
         });
         return;
     }
+
     const max_rows = @min(network_manager.server_list.count, network_manager.server_list.servers.len);
     for (0..max_rows) |i| {
         const server = &network_manager.server_list.servers[i];
-        const label = ui.print("{d}", .{server.steam_id});
-        const row_top = top + (row_height + row_gap) * @as(f32, @floatFromInt(i + 1));
+        const id = serverId(ui, server);
+        const title = clippedText(ui, serverTitle(ui, server), 42);
+        const tags = serverTags(server);
+        const host = tagValue(tags, "host");
+        const players = tagValue(tags, "players");
+        const host_text = if (host.len == 0)
+            "Host: unknown"
+        else
+            ui.print("Host: {s}", .{clippedText(ui, host, 36)});
+        const player_text = if (players.len == 0)
+            ui.print("Players: {d}/{d}", .{ @max(server.player_count, 0), @max(server.max_players, 0) })
+        else
+            ui.print("Players: {s}", .{clippedText(ui, players, 54)});
+        const row_top = top + button_height + row_gap + (row_height + row_gap) * @as(f32, @floatFromInt(i));
+        const hot = ui.isHot(id);
+
         ui.add(null, .{
-            .name = label,
+            .name = id,
+            .axis_align = .vertical,
+            .gap = 2,
+            .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
-            .color = if (ui.isHot(label)) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
-            .child_anchor = .{ .x = .center, .y = .center },
-            .text = .{ .data = label, .size = 24, .color = .new(0.94, 0.96, 0.9, 1) },
+            .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .children = &.{
+                .{
+                    .size = .{ .fixed = .{ .heigth = 24, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = title, .size = 20, .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1) },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = host_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = player_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                },
+            },
         });
-        if (ui.isActive(label)) {
+        if (ui.isActive(id)) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.debug("connect to {d}", .{server.steam_id});
         }
@@ -511,6 +545,41 @@ fn addOptionsButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top:
     });
 }
 
+fn serverId(ui: *Ui, server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const id = std.mem.sliceTo(server.id_str[0..], 0);
+    return if (id.len == 0) ui.print("{d}", .{server.steam_id}) else id;
+}
+
+fn serverTitle(ui: *Ui, server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const title = std.mem.sliceTo(server.name[0..], 0);
+    return if (title.len == 0) serverId(ui, server) else title;
+}
+
+fn serverTags(server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    return std.mem.sliceTo(server.game_tags[0..], 0);
+}
+
+fn tagValue(tags: []const u8, comptime key: []const u8) []const u8 {
+    var rest = tags;
+    while (rest.len != 0) {
+        const separator_index = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
+        const part = rest[0..separator_index];
+        if (part.len > key.len and std.mem.eql(u8, part[0..key.len], key) and part[key.len] == '=') {
+            return part[key.len + 1 ..];
+        }
+        if (separator_index == rest.len) break;
+        rest = rest[separator_index + 1 ..];
+    }
+    return "";
+}
+
+fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
+    if (text.len <= max_len) return text;
+    if (max_len <= 3) return text[0..max_len];
+    return ui.print("{s}...", .{text[0 .. max_len - 3]});
+}
+
+
 fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
@@ -529,7 +598,10 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
 
+
     if (info.world.getPtr(info.world.player_id)) |player| {
+        addNameTags(info, ui);
+
         const health = player.stats.get(.health);
         const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 50;
@@ -735,4 +807,75 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
             }
         }
     }
+}
+
+fn addNameTags(info: *const Info, ui: *Ui) void {
+    const label_size: f32 = 18;
+    const padding_x: f32 = 8;
+    const padding_y: f32 = 3;
+
+    for (info.world.entities.values()) |*entity| {
+        if (entity.kind != .player) continue;
+
+        const name = if (entity.player_name.len != 0)
+            entity.player_name
+        else
+            ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
+
+        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
+            nz.vec.normalize(entity.transform.position)
+        else
+            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
+        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
+        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        const text_size = ui.textSize(name, label_size);
+        const tag_width = text_size.width + padding_x * 2;
+        const tag_heigth = text_size.heigth + padding_y * 2;
+
+        ui.add(null, .{
+            .offset = .{
+                .left = screen[0] - tag_width / 2,
+                .top = screen[1] - tag_heigth - 4,
+            },
+            .size = .{ .fixed = .{
+                .width = tag_width,
+                .heigth = tag_heigth,
+            } },
+            .color = .new(0, 0, 0, 0.45),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .children = &.{.{
+                .size = .{ .fixed = text_size },
+                .text = .{
+                    .data = name,
+                    .size = label_size,
+                    .color = .new(1, 1, 1, 0.95),
+                },
+            }},
+        });
+    }
+}
+
+fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
+    if (width <= 0 or heigth <= 0) return null;
+
+    const aspect = width / heigth;
+    const clip = camera.viewProj(aspect).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
+    if (clip[3] <= 0.001) return null;
+
+    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
+    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
+    return .{
+        (ndc[0] * 0.5 + 0.5) * width,
+        (ndc[1] * 0.5 + 0.5) * heigth,
+    };
+}
+
+fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+    const segment = tag_position - camera_position;
+    const segment_len_sq = nz.vec.dot(segment, segment);
+    if (segment_len_sq <= 0.0001) return false;
+    const t = std.math.clamp(-nz.vec.dot(camera_position, segment) / segment_len_sq, 0, 1);
+    const closest = camera_position + nz.vec.scale(segment, t);
+    return nz.vec.length(closest) < planet_radius + 0.2;
 }

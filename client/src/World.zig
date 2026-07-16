@@ -64,6 +64,7 @@ pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
+pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 particles: std.ArrayList(Particle) = .empty,
 camera: Camera = .{},
@@ -85,6 +86,7 @@ prng: std.Random.DefaultPrng,
 pub const Entity = struct {
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
+    player_name: []const u8 = "",
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
@@ -95,6 +97,13 @@ pub const Entity = struct {
     position_error: nz.Vec3(f32) = @splat(0),
 
     transform: nz.Transform3D(f32) = .{},
+
+    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
+        if (self.player_name.len != 0) {
+            gpa.free(self.player_name);
+            self.player_name = "";
+        }
+    }
 };
 
 pub const Particle = struct {
@@ -113,6 +122,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_stats = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
+        .pending_player_names = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .particles = try .initCapacity(gpa, 512),
         .prng = .init(0x5EED_BA11),
@@ -120,12 +130,17 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
 }
 
 pub fn deinit(self: *@This()) void {
+    for (self.entities.values()) |*entity| {
+        entity.deinit(self.gpa);
+    }
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
     self.pending_stats.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
+    clearPendingPlayerNames(self);
+    self.pending_player_names.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
     self.particles.deinit(self.gpa);
 }
@@ -136,6 +151,8 @@ pub fn clearSession(self: *@This()) void {
     self.pending_spawn.clearRetainingCapacity();
     self.pending_despawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();
+    self.pending_inventory.clearRetainingCapacity();
+    clearPendingPlayerNames(self);
     self.attack_events.clearRetainingCapacity();
 
     self.camera = .{};
@@ -162,7 +179,30 @@ pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
+pub fn setPlayerName(self: *@This(), entity: *Entity, name: []const u8) !void {
+    var name_buffer: [shared.max_player_name_len]u8 = undefined;
+    const sanitized = sanitizePlayerName(&name_buffer, name);
+    if (std.mem.eql(u8, entity.player_name, sanitized)) return;
+    if (entity.player_name.len != 0) {
+        self.gpa.free(entity.player_name);
+        entity.player_name = "";
+    }
+    entity.player_name = if (sanitized.len == 0) "" else try self.gpa.dupe(u8, sanitized);
+}
+
+fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
+    var len: usize = 0;
+    for (std.mem.trim(u8, raw, " \t\r\n")) |char| {
+        if (len >= buffer.len) break;
+        if (char < 32 or char > 126) continue;
+        buffer[len] = char;
+        len += 1;
+    }
+    return buffer[0..len];
+}
+
 pub fn despawn(self: *@This(), id: shared.entity.Id) bool {
+    if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
 }
 
@@ -171,6 +211,13 @@ fn appendParticle(self: *@This(), particle: Particle) void {
         _ = self.particles.swapRemove(0);
     }
     self.particles.appendAssumeCapacity(particle);
+}
+
+pub fn clearPendingPlayerNames(self: *@This()) void {
+    for (self.pending_player_names.items) |player_name| {
+        if (player_name.name.len != 0) self.gpa.free(player_name.name);
+    }
+    self.pending_player_names.clearRetainingCapacity();
 }
 
 fn particleSurfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {

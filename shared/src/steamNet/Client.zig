@@ -7,7 +7,10 @@ const ServerListResponse = steam.ISteamMatchmakingServerListResponse;
 pub const ServerInfo = extern struct {
     steam_id: u64,
     name: [64]u8,
+    game_tags: [128]u8,
     id_str: [64]u8,
+    player_count: i32,
+    max_players: i32,
 };
 pub const ServerList = extern struct {
     const RefreshState = enum(u8) {
@@ -57,6 +60,9 @@ const Browser = extern struct {
             const server = servers.GetServerDetails(request, @intCast(server_index));
             self.list.servers[server_index].steam_id = server.*.m_steamID;
             @memcpy(self.list.servers[server_index].name[0..], server.*.m_szServerName[0..]);
+            @memcpy(self.list.servers[server_index].game_tags[0..], server.*.m_szGameTags[0..]);
+            self.list.servers[server_index].player_count = server.*.m_nPlayers;
+            self.list.servers[server_index].max_players = server.*.m_nMaxPlayers;
             std.log.info("Server[{d}] steamID={d} hadResponse={} name=\"{s}\"", .{
                 server_index,
                 server.*.m_steamID,
@@ -98,6 +104,12 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
         .user_steam_id = steam.SteamUser().GetSteamID(),
         .browser = .{},
     };
+}
+
+pub fn personaName(_: *const @This()) []const u8 {
+    const persona_name = steam.SteamFriends().GetPersonaName();
+    if (persona_name == null) return "";
+    return std.mem.sliceTo(persona_name, 0);
 }
 
 pub fn deinit(self: *@This()) void {

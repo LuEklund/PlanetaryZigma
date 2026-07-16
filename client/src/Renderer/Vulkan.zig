@@ -1012,10 +1012,10 @@ fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
 fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
     const f = 1.0 / std.math.tan(fovy_rad / 2.0);
     return .new(.{
-        f / aspect, 0, 0, 0,
-        0, -f, 0, 0, // flip Y for Vulkan
-        0, 0, far / (near - far),          -1, // <- note near-far here
-        0, 0, (far * near) / (near - far), 0,
+        f / aspect, 0,  0,                           0,
+        0,          -f, 0,                           0, // flip Y for Vulkan
+        0,          0,  far / (near - far),          -1,
+        0,          0,  (far * near) / (near - far), 0,
     });
 }
 

@@ -9,6 +9,7 @@ old_dynlib: ?DynLib = null,
 dir_path: []const u8,
 source_name: []const u8,
 mtime: std.Io.Timestamp,
+process_id: u32,
 copy_id: u64,
 versions: [25]?DynLib,
 version_count: u64,
@@ -42,6 +43,7 @@ pub fn init(comptime library_name: []const u8, io: std.Io) !@This() {
         .dir_path = found_path,
         .source_name = source_name,
         .mtime = .zero,
+        .process_id = if (is_windows) std.os.windows.GetCurrentProcessId() else 0,
         .copy_id = 0,
         .versions = @splat(null),
         .version_count = 0,
@@ -62,7 +64,7 @@ pub fn load(self: *@This(), io: std.Io) !void {
     self.copy_id += 1;
     var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
     const copy_path = if (is_windows)
-        try std.fmt.bufPrint(&copy_buf, "{s}{s}.{d}", .{ self.dir_path, self.source_name, self.copy_id })
+        try std.fmt.bufPrint(&copy_buf, "{s}{s}.{d}.{d}", .{ self.dir_path, self.source_name, self.process_id, self.copy_id })
     else
         try std.fmt.bufPrint(&copy_buf, "/tmp/{s}.{d}", .{ self.source_name, self.copy_id });
 
