@@ -983,20 +983,19 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn reconcileSkeletons(self: *@This(), gpa: std.mem.Allocator, world: *World) !void {
-    var reap: [shared.max_entities]shared.entity.Id = undefined;
-    var reap_count: usize = 0;
-    var it = self.skeletons.iterator();
-    while (it.next()) |entry| {
-        const id = entry.key_ptr.*;
-        const backed = if (world.getPtr(id)) |entity| self.isSkinnedKind(entity.kind) else false;
-        if (!backed) {
-            reap[reap_count] = id;
-            reap_count += 1;
-        }
-    }
-    for (reap[0..reap_count]) |id| self.removeSkeleton(gpa, id);
-    for (world.entities.values()) |*entity| try self.ensureSkeleton(gpa, entity.id, entity.kind);
+pub fn drainRenderCommands(self: *@This(), gpa: std.mem.Allocator, world: *World) !void {
+    for (world.render_outbox.items) |command| switch (command) {
+        .entity_spawned => |spawned| try self.ensureSkeleton(gpa, spawned.id, spawned.kind),
+        .entity_despawned => |id| self.removeSkeleton(gpa, id),
+        .planet_spawned => |radius| try self.buildPlanet(gpa, radius),
+    };
+    world.render_outbox.clearRetainingCapacity();
+}
+
+fn buildPlanet(self: *@This(), gpa: std.mem.Allocator, radius: u32) !void {
+    var planet: shared.Planet(.renderable) = try .init(gpa, radius);
+    defer planet.deinit(gpa);
+    try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices, .planet);
 }
 
 fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
@@ -1007,10 +1006,6 @@ fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.enti
     }
     if (!model.isSkinned()) return; // static/modelless: no skeleton
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
-}
-
-fn isSkinnedKind(self: *@This(), entity_kind: shared.entity.Kind) bool {
-    return self.resources.models.getPtr(.fromKind(entity_kind)).isSkinned();
 }
 
 fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {

@@ -5,7 +5,6 @@ const nz = shared.numz;
 const yes = @import("yes");
 const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
-const Spawner = @import("system/Spawner.zig");
 const Animation = @import("system/Animations.zig");
 pub const Renderer = @import("Renderer.zig");
 
@@ -101,8 +100,8 @@ pub const Context = struct {
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
-        try Spawner.update(info, self);
-        try self.renderer.inner.reconcileSkeletons(self.gpa, info.world);
+        try info.world.flush();
+        try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

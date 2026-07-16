@@ -5,7 +5,6 @@ const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
 const World = system.World;
-const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 
@@ -303,7 +302,7 @@ fn handleCommand(
         },
         .spawn_entity => |spawn_entity| {
             if (info.world.getPtr(spawn_entity.id)) |entity| {
-                try Spawner.applySpawnData(info.world, entity, spawn_entity);
+                try info.world.applySpawnData(entity, spawn_entity);
                 return;
             }
             if (spawn_entity.kind == .unknown) {
@@ -327,7 +326,7 @@ fn handleCommand(
                 info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            Spawner.applyStat(entity, update_stat_command);
+            World.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {
