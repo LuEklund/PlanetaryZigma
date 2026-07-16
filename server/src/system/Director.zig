@@ -18,10 +18,10 @@ const StageItemSpawn = struct {
 
 const stage_item_spawns = [_]StageItemSpawn{
     .{ .kind = .attack_speed, .count = 5 },
-    .{ .kind = .speed, .count = 4 },
-    .{ .kind = .damage, .count = 4 },
-    .{ .kind = .rocket, .count = 40 },
-    .{ .kind = .health, .count = 3 },
+    .{ .kind = .speed, .count = 5 },
+    .{ .kind = .damage, .count = 5 },
+    .{ .kind = .rocket, .count = 5 },
+    .{ .kind = .health, .count = 5 },
 };
 
 const item_surface_offset: f32 = 1.2;
@@ -50,7 +50,7 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
                 const surface = shared.planetSurfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
-                    .kind = .{ .enemy = .tubloid },
+                    .kind = .{ .enemy = .tubloida },
                     .transform = .{ .position = spawn_position },
                     .last_attack = info.elapsed_time,
                 })) |_| {
@@ -107,12 +107,21 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
         }
     }
 
+    //NOTE: TEST ITEMS
     for (stage_item_spawns) |spawn_spec| {
         const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
         for (0..random_spawn_count) |_| {
-            const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            try spawnItem(world, spawn_spec.kind, vector_direction);
+            // const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            try spawnItem(world, spawn_spec.kind, .{ 0, 1, 0 });
         }
+    }
+    for (0..25) |_| {
+        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        const transform = surfaceTransform(world, vector_direction);
+        _ = try world.spawn(.{
+            .kind = .lootbox,
+            .transform = transform,
+        });
     }
 
     const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
@@ -134,7 +143,7 @@ pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void
 }
 
 fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
-    const transform = itemSurfaceTransform(world, vector_direction);
+    const transform = surfaceTransform(world, vector_direction);
     const item = try world.spawn(.{
         .kind = .{ .item = kind },
         .transform = transform,
@@ -142,8 +151,9 @@ fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.
     std.log.debug("spawn item {t} id={d}", .{ kind, item.id });
 }
 
-fn itemSurfaceTransform(world: *system.World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
-    const surface = shared.planetSurfacePoint(vector_direction, @floatFromInt(world.planet_radius));
+fn surfaceTransform(world: *system.World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
+    const random = world.prng.random();
+    const surface = shared.planetSurfacePointNear(vector_direction, @floatFromInt(world.planet_radius), 5, 20, random);
     const planet_up = nz.vec.normalize(surface);
     return .{
         .position = surface + nz.vec.scale(planet_up, item_surface_offset),

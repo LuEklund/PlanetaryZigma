@@ -78,14 +78,14 @@ pub fn updateEnemies(info: *const Info) !void {
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
-            .wizard => {
+            .bloorpLord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
                 if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     _ = info.world.spawn(.{
                         .kind = .{ .enemy = .tubloid },
-                        .transform = .{ .position = player.transform.position },
+                        .transform = .{ .position = enemy.transform.position },
                         .last_attack = info.elapsed_time,
                     }) catch {};
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });

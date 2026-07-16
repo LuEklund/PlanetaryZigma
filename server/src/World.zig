@@ -29,6 +29,7 @@ pub const ClientUpdate = union(enum) {
     stat: shared.net.UpdateStat,
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
+    currency: shared.net.SetCurrency,
 };
 
 pub const Camera = struct {
@@ -141,11 +142,23 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
     switch (entity.kind) {
         .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid => entity.stats.init(20, 3, 1, 1, 2),
-            .tubloida => entity.stats.init(20, 3, 1, 0.2, 10),
-            .wizard => entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40),
+            .tubloid => {
+                entity.stats.init(20, 3, 1, 1, 2);
+                entity.currency = 5;
+            },
+            .tubloida => {
+                entity.stats.init(20, 3, 1, 0.2, 10);
+                entity.currency = 7;
+            },
+            .bloorpLord => {
+                entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40);
+                entity.currency = 100;
+            },
         },
-        .player => entity.stats.init(100, 10, 10, 10, 10),
+        .player => {
+            entity.currency = 100;
+            entity.stats.init(100, 10, 10, 10, 10);
+        },
         else => {},
     }
     self.new_spawns.appendAssumeCapacity(id);
@@ -203,6 +216,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
     }
     self.new_spawns.clearRetainingCapacity();
 
+    var players_recived_currency = false;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
@@ -216,6 +230,13 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             entity.flags.is_dead = true;
             entity.velocity = .{ 0, 0, 0 };
         } else {
+            if (entity.kind == .enemy) {
+                for (self.players.items) |player_id| {
+                    const player = self.getPtr(player_id) orelse continue;
+                    player.currency += entity.currency;
+                    players_recived_currency = true;
+                }
+            }
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
             }
@@ -224,12 +245,17 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
+    if (players_recived_currency) for (self.players.items) |player_id| {
+        const player = self.getPtr(player_id) orelse continue;
+        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
+    };
+
     self.pending_despawns.clearRetainingCapacity();
 }
 
 pub fn motionType(kind: shared.entity.Kind) Physics.MotionType {
     return switch (kind) {
-        .teleporter, .planet, .item => .static,
+        .teleporter, .planet, .item, .lootbox => .static,
         else => .dynamic,
     };
 }

@@ -39,6 +39,7 @@ pub const ServerPacket = union(enum) {
     update_event: Event,
     update_inventory: UpdateInventory,
     update_player_name: PlayerNameUpdate,
+    set_currency: SetCurrency,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -133,6 +134,11 @@ pub const UpdateInventory = struct {
     id: entity.Id,
     item_kind: root.Item.Kind,
     set: u8,
+};
+
+pub const SetCurrency = struct {
+    id: entity.Id,
+    amount: u32,
 };
 
 pub const Event = union(enum) {

@@ -296,6 +296,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try client.sendCommand(writer, .{ .set_currency = .{ .id = entity.id, .amount = entity.currency } }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
@@ -310,6 +311,9 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             },
             .event => |event| {
                 try client.sendCommand(writer, .{ .update_event = event }, .reliable);
+            },
+            .currency => |currency| {
+                try client.sendCommand(writer, .{ .set_currency = .{ .amount = currency.amount, .id = currency.id } }, .reliable);
             },
         };
     }
@@ -373,7 +377,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
         },
     };
 }

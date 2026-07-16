@@ -362,6 +362,10 @@ fn handleCommand(
             };
             if (entity.kind == .player) try info.world.setPlayerName(entity, player_name.name);
         },
+        .set_currency => |set_currency| {
+            const entity = info.world.getPtr(set_currency.id) orelse return;
+            entity.currency = set_currency.amount;
+        },
     }
 }
 
