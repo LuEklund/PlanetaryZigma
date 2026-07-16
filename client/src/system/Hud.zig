@@ -24,7 +24,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
         if (info.world.options_menu_open) optionsMenu(info, ui);
     } else {
         info.world.show_menu_scene = false;
-        try inGame(info, ui);
+        try inGame(info, network_manager, ui);
         if (info.world.pause_menu_open) {
             try pauseMenu(info, network_manager, ui);
         } else if (info.world.options_menu_open) {
@@ -579,7 +579,26 @@ fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
     return ui.print("{s}...", .{text[0 .. max_len - 3]});
 }
 
-fn inGame(info: *const Info, ui: *Ui) !void {
+
+fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
+    const ping = network_manager.ping_milliseconds;
+    const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
+    const ping_color: nz.color.Rgba(f32) = if (ping < 0)
+        .new(0.68, 0.72, 0.66, 1)
+    else if (ping < 60)
+        .new(0.25, 0.85, 0.3, 1)
+    else if (ping < 120)
+        .new(0.9, 0.78, 0.12, 1)
+    else
+        .new(0.9, 0.2, 0.15, 1);
+    const ping_size = ui.textSize(ping_text, 24);
+    ui.add(null, .{
+        .size = .{ .fixed = ping_size },
+        .offset = .{ .left = ui.screen_width - ping_size.width - 12, .top = 10 },
+        .text = .{ .data = ping_text, .size = 24, .color = ping_color },
+    });
+
+
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
 
@@ -598,14 +617,19 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
-        const inventory_width: f32 = ui.screen_width * 0.8;
+        const inventory_width: f32 = ui.screen_width * 0.6;
         const inventory_heigth: f32 = 60;
         ui.add(null, .{
             .name = "HUD",
-            .axis_align = .vertical,
-            .offset = .{ .top = 60, .left = ui.screen_width / 2 - inventory_width / 2 },
+            .axis_align = .horizontal,
+            .offset = .{ .top = 60, .left = 0 },
             // .child_anchor = .{ .x = .end, .y = .end },
             .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
+        });
+
+        ui.add("HUD", .{
+            .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
+            .text = .{ .data = ui.print("$: {d}", .{player.currency}) },
         });
 
         ui.add("HUD", .{
@@ -645,23 +669,6 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 }},
             });
         }
-        ui.add(
-            "HUD",
-            .{
-                .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
-                .name = "info",
-                .axis_align = .vertical,
-            },
-        );
-        ui.add("info", .{
-            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
-            .text = .{ .data = ui.print("Stage: {d}", .{info.world.stage}) },
-        });
-        ui.add("info", .{
-            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
-            .text = .{ .data = ui.print("Currency: {d}", .{10}) },
-        });
-
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
@@ -684,6 +691,14 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 );
             }
         }
+        ui.add(
+            "HUD",
+            .{
+                .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
+                .text = .{ .data = ui.print("stage: {d}", .{info.world.stage}) },
+            },
+        );
+
         if (info.world.options.show_crosshair) {
             ui.add(null, .{
                 .name = "crosshair",

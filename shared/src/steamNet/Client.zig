@@ -165,6 +165,13 @@ pub fn disconnect(self: *@This()) void {
     self.packets.events.clearRetainingCapacity();
 }
 
+pub fn pingMilliseconds(self: *const @This()) i32 {
+    if (self.server_conn == 0) return -1;
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
+    if (steam.SteamNetworkingSockets_SteamAPI().GetConnectionRealTimeStatus(self.server_conn, &status, &.{}) != .k_EResultOK) return -1;
+    return status.m_nPing;
+}
+
 pub fn isLoggedOn(self: *const @This()) bool {
     _ = self;
     return steam.SteamUser().BLoggedOn();

@@ -17,6 +17,7 @@ server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
+ping_milliseconds: i32 = -1,
 server_list: ServerList = .{},
 host_state: HostState = .none,
 host_intent: HostIntent = .none,
@@ -185,6 +186,7 @@ pub fn update(self: *@This(), info: *const Info) !void {
     defer self.steam_client.packet_mutex.unlock(self.io);
 
     self.steam_logged_on = self.steam_client.isLoggedOn();
+    self.ping_milliseconds = self.steam_client.pingMilliseconds();
     if (!self.steam_logged_on) {
         self.server_list.refresh = false;
         self.server_list.count = 0;

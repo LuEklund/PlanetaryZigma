@@ -5,6 +5,8 @@ const noise_frequency = 0.04;
 const noise_amplitude = 2;
 const cell_margin = 1;
 
+pub const min_radius: u32 = 8;
+
 pub const PlanetKind = enum {
     logical,
     renderable,
@@ -21,7 +23,7 @@ pub fn Planet(kind: PlanetKind) type {
         };
 
         pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
-            const radius_float: f32 = if (radius < 2) 2.0 else @floatFromInt(radius);
+            const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
 
             var vertices: std.ArrayList(Vertex) = .empty;
             var indices: std.ArrayList(u32) = .empty;
@@ -229,6 +231,44 @@ pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
     const sample = nz.vec.scale(position, noise_frequency);
     const noise = simplex3(sample[0], sample[1], sample[2]) * noise_amplitude;
     return nz.vec.length(position) - radius + noise;
+}
+
+pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
+    const unit_direction = nz.vec.normalize(direction);
+    var inner: f32 = @max(radius - noise_amplitude - cell_margin, 0);
+    var outer: f32 = radius + noise_amplitude + cell_margin;
+    for (0..24) |_| {
+        const middle = (inner + outer) * 0.5;
+        if (sdf(nz.vec.scale(unit_direction, middle), radius) < 0) inner = middle else outer = middle;
+    }
+    return nz.vec.scale(unit_direction, (inner + outer) * 0.5);
+}
+
+test surfacePoint {
+    var prng = std.Random.DefaultPrng.init(1);
+    const random = prng.random();
+    for ([_]f32{ 8, 15, 60, 100 }) |radius| {
+        for (0..50) |_| {
+            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            const point = surfacePoint(direction, radius);
+            try std.testing.expect(@abs(sdf(point, radius)) < 0.001);
+            const near = surfacePointNear(direction, radius, 15, 25, random);
+            try std.testing.expect(@abs(sdf(near, radius)) < 0.001);
+        }
+    }
+}
+
+pub fn surfacePointNear(direction: nz.Vec3(f32), radius: f32, min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
+    const unit_direction = nz.vec.normalize(direction);
+    const reference: nz.Vec3(f32) = if (@abs(unit_direction[1]) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
+    const tangent_a = nz.vec.normalize(nz.vec.cross(unit_direction, reference));
+    const tangent_b = nz.vec.cross(unit_direction, tangent_a);
+    const spin = random.float(f32) * std.math.tau;
+    const tangent = nz.vec.scale(tangent_a, @cos(spin)) + nz.vec.scale(tangent_b, @sin(spin));
+    const distance = min_distance + random.float(f32) * (max_distance - min_distance);
+    const angle = distance / radius;
+    const tilted = nz.vec.scale(unit_direction, @cos(angle)) + nz.vec.scale(tangent, @sin(angle));
+    return surfacePoint(tilted, radius);
 }
 
 const cube_corners = [_]nz.Vec3(f32){
