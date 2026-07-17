@@ -1,3 +1,5 @@
+const Camera = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -22,7 +24,7 @@ pub const arm_ease_speed: f32 = 4;
 pub const near: f32 = 0.01;
 pub const far: f32 = 1000;
 
-pub fn viewProj(self: *const @This(), aspect: f32) nz.Mat4x4(f32) {
+pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
     const inv_rotation = self.transform.rotation.conjugate().toMat4x4();
     const inv_translation = nz.Mat4x4(f32).translate(-self.transform.position);
     const view = inv_rotation.mul(inv_translation);
@@ -37,7 +39,7 @@ pub fn viewProj(self: *const @This(), aspect: f32) nz.Mat4x4(f32) {
     return proj.mul(view);
 }
 
-pub fn update(self: *@This(), info: *const Info) void {
+pub fn update(self: *Camera, info: *const Info) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 

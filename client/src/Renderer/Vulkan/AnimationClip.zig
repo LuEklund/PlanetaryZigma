@@ -1,3 +1,5 @@
+const AnimationClip = @This();
+
 const std = @import("std");
 const nz = @import("shared").numz;
 
@@ -18,7 +20,7 @@ channels: []Channel,
 start: f32,
 end: f32,
 
-pub fn init(gpa: std.mem.Allocator, name: []const u8, sampler_count: usize, channel_count: usize) !@This() {
+pub fn init(gpa: std.mem.Allocator, name: []const u8, sampler_count: usize, channel_count: usize) !AnimationClip {
     return .{
         .name = try gpa.dupe(u8, name),
         .samplers = try gpa.alloc(Sampler, sampler_count),
@@ -28,7 +30,7 @@ pub fn init(gpa: std.mem.Allocator, name: []const u8, sampler_count: usize, chan
     };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn deinit(self: *AnimationClip, gpa: std.mem.Allocator) void {
     gpa.free(self.name);
     for (self.samplers) |sampler| {
         gpa.free(sampler.inputs);

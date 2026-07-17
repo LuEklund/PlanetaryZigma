@@ -1,3 +1,5 @@
+const World = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
@@ -88,7 +90,7 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !@This() {
+pub fn init(gpa: std.mem.Allocator) !World {
     var entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty;
     try entities.ensureTotalCapacity(gpa, shared.max_entities);
 
@@ -109,7 +111,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *World) void {
     for (self.entities.values()) |*entity| {
         entity.deinit(self.gpa);
     }
@@ -123,7 +125,7 @@ pub fn deinit(self: *@This()) void {
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
 
-pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
+pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     if (self.entities.entries.len >= shared.max_entities) {
         if (builtin.mode == .Debug) @panic("spawn: world full");
         return error.SpawnMaxSize;
@@ -165,7 +167,7 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
     return entity;
 }
 
-pub fn enemyCount(self: *const @This()) usize {
+pub fn enemyCount(self: *const World) usize {
     var count: usize = 0;
     for (self.entities.values()) |*entity| {
         if (entity.kind == .enemy) count += 1;
@@ -173,25 +175,25 @@ pub fn enemyCount(self: *const @This()) usize {
     return count;
 }
 
-pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
+pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn queueDespawn(self: *@This(), id: shared.entity.Id) void {
+pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = false });
 }
 
-pub fn queueRemove(self: *@This(), id: shared.entity.Id) void {
+pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
-pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
+pub fn removeHealth(self: *World, entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     if (entity.flags.invinsible) return false;
     return self.addHealth(entity, -amount);
 }
 
-pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
+pub fn addHealth(self: *World, entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
@@ -199,7 +201,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
     return true;
 }
 
-pub fn flush(self: *@This(), physics: *Physics) !void {
+pub fn flush(self: *World, physics: *Physics) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.entity.hasCollider(entity.kind)) {

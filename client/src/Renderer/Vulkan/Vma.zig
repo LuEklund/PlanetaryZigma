@@ -1,3 +1,5 @@
+const Vma = @This();
+
 pub const c = @import("vulkan");
 const Instance = @import("Instance.zig");
 const PhysicalDevice = @import("device.zig").Physical;
@@ -10,7 +12,7 @@ pub const AllocationInfo = c.VmaAllocationInfo;
 
 handle: c.VmaAllocator = undefined,
 
-pub fn init(instance: Instance, physical_device: PhysicalDevice, device: Device) !@This() {
+pub fn init(instance: Instance, physical_device: PhysicalDevice, device: Device) !Vma {
     var create_info: c.VmaAllocatorCreateInfo = .{
         .physicalDevice = @ptrCast(physical_device.handle),
         .device = @ptrCast(device.handle),
@@ -25,6 +27,6 @@ pub fn init(instance: Instance, physical_device: PhysicalDevice, device: Device)
     return .{ .handle = allocator };
 }
 
-pub fn deinit(self: @This()) void {
+pub fn deinit(self: Vma) void {
     c.vmaDestroyAllocator(self.handle);
 }

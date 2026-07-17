@@ -1,3 +1,5 @@
+const Animations = @This();
+
 const std = @import("std");
 const system = @import("../system.zig");
 const shared = @import("shared");
@@ -16,11 +18,11 @@ const look_yaw_deadzone: f32 = 0.05;
 
 gpa: std.mem.Allocator,
 
-pub fn init(gpa: std.mem.Allocator) @This() {
+pub fn init(gpa: std.mem.Allocator) Animations {
     return .{ .gpa = gpa };
 }
 
-pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
+pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;

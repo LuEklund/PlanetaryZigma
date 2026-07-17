@@ -1,3 +1,5 @@
+const World = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -115,7 +117,7 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !@This() {
+pub fn init(gpa: std.mem.Allocator) !World {
     return .{
         .gpa = gpa,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
@@ -131,7 +133,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *World) void {
     for (self.entities.values()) |*entity| {
         entity.deinit(self.gpa);
     }
@@ -148,7 +150,7 @@ pub fn deinit(self: *@This()) void {
     self.particles.deinit(self.gpa);
 }
 
-pub fn clearSession(self: *@This()) void {
+pub fn clearSession(self: *World) void {
     for (self.entities.values()) |*entity| {
         self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = entity.id });
         entity.deinit(self.gpa);
@@ -177,7 +179,7 @@ pub fn clearSession(self: *@This()) void {
     self.stage = 0;
 }
 
-pub fn clearPendingSpawns(self: *@This()) void {
+pub fn clearPendingSpawns(self: *World) void {
     for (self.pending_spawn.items) |entity_info| {
         switch (entity_info.data) {
             .player_name => |player_name| if (player_name.name.len != 0) self.gpa.free(player_name.name),
@@ -187,7 +189,7 @@ pub fn clearPendingSpawns(self: *@This()) void {
     self.pending_spawn.clearRetainingCapacity();
 }
 
-pub fn flush(self: *@This()) !void {
+pub fn flush(self: *World) !void {
     defer self.clearPendingSpawns();
 
     for (self.pending_spawn.items) |entity_info| {
@@ -269,7 +271,7 @@ pub fn flush(self: *@This()) !void {
     self.pending_despawn.clearRetainingCapacity();
 }
 
-pub fn applySpawnData(self: *@This(), entity: *Entity, entity_info: shared.net.SpawnEntity) !void {
+pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.SpawnEntity) !void {
     switch (entity_info.data) {
         .player_name => |player_name| {
             if (entity.kind == .player) try self.setPlayerName(entity, player_name.name);
@@ -285,16 +287,16 @@ pub fn applyStat(entity: *Entity, command: shared.net.UpdateStat) void {
     }
 }
 
-pub fn spawn(self: *@This(), id: shared.entity.Id) !*Entity {
+pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {
     try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
     return self.entities.getPtr(id).?;
 }
 
-pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
+pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn setPlayerName(self: *@This(), entity: *Entity, name: []const u8) !void {
+pub fn setPlayerName(self: *World, entity: *Entity, name: []const u8) !void {
     var name_buffer: [shared.max_player_name_len]u8 = undefined;
     const sanitized = sanitizePlayerName(&name_buffer, name);
     if (std.mem.eql(u8, entity.player_name, sanitized)) return;
@@ -316,12 +318,12 @@ fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) 
     return buffer[0..len];
 }
 
-pub fn despawn(self: *@This(), id: shared.entity.Id) bool {
+pub fn despawn(self: *World, id: shared.entity.Id) bool {
     if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
 }
 
-pub fn clearPendingPlayerNames(self: *@This()) void {
+pub fn clearPendingPlayerNames(self: *World) void {
     for (self.pending_player_names.items) |player_name| {
         if (player_name.name.len != 0) self.gpa.free(player_name.name);
     }

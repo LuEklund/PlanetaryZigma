@@ -1,3 +1,5 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -43,7 +45,7 @@ pub const Client = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !NetworkManager {
     var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(shared.max_entities);
     return .{
@@ -55,7 +57,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@
     };
 }
 
-pub fn deinit(self: *@This()) !void {
+pub fn deinit(self: *NetworkManager) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
@@ -63,7 +65,7 @@ pub fn deinit(self: *@This()) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *@This(), pre_reload: bool) !void {
+pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
     _ = self;
     _ = pre_reload;
     // Steam connection state lives in main.zig and survives reload; nothing to
@@ -99,7 +101,7 @@ fn clearClientCommands(gpa: std.mem.Allocator, client: *Client) void {
     client.command_queue.commands.clearRetainingCapacity();
 }
 
-pub fn update(self: *@This(), info: *const Info) !WireStatus {
+pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const world = info.world;
@@ -389,7 +391,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
     };
 }
 
-fn nameForEntity(self: *@This(), entity_id: shared.entity.Id) []const u8 {
+fn nameForEntity(self: *NetworkManager, entity_id: shared.entity.Id) []const u8 {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == entity_id and client.name.len != 0) return client.name;
@@ -397,14 +399,14 @@ fn nameForEntity(self: *@This(), entity_id: shared.entity.Id) []const u8 {
     return shared.default_player_name;
 }
 
-fn markAllClientsForFullSync(self: *@This()) void {
+fn markAllClientsForFullSync(self: *NetworkManager) void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         client.needs_full_sync = true;
     }
 }
 
-fn broadcastPlayerName(self: *@This(), writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
+fn broadcastPlayerName(self: *NetworkManager, writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == .none) continue;
@@ -416,7 +418,7 @@ fn broadcastPlayerName(self: *@This(), writer: *std.Io.Writer, entity_id: shared
     }
 }
 
-fn updateAdvertisedSession(self: *@This()) void {
+fn updateAdvertisedSession(self: *NetworkManager) void {
     var player_names: [shared.max_players][]const u8 = undefined;
     var player_count: usize = 0;
     var host_name: []const u8 = "";

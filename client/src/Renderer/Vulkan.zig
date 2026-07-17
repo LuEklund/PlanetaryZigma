@@ -1,3 +1,5 @@
+const Vulkan = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
@@ -73,8 +75,8 @@ pub const InitOptions = struct {
     },
 };
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*@This() {
-    const self = try gpa.create(@This());
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOptions) !*Vulkan {
+    const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.skeletons = .init(gpa);
 
@@ -128,7 +130,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     return self;
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
 
     self.menu_player.deinit(gpa, self.vma);
@@ -147,12 +149,12 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     self.instance.deinit();
 }
 
-pub fn rebindProcs(self: *@This()) void {
+pub fn rebindProcs(self: *Vulkan) void {
     procs.instance.load(self.instance.handle, null);
     procs.device.load(self.device.handle, null);
 }
 
-pub fn update(self: *@This(), info: *const Info) !void {
+pub fn update(self: *Vulkan, info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // const time = data.delta_time;
@@ -244,7 +246,7 @@ pub fn update(self: *@This(), info: *const Info) !void {
     self.current_frame_inflight += 1;
 }
 
-pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info) !void {
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info) !void {
     const elapsed_time = info.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -592,7 +594,7 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
 }
 
 fn drawStatic(
-    self: *@This(),
+    self: *Vulkan,
     cmd: c.VkCommandBuffer,
     model: *const Model,
     current_frame: *const FrameData,
@@ -610,7 +612,7 @@ fn drawStatic(
 }
 
 fn drawSkeletal(
-    self: *@This(),
+    self: *Vulkan,
     cmd: c.VkCommandBuffer,
     skeleton: *const SkeletonInstance,
     current_frame: *const FrameData,
@@ -631,7 +633,7 @@ fn drawSkeletal(
     }
 }
 
-fn drawMenuScene(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *const FrameData, elapsed_time: f32, delta_time: f32, camera_transform: nz.Transform3D(f32), aspect: f32, tuning: World.MenuTuning) !void {
+fn drawMenuScene(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, elapsed_time: f32, delta_time: f32, camera_transform: nz.Transform3D(f32), aspect: f32, tuning: World.MenuTuning) !void {
     const planet_position = tuning.planet_position;
     const camera_right = camera_transform.rotation.rotateVec(.{ 1, 0, 0 });
     const roll_axis = nz.vec.normalize(camera_right);
@@ -788,7 +790,7 @@ fn menuPlanetNormal(position: nz.Vec3(f32), planet_transform: nz.Transform3D(f32
     }));
 }
 
-fn updateMenuPlayer(self: *@This(), elapsed_time: f32) void {
+fn updateMenuPlayer(self: *Vulkan, elapsed_time: f32) void {
     const model = self.menu_player.model;
     if (model.clips.len > 0) {
         const clip_index = model.state_clips.get(.walk);
@@ -932,7 +934,7 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
 }
 
 fn emitNode(
-    self: *@This(),
+    self: *Vulkan,
     cmd: c.VkCommandBuffer,
     current_frame: *const FrameData,
     mesh: *Mesh,
@@ -969,7 +971,7 @@ fn emitNode(
     }
 }
 
-pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !void {
+pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
     try self.swapchain.recreate(
         gpa,
         self.vma,
@@ -983,7 +985,7 @@ pub fn resize(self: *@This(), gpa: std.mem.Allocator, width: u32, height: u32) !
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn drainRenderCommands(self: *@This(), gpa: std.mem.Allocator, world: *World) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !void {
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| try self.ensureSkeleton(gpa, spawned.id, spawned.kind),
         .entity_despawned => |id| self.removeSkeleton(gpa, id),
@@ -992,13 +994,13 @@ pub fn drainRenderCommands(self: *@This(), gpa: std.mem.Allocator, world: *World
     world.render_outbox.clearRetainingCapacity();
 }
 
-fn buildPlanet(self: *@This(), gpa: std.mem.Allocator, radius: u32) !void {
+fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32) !void {
     var planet: shared.Planet(.renderable) = try .init(gpa, radius);
     defer planet.deinit(gpa);
     try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices, .planet);
 }
 
-fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
     if (self.skeletons.contains(entity_id)) return;
     const model = self.resources.models.getPtr(.fromKind(entity_kind));
     if (model.isEmpty() and entity_kind.expectsModel()) {
@@ -1008,14 +1010,14 @@ fn ensureSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.enti
     try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
 }
 
-fn removeSkeleton(self: *@This(), gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
+fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
         var skeleton = kv.value;
         skeleton.deinit(gpa, self.vma);
     }
 }
 
-fn clearSkeletons(self: *@This(), gpa: std.mem.Allocator) void {
+fn clearSkeletons(self: *Vulkan, gpa: std.mem.Allocator) void {
     var it = self.skeletons.valueIterator();
     while (it.next()) |skeleton| skeleton.deinit(gpa, self.vma);
     self.skeletons.clearRetainingCapacity();

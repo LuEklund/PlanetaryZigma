@@ -1,3 +1,5 @@
+const Model = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
@@ -97,7 +99,7 @@ overlay_mask: ?[]bool,
 state_clips: std.EnumArray(shared.entity.State, usize),
 offset: nz.Transform3D(f32),
 
-pub const empty: @This() = .{
+pub const empty: Model = .{
     .surfaces = .empty,
     .nodes = .empty,
     .clips = &.{},
@@ -134,16 +136,16 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
-pub fn isEmpty(self: *const @This()) bool {
+pub fn isEmpty(self: *const Model) bool {
     return self.surfaces.items.len == 0 and self.nodes.items.len == 0;
 }
 
-pub fn isSkinned(self: *const @This()) bool {
+pub fn isSkinned(self: *const Model) bool {
     return self.skins.len > 0;
 }
 
 pub fn loadGlb(
-    self: *@This(),
+    self: *Model,
     gpa: std.mem.Allocator,
     io: std.Io,
     file: std.Io.File,
@@ -205,7 +207,7 @@ pub fn loadGlb(
     self.offset = spec.offset;
 }
 
-fn clipIndex(self: *const @This(), name: []const u8, spec: Spec) !usize {
+fn clipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
@@ -225,7 +227,7 @@ pub fn computeMatrices(nodes: []Node) void {
     }
 }
 
-pub fn clear(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
     for (self.nodes.items) |*node| node.deinit(gpa);
     self.nodes.clearAndFree(gpa);
     for (self.clips) |*clip| clip.deinit(gpa);
@@ -241,6 +243,6 @@ pub fn clear(self: *@This(), gpa: std.mem.Allocator) void {
     self.surfaces.clearAndFree(gpa);
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn deinit(self: *Model, gpa: std.mem.Allocator) void {
     self.clear(gpa);
 }

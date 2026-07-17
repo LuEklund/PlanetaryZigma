@@ -1,3 +1,5 @@
+const AssetServer = @This();
+
 const std = @import("std");
 const tracy = @import("ztracy");
 
@@ -28,7 +30,7 @@ pub const Metadata = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !AssetServer {
     const asset_paths: []const []const u8 = &.{
         "assets",
         "../assets",
@@ -53,7 +55,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *AssetServer) void {
     self.dir.close(self.io);
     for (self.metadata.items) |*meta| {
         try meta.deinit(self.gpa);
@@ -62,7 +64,7 @@ pub fn deinit(self: *@This()) void {
     self.* = undefined;
 }
 
-pub fn update(self: *@This()) !void {
+pub fn update(self: *AssetServer) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     for (self.metadata.items) |*metadata| {
@@ -86,7 +88,7 @@ pub fn update(self: *@This()) !void {
     }
 }
 
-pub fn watch(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
+pub fn watch(self: *AssetServer, comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
     for (self.metadata.items) |metadata| {
         if (std.mem.eql(u8, metadata.file_path, file_path) == true) return;
     }
@@ -96,7 +98,7 @@ pub fn watch(self: *@This(), comptime UserData: type, user_data: *UserData, file
     );
 }
 
-pub fn loadAndWatch(self: *@This(), comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
+pub fn loadAndWatch(self: *AssetServer, comptime UserData: type, user_data: *UserData, file_path: []const u8, callback: Metadata.Callback) !void {
     try self.watch(UserData, user_data, file_path, callback);
 
     std.log.debug("path: {s}", .{file_path});

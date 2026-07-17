@@ -1,3 +1,5 @@
+const Renderer = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
@@ -12,13 +14,13 @@ const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Inner = *Vulkan;
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !@This() {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !Renderer {
     return switch (builtin.os.tag) {
         else => initVulkan(gpa, asset_server, desktop, window),
     };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     self.inner.deinit(gpa);
     switch (builtin.os.tag) {
         .macos => self.inner.deinit(),
@@ -28,7 +30,7 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
     }
 }
 
-pub fn update(self: *@This(), info: *const Info) !void {
+pub fn update(self: *Renderer, info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.inner.update(info);
@@ -39,11 +41,11 @@ const debug_instance_extensions = if (builtin.mode == .Debug)
 else
     [_][*:0]const u8{};
 
-pub fn resize(self: *@This(), gpa: std.mem.Allocator, window: *yes.Window) !void {
+pub fn resize(self: *Renderer, gpa: std.mem.Allocator, window: *yes.Window) !void {
     try self.inner.resize(gpa, window.size.width, window.size.height);
 }
 
-pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !@This() {
+pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: yes.Desktop, window: *yes.Window) !Renderer {
     const extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
         .windows => &(debug_instance_extensions ++ [_][*:0]const u8{
             "VK_KHR_surface",
