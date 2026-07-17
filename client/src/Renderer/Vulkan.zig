@@ -476,6 +476,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         for (info.world.entities.values()) |*entity| {
             const model = self.resources.models.getPtr(.fromKind(entity.kind));
             if (model.isEmpty() or model.isSkinned()) continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
             try drawStatic(self, cmd, model, current_frame, base_matrix);
         }
@@ -484,6 +485,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
             const model = self.resources.models.getPtr(.fromKind(entity.kind));
             if (model.isEmpty() or !model.isSkinned()) continue;
             const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
             try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
         }
@@ -954,6 +956,18 @@ fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice
         -(center_light[2] - radius),
     );
     return proj.mul(light_view);
+}
+
+const shadow_caster_radius: f32 = 16;
+
+fn cascadeContains(cascade_vp: *const nz.Mat4x4(f32), position: nz.Vec3(f32)) bool {
+    const clip = cascade_vp.mulVec4(.{ position[0], position[1], position[2], 1 });
+    const margin_x = shadow_caster_radius * @abs(cascade_vp.d[0]);
+    const margin_y = shadow_caster_radius * @abs(cascade_vp.d[5]);
+    const margin_z = shadow_caster_radius * @abs(cascade_vp.d[10]);
+    return @abs(clip[0]) <= 1 + margin_x and
+        @abs(clip[1]) <= 1 + margin_y and
+        clip[2] >= -margin_z and clip[2] <= 1 + margin_z;
 }
 
 fn shadowOrtho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
