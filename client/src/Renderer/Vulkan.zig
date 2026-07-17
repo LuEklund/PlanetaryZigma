@@ -457,7 +457,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     }
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthBias(cmd, 4.0, 0.0, 3.0);
+    c.vkCmdSetDepthBias(cmd, 0.0, 0.0, 3.0);
     for (cascade_vps, 0..) |cascade_vp, cascade_index| {
         const shadow_viewport: c.VkViewport = .{
             .x = @floatFromInt(cascade_index * Resources.shadow_map_size),

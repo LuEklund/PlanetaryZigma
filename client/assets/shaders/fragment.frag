@@ -49,7 +49,7 @@ float shadowFactor() {
     vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
   float texel = 1.0 / 2048.0;
   float pcf_radius = 2.0 * texel;
-  float depth_ref = ndc.z - 0.0015;
+  float depth_ref = ndc.z - 0.0005;
   float sum = 0.0;
   for (int i = 0; i < 12; i++) {
     vec2 tap = clamp(uv + poisson[i] * pcf_radius, vec2(texel), vec2(1.0 - texel));
