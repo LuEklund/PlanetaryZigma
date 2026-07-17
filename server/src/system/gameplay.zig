@@ -169,6 +169,8 @@ pub fn updateItems(info: *const Info) !void {
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
+            if (player.inventory.get(item_kind) >= 255) continue;
+
             const item_count = player.inventory.add(item_kind, 1);
             player.stats.gain(item_kind, 1);
             player.stats.refresh(player.inventory);
