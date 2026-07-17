@@ -45,8 +45,9 @@ float shadowFactor() {
 }
 
 void main() {
-  float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.4);
-  float shading = max(diff * shadowFactor(), 0.4);
+  const float ambient = 0.4;
+  float direct = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.0);
+  float shading = ambient + (1.0 - ambient) * direct * shadowFactor();
   vec4 tex = texture(texSampler, in_uv);
   out_frag_color = vec4((tex.xyz * in_color.xyz * shading) * scene_data.light_color.xyz, tex.a * in_color.a);
 }

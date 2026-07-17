@@ -402,11 +402,12 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     var proj = perspective(fov_rad, aspect, 0.01, 1000);
     const proj_view = proj.mul(view);
 
-    const light_time = info.elapsed_time * 0.01;
+    const light_time = info.elapsed_time * 0.01 + 0.9;
+    const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_view_proj = proj_view.inverse().d,
-        .global_light_direction = .{ @cos(light_time), @sin(light_time), 0 },
+        .global_light_direction = light_dir,
         .time = elapsed_time,
         .camera_position = camera_transform.position,
         .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
@@ -415,7 +416,6 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 
-    const light_dir: nz.Vec3(f32) = .{ @cos(light_time), @sin(light_time), 0 };
     var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
     var cascades: Resources.GPUCascades = undefined;
     cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
