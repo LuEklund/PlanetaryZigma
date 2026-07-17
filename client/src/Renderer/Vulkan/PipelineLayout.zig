@@ -1,10 +1,12 @@
+const PipelineLayout = @This();
+
 const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const check = @import("utils.zig").check;
 
 handle: c.VkPipelineLayout,
 
-pub fn init(device: Device, comptime PushConstant: type, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !@This() {
+pub fn init(device: Device, comptime PushConstant: type, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
     const ranges: c.VkPushConstantRange = .{
         .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
@@ -26,6 +28,6 @@ pub fn init(device: Device, comptime PushConstant: type, descriptor_set_layouts:
     };
 }
 
-pub fn deinit(self: @This(), device: Device) void {
+pub fn deinit(self: PipelineLayout, device: Device) void {
     c.vkDestroyPipelineLayout(device.handle, self.handle, null);
 }

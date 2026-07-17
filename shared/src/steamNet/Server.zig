@@ -1,3 +1,5 @@
+const Server = @This();
+
 const std = @import("std");
 const steam = @import("steamworks");
 const Packets = @import("../SteamNet.zig").Packets;
@@ -42,7 +44,7 @@ pub const HostState = enum(u8) {
     left,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -133,7 +135,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !@This() {
     };
 }
 
-pub fn updateSessionMetadata(self: *@This(), max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
+pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
     self.gs.SetMaxPlayerCount(@intCast(max_players));
 
     const host = if (host_name.len == 0) "Unknown" else host_name;
@@ -148,7 +150,7 @@ pub fn updateSessionMetadata(self: *@This(), max_players: usize, protocol_versio
     self.gs.SetGameTags(&tags_buf[0]);
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *Server) void {
     if (self.listen_socket != 0) _ = self.socket.CloseListenSocket(self.listen_socket);
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
@@ -179,7 +181,7 @@ fn writeTagValue(writer: *std.Io.Writer, value: []const u8) !void {
     }
 }
 
-pub fn handlePackets(self: *@This()) !void {
+pub fn handlePackets(self: *Server) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     var last_status_log = last_iteration;
@@ -209,7 +211,7 @@ pub fn handlePackets(self: *@This()) !void {
     }
 }
 
-pub fn recievePackets(self: *@This()) !void {
+pub fn recievePackets(self: *Server) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
         if (conn == 0) continue;
@@ -239,7 +241,7 @@ pub fn recievePackets(self: *@This()) !void {
     }
 }
 
-pub fn sendPackets(self: *@This()) !void {
+pub fn sendPackets(self: *Server) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
         var msg_num: i64 = 0;
@@ -253,7 +255,7 @@ pub fn sendPackets(self: *@This()) !void {
 }
 
 fn steamCallback(
-    self: ?*@This(),
+    self: ?*Server,
     gpa: std.mem.Allocator,
     pipe: steam.HSteamPipe,
     socket: ?steam.ISteamNetworkingSockets,
@@ -310,7 +312,7 @@ fn steamCallback(
     return -1;
 }
 
-fn addConnection(self: *@This(), conn: steam.HSteamNetConnection) void {
+fn addConnection(self: *Server, conn: steam.HSteamNetConnection) void {
     for (&self.connections) |*slot| {
         if (slot.* == 0) {
             slot.* = conn;
@@ -320,7 +322,7 @@ fn addConnection(self: *@This(), conn: steam.HSteamNetConnection) void {
     std.log.err("connection table full; dropping conn={d}", .{conn});
 }
 
-fn removeConnection(self: *@This(), conn: steam.HSteamNetConnection) void {
+fn removeConnection(self: *Server, conn: steam.HSteamNetConnection) void {
     for (&self.connections) |*slot| {
         if (slot.* == conn) {
             slot.* = 0;

@@ -1,9 +1,12 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
+const Particle = @import("Particle.zig");
 const World = system.World;
 const Info = system.Info;
 const nz = shared.numz;
@@ -53,7 +56,7 @@ const HostServer = struct {
 };
 
 pub fn init(
-    self: *@This(),
+    self: *NetworkManager,
     gpa: std.mem.Allocator,
     io: std.Io,
     net: *shared.SteamNet.Client,
@@ -66,16 +69,20 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
 }
 
-fn stopHostServer(self: *@This()) void {
+fn stopHostServer(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
     self.server_process = null;
 }
 
-pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
+pub fn connected(self: *const NetworkManager) bool {
+    return self.server_conn != 0 or self.steam_client.server_conn != 0;
+}
+
+pub fn returnToMainMenu(self: *NetworkManager) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
     self.steam_client.disconnect();
@@ -87,10 +94,9 @@ pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
     self.sent_connect = false;
     self.host_state = .none;
     self.host_intent = .none;
-    info.world.clearSession();
 }
 
-pub fn requestHost(self: *@This(), intent: HostIntent) void {
+pub fn requestHost(self: *NetworkManager, intent: HostIntent) void {
     if (intent == .multiplayer and !self.steam_logged_on) {
         self.host_state = .steam_offline;
         self.host_intent = intent;
@@ -102,7 +108,7 @@ pub fn requestHost(self: *@This(), intent: HostIntent) void {
     }
 }
 
-fn findHostServer(self: *@This(), dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+fn findHostServer(self: *NetworkManager, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
     for (server_dir_candidates) |candidate| {
         var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
         defer server_dir.close(self.io);
@@ -121,7 +127,7 @@ fn findHostServer(self: *@This(), dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_p
     return null;
 }
 
-fn spawnHostServer(self: *@This()) void {
+fn spawnHostServer(self: *NetworkManager) void {
     var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
@@ -155,13 +161,13 @@ fn spawnHostServer(self: *@This()) void {
     self.host_state = .waiting;
 }
 
-fn sendConnect(self: *@This()) !void {
+fn sendConnect(self: *NetworkManager) !void {
     const name = self.playerDisplayName();
     const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .name_len = @intCast(name.len), .name = name } };
     try self.sendCommand(cmd, .reliable);
 }
 
-fn playerDisplayName(self: *const @This()) []const u8 {
+fn playerDisplayName(self: *const NetworkManager) []const u8 {
     const steam_name = std.mem.trim(u8, self.steam_client.personaName(), " \t\r\n");
     return if (steam_name.len == 0)
         shared.default_player_name
@@ -169,7 +175,7 @@ fn playerDisplayName(self: *const @This()) []const u8 {
         steam_name[0..@min(steam_name.len, shared.max_player_name_len)];
 }
 
-pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
+pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
     if (self.server_conn == 0) return;
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -178,7 +184,7 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *@This(), info: *const Info) !void {
+pub fn update(self: *NetworkManager, info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
@@ -287,7 +293,7 @@ pub fn update(self: *@This(), info: *const Info) !void {
 }
 
 fn handleCommand(
-    self: *@This(),
+    self: *NetworkManager,
     info: *const Info,
     command: shared.net.ServerPacket,
 ) !void {
@@ -344,7 +350,7 @@ fn handleCommand(
                     info.world.attack_events.appendAssumeCapacity(id);
                 },
                 .rocket_impact => |position| {
-                    info.world.spawnRocketExplosion(position);
+                    Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
                 },
             }
         },
@@ -369,7 +375,7 @@ fn handleCommand(
     }
 }
 
-fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntity) !void {
+fn queueSpawn(self: *NetworkManager, world: *World, spawn_entity: shared.net.SpawnEntity) !void {
     if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
 
     var queued_spawn = spawn_entity;
@@ -386,7 +392,7 @@ fn queueSpawn(self: *@This(), world: *World, spawn_entity: shared.net.SpawnEntit
     world.pending_spawn.appendAssumeCapacity(queued_spawn);
 }
 
-fn queuePlayerName(self: *@This(), world: *World, player_name: shared.net.PlayerNameUpdate) !void {
+fn queuePlayerName(self: *NetworkManager, world: *World, player_name: shared.net.PlayerNameUpdate) !void {
     if (world.pending_player_names.items.len >= world.pending_player_names.capacity) return error.PendingPlayerNameFull;
 
     const name = try self.gpa.dupe(u8, player_name.name);

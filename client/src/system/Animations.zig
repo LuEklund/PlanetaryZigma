@@ -1,3 +1,5 @@
+const Animations = @This();
+
 const std = @import("std");
 const system = @import("../system.zig");
 const shared = @import("shared");
@@ -16,11 +18,11 @@ const look_yaw_deadzone: f32 = 0.05;
 
 gpa: std.mem.Allocator,
 
-pub fn init(gpa: std.mem.Allocator) @This() {
+pub fn init(gpa: std.mem.Allocator) Animations {
     return .{ .gpa = gpa };
 }
 
-pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
+pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -37,8 +39,10 @@ pub fn update(self: *@This(), info: *const Info, skeletons: *std.AutoHashMap(sha
         const model = instance.model;
         if (model.clips.len == 0) continue;
 
-        const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
-        const state: shared.entity.State = if (speed > 0.5) .walk else .idle;
+        const state: shared.entity.State = entity.animation_state orelse state: {
+            const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
+            break :state if (speed > 0.5) .walk else .idle;
+        };
         const clip_index = model.state_clips.get(state);
         if (clip_index != instance.player.active) {
             instance.playClip(clip_index);

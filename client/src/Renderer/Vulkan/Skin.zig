@@ -1,3 +1,5 @@
+const Skin = @This();
+
 const std = @import("std");
 const nz = @import("shared").numz;
 
@@ -5,7 +7,7 @@ name: []const u8,
 inverse_bind_matrices: ?[]nz.Mat4x4(f32),
 joints: []usize,
 
-pub fn init(gpa: std.mem.Allocator, name: []const u8, inverse_bind_matrices: ?[]nz.Mat4x4(f32), joints: []usize) !@This() {
+pub fn init(gpa: std.mem.Allocator, name: []const u8, inverse_bind_matrices: ?[]nz.Mat4x4(f32), joints: []usize) !Skin {
     return .{
         .name = try gpa.dupe(u8, name),
         .inverse_bind_matrices = inverse_bind_matrices,
@@ -13,7 +15,7 @@ pub fn init(gpa: std.mem.Allocator, name: []const u8, inverse_bind_matrices: ?[]
     };
 }
 
-pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+pub fn deinit(self: *Skin, gpa: std.mem.Allocator) void {
     gpa.free(self.name);
     if (self.inverse_bind_matrices) |matrices| gpa.free(matrices);
     gpa.free(self.joints);

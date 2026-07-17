@@ -1,3 +1,5 @@
+const DesrciptorLayout = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const Func = @import("utils.zig").Func;
@@ -13,7 +15,7 @@ pub const Kind = enum {
     ui,
 };
 
-pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !@This() {
+pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DesrciptorLayout {
     var info: c.VkDescriptorSetLayoutCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pBindings = &bindings[0],
@@ -34,6 +36,6 @@ pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, de
     };
 }
 
-pub fn deinit(self: @This(), device: Device) void {
+pub fn deinit(self: DesrciptorLayout, device: Device) void {
     c.vkDestroyDescriptorSetLayout(device.handle, self.handle, null);
 }

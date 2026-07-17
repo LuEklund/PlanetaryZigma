@@ -1,3 +1,5 @@
+const Director = @This();
+
 const std = @import("std");
 const system = @import("../system.zig");
 const shared = @import("shared");
@@ -26,7 +28,7 @@ const stage_item_spawns = [_]StageItemSpawn{
 
 const item_surface_offset: f32 = 1.2;
 
-pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void {
+pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -61,7 +63,7 @@ pub fn update(self: *@This(), info: *const system.Info, physics: *Physics) !void
     }
 }
 
-pub fn startStage(self: *@This(), world: *system.World, physics: *Physics) !void {
+pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !void {
     world.next_stage += 1;
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);

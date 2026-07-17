@@ -1,3 +1,5 @@
+const Physics = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -68,7 +70,7 @@ fn makeWorld() c.b3WorldId {
     return c.b3CreateWorld(&world_def);
 }
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) @This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) Physics {
     return .{
         .gpa = gpa,
         .io = io,
@@ -76,11 +78,11 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) @This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *Physics) void {
     c.b3DestroyWorld(self.world);
 }
 
-pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
+pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
     if (pre_reload) {
         c.b3DestroyWorld(self.world);
         self.world = undefined;
@@ -99,7 +101,7 @@ pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
     }
 }
 
-pub fn update(self: *@This(), info: *const system.Info) !void {
+pub fn update(self: *Physics, info: *const system.Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -166,7 +168,7 @@ fn planetRayFilter() c.b3QueryFilter {
     return filter;
 }
 
-fn isGrounded(self: *@This(), entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
+fn isGrounded(self: *Physics, entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
     const ground_check_skin: f32 = 0.2;
     const ground_reach = colliderGroundExtent(entity.collider) + ground_check_skin;
     const translation = nz.vec.scale(planet_up, -ground_reach);
@@ -174,7 +176,7 @@ fn isGrounded(self: *@This(), entity: *const system.Entity, planet_up: nz.Vec3(f
     return result.hit;
 }
 
-pub fn createBody(self: *@This(), entity: *system.Entity) !void {
+pub fn createBody(self: *Physics, entity: *system.Entity) !void {
     const collider = &entity.collider;
     const transform = entity.transform;
 
@@ -237,7 +239,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
     collider.body_id = body_id;
 }
 
-pub fn destroyBody(self: *@This(), body_id: c.b3BodyId) void {
+pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {
     _ = self;
     c.b3DestroyBody(body_id);
 }

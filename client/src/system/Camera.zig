@@ -1,9 +1,12 @@
+const Camera = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
+const Options = @import("../Options.zig");
 const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
@@ -22,7 +25,7 @@ pub const arm_ease_speed: f32 = 4;
 pub const near: f32 = 0.01;
 pub const far: f32 = 1000;
 
-pub fn viewProj(self: *const @This(), aspect: f32) nz.Mat4x4(f32) {
+pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
     const inv_rotation = self.transform.rotation.conjugate().toMat4x4();
     const inv_translation = nz.Mat4x4(f32).translate(-self.transform.position);
     const view = inv_rotation.mul(inv_translation);
@@ -37,14 +40,14 @@ pub fn viewProj(self: *const @This(), aspect: f32) nz.Mat4x4(f32) {
     return proj.mul(view);
 }
 
-pub fn update(self: *@This(), info: *const Info) void {
+pub fn update(self: *Camera, info: *const Info, options: *const Options) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
     const controller = &info.world.controller;
     const keys = controller.input_map.keys;
-    const mouse_sensitivity = sensitivity * info.world.options.mouse_sensitivity;
-    const pitch_direction: f64 = if (info.world.options.invert_y) 1 else -1;
+    const mouse_sensitivity = sensitivity * options.mouse_sensitivity;
+    const pitch_direction: f64 = if (options.invert_y) 1 else -1;
     const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * mouse_sensitivity);
     const delta_pitch: f32 = @floatCast(controller.mouse_delta[1] * pitch_direction * mouse_sensitivity);
     const pitch_limit: f32 = std.math.degreesToRadians(80);
