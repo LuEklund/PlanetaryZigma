@@ -35,7 +35,6 @@ const check = @import("Vulkan/utils.zig").check;
 pub const Info = system.Info;
 pub const c = @import("vulkan");
 const max_frames_inflight: usize = FrameData.max_frames_inflight;
-const menu_planet_radius: f32 = 18;
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
 pub const Model = @import("Vulkan/Model.zig");
