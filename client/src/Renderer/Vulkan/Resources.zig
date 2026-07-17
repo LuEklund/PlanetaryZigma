@@ -27,6 +27,14 @@ const explosion_particle_texture_size: u32 = 32;
 
 pub const PipelineLayoutKind = enum { world, ui };
 
+pub const shadow_cascade_count = 3;
+pub const shadow_map_size: u32 = 2048;
+
+pub const GPUCascades = extern struct {
+    light_view_proj: [shadow_cascade_count][16]f32,
+    splits: [4]f32,
+};
+
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
@@ -39,6 +47,10 @@ images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 ui_texture_buffer: Buffer,
+shadow_image: Image,
+shadow_sampler: c.VkSampler,
+shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
+shadow_cascade_offset: c.VkDeviceSize,
 font: Font,
 ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
 skybox: Image,
@@ -78,6 +90,21 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
+        .shadow = try .init(device, &.{
+            .{
+                .binding = 0,
+                .descriptorCount = 1,
+                .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImmutableSamplers = null,
+                .stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
+            .{
+                .binding = 1,
+                .descriptorCount = @sizeOf(GPUCascades),
+                .descriptorType = c.VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
+                .stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
+        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
         .ui = try .init(device, &.{
             .{
                 .binding = 0,
@@ -93,6 +120,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .world = try .init(device, Shader.AnimationPushConstant, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
+            descriptor_layouts.get(.shadow).handle,
         }),
         .ui = try .init(device, Shader.UiPushConstant, &.{
             descriptor_layouts.get(.ui).handle,
@@ -158,6 +186,68 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     );
     try materials.append(gpa, default_material);
 
+    const shadow_image: Image = try .init(
+        vma,
+        device,
+        c.VK_FORMAT_D32_SFLOAT,
+        .{ .width = shadow_map_size * shadow_cascade_count, .height = shadow_map_size, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_DEPTH_BIT,
+        false,
+    );
+    const shadow_sampler_info: c.VkSamplerCreateInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .magFilter = c.VK_FILTER_LINEAR,
+        .minFilter = c.VK_FILTER_LINEAR,
+        .compareEnable = c.VK_TRUE,
+        .compareOp = c.VK_COMPARE_OP_LESS_OR_EQUAL,
+        .borderColor = c.VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+        .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_NEAREST,
+    };
+    var shadow_sampler: c.VkSampler = undefined;
+    try check(c.vkCreateSampler(device.handle, &shadow_sampler_info, null, &shadow_sampler));
+
+    var shadow_set_size: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.shadow).handle, &shadow_set_size);
+    var shadow_sampler_offset: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.shadow).handle, 0, &shadow_sampler_offset);
+    var shadow_cascade_offset: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.shadow).handle, 1, &shadow_cascade_offset);
+
+    var shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer = undefined;
+    for (&shadow_descriptor_buffers) |*shadow_descriptor_buffer| {
+        shadow_descriptor_buffer.* = try .init(
+            device,
+            vma,
+            u8,
+            shadow_set_size,
+            c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
+        );
+        const shadow_image_info: c.VkDescriptorImageInfo = .{
+            .sampler = shadow_sampler,
+            .imageView = shadow_image.vk_imageview,
+            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+        const shadow_descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .data = .{ .pCombinedImageSampler = &shadow_image_info },
+        };
+        const shadow_descriptor_bytes: [*]u8 = @ptrCast(shadow_descriptor_buffer.info.pMappedData);
+        ext.vkGetDescriptorEXT(
+            device.handle,
+            &shadow_descriptor_get_info,
+            db_props.combinedImageSamplerDescriptorSize,
+            shadow_descriptor_bytes + shadow_sampler_offset,
+        );
+    }
+
     const self = try gpa.create(@This());
     self.* = .{
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
@@ -171,6 +261,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .ui_texture_buffer = ui_texture_buffer,
+        .shadow_image = shadow_image,
+        .shadow_sampler = shadow_sampler,
+        .shadow_descriptor_buffers = shadow_descriptor_buffers,
+        .shadow_cascade_offset = shadow_cascade_offset,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
         .ui_image_indices = .initFill(null),
         .skybox = undefined,
@@ -185,7 +279,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     for (std.enums.values(Shader.Kind)) |kind| {
         const shader_spec = Shader.specs.get(kind);
         const layout_handles: []const c.VkDescriptorSetLayout = switch (shader_spec.layout) {
-            .scene_material => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
+            .scene_material => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle, descriptor_layouts.get(.shadow).handle },
             .ui => &.{descriptor_layouts.get(.ui).handle},
         };
         self.shaders.set(kind, .init(device, kind, layout_handles));
@@ -574,8 +668,19 @@ pub fn deinit(self: *@This(), gpa: std.mem.Allocator, vma: Vma, device: Device) 
         layout.deinit(device);
     }
     self.ui_texture_buffer.deinit(vma);
+    self.shadow_image.deinit(vma, device);
+    c.vkDestroySampler(device.handle, self.shadow_sampler, null);
+    for (&self.shadow_descriptor_buffers) |*shadow_descriptor_buffer| shadow_descriptor_buffer.deinit(vma);
     self.font.deinit(gpa, vma, device);
     gpa.destroy(self);
+}
+
+pub fn writeCascades(self: *@This(), frame_index: usize, cascades: *const GPUCascades) void {
+    const bytes: [*]u8 = @ptrCast(self.shadow_descriptor_buffers[frame_index].info.pMappedData);
+    @memcpy(
+        bytes[self.shadow_cascade_offset..][0..@sizeOf(GPUCascades)],
+        @as([*]const u8, @ptrCast(cascades))[0..@sizeOf(GPUCascades)],
+    );
 }
 
 pub fn getMeshPtr(self: *@This(), index: usize) *Mesh {

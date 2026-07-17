@@ -14,6 +14,7 @@ gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
 
+pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
 
 pub const DebugVertex = extern struct {

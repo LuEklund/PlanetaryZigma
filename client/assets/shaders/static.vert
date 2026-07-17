@@ -32,10 +32,13 @@ layout(push_constant, std430) uniform pc {
 layout(location = 0) out vec4 out_frag_color;
 layout(location = 1) out vec2 out_uv;
 layout(location = 2) out vec3 out_normal;
+layout(location = 3) out vec3 out_world_pos;
 
 void main() {
   Vertex v = push_constant.vertex_buffer.vertices[gl_VertexIndex];
-  gl_Position = scene_data.proj_view * push_constant.model_matrix * vec4(v.position, 1.0);
+  vec4 world_pos = push_constant.model_matrix * vec4(v.position, 1.0);
+  out_world_pos = world_pos.xyz;
+  gl_Position = scene_data.proj_view * world_pos;
   // vec3 col = 0.5 + 0.5 * cos(scene_data.time * 10 + v.uv_x + vec3(0, 2, 4));
   // out_frag_color = vec4(col, 1);
   out_frag_color = v.color;

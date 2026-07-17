@@ -32,8 +32,9 @@ const check = @import("Vulkan/utils.zig").check;
 
 pub const Info = system.Info;
 pub const c = @import("vulkan");
-const max_frames_inflight: usize = 3;
+const max_frames_inflight: usize = FrameData.max_frames_inflight;
 const menu_planet_radius: f32 = 18;
+const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
 pub const Model = @import("Vulkan/Model.zig");
 
@@ -413,6 +414,96 @@ pub fn render(self: *@This(), cmd: c.VkCommandBuffer, current_frame: *FrameData,
         },
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
+
+    const light_dir: nz.Vec3(f32) = .{ @cos(light_time), @sin(light_time), 0 };
+    var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
+    var cascades: Resources.GPUCascades = undefined;
+    cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
+    for (0..Resources.shadow_cascade_count) |cascade_index| {
+        const slice_near: f32 = if (cascade_index == 0) 0.05 else shadow_splits[cascade_index - 1];
+        cascade_vps[cascade_index] = cascadeViewProj(camera_transform, fov_rad, aspect, slice_near, shadow_splits[cascade_index], light_dir);
+        cascades.light_view_proj[cascade_index] = cascade_vps[cascade_index].d;
+    }
+    const frame_index = self.current_frame_inflight % self.frames.len;
+    self.resources.writeCascades(frame_index, &cascades);
+
+    var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    );
+    var shadow_depth_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = self.resources.shadow_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
+    };
+    var shadow_render_info: c.VkRenderingInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = .{
+                .width = Resources.shadow_map_size * Resources.shadow_cascade_count,
+                .height = Resources.shadow_map_size,
+            },
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 0,
+        .pDepthAttachment = &shadow_depth_attachment,
+    };
+    ext.vkCmdBeginRendering(cmd, &shadow_render_info);
+    {
+        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
+        const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_shadow_static).handle, null };
+        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
+    }
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
+    c.vkCmdSetDepthBias(cmd, 4.0, 0.0, 1.5);
+    for (cascade_vps, 0..) |cascade_vp, cascade_index| {
+        const shadow_viewport: c.VkViewport = .{
+            .x = @floatFromInt(cascade_index * Resources.shadow_map_size),
+            .width = @floatFromInt(Resources.shadow_map_size),
+            .height = @floatFromInt(Resources.shadow_map_size),
+            .maxDepth = 1,
+        };
+        const shadow_scissor: c.VkRect2D = .{
+            .offset = .{ .x = @intCast(cascade_index * Resources.shadow_map_size), .y = 0 },
+            .extent = .{ .width = Resources.shadow_map_size, .height = Resources.shadow_map_size },
+        };
+        ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
+        ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
+
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_static));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.models.getPtr(.fromKind(entity.kind));
+            if (model.isEmpty() or model.isSkinned()) continue;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawStatic(self, cmd, model, current_frame, base_matrix);
+        }
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_skinned));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.models.getPtr(.fromKind(entity.kind));
+            if (model.isEmpty() or !model.isSkinned()) continue;
+            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+            for (skeleton.joint_matrices) |*matrices| {
+                matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
+            }
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
+        }
+    }
+    ext.vkCmdEndRendering(cmd);
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        c.VK_ACCESS_SHADER_READ_BIT,
+    );
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetViewportWithCountEXT(cmd, 1, &viewport);
+    ext.vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
 
@@ -944,6 +1035,7 @@ fn emitNode(
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
     c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
     c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT, 0, @sizeOf(@typeInfo(@TypeOf(push)).pointer.child), push);
+    const shadow_descriptor_buffer = &self.resources.shadow_descriptor_buffers[self.current_frame_inflight % self.frames.len];
     for (mesh.surfaces.items) |surface| {
         const material = self.resources.getMaterialPtr(surface.material_index);
         const surface_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -958,6 +1050,12 @@ fn emitNode(
                 .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                     c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
             },
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+                .address = shadow_descriptor_buffer.getGPUAddress(),
+                .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                    c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
+            },
         };
         ext.vkCmdBindDescriptorBuffersEXT(cmd, surface_bindings.len, &surface_bindings[0]);
 
@@ -967,6 +1065,9 @@ fn emitNode(
         const buf_idx_1: u32 = 1;
         const off_1: c.VkDeviceSize = 0;
         ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
+        const buf_idx_2: u32 = 2;
+        const off_2: c.VkDeviceSize = 0;
+        ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 2, 1, &buf_idx_2, &off_2);
 
         c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
@@ -1016,6 +1117,62 @@ fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
         0, -f, 0, 0, // flip Y for Vulkan
         0, 0, far / (near - far),          -1, // <- note near-far here
         0, 0, (far * near) / (near - far), 0,
+    });
+}
+
+fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice_near: f32, slice_far: f32, light_dir: nz.Vec3(f32)) nz.Mat4x4(f32) {
+    const forward = camera.rotation.rotateVec(.{ 0, 0, -1 });
+    const right = camera.rotation.rotateVec(.{ 1, 0, 0 });
+    const up = camera.rotation.rotateVec(.{ 0, 1, 0 });
+    const tan_half_fov = @tan(fov_rad * 0.5);
+
+    var corners: [8]nz.Vec3(f32) = undefined;
+    for ([2]f32{ slice_near, slice_far }, 0..) |plane_distance, plane| {
+        const half_height = plane_distance * tan_half_fov;
+        const half_width = half_height * aspect;
+        const plane_center = camera.position + nz.vec.scale(forward, plane_distance);
+        for (0..4) |corner| {
+            const sign_x: f32 = if (corner & 1 == 0) -1 else 1;
+            const sign_y: f32 = if (corner & 2 == 0) -1 else 1;
+            corners[plane * 4 + corner] = plane_center +
+                nz.vec.scale(right, sign_x * half_width) +
+                nz.vec.scale(up, sign_y * half_height);
+        }
+    }
+
+    var center: nz.Vec3(f32) = .{ 0, 0, 0 };
+    for (corners) |corner| center += corner;
+    center = nz.vec.scale(center, 1.0 / 8.0);
+    var radius: f32 = 0;
+    for (corners) |corner| radius = @max(radius, nz.vec.length(corner - center));
+
+    const normalized_light = nz.vec.normalize(light_dir);
+    const up_reference: nz.Vec3(f32) = if (@abs(normalized_light[1]) > 0.99) .{ 0, 0, 1 } else .{ 0, 1, 0 };
+    const light_view = nz.Mat4x4(f32).lookAt(.{ 0, 0, 0 }, -normalized_light, up_reference);
+
+    const center_light = light_view.mulVec4(.{ center[0], center[1], center[2], 1 });
+    const texel_size = radius * 2.0 / @as(f32, @floatFromInt(Resources.shadow_map_size));
+    const snapped_x = @floor(center_light[0] / texel_size) * texel_size;
+    const snapped_y = @floor(center_light[1] / texel_size) * texel_size;
+
+    const caster_pad: f32 = 80; // room behind the slice for off-screen casters
+    const proj = shadowOrtho(
+        snapped_x - radius,
+        snapped_x + radius,
+        snapped_y - radius,
+        snapped_y + radius,
+        -(center_light[2] + radius + caster_pad),
+        -(center_light[2] - radius),
+    );
+    return proj.mul(light_view);
+}
+
+fn shadowOrtho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
+    return .new(.{
+        2.0 / (right - left),             0,                             0,                  0,
+        0,                                -2.0 / (top - bottom),         0,                  0,
+        0,                                0,                             1.0 / (near - far), 0,
+        -(right + left) / (right - left), (top + bottom) / (top - bottom), near / (near - far), 1,
     });
 }
 

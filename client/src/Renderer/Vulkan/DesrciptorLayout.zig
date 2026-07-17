@@ -10,6 +10,7 @@ count: u32,
 pub const Kind = enum {
     scene,
     material,
+    shadow,
     ui,
 };
 
