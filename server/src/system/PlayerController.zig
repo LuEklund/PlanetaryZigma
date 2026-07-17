@@ -42,9 +42,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             // });
         }
 
-        const ray_position_start = player.transform.position;
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-        const ray_position_end = nz.vec.scale(camera_forward, 8);
+        const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
+        const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
+        const ray_position_end = nz.vec.scale(camera_forward, 5);
         const ray_hit = Physics.c.b3World_CastRayClosest(
             physics.world,
             .{ .x = ray_position_start[0], .y = ray_position_start[1], .z = ray_position_start[2] },
