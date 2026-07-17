@@ -78,7 +78,11 @@ fn stopHostServer(self: *NetworkManager) void {
     self.server_process = null;
 }
 
-pub fn returnToMainMenu(self: *NetworkManager, info: *const Info) !void {
+pub fn connected(self: *const NetworkManager) bool {
+    return self.server_conn != 0 or self.steam_client.server_conn != 0;
+}
+
+pub fn returnToMainMenu(self: *NetworkManager) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
     self.steam_client.disconnect();
@@ -90,7 +94,6 @@ pub fn returnToMainMenu(self: *NetworkManager, info: *const Info) !void {
     self.sent_connect = false;
     self.host_state = .none;
     self.host_intent = .none;
-    info.world.clearSession();
 }
 
 pub fn requestHost(self: *NetworkManager, intent: HostIntent) void {

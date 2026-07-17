@@ -20,6 +20,11 @@ pub const Info = struct {
     world: *World,
 };
 
+pub const Scene = enum {
+    menu,
+    game,
+};
+
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
 
@@ -33,6 +38,7 @@ pub const Context = struct {
     renderer: Renderer,
     network_manager: NetworkManager,
     animation: Animation,
+    scene: Scene,
     request_exit: bool = false,
     fullscreen_applied: bool = false,
     cursor_mode_applied: yes.Window.Property.CursorMode = .normal,
@@ -57,6 +63,7 @@ pub const Context = struct {
         self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
+        self.scene = .menu;
         self.request_exit = false;
         self.fullscreen_applied = false;
         self.cursor_mode_applied = .normal;
@@ -69,7 +76,13 @@ pub const Context = struct {
     }
 
     pub fn isInGame(self: *const Context) bool {
-        return self.network_manager.server_conn != 0 or self.network_manager.steam_client.server_conn != 0;
+        return self.scene == .game;
+    }
+
+    fn setScene(self: *Context, info: *const Info, next: Scene) void {
+        if (next == self.scene) return;
+        info.world.clearSession();
+        self.scene = next;
     }
 
     pub fn update(self: *Context, info: *const Info) !void {
@@ -91,7 +104,7 @@ pub const Context = struct {
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         if (info.world.request_main_menu) {
             info.world.request_main_menu = false;
-            try self.network_manager.returnToMainMenu(info);
+            try self.network_manager.returnToMainMenu();
         }
         self.request_exit = self.request_exit or info.world.request_quit;
         if (paused_for_input or info.world.pause_menu_open or info.world.options_menu_open) {
@@ -102,6 +115,7 @@ pub const Context = struct {
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
+        self.setScene(info, if (self.network_manager.connected()) .game else .menu);
         try info.world.flush();
         try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
