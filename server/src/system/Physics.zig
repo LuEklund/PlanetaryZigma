@@ -1,3 +1,5 @@
+const Physics = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -68,7 +70,7 @@ fn makeWorld() c.b3WorldId {
     return c.b3CreateWorld(&world_def);
 }
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) @This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) Physics {
     return .{
         .gpa = gpa,
         .io = io,
@@ -76,11 +78,11 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) @This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *Physics) void {
     c.b3DestroyWorld(self.world);
 }
 
-pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
+pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
     if (pre_reload) {
         c.b3DestroyWorld(self.world);
         self.world = undefined;
@@ -99,7 +101,7 @@ pub fn reload(self: *@This(), pre_reload: bool, world: *system.World) !void {
     }
 }
 
-pub fn update(self: *@This(), info: *const system.Info) !void {
+pub fn update(self: *Physics, info: *const system.Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -110,13 +112,11 @@ pub fn update(self: *@This(), info: *const system.Info) !void {
 
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
-            const result = self.samplePlanetRandomSurfacePoint(info.world);
-            if (result) |const_point| {
-                var point = const_point;
-                point += nz.vec.scale(nz.vec.normalize(point), 5);
-                c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
-                c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
-            }
+            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
+            var point = shared.planetSurfacePoint(direction, @floatFromInt(info.world.planet_radius));
+            point += nz.vec.scale(nz.vec.normalize(point), 5);
+            c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
+            c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
@@ -168,7 +168,7 @@ fn planetRayFilter() c.b3QueryFilter {
     return filter;
 }
 
-fn isGrounded(self: *@This(), entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
+fn isGrounded(self: *Physics, entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
     const ground_check_skin: f32 = 0.2;
     const ground_reach = colliderGroundExtent(entity.collider) + ground_check_skin;
     const translation = nz.vec.scale(planet_up, -ground_reach);
@@ -176,7 +176,7 @@ fn isGrounded(self: *@This(), entity: *const system.Entity, planet_up: nz.Vec3(f
     return result.hit;
 }
 
-pub fn createBody(self: *@This(), entity: *system.Entity) !void {
+pub fn createBody(self: *Physics, entity: *system.Entity) !void {
     const collider = &entity.collider;
     const transform = entity.transform;
 
@@ -239,7 +239,7 @@ pub fn createBody(self: *@This(), entity: *system.Entity) !void {
     collider.body_id = body_id;
 }
 
-pub fn destroyBody(self: *@This(), body_id: c.b3BodyId) void {
+pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {
     _ = self;
     c.b3DestroyBody(body_id);
 }
@@ -305,23 +305,3 @@ pub fn moveTowardsOnPlanet(
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
 }
 
-pub fn samplePlanetRandomSurfacePoint(self: *@This(), world: *system.World) ?nz.Vec3(f32) {
-    const random = world.prng.random();
-    const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    // radius * 2 starts inside the terrain on tiny planets (mesh min radius + noise)
-    const origin = nz.vec.scale(direction, @as(f32, @floatFromInt(world.planet_radius)) + 10);
-    const translation = nz.vec.scale(origin, -2.0);
-
-    const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
-    if (!result.hit) return null;
-    return toVec(result.point);
-}
-
-pub fn getSurfacePoint(self: *@This(), world: *system.World, from_point: nz.Vec3(f32)) ?nz.Vec3(f32) {
-    const origin = nz.vec.scale(nz.vec.normalize(from_point), @as(f32, @floatFromInt(world.planet_radius)) + 10);
-    const translation = nz.vec.scale(origin, -2.0);
-
-    const result = c.b3World_CastRayClosest(self.world, toB3(origin), toB3(translation), planetRayFilter());
-    if (!result.hit) return null;
-    return toVec(result.point);
-}

@@ -1,11 +1,13 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
+const Particle = @import("Particle.zig");
 const World = system.World;
-const Spawner = @import("Spawner.zig");
 const Info = system.Info;
 const nz = shared.numz;
 
@@ -17,6 +19,7 @@ server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
 render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
+ping_milliseconds: i32 = -1,
 server_list: ServerList = .{},
 host_state: HostState = .none,
 host_intent: HostIntent = .none,
@@ -46,6 +49,7 @@ const ServerList = struct {
 
 const server_exe_name = if (builtin.os.tag == .windows) "server.exe" else "server";
 const server_dir_candidates = [_][]const u8{ "../server", "server", "../../../server" };
+const server_exe_rel_candidates = [_][]const u8{ server_exe_name, "zig-out/bin/" ++ server_exe_name };
 
 const HostServer = struct {
     dir: []const u8,
@@ -53,7 +57,7 @@ const HostServer = struct {
 };
 
 pub fn init(
-    self: *@This(),
+    self: *NetworkManager,
     gpa: std.mem.Allocator,
     io: std.Io,
     net: *shared.SteamNet.Client,
@@ -66,16 +70,20 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
 }
 
-fn stopHostServer(self: *@This()) void {
+fn stopHostServer(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
     self.server_process = null;
 }
 
-pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
+pub fn connected(self: *const NetworkManager) bool {
+    return self.server_conn != 0 or self.steam_client.server_conn != 0;
+}
+
+pub fn returnToMainMenu(self: *NetworkManager) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
     self.steam_client.disconnect();
@@ -87,10 +95,9 @@ pub fn returnToMainMenu(self: *@This(), info: *const Info) !void {
     self.sent_connect = false;
     self.host_state = .none;
     self.host_intent = .none;
-    info.world.clearSession();
 }
 
-pub fn requestHost(self: *@This(), intent: HostIntent) void {
+pub fn requestHost(self: *NetworkManager, intent: HostIntent) void {
     if (intent == .multiplayer and !self.steam_logged_on) {
         self.host_state = .steam_offline;
         self.host_intent = intent;
@@ -102,26 +109,26 @@ pub fn requestHost(self: *@This(), intent: HostIntent) void {
     }
 }
 
-fn findHostServer(self: *@This(), dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+fn findHostServer(self: *NetworkManager, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
     for (server_dir_candidates) |candidate| {
         var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
         defer server_dir.close(self.io);
 
-        var exe_rel_buf: [64]u8 = undefined;
-        const exe_rel = std.fmt.bufPrint(&exe_rel_buf, "zig-out/bin/{s}", .{server_exe_name}) catch unreachable;
-        server_dir.access(self.io, exe_rel, .{}) catch continue;
+        for (server_exe_rel_candidates) |exe_rel| {
+            server_dir.access(self.io, exe_rel, .{}) catch continue;
 
-        const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
-        const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
-        return .{
-            .dir = dir_buf[0..dir_len],
-            .exe_path = exe_path_buf[0..exe_path_len],
-        };
+            const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
+            const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
+            return .{
+                .dir = dir_buf[0..dir_len],
+                .exe_path = exe_path_buf[0..exe_path_len],
+            };
+        }
     }
     return null;
 }
 
-fn spawnHostServer(self: *@This()) void {
+fn spawnHostServer(self: *NetworkManager) void {
     var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
@@ -155,13 +162,21 @@ fn spawnHostServer(self: *@This()) void {
     self.host_state = .waiting;
 }
 
-fn sendConnect(self: *@This()) !void {
-    const name = "lucas";
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .name_len = name.len, .name = name } };
+fn sendConnect(self: *NetworkManager) !void {
+    const name = self.playerDisplayName();
+    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .name_len = @intCast(name.len), .name = name } };
     try self.sendCommand(cmd, .reliable);
 }
 
-pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
+fn playerDisplayName(self: *const NetworkManager) []const u8 {
+    const steam_name = std.mem.trim(u8, self.steam_client.personaName(), " \t\r\n");
+    return if (steam_name.len == 0)
+        shared.default_player_name
+    else
+        steam_name[0..@min(steam_name.len, shared.max_player_name_len)];
+}
+
+pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
     if (self.server_conn == 0) return;
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -170,13 +185,14 @@ pub fn sendCommand(self: *@This(), command: shared.net.ClientPacket, flags: shar
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *@This(), info: *const Info) !void {
+pub fn update(self: *NetworkManager, info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
     self.steam_logged_on = self.steam_client.isLoggedOn();
+    self.ping_milliseconds = self.steam_client.pingMilliseconds();
     if (!self.steam_logged_on) {
         self.server_list.refresh = false;
         self.server_list.count = 0;
@@ -223,9 +239,10 @@ pub fn update(self: *@This(), info: *const Info) !void {
         self.server_list.refresh = false;
         self.steam_client.browser.list.refresh_state = .idle;
         for (0..self.steam_client.browser.list.count) |i| {
-            @memcpy(self.server_list.servers[i].name[0..], self.steam_client.browser.list.servers[i].name[0..]);
-            self.server_list.servers[i].steam_id = self.steam_client.browser.list.servers[i].steam_id;
+            self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
+            @memset(&self.server_list.servers[i].id_str, 0);
             _ = try std.fmt.bufPrint(&self.server_list.servers[i].id_str, "{d}", .{self.server_list.servers[i].steam_id});
+            std.log.info("browser server[{d}] my_ver={d} tags=\"{s}\"", .{ i, shared.net.protocol_version, std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0) });
         }
         self.server_list.count = self.steam_client.browser.list.count;
     }
@@ -254,9 +271,14 @@ pub fn update(self: *@This(), info: *const Info) !void {
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
+    if (info.world.getPtr(info.world.player_id)) |player| {
+        if (player.kind == .player and player.player_name.len == 0) {
+            try info.world.setPlayerName(player, self.playerDisplayName());
+        }
+    }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     for (self.steam_client.packets.incoming.items) |*msg| {
-        var msg_reader: std.Io.Reader = .fixed(&msg.bytes);
+        var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
         const parsed = shared.net.parse(shared.net.ServerPacket, reader) catch |err| {
             std.log.err("parse packet: {s}", .{@errorName(err)});
@@ -272,25 +294,29 @@ pub fn update(self: *@This(), info: *const Info) !void {
 }
 
 fn handleCommand(
-    self: *@This(),
+    self: *NetworkManager,
     info: *const Info,
     command: shared.net.ServerPacket,
 ) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
+            const name = self.playerDisplayName();
             info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            info.world.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .none });
+            try self.queueSpawn(info.world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .{ .name_len = @intCast(name.len), .name = name } } });
             info.world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
         },
         .spawn_entity => |spawn_entity| {
-            if (info.world.getPtr(spawn_entity.id) != null) return;
+            if (info.world.getPtr(spawn_entity.id)) |entity| {
+                try info.world.applySpawnData(entity, spawn_entity);
+                return;
+            }
             if (spawn_entity.kind == .unknown) {
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            info.world.pending_spawn.appendAssumeCapacity(spawn_entity);
+            try self.queueSpawn(info.world, spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
@@ -307,7 +333,7 @@ fn handleCommand(
                 info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            Spawner.applyStat(entity, update_stat_command);
+            World.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {
@@ -325,7 +351,7 @@ fn handleCommand(
                     info.world.attack_events.appendAssumeCapacity(id);
                 },
                 .rocket_impact => |position| {
-                    info.world.spawnRocketExplosion(position);
+                    Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
                 },
             }
         },
@@ -336,5 +362,44 @@ fn handleCommand(
             };
             entity.inventory.set(inventory.item_kind, inventory.set);
         },
+        .update_player_name => |player_name| {
+            const entity = info.world.getPtr(player_name.id) orelse {
+                try self.queuePlayerName(info.world, player_name);
+                return;
+            };
+            if (entity.kind == .player) try info.world.setPlayerName(entity, player_name.name);
+        },
+        .set_currency => |set_currency| {
+            const entity = info.world.getPtr(set_currency.id) orelse return;
+            entity.currency = set_currency.amount;
+        },
     }
+}
+
+fn queueSpawn(self: *NetworkManager, world: *World, spawn_entity: shared.net.SpawnEntity) !void {
+    if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
+
+    var queued_spawn = spawn_entity;
+    switch (spawn_entity.data) {
+        .player_name => |player_name| {
+            const name = try self.gpa.dupe(u8, player_name.name);
+            queued_spawn.data = .{ .player_name = .{
+                .name_len = @intCast(name.len),
+                .name = name,
+            } };
+        },
+        .none, .planet_radius, .is_teleporter_boss => {},
+    }
+    world.pending_spawn.appendAssumeCapacity(queued_spawn);
+}
+
+fn queuePlayerName(self: *NetworkManager, world: *World, player_name: shared.net.PlayerNameUpdate) !void {
+    if (world.pending_player_names.items.len >= world.pending_player_names.capacity) return error.PendingPlayerNameFull;
+
+    const name = try self.gpa.dupe(u8, player_name.name);
+    world.pending_player_names.appendAssumeCapacity(.{
+        .id = player_name.id,
+        .name_len = @intCast(name.len),
+        .name = name,
+    });
 }

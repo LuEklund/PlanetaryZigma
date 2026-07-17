@@ -38,11 +38,56 @@ pub const ServerPacket = union(enum) {
     update_stat: UpdateStat,
     update_event: Event,
     update_inventory: UpdateInventory,
+    update_player_name: PlayerNameUpdate,
+    set_currency: SetCurrency,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const Connect = struct {
+    protocol_version: u32,
+    name_len: u16,
+    name: []const u8,
+};
+
+// Comptime fingerprint of the entire wire format. Changes if and only if the
+// structural layout reachable from ClientPacket/ServerPacket changes;
+pub const protocol_version: u32 = version: {
+    @setEvalBranchQuota(100_000);
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+};
+
+fn protocolDescription(comptime T: type) []const u8 {
+    return switch (@typeInfo(T)) {
+        .optional => |optional| "?" ++ protocolDescription(optional.child),
+        .pointer => |pointer| "[]" ++ protocolDescription(pointer.child),
+        .array => |array| std.fmt.comptimePrint("[{d}]", .{array.len}) ++ protocolDescription(array.child),
+        .@"enum" => |@"enum"| description: {
+            var description: []const u8 = "e" ++ @typeName(@"enum".tag_type) ++ "{";
+            for (@"enum".fields) |field| description = description ++ field.name ++ ",";
+            break :description description ++ "}";
+        },
+        .@"struct" => |@"struct"| description: {
+            var description: []const u8 = "s{";
+            for (@"struct".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        .@"union" => |@"union"| description: {
+            var description: []const u8 = "u{";
+            for (@"union".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            break :description description ++ "}";
+        },
+        else => @typeName(T),
+    };
+}
+
+pub const PlayerName = struct {
+    name_len: u16,
+    name: []const u8,
+};
+
+pub const PlayerNameUpdate = struct {
+    id: entity.Id,
     name_len: u16,
     name: []const u8,
 };
@@ -66,6 +111,7 @@ pub const SpawnEntityData = union(enum) {
     none: void,
     planet_radius: u32,
     is_teleporter_boss: void,
+    player_name: PlayerName,
 };
 
 pub const DespawnEntity = struct {
@@ -122,6 +168,11 @@ pub const UpdateInventory = struct {
     set: u8,
 };
 
+pub const SetCurrency = struct {
+    id: entity.Id,
+    amount: u32,
+};
+
 pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
@@ -162,10 +213,11 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .int => try writer.writeInt(T, value, endian),
         .float => |float| try writer.writeInt(@Int(.signed, float.bits), @bitCast(value), endian),
         .pointer => |pointer| {
-            if (pointer.child == u8)
-                try writer.writeAll(value)
-            else
-                try writer.writeSliceEndian(pointer.child, value, endian);
+            comptime std.debug.assert(pointer.size == .slice);
+            if (pointer.child == u8) {
+                try writer.writeAll(value);
+                try writer.splatByteAll(0, (4 - (value.len % 4)) % 4);
+            } else try writer.writeSliceEndian(pointer.child, value, endian);
         },
         .array => |array| if (array.child == u8)
             try writer.writeAll(&value)

@@ -1,9 +1,12 @@
+const Camera = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
+const Options = @import("../Options.zig");
 const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
@@ -19,18 +22,35 @@ free_speed: f32 = 30,
 pub const sensitivity: f32 = 0.02;
 pub const camera_padding: f32 = 0.5;
 pub const arm_ease_speed: f32 = 4;
+pub const near: f32 = 0.01;
+pub const far: f32 = 1000;
 
-pub fn update(self: *@This(), info: *const Info) void {
+pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
+    const inv_rotation = self.transform.rotation.conjugate().toMat4x4();
+    const inv_translation = nz.Mat4x4(f32).translate(-self.transform.position);
+    const view = inv_rotation.mul(inv_translation);
+
+    const f = 1.0 / std.math.tan(self.fov_rad / 2.0);
+    const proj: nz.Mat4x4(f32) = .new(.{
+        f / aspect, 0,  0,                           0,
+        0,          -f, 0,                           0, // flip Y for Vulkan
+        0,          0,  far / (near - far),          -1,
+        0,          0,  (far * near) / (near - far), 0,
+    });
+    return proj.mul(view);
+}
+
+pub fn update(self: *Camera, info: *const Info, options: *const Options) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
     const controller = &info.world.controller;
     const keys = controller.input_map.keys;
-    const mouse_sensitivity = sensitivity * info.world.options.mouse_sensitivity;
-    const pitch_direction: f64 = if (info.world.options.invert_y) 1 else -1;
+    const mouse_sensitivity = sensitivity * options.mouse_sensitivity;
+    const pitch_direction: f64 = if (options.invert_y) 1 else -1;
     const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * mouse_sensitivity);
     const delta_pitch: f32 = @floatCast(controller.mouse_delta[1] * pitch_direction * mouse_sensitivity);
-    const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
+    const pitch_limit: f32 = std.math.degreesToRadians(80);
 
     if (controller.free_camera) {
         self.free_speed = std.math.clamp(self.free_speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(controller.mouse_wheel))), 1, 1000);

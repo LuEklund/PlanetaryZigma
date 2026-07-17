@@ -1,3 +1,5 @@
+const Watcher = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const DynLib = @import("DynLib.zig").DynLib;
@@ -9,11 +11,12 @@ old_dynlib: ?DynLib = null,
 dir_path: []const u8,
 source_name: []const u8,
 mtime: std.Io.Timestamp,
+process_id: u32,
 copy_id: u64,
 versions: [25]?DynLib,
 version_count: u64,
 
-pub fn init(comptime library_name: []const u8, io: std.Io) !@This() {
+pub fn init(comptime library_name: []const u8, io: std.Io) !Watcher {
     const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
     const search_paths: []const [:0]const u8 = &.{
         "../lib/",
@@ -42,18 +45,19 @@ pub fn init(comptime library_name: []const u8, io: std.Io) !@This() {
         .dir_path = found_path,
         .source_name = source_name,
         .mtime = .zero,
+        .process_id = if (is_windows) std.os.windows.GetCurrentProcessId() else 0,
         .copy_id = 0,
         .versions = @splat(null),
         .version_count = 0,
     };
 }
 
-pub fn deinit(self: *@This(), io: std.Io) void {
+pub fn deinit(self: *Watcher, io: std.Io) void {
     _ = io;
     for (&self.versions) |*slot| if (slot.*) |*dynlib| dynlib.close();
 }
 
-pub fn load(self: *@This(), io: std.Io) !void {
+pub fn load(self: *Watcher, io: std.Io) !void {
     var source_buf: [std.fs.max_path_bytes]u8 = undefined;
     const source_path = try std.fmt.bufPrint(&source_buf, "{s}{s}", .{ self.dir_path, self.source_name });
 
@@ -62,7 +66,7 @@ pub fn load(self: *@This(), io: std.Io) !void {
     self.copy_id += 1;
     var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
     const copy_path = if (is_windows)
-        try std.fmt.bufPrint(&copy_buf, "{s}{s}.{d}", .{ self.dir_path, self.source_name, self.copy_id })
+        try std.fmt.bufPrint(&copy_buf, "{s}{s}.{d}.{d}", .{ self.dir_path, self.source_name, self.process_id, self.copy_id })
     else
         try std.fmt.bufPrint(&copy_buf, "/tmp/{s}.{d}", .{ self.source_name, self.copy_id });
 
@@ -87,13 +91,13 @@ pub fn load(self: *@This(), io: std.Io) !void {
     self.version_count += 1;
 }
 
-pub fn version(self: *@This(), n: usize) ?*DynLib {
+pub fn version(self: *Watcher, n: usize) ?*DynLib {
     if (n >= self.versions.len) return null;
     if (self.versions[n]) |*lib| return lib;
     return null;
 }
 
-pub fn reload(self: *@This(), io: std.Io) !bool {
+pub fn reload(self: *Watcher, io: std.Io) !bool {
     var source_buf: [std.fs.max_path_bytes]u8 = undefined;
     const source_path = std.fmt.bufPrint(&source_buf, "{s}{s}", .{ self.dir_path, self.source_name }) catch return false;
 
@@ -113,7 +117,7 @@ pub fn reload(self: *@This(), io: std.Io) !bool {
     return true;
 }
 
-pub inline fn lookup(self: *@This(), comptime T: type, name: [:0]const u8) !T {
+pub inline fn lookup(self: *Watcher, comptime T: type, name: [:0]const u8) !T {
     const function_pointer = self.dynlib.?.lookup(T, name);
     if (function_pointer == null) return error.DynlibLookup;
     return function_pointer.?;

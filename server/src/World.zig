@@ -1,3 +1,5 @@
+const World = @This();
+
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
@@ -29,6 +31,7 @@ pub const ClientUpdate = union(enum) {
     stat: shared.net.UpdateStat,
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
+    currency: shared.net.SetCurrency,
 };
 
 pub const Camera = struct {
@@ -61,6 +64,7 @@ pub const Entity = struct {
     controller: Controller = .{},
     camera: Camera = .{},
     lifetime: ?f32 = null,
+    currency: u32 = 0,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
@@ -86,7 +90,7 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !@This() {
+pub fn init(gpa: std.mem.Allocator) !World {
     var entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty;
     try entities.ensureTotalCapacity(gpa, shared.max_entities);
 
@@ -107,7 +111,7 @@ pub fn init(gpa: std.mem.Allocator) !@This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *World) void {
     for (self.entities.values()) |*entity| {
         entity.deinit(self.gpa);
     }
@@ -121,7 +125,7 @@ pub fn deinit(self: *@This()) void {
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
 
-pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
+pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     if (self.entities.entries.len >= shared.max_entities) {
         if (builtin.mode == .Debug) @panic("spawn: world full");
         return error.SpawnMaxSize;
@@ -140,18 +144,30 @@ pub fn spawn(self: *@This(), entity_info: Entity) SpawnError!*Entity {
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
     switch (entity.kind) {
         .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid => entity.stats.init(20, 3, 1, 1, 2),
-            .tubloida => entity.stats.init(20, 3, 1, 0.2, 10),
-            .wizard => entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40),
+            .tubloid => {
+                entity.stats.init(20, 3, 1, 1, 2);
+                entity.currency = 5;
+            },
+            .tubloida => {
+                entity.stats.init(20, 3, 1, 0.2, 10);
+                entity.currency = 7;
+            },
+            .bloorpLord => {
+                entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40);
+                entity.currency = 100;
+            },
         },
-        .player => entity.stats.init(100, 10, 10, 10, 10),
+        .player => {
+            entity.currency = 100;
+            entity.stats.init(100, 10, 10, 10, 10);
+        },
         else => {},
     }
     self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }
 
-pub fn enemyCount(self: *const @This()) usize {
+pub fn enemyCount(self: *const World) usize {
     var count: usize = 0;
     for (self.entities.values()) |*entity| {
         if (entity.kind == .enemy) count += 1;
@@ -159,25 +175,25 @@ pub fn enemyCount(self: *const @This()) usize {
     return count;
 }
 
-pub fn getPtr(self: *@This(), id: shared.entity.Id) ?*Entity {
+pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn queueDespawn(self: *@This(), id: shared.entity.Id) void {
+pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = false });
 }
 
-pub fn queueRemove(self: *@This(), id: shared.entity.Id) void {
+pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
-pub fn removeHealth(self: *@This(), entity: *Entity, amount: f32) bool {
+pub fn removeHealth(self: *World, entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     if (entity.flags.invinsible) return false;
     return self.addHealth(entity, -amount);
 }
 
-pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
+pub fn addHealth(self: *World, entity: *Entity, amount: f32) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
@@ -185,7 +201,7 @@ pub fn addHealth(self: *@This(), entity: *Entity, amount: f32) bool {
     return true;
 }
 
-pub fn flush(self: *@This(), physics: *Physics) !void {
+pub fn flush(self: *World, physics: *Physics) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.entity.hasCollider(entity.kind)) {
@@ -202,6 +218,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
     }
     self.new_spawns.clearRetainingCapacity();
 
+    var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
@@ -215,6 +232,7 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
             entity.flags.is_dead = true;
             entity.velocity = .{ 0, 0, 0 };
         } else {
+            if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
             }
@@ -223,12 +241,18 @@ pub fn flush(self: *@This(), physics: *Physics) !void {
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
+    if (currency_reward > 0) for (self.players.items) |player_id| {
+        const player = self.getPtr(player_id) orelse continue;
+        player.currency += currency_reward;
+        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
+    };
+
     self.pending_despawns.clearRetainingCapacity();
 }
 
 pub fn motionType(kind: shared.entity.Kind) Physics.MotionType {
     return switch (kind) {
-        .teleporter, .planet, .item => .static,
+        .teleporter, .planet, .item, .lootbox => .static,
         else => .dynamic,
     };
 }

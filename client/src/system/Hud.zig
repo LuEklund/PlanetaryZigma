@@ -1,3 +1,5 @@
+const Hud = @This();
+
 const std = @import("std");
 const nz = @import("shared").numz;
 const shared = @import("shared");
@@ -7,8 +9,45 @@ const Info = system.Info;
 const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
+const Options = @import("../Options.zig");
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, controller: *const Controller) !void {
+pub const Screen = enum {
+    main,
+    multiplayer,
+};
+
+pub const OptionsTab = enum {
+    gameplay,
+    keyboard_mouse,
+    video,
+    graphics,
+};
+
+pub const Overlay = union(enum) {
+    none,
+    pause,
+    options: struct { return_to_pause: bool },
+};
+
+pub const Request = union(enum) {
+    none,
+    main_menu,
+    quit,
+};
+
+screen: Screen = .main,
+overlay: Overlay = .none,
+options_tab: OptionsTab = .gameplay,
+
+pub fn update(
+    hud: *Hud,
+    info: *const Info,
+    scene: system.Scene,
+    network_manager: *NetworkManager,
+    ui: *Ui,
+    controller: *Controller,
+    options: *Options,
+) !Request {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -18,24 +57,24 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
     });
-    if (network_manager.steam_client.server_conn == 0) {
-        info.world.show_menu_scene = true;
-        try mainMenu(info, network_manager, ui);
-        if (info.world.options_menu_open) optionsMenu(info, ui);
+    var request: Request = .none;
+    if (scene == .menu) {
+        request = try mainMenu(network_manager, ui, hud);
+        if (hud.overlay == .options) optionsMenu(ui, hud, options, controller);
     } else {
-        info.world.show_menu_scene = false;
-        try inGame(info, ui);
-        if (info.world.pause_menu_open) {
-            try pauseMenu(info, network_manager, ui);
-        } else if (info.world.options_menu_open) {
-            optionsMenu(info, ui);
+        try inGame(info, network_manager, ui, options);
+        switch (hud.overlay) {
+            .none => {},
+            .pause => request = try pauseMenu(ui, hud),
+            .options => optionsMenu(ui, hud, options, controller),
         }
     }
 
     ui.end();
+    return request;
 }
 
-fn mainMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
+fn mainMenu(network_manager: *NetworkManager, ui: *Ui, hud: *Hud) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
@@ -55,35 +94,35 @@ fn mainMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void 
     const singleplayer_text = if (singleplayer_hosting) "Starting..." else if (singleplayer_failed) "Start Failed" else "Singleplayer";
 
     addMainMenuButton(ui, "menu_singleplayer", singleplayer_text, left, top, button_width, button_height, button_text_size, singleplayer_hosting, true);
-    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, info.world.menu_screen == .multiplayer, steam_logged_on);
-    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, info.world.options_menu_open, true);
+    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, hud.screen == .multiplayer, steam_logged_on);
+    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, hud.overlay == .options, true);
     addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false, true);
 
     if (ui.isActive("menu_singleplayer")) {
-        info.world.menu_screen = .main;
+        hud.screen = .main;
         network_manager.requestHost(.singleplayer);
     }
     if (steam_logged_on and ui.isActive("menu_multiplayer")) {
-        info.world.menu_screen = .multiplayer;
+        hud.screen = .multiplayer;
         if (!network_manager.server_list.refresh and network_manager.server_list.count == 0) {
             network_manager.server_list.refresh = true;
         }
     } else if (!steam_logged_on and ui.isActive("menu_multiplayer")) {
-        info.world.menu_screen = .multiplayer;
+        hud.screen = .multiplayer;
     }
     if (ui.isActive("menu_settings")) {
-        info.world.menu_screen = .main;
-        info.world.options_menu_open = true;
-        info.world.options_menu_return_to_pause = false;
+        hud.screen = .main;
+        hud.overlay = .{ .options = .{ .return_to_pause = false } };
     }
     if (ui.isActive("menu_quit")) {
-        info.world.request_quit = true;
+        return .quit;
     }
 
-    switch (info.world.menu_screen) {
+    switch (hud.screen) {
         .main => {},
         .multiplayer => try multiplayerPanel(network_manager, ui, panel_left, panel_top, panel_width),
     }
+    return .none;
 }
 
 fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool, enabled: bool) void {
@@ -112,7 +151,8 @@ fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top
 }
 
 fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f32, width: f32) !void {
-    const row_height: f32 = 42;
+    const button_height: f32 = 42;
+    const row_height: f32 = 64;
     const row_gap: f32 = 8;
     const panel_width = @max(@as(f32, 260), width);
     const button_width = (panel_width - row_gap) * 0.5;
@@ -122,7 +162,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
 
     ui.add(null, .{
         .name = "menu_refresh",
-        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
+        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -133,7 +173,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     }
     ui.add(null, .{
         .name = "menu_host",
-        .size = .{ .fixed = .{ .heigth = row_height, .width = button_width } },
+        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
         .offset = .{ .left = left + button_width + row_gap, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -149,8 +189,8 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
 
     if (network_manager.server_list.count == 0) {
         ui.add(null, .{
-            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
-            .offset = .{ .left = left, .top = top + row_height + row_gap },
+            .size = .{ .fixed = .{ .heigth = button_height, .width = panel_width } },
+            .offset = .{ .left = left, .top = top + button_height + row_gap },
             .color = .new(0.02, 0.025, 0.025, 0.62),
             .child_anchor = .{ .x = .center, .y = .center },
             .text = .{
@@ -161,27 +201,67 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
         });
         return;
     }
+
     const max_rows = @min(network_manager.server_list.count, network_manager.server_list.servers.len);
     for (0..max_rows) |i| {
         const server = &network_manager.server_list.servers[i];
-        const label = ui.print("{d}", .{server.steam_id});
-        const row_top = top + (row_height + row_gap) * @as(f32, @floatFromInt(i + 1));
+        const id = serverId(ui, server);
+        const tags = serverTags(server);
+        const host = tagValue(tags, "host");
+        const players = tagValue(tags, "players");
+        const server_version_text = tagValue(tags, "ver");
+        const bad_version = server_version_text.len != 0 and (std.fmt.parseInt(u32, server_version_text, 10) catch 0) != shared.net.protocol_version;
+        const title = if (bad_version)
+            ui.print("BAD VERSION - {s}", .{clippedText(ui, serverTitle(ui, server), 28)})
+        else
+            clippedText(ui, serverTitle(ui, server), 42);
+        const host_text = if (host.len == 0)
+            "Host: unknown"
+        else
+            ui.print("Host: {s}", .{clippedText(ui, host, 36)});
+        const player_text = if (bad_version)
+            "Incompatible version"
+        else if (players.len == 0)
+            ui.print("Players: {d}/{d}", .{ @max(server.player_count, 0), @max(server.max_players, 0) })
+        else
+            ui.print("Players: {s}", .{clippedText(ui, players, 54)});
+        const row_top = top + button_height + row_gap + (row_height + row_gap) * @as(f32, @floatFromInt(i));
+        const hot = ui.isHot(id);
+
         ui.add(null, .{
-            .name = label,
+            .name = id,
+            .axis_align = .vertical,
+            .gap = 2,
+            .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
-            .color = if (ui.isHot(label)) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
-            .child_anchor = .{ .x = .center, .y = .center },
-            .text = .{ .data = label, .size = 24, .color = .new(0.94, 0.96, 0.9, 1) },
+            .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .children = &.{
+                .{
+                    .size = .{ .fixed = .{ .heigth = 24, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = title, .size = 20, .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1) },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = host_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                },
+                .{
+                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .offset = .{ .left = 12, .top = 0 },
+                    .text = .{ .data = player_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                },
+            },
         });
-        if (ui.isActive(label)) {
+        if (ui.isActive(id) and !bad_version) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.debug("connect to {d}", .{server.steam_id});
         }
     }
 }
 
-fn pauseMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void {
+fn pauseMenu(ui: *Ui, hud: *Hud) !Request {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
     const button_height = std.math.clamp(ui.screen_heigth * 0.058, @as(f32, 40), @as(f32, 52));
     const row_gap: f32 = 10;
@@ -216,19 +296,18 @@ fn pauseMenu(info: *const Info, network_manager: *NetworkManager, ui: *Ui) !void
     addPauseButton(ui, "pause_main_menu", "Main Menu", panel_width * 0.82, button_height);
 
     if (ui.isActive("pause_resume")) {
-        info.world.pause_menu_open = false;
+        hud.overlay = .none;
     }
     if (ui.isActive("pause_options")) {
-        info.world.pause_menu_open = false;
-        info.world.options_menu_open = true;
-        info.world.options_menu_return_to_pause = true;
+        hud.overlay = .{ .options = .{ .return_to_pause = true } };
     }
     if (ui.isActive("pause_main_menu")) {
-        try network_manager.returnToMainMenu(info);
+        return .main_menu;
     }
+    return .none;
 }
 
-fn optionsMenu(info: *const Info, ui: *Ui) void {
+fn optionsMenu(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) void {
     const max_width = @max(@as(f32, 260), ui.screen_width - 8);
     const max_height = @max(@as(f32, 320), ui.screen_heigth - 8);
     const panel_width = @min(max_width, @max(@as(f32, 740), ui.screen_width * 0.9));
@@ -241,7 +320,7 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
     const title_height: f32 = 52;
     const tab_gap: f32 = 6;
     const tab_height: f32 = 36;
-    const tabs = [_]system.World.OptionsTab{ .gameplay, .keyboard_mouse, .video, .graphics };
+    const tabs = [_]OptionsTab{ .gameplay, .keyboard_mouse, .video, .graphics };
     const tab_width = (content_width - tab_gap * @as(f32, @floatFromInt(tabs.len - 1))) / @as(f32, @floatFromInt(tabs.len));
     const tabs_top = top + padding + title_height;
     const body_top = tabs_top + tab_height + 18;
@@ -266,49 +345,45 @@ fn optionsMenu(info: *const Info, ui: *Ui) void {
 
     for (tabs, 0..) |tab, i| {
         const tab_left = content_left + (tab_width + tab_gap) * @as(f32, @floatFromInt(i));
-        addOptionsTab(ui, tab, info.world.options.tab == tab, tab_left, tabs_top, tab_width, tab_height);
-        if (ui.isClicked(optionsTabName(tab))) info.world.options.tab = tab;
+        addOptionsTab(ui, tab, hud.options_tab == tab, tab_left, tabs_top, tab_width, tab_height);
+        if (ui.isClicked(optionsTabName(tab))) hud.options_tab = tab;
     }
 
-    switch (info.world.options.tab) {
-        .gameplay => optionsGameplay(info, ui, content_left, body_top, content_width),
-        .keyboard_mouse => optionsKeyboardMouse(info, ui, content_left, body_top, content_width),
-        .video => optionsVideo(info, ui, content_left, body_top, content_width),
-        .graphics => optionsGraphics(info, ui, content_left, body_top, content_width),
+    switch (hud.options_tab) {
+        .gameplay => optionsGameplay(ui, options, content_left, body_top, content_width),
+        .keyboard_mouse => optionsKeyboardMouse(ui, options, controller, content_left, body_top, content_width),
+        .video => optionsVideo(ui, options, content_left, body_top, content_width),
+        .graphics => optionsGraphics(ui, controller, content_left, body_top, content_width),
     }
 
     const back_width: f32 = 150;
     addOptionsButton(ui, "options_back", "Back", content_left + content_width - back_width, body_top + body_height, back_width, 40);
     if (ui.isClicked("options_back")) {
-        info.world.options_menu_open = false;
-        if (info.world.options_menu_return_to_pause) {
-            info.world.pause_menu_open = true;
-        }
-        info.world.options_menu_return_to_pause = false;
+        hud.overlay = if (hud.overlay.options.return_to_pause) .pause else .none;
     }
 }
 
-fn optionsGameplay(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
+fn optionsGameplay(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
     const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(info.world.options.show_hud_stats), left, top, width, row_height)) {
-        info.world.options.show_hud_stats = !info.world.options.show_hud_stats;
+    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(options.show_hud_stats), left, top, width, row_height)) {
+        options.show_hud_stats = !options.show_hud_stats;
     }
-    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(info.world.options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
-        info.world.options.show_crosshair = !info.world.options.show_crosshair;
+    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
+        options.show_crosshair = !options.show_crosshair;
     }
 }
 
-fn optionsKeyboardMouse(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
+fn optionsKeyboardMouse(ui: *Ui, options: *Options, controller: *Controller, left: f32, top: f32, width: f32) void {
     const slider_height: f32 = 38;
     const toggle_height: f32 = 32;
     const binding_height: f32 = 26;
     const binding_gap: f32 = 3;
-    if (addOptionSlider(ui, "options_mouse_sensitivity", "Mouse Sensitivity", info.world.options.mouse_sensitivity, 0.25, 3.0, left, top, width, slider_height, ui.print("{d:.2}x", .{info.world.options.mouse_sensitivity}))) |value| {
-        info.world.options.mouse_sensitivity = value;
+    if (addOptionSlider(ui, "options_mouse_sensitivity", "Mouse Sensitivity", options.mouse_sensitivity, 0.25, 3.0, left, top, width, slider_height, ui.print("{d:.2}x", .{options.mouse_sensitivity}))) |value| {
+        options.mouse_sensitivity = value;
     }
-    if (addOptionToggle(ui, "options_invert_y", "Invert Y", boolText(info.world.options.invert_y), left, top + slider_height + 6, width, toggle_height)) {
-        info.world.options.invert_y = !info.world.options.invert_y;
+    if (addOptionToggle(ui, "options_invert_y", "Invert Y", boolText(options.invert_y), left, top + slider_height + 6, width, toggle_height)) {
+        options.invert_y = !options.invert_y;
     }
 
     const bindings_top = top + slider_height + toggle_height + 18;
@@ -319,33 +394,33 @@ fn optionsKeyboardMouse(info: *const Info, ui: *Ui, left: f32, top: f32, width: 
         const row: f32 = @floatFromInt(if (i < 6) i else i - 6);
         const row_left = left + column * (column_width + column_gap);
         const row_top = bindings_top + row * (binding_height + binding_gap);
-        if (addBindingRow(ui, &info.world.controller, action, row_left, row_top, column_width, binding_height)) {
-            info.world.controller.rebinding_action = action;
-            info.world.controller.clearInput();
+        if (addBindingRow(ui, controller, action, row_left, row_top, column_width, binding_height)) {
+            controller.rebinding_action = action;
+            controller.clearInput();
         }
     }
 }
 
-fn optionsVideo(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
+fn optionsVideo(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
     const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_fullscreen", "Fullscreen", boolText(info.world.options.fullscreen), left, top, width, row_height)) {
-        info.world.options.fullscreen = !info.world.options.fullscreen;
+    if (addOptionToggle(ui, "options_fullscreen", "Fullscreen", boolText(options.fullscreen), left, top, width, row_height)) {
+        options.fullscreen = !options.fullscreen;
     }
-    const fov_degrees = info.world.options.fov_rad * 180.0 / std.math.pi;
+    const fov_degrees = options.fov_rad * 180.0 / std.math.pi;
     if (addOptionSlider(ui, "options_fov", "Field of View", fov_degrees, 65, 115, left, top + (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{fov_degrees}))) |value| {
-        info.world.options.fov_rad = value * std.math.pi / 180.0;
+        options.fov_rad = value * std.math.pi / 180.0;
     }
 }
 
-fn optionsGraphics(info: *const Info, ui: *Ui, left: f32, top: f32, width: f32) void {
+fn optionsGraphics(ui: *Ui, controller: *Controller, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
-    if (addOptionToggle(ui, "options_debug_colliders", "Debug Colliders", boolText(info.world.controller.debug_draw_colliders), left, top, width, row_height)) {
-        info.world.controller.debug_draw_colliders = !info.world.controller.debug_draw_colliders;
+    if (addOptionToggle(ui, "options_debug_colliders", "Debug Colliders", boolText(controller.debug_draw_colliders), left, top, width, row_height)) {
+        controller.debug_draw_colliders = !controller.debug_draw_colliders;
     }
 }
 
-fn addOptionsTab(ui: *Ui, tab: system.World.OptionsTab, selected: bool, left: f32, top: f32, width: f32, height: f32) void {
+fn addOptionsTab(ui: *Ui, tab: OptionsTab, selected: bool, left: f32, top: f32, width: f32, height: f32) void {
     const name = optionsTabName(tab);
     const hot = ui.isHot(name);
     ui.add(null, .{
@@ -458,7 +533,7 @@ fn bindingRowName(action: Controller.Action) []const u8 {
     };
 }
 
-fn optionsTabName(tab: system.World.OptionsTab) []const u8 {
+fn optionsTabName(tab: OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "options_tab_gameplay",
         .keyboard_mouse => "options_tab_keyboard_mouse",
@@ -467,7 +542,7 @@ fn optionsTabName(tab: system.World.OptionsTab) []const u8 {
     };
 }
 
-fn optionsTabLabel(tab: system.World.OptionsTab) []const u8 {
+fn optionsTabLabel(tab: OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "Gameplay",
         .keyboard_mouse => "Keyboard-Mouse",
@@ -511,8 +586,63 @@ fn addOptionsButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top:
     });
 }
 
-fn inGame(info: *const Info, ui: *Ui) !void {
+fn serverId(ui: *Ui, server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const id = std.mem.sliceTo(server.id_str[0..], 0);
+    return if (id.len == 0) ui.print("{d}", .{server.steam_id}) else id;
+}
+
+fn serverTitle(ui: *Ui, server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    const title = std.mem.sliceTo(server.name[0..], 0);
+    return if (title.len == 0) serverId(ui, server) else title;
+}
+
+fn serverTags(server: *const shared.SteamNet.Client.ServerInfo) []const u8 {
+    return std.mem.sliceTo(server.game_tags[0..], 0);
+}
+
+fn tagValue(tags: []const u8, comptime key: []const u8) []const u8 {
+    var rest = tags;
+    while (rest.len != 0) {
+        const separator_index = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
+        const part = rest[0..separator_index];
+        if (part.len > key.len and std.mem.eql(u8, part[0..key.len], key) and part[key.len] == '=') {
+            return part[key.len + 1 ..];
+        }
+        if (separator_index == rest.len) break;
+        rest = rest[separator_index + 1 ..];
+    }
+    return "";
+}
+
+fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
+    if (text.len <= max_len) return text;
+    if (max_len <= 3) return text[0..max_len];
+    return ui.print("{s}...", .{text[0 .. max_len - 3]});
+}
+
+
+fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options: *Options) !void {
+    const ping = network_manager.ping_milliseconds;
+    const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
+    const ping_color: nz.color.Rgba(f32) = if (ping < 0)
+        .new(0.68, 0.72, 0.66, 1)
+    else if (ping < 60)
+        .new(0.25, 0.85, 0.3, 1)
+    else if (ping < 120)
+        .new(0.9, 0.78, 0.12, 1)
+    else
+        .new(0.9, 0.2, 0.15, 1);
+    const ping_size = ui.textSize(ping_text, 24);
+    ui.add(null, .{
+        .size = .{ .fixed = ping_size },
+        .offset = .{ .left = ui.screen_width - ping_size.width - 12, .top = 10 },
+        .text = .{ .data = ping_text, .size = 24, .color = ping_color },
+    });
+
+
     if (info.world.getPtr(info.world.player_id)) |player| {
+        addNameTags(info, ui);
+
         const health = player.stats.get(.health);
         const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 50;
@@ -528,14 +658,19 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
-        const inventory_width: f32 = ui.screen_width * 0.8;
+        const inventory_width: f32 = ui.screen_width * 0.6;
         const inventory_heigth: f32 = 60;
         ui.add(null, .{
             .name = "HUD",
-            .axis_align = .vertical,
-            .offset = .{ .top = 60, .left = ui.screen_width / 2 - inventory_width / 2 },
+            .axis_align = .horizontal,
+            .offset = .{ .top = 60, .left = 0 },
             // .child_anchor = .{ .x = .end, .y = .end },
             .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
+        });
+
+        ui.add("HUD", .{
+            .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
+            .text = .{ .data = ui.print("$: {d}", .{player.currency}) },
         });
 
         ui.add("HUD", .{
@@ -575,23 +710,6 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 }},
             });
         }
-        ui.add(
-            "HUD",
-            .{
-                .size = .{ .fixed = .{ .heigth = inventory_heigth, .width = inventory_width } },
-                .name = "info",
-                .axis_align = .vertical,
-            },
-        );
-        ui.add("info", .{
-            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
-            .text = .{ .data = ui.print("Stage: {d}", .{info.world.stage}) },
-        });
-        ui.add("info", .{
-            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
-            .text = .{ .data = ui.print("Currency: {d}", .{10}) },
-        });
-
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
@@ -614,7 +732,15 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 );
             }
         }
-        if (info.world.options.show_crosshair) {
+        ui.add(
+            "HUD",
+            .{
+                .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
+                .text = .{ .data = ui.print("stage: {d}", .{info.world.stage}) },
+            },
+        );
+
+        if (options.show_crosshair) {
             ui.add(null, .{
                 .name = "crosshair",
                 .size = .{
@@ -636,7 +762,7 @@ fn inGame(info: *const Info, ui: *Ui) !void {
                 },
             });
         }
-        if (info.world.options.show_hud_stats) {
+        if (options.show_hud_stats) {
             const stats_box_width: u32 = 200;
             const stats_box_heigth: u32 = 200;
             ui.add(null, .{
@@ -722,4 +848,75 @@ fn inGame(info: *const Info, ui: *Ui) !void {
             }
         }
     }
+}
+
+fn addNameTags(info: *const Info, ui: *Ui) void {
+    const label_size: f32 = 18;
+    const padding_x: f32 = 8;
+    const padding_y: f32 = 3;
+
+    for (info.world.entities.values()) |*entity| {
+        if (entity.kind != .player) continue;
+
+        const name = if (entity.player_name.len != 0)
+            entity.player_name
+        else
+            ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
+
+        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
+            nz.vec.normalize(entity.transform.position)
+        else
+            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
+        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
+        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        const text_size = ui.textSize(name, label_size);
+        const tag_width = text_size.width + padding_x * 2;
+        const tag_heigth = text_size.heigth + padding_y * 2;
+
+        ui.add(null, .{
+            .offset = .{
+                .left = screen[0] - tag_width / 2,
+                .top = screen[1] - tag_heigth - 4,
+            },
+            .size = .{ .fixed = .{
+                .width = tag_width,
+                .heigth = tag_heigth,
+            } },
+            .color = .new(0, 0, 0, 0.45),
+            .child_anchor = .{ .x = .center, .y = .center },
+            .children = &.{.{
+                .size = .{ .fixed = text_size },
+                .text = .{
+                    .data = name,
+                    .size = label_size,
+                    .color = .new(1, 1, 1, 0.95),
+                },
+            }},
+        });
+    }
+}
+
+fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
+    if (width <= 0 or heigth <= 0) return null;
+
+    const aspect = width / heigth;
+    const clip = camera.viewProj(aspect).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
+    if (clip[3] <= 0.001) return null;
+
+    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
+    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
+    return .{
+        (ndc[0] * 0.5 + 0.5) * width,
+        (ndc[1] * 0.5 + 0.5) * heigth,
+    };
+}
+
+fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+    const segment = tag_position - camera_position;
+    const segment_len_sq = nz.vec.dot(segment, segment);
+    if (segment_len_sq <= 0.0001) return false;
+    const t = std.math.clamp(-nz.vec.dot(camera_position, segment) / segment_len_sq, 0, 1);
+    const closest = camera_position + nz.vec.scale(segment, t);
+    return nz.vec.length(closest) < planet_radius + 0.2;
 }

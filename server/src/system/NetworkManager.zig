@@ -1,3 +1,5 @@
+const NetworkManager = @This();
+
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../system.zig");
@@ -11,6 +13,7 @@ steam_server: *shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Connection, Client),
 last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
 pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
+session_metadata_dirty: bool = true,
 
 pub const WireStatus = enum {
     running,
@@ -37,11 +40,12 @@ pub const Client = struct {
 
     pub fn deinit(self: *Client) !void {
         if (self.name.len != 0) self.gpa.free(self.name);
+        clearClientCommands(self.gpa, self);
         try self.command_queue.deinit(self.gpa, self.io);
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !NetworkManager {
     var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
     try last_motions.ensureTotalCapacity(shared.max_entities);
     return .{
@@ -53,7 +57,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !@
     };
 }
 
-pub fn deinit(self: *@This()) !void {
+pub fn deinit(self: *NetworkManager) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit();
     self.clients.deinit();
@@ -61,14 +65,43 @@ pub fn deinit(self: *@This()) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *@This(), pre_reload: bool) !void {
+pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
     _ = self;
     _ = pre_reload;
     // Steam connection state lives in main.zig and survives reload; nothing to
     // tear down or rebuild here.
 }
 
-pub fn update(self: *@This(), info: *const Info) !WireStatus {
+fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
+    return switch (packet) {
+        .connect => |connect| connect: {
+            const name = try gpa.dupe(u8, connect.name);
+            break :connect .{ .connect = .{
+                .protocol_version = connect.protocol_version,
+                .name_len = @intCast(name.len),
+                .name = name,
+            } };
+        },
+        .disconnect => .disconnect,
+        .input => |input| .{ .input = input },
+    };
+}
+
+fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
+    switch (packet.*) {
+        .connect => |connect| if (connect.name.len != 0) gpa.free(connect.name),
+        .disconnect, .input => {},
+    }
+}
+
+fn clearClientCommands(gpa: std.mem.Allocator, client: *Client) void {
+    for (client.command_queue.commands.items) |*command| {
+        freeClientPacket(gpa, command);
+    }
+    client.command_queue.commands.clearRetainingCapacity();
+}
+
+pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const world = info.world;
@@ -94,6 +127,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 if (client.entity_id != .none) world.queueRemove(client.entity_id);
                 try client.deinit();
                 _ = self.clients.remove(conn);
+                self.session_metadata_dirty = true;
                 std.log.debug("client disconnected: conn={d}", .{conn});
             }
         },
@@ -102,13 +136,15 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
 
     for (self.steam_server.packets.incoming.items) |*msg| {
         const client = self.clients.getPtr(msg.conn) orelse continue;
-        var msg_reader: std.Io.Reader = .fixed(&msg.bytes);
+        var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
         const parsed = shared.net.parse(shared.net.ClientPacket, reader) catch |err| {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try client.command_queue.commands.append(self.gpa, parsed);
+        var queued_packet = try cloneClientPacket(self.gpa, parsed);
+        errdefer freeClientPacket(self.gpa, &queued_packet);
+        try client.command_queue.commands.append(self.gpa, queued_packet);
     }
     self.steam_server.packets.incoming.clearRetainingCapacity();
 
@@ -116,36 +152,64 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     var fix_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
     const writer = &fix_writer;
 
+    var sync_all_clients = false;
+    var player_name_update_ids: [shared.max_players]shared.entity.Id = undefined;
+    var player_name_update_count: usize = 0;
     var it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
         for (client.command_queue.commands.items) |command| {
             switch (command) {
                 .connect => |connect| {
-                    if (client.name.len == 0) client.name = try self.gpa.dupe(u8, connect.name);
-                    const new_player_entity = world.spawn(.{
-                        .kind = .player,
-                        .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
-                        .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                    }) catch continue;
-
-                    client.entity_id = new_player_entity.id;
-                    info.world.players.appendAssumeCapacity(client.entity_id);
-
-                    try client.sendCommand(
-                        writer,
-                        .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
-                        .reliable,
-                    );
-                    try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
-                    if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                        if (entity.teleporter.active) {
-                            try client.sendCommand(writer, .{
-                                .update_event = .teleport_start,
-                            }, .reliable);
-                        }
+                    if (connect.protocol_version != shared.net.protocol_version) {
+                        std.log.warn("rejecting client conn={d}: protocol {d} != server {d}", .{ client.conn, connect.protocol_version, shared.net.protocol_version });
+                        _ = self.steam_server.socket.CloseConnection(client.conn, 0, "protocol version mismatch", false);
+                        continue;
                     }
-                    std.log.debug("PLAYER SPAWN entity_id={d}", .{client.entity_id});
+                    var player_name_changed = false;
+                    var name_buf: [shared.max_player_name_len]u8 = undefined;
+                    const name = sanitizePlayerName(&name_buf, connect.name);
+                    const display_name = if (name.len == 0) shared.default_player_name else name;
+                    if (!std.mem.eql(u8, client.name, display_name)) {
+                        if (client.name.len != 0) self.gpa.free(client.name);
+                        client.name = try self.gpa.dupe(u8, display_name);
+                        self.session_metadata_dirty = true;
+                        sync_all_clients = true;
+                        player_name_changed = true;
+                    }
+
+                    if (client.entity_id == .none) {
+                        const new_player_entity = world.spawn(.{
+                            .kind = .player,
+                            .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
+                            .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
+                        }) catch continue;
+
+                        client.entity_id = new_player_entity.id;
+                        info.world.players.appendAssumeCapacity(client.entity_id);
+                        self.session_metadata_dirty = true;
+                        sync_all_clients = true;
+                        player_name_changed = true;
+
+                        try client.sendCommand(
+                            writer,
+                            .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
+                            .reliable,
+                        );
+                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
+                        if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                            if (entity.teleporter.active) {
+                                try client.sendCommand(writer, .{
+                                    .update_event = .teleport_start,
+                                }, .reliable);
+                            }
+                        }
+                        std.log.debug("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
+                    }
+                    if (player_name_changed and client.entity_id != .none and player_name_update_count < player_name_update_ids.len) {
+                        player_name_update_ids[player_name_update_count] = client.entity_id;
+                        player_name_update_count += 1;
+                    }
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
@@ -159,7 +223,13 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
                 },
             }
         }
-        client.command_queue.commands.clearRetainingCapacity();
+        clearClientCommands(self.gpa, client);
+    }
+
+    if (sync_all_clients) self.markAllClientsForFullSync();
+
+    if (self.session_metadata_dirty) {
+        self.updateAdvertisedSession();
     }
 
     self.pending_motions.clearRetainingCapacity();
@@ -202,6 +272,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
     it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
+        if (client.entity_id == .none) continue;
 
         try client.sendCommand(writer, .{ .server_tick = info.tick }, .unreliable_no_delay);
 
@@ -215,7 +286,7 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             for (world.entities.values()) |*entity| {
                 if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
                 if (tracksMotion(entity)) {
@@ -233,7 +304,8 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity) }, .reliable);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try client.sendCommand(writer, .{ .set_currency = .{ .id = entity.id, .amount = entity.currency } }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
@@ -249,12 +321,18 @@ pub fn update(self: *@This(), info: *const Info) !WireStatus {
             .event => |event| {
                 try client.sendCommand(writer, .{ .update_event = event }, .reliable);
             },
+            .currency => |currency| {
+                try client.sendCommand(writer, .{ .set_currency = .{ .amount = currency.amount, .id = currency.id } }, .reliable);
+            },
         };
     }
     for (world.client_updates.items) |client_update| switch (client_update) {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
+    for (player_name_update_ids[0..player_name_update_count]) |id| {
+        try self.broadcastPlayerName(writer, id, self.nameForEntity(id));
+    }
     world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
@@ -295,7 +373,7 @@ fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.
     }
 }
 
-fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.SpawnEntity {
+fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
     if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
     return .{
         .id = entity.id,
@@ -307,7 +385,66 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity) shared.net.Spawn
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .unknown, .projectile_cube, .projectile_rocket, .player, .teleporter, .item => .none,
+            .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
         },
     };
+}
+
+fn nameForEntity(self: *NetworkManager, entity_id: shared.entity.Id) []const u8 {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        if (client.entity_id == entity_id and client.name.len != 0) return client.name;
+    }
+    return shared.default_player_name;
+}
+
+fn markAllClientsForFullSync(self: *NetworkManager) void {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        client.needs_full_sync = true;
+    }
+}
+
+fn broadcastPlayerName(self: *NetworkManager, writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        if (client.entity_id == .none) continue;
+        try client.sendCommand(writer, .{ .update_player_name = .{
+            .id = entity_id,
+            .name_len = @intCast(name.len),
+            .name = name,
+        } }, .reliable);
+    }
+}
+
+fn updateAdvertisedSession(self: *NetworkManager) void {
+    var player_names: [shared.max_players][]const u8 = undefined;
+    var player_count: usize = 0;
+    var host_name: []const u8 = "";
+
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        if (client.entity_id == .none or client.name.len == 0) continue;
+        if (client.conn == self.steam_server.host_conn) host_name = client.name;
+        if (player_count < player_names.len) {
+            player_names[player_count] = client.name;
+            player_count += 1;
+        }
+    }
+
+    if (host_name.len == 0 and player_count != 0) host_name = player_names[0];
+    self.steam_server.updateSessionMetadata(shared.max_players, shared.net.protocol_version, host_name, player_names[0..player_count]);
+    self.session_metadata_dirty = false;
+}
+
+fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
+    var len: usize = 0;
+    for (std.mem.trim(u8, raw, " \t\r\n")) |char| {
+        if (len >= buffer.len) break;
+        if (char < 32 or char == 127) continue;
+        buffer[len] = char;
+        len += 1;
+    }
+    return buffer[0..len];
 }

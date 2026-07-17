@@ -1,3 +1,5 @@
+const Client = @This();
+
 const std = @import("std");
 const steam = @import("steamworks");
 const SteamNet = @import("../SteamNet.zig");
@@ -7,7 +9,10 @@ const ServerListResponse = steam.ISteamMatchmakingServerListResponse;
 pub const ServerInfo = extern struct {
     steam_id: u64,
     name: [64]u8,
+    game_tags: [128]u8,
     id_str: [64]u8,
+    player_count: i32,
+    max_players: i32,
 };
 pub const ServerList = extern struct {
     const RefreshState = enum(u8) {
@@ -57,6 +62,9 @@ const Browser = extern struct {
             const server = servers.GetServerDetails(request, @intCast(server_index));
             self.list.servers[server_index].steam_id = server.*.m_steamID;
             @memcpy(self.list.servers[server_index].name[0..], server.*.m_szServerName[0..]);
+            @memcpy(self.list.servers[server_index].game_tags[0..], server.*.m_szGameTags[0..]);
+            self.list.servers[server_index].player_count = server.*.m_nPlayers;
+            self.list.servers[server_index].max_players = server.*.m_nMaxPlayers;
             std.log.info("Server[{d}] steamID={d} hadResponse={} name=\"{s}\"", .{
                 server_index,
                 server.*.m_steamID,
@@ -81,7 +89,7 @@ packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
     if (!steam.SteamAPI_Init()) {
         std.log.err("SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.", .{});
         return error.InitSteamworks;
@@ -100,7 +108,13 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !@This() {
     };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn personaName(_: *const Client) []const u8 {
+    const persona_name = steam.SteamFriends().GetPersonaName();
+    if (persona_name == null) return "";
+    return std.mem.sliceTo(persona_name, 0);
+}
+
+pub fn deinit(self: *Client) void {
     self.handle_packets_future.cancel(self.io) catch {};
 
     const servers = steam.SteamMatchmakingServers();
@@ -140,7 +154,7 @@ pub fn deinit(self: *@This()) void {
     self.packets.deinit(self.gpa);
 }
 
-pub fn disconnect(self: *@This()) void {
+pub fn disconnect(self: *Client) void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     const conn = self.server_conn;
     if (conn != 0) {
@@ -153,7 +167,14 @@ pub fn disconnect(self: *@This()) void {
     self.packets.events.clearRetainingCapacity();
 }
 
-pub fn isLoggedOn(self: *const @This()) bool {
+pub fn pingMilliseconds(self: *const Client) i32 {
+    if (self.server_conn == 0) return -1;
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
+    if (steam.SteamNetworkingSockets_SteamAPI().GetConnectionRealTimeStatus(self.server_conn, &status, &.{}) != .k_EResultOK) return -1;
+    return status.m_nPing;
+}
+
+pub fn isLoggedOn(self: *const Client) bool {
     _ = self;
     return steam.SteamUser().BLoggedOn();
 }
@@ -190,7 +211,7 @@ fn endReasonName(reason: i32) []const u8 {
     };
 }
 
-pub fn handlePackets(self: *@This()) !void {
+pub fn handlePackets(self: *Client) !void {
     defer std.log.warn("packet pump exited", .{});
     var last_iteration: std.Io.Timestamp = .now(self.io, .real);
     var last_status_log = last_iteration;
@@ -225,7 +246,7 @@ pub fn handlePackets(self: *@This()) !void {
     }
 }
 
-fn steamPump(self: *@This()) !void {
+fn steamPump(self: *Client) !void {
     steam.SteamAPI_ManualDispatch_RunFrame(self.pipe);
     if (self.browser.list.refresh_state == .done and self.browser.request != 0) {
         const servers = steam.SteamMatchmakingServers();
@@ -267,7 +288,7 @@ fn steamPump(self: *@This()) !void {
     }
 }
 
-pub fn recievePackets(self: *@This()) !void {
+pub fn recievePackets(self: *Client) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;
@@ -286,7 +307,7 @@ pub fn recievePackets(self: *@This()) !void {
     }
 }
 
-pub fn sendPackets(self: *@This()) !void {
+pub fn sendPackets(self: *Client) !void {
     if (self.packets.outgoing.items.len == 0) return;
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
@@ -300,7 +321,7 @@ pub fn sendPackets(self: *@This()) !void {
     self.packets.outgoing.clearRetainingCapacity();
 }
 
-pub fn connectToServer(self: *@This(), steam_id: u64) !void {
+pub fn connectToServer(self: *Client, steam_id: u64) !void {
     var identity: steam.SteamNetworkingIdentity = undefined;
     identity.Clear();
     identity.SetSteamID64(steam_id);
@@ -313,7 +334,7 @@ pub fn connectToServer(self: *@This(), steam_id: u64) !void {
     std.log.info("ConnectP2P({d}) -> {d}", .{ steam_id, conn });
 }
 
-pub fn connectToLocalServer(self: *@This(), port: u16) !void {
+pub fn connectToLocalServer(self: *Client, port: u16) !void {
     var address: steam.SteamNetworkingIPAddr = undefined;
     address.Clear();
     address.SetIPv4(0x7f000001, port);

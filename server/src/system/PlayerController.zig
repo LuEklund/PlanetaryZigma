@@ -47,9 +47,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                     if (!teleporter.active) {
                         teleporter.active = true;
                         info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
+                        const boss_surface = shared.planetSurfacePointNear(entity.transform.position, @floatFromInt(info.world.planet_radius), 15, 25, info.world.prng.random());
                         _ = try info.world.spawn(.{
-                            .kind = .{ .enemy = .wizard },
-                            .transform = .{ .position = entity.transform.position + nz.vec.scale(nz.vec.normalize(entity.transform.position), 10) },
+                            .kind = .{ .enemy = .bloorpLord },
+                            .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
                             .flags = .{ .is_teleporter_boss = true },
                             .last_attack = info.elapsed_time,
                         });

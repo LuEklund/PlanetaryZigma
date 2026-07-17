@@ -9,7 +9,7 @@ pub const Id = enum(u32) {
 pub const EnemyKind = enum(u16) {
     tubloid = 0,
     tubloida = 1,
-    wizard = 2,
+    bloorpLord = 2,
 };
 
 pub const ProjectileKind = enum(u16) {
@@ -40,23 +40,26 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
         .player => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid, .tubloida => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
-            .wizard => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+            .bloorpLord => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
         },
         .teleporter => .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
         .item => .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+        .lootbox => .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
     };
 }
 
 pub const Kind = union(enum) {
     unknown,
+
     player,
-    planet,
-    projectile_cube,
-
-    teleporter,
-
     enemy: EnemyKind,
     item: Item.Kind,
+
+    planet,
+    teleporter,
+    lootbox,
+
+    projectile_cube,
     projectile_rocket,
 
     pub fn eql(kind: Kind, other_kind: Kind) bool {
@@ -77,7 +80,7 @@ pub const Kind = union(enum) {
 
     pub fn expectsModel(kind: Kind) bool {
         return switch (kind) {
-            .player, .planet, .enemy, .item, .projectile_cube, .projectile_rocket => true,
+            .player, .planet, .enemy, .item, .projectile_cube, .projectile_rocket, .lootbox => true,
             .unknown, .teleporter => false,
         };
     }

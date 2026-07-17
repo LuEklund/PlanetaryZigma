@@ -1,3 +1,5 @@
+const Controller = @This();
+
 const shared = @import("shared");
 const yes = @import("yes");
 
@@ -104,7 +106,6 @@ pub const Bindings = struct {
 };
 
 mouse_pos: [2]f64 = .{ 0, 0 },
-mouse_prev_pos: [2]f64 = .{ 0, 0 },
 mouse_delta: [2]f64 = .{ 0, 0 },
 mouse_wheel: f64 = 0,
 mouse_button_left: bool = false,
@@ -116,27 +117,21 @@ suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 
-pub fn update(self: *@This()) void {
-    self.mouse_prev_pos[0] = self.mouse_pos[0];
-    self.mouse_prev_pos[1] = self.mouse_pos[1];
-}
-
-pub fn clearInput(self: *@This()) void {
+pub fn clearInput(self: *Controller) void {
     self.input_map = .{};
     self.mouse_wheel = 0;
 }
 
-pub fn releaseMouseButtons(self: *@This()) void {
+pub fn releaseMouseButtons(self: *Controller) void {
     self.mouse_button_left = false;
     self.mouse_button_right = false;
 }
 
-pub fn resetMouseDelta(self: *@This()) void {
+pub fn resetMouseDelta(self: *Controller) void {
     self.mouse_delta = .{ 0, 0 };
-    self.mouse_prev_pos = self.mouse_pos;
 }
 
-pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
+pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
     switch (event.*) {
         .key => |key| {
             const pressed = key.state == .pressed;
@@ -203,7 +198,7 @@ pub fn eventUpdate(self: *@This(), event: *const yes.Window.Event) void {
     }
 }
 
-fn applyAction(self: *@This(), action: Action, pressed: bool) void {
+fn applyAction(self: *Controller, action: Action, pressed: bool) void {
     switch (action) {
         .move_forward => self.input_map.keys.w = pressed,
         .move_backward => self.input_map.keys.s = pressed,

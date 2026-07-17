@@ -88,7 +88,7 @@ pub fn main(init: std.process.Init) !void {
         }
         accumlated_time -= time_step;
         while (try window.poll(desktop)) |event| {
-            const options_was_open = world.options_menu_open;
+            const options_was_open = system_context.hud.overlay == .options;
             system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event);
             switch (event) {
                 .close => break :main_loop,
@@ -96,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
                     try system_context.renderer.resize(gpa, window);
                 },
                 .key => |key| {
-                    if (key.state == .released and key.sym == .escape and !system_context.isInGame() and !options_was_open) break :main_loop;
+                    if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;
                     if (key.state == .released) {
                         // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
                         const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
