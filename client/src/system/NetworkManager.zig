@@ -49,6 +49,7 @@ const ServerList = struct {
 
 const server_exe_name = if (builtin.os.tag == .windows) "server.exe" else "server";
 const server_dir_candidates = [_][]const u8{ "../server", "server", "../../../server" };
+const server_exe_rel_candidates = [_][]const u8{ server_exe_name, "zig-out/bin/" ++ server_exe_name };
 
 const HostServer = struct {
     dir: []const u8,
@@ -113,16 +114,16 @@ fn findHostServer(self: *NetworkManager, dir_buf: *[std.Io.Dir.max_path_bytes]u8
         var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
         defer server_dir.close(self.io);
 
-        var exe_rel_buf: [64]u8 = undefined;
-        const exe_rel = std.fmt.bufPrint(&exe_rel_buf, "zig-out/bin/{s}", .{server_exe_name}) catch unreachable;
-        server_dir.access(self.io, exe_rel, .{}) catch continue;
+        for (server_exe_rel_candidates) |exe_rel| {
+            server_dir.access(self.io, exe_rel, .{}) catch continue;
 
-        const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
-        const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
-        return .{
-            .dir = dir_buf[0..dir_len],
-            .exe_path = exe_path_buf[0..exe_path_len],
-        };
+            const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
+            const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
+            return .{
+                .dir = dir_buf[0..dir_len],
+                .exe_path = exe_path_buf[0..exe_path_len],
+            };
+        }
     }
     return null;
 }

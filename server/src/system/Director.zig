@@ -72,7 +72,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = random.intRangeAtMost(u32, shared.planet_min_radius, 100);
+    world.planet_radius = random.intRangeAtMost(u32, shared.planet_min_radius, 60);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
     _ = try world.spawn(.{
