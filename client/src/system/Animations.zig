@@ -16,6 +16,16 @@ const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
 const look_yaw_deadzone: f32 = 0.05;
 
+const item_spin_speed: f32 = 1.5;
+const item_spawn_duration: f32 = 0.35;
+
+fn easeOutBack(x: f32) f32 {
+    const c1: f32 = 1.70158;
+    const c3: f32 = c1 + 1.0;
+    const xm1 = x - 1.0;
+    return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
+}
+
 gpa: std.mem.Allocator,
 
 pub fn init(gpa: std.mem.Allocator) Animations {
@@ -108,6 +118,24 @@ pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(
             for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices.cpu) |node_index, inverse_bind_matrix, *joint_matrix| {
                 joint_matrix.* = instance.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
             }
+        }
+    }
+
+    for (info.world.entities.values()) |*entity| {
+        switch (entity.kind) {
+            .item => {
+                if (entity.spawn_anim < 1.0) {
+                    entity.spawn_anim = @min(entity.spawn_anim + info.delta_time / item_spawn_duration, 1.0);
+                    entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(entity.spawn_anim));
+                }
+                if (entity.update_motion) |*motion| {
+                    const spun = nz.Quat(f32).fromVec(motion.rotation)
+                        .mul(nz.Quat(f32).angleAxis(item_spin_speed * info.delta_time, .{ 0, 1, 0 }))
+                        .normalize();
+                    motion.rotation = spun.toVec();
+                }
+            },
+            else => {},
         }
     }
 }

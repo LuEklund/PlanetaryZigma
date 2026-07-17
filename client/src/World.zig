@@ -46,6 +46,7 @@ pub const Entity = struct {
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
     animation_state: ?shared.entity.State = null,
+    spawn_anim: f32 = 0,
 
     transform: nz.Transform3D(f32) = .{},
 
