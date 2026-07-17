@@ -178,6 +178,7 @@ pub const Event = union(enum) {
     teleporter_charge: f16,
     new_stage: u32,
     attack: entity.Id,
+    interact: struct { interactor: entity.Id, interacted: entity.Id },
     rocket_impact: @Vector(3, f32),
 };
 

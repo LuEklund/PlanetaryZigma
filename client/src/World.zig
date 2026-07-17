@@ -41,7 +41,7 @@ pub const Entity = struct {
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .{},
     currency: u32 = 0,
-
+    interacting: shared.entity.Id = .none,
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
@@ -264,4 +264,3 @@ pub fn clearPendingPlayerNames(self: *World) void {
     }
     self.pending_player_names.clearRetainingCapacity();
 }
-

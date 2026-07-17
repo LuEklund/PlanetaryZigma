@@ -110,13 +110,13 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     }
 
     //NOTE: TEST ITEMS
-    for (stage_item_spawns) |spawn_spec| {
-        const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
-        for (0..random_spawn_count) |_| {
-            // const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            try spawnItem(world, spawn_spec.kind, .{ 0, 1, 0 });
-        }
-    }
+    // for (stage_item_spawns) |spawn_spec| {
+    //     const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
+    //     for (0..random_spawn_count) |_| {
+    //         // const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+    //         try spawnItem(world, spawn_spec.kind, .{ 0, 1, 0 });
+    //     }
+    // }
     for (0..25) |_| {
         const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
         const transform = surfaceTransform(world, vector_direction);
@@ -144,7 +144,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = teleporter.id;
 }
 
-fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
+pub fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
     const transform = surfaceTransform(world, vector_direction);
     const item = try world.spawn(.{
         .kind = .{ .item = kind },
@@ -154,8 +154,7 @@ fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.
 }
 
 fn surfaceTransform(world: *system.World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
-    const random = world.prng.random();
-    const surface = shared.planetSurfacePointNear(vector_direction, @floatFromInt(world.planet_radius), 5, 20, random);
+    const surface = shared.planetSurfacePoint(vector_direction, @floatFromInt(world.planet_radius));
     const planet_up = nz.vec.normalize(surface);
     return .{
         .position = surface + nz.vec.scale(planet_up, item_surface_offset),

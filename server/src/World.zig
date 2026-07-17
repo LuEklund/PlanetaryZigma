@@ -53,6 +53,7 @@ pub const Entity = struct {
     flags: Flags = .{},
     kind: shared.entity.Kind = .unknown,
     owner_id: shared.entity.Id = .none,
+    interacting: shared.entity.Id = .none,
 
     transform: nz.Transform3D(f32) = .{},
     velocity: nz.Vec3(f32) = .{ 0, 0, 0 },

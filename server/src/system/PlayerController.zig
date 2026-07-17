@@ -5,6 +5,8 @@ const Physics = @import("Physics.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
+const Director = @import("../system/Director.zig");
+
 pub const aim_range: f32 = 300;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
@@ -40,30 +42,63 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             // });
         }
 
+        const ray_position_start = player.transform.position;
+        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+        const ray_position_end = nz.vec.scale(camera_forward, 8);
+        const ray_hit = Physics.c.b3World_CastRayClosest(
+            physics.world,
+            .{ .x = ray_position_start[0], .y = ray_position_start[1], .z = ray_position_start[2] },
+            .{ .x = ray_position_end[0], .y = ray_position_end[1], .z = ray_position_end[2] },
+            Physics.c.b3DefaultQueryFilter(),
+        );
+        var hit_id: shared.entity.Id = .none;
+        if (ray_hit.hit) {
+            const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
+            hit_id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
+        }
+        if (player.interacting != hit_id) {
+            player.interacting = hit_id;
+            if (info.world.getPtr(hit_id)) |hit_entity| {
+                switch (hit_entity.kind) {
+                    .lootbox, .item, .teleporter => info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = hit_id } } }),
+                    else => info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } }),
+                }
+                std.log.debug("player ID {d}, hit tag {t}", .{ player_id, hit_entity.kind });
+            } else {
+                info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
+            }
+        }
+
         if (player.controller.input.keys.e) {
-            if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                const teleporter = &entity.teleporter;
-                if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
-                    if (!teleporter.active) {
-                        teleporter.active = true;
-                        info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
-                        const boss_surface = shared.planetSurfacePointNear(entity.transform.position, @floatFromInt(info.world.planet_radius), 15, 25, info.world.prng.random());
-                        _ = try info.world.spawn(.{
-                            .kind = .{ .enemy = .bloorpLord },
-                            .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
-                            .flags = .{ .is_teleporter_boss = true },
-                            .last_attack = info.elapsed_time,
-                        });
-                    } else {
-                        if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
-                            info.world.next_stage_requested = true;
+            if (info.world.getPtr(player.interacting)) |entity| {
+                switch (entity.kind) {
+                    .lootbox => {
+                        info.world.queueDespawn(entity.id);
+                        try Director.spawnItem(info.world, .health, entity.transform.position);
+                    },
+                    .teleporter => {
+                        const teleporter = &entity.teleporter;
+                        if (!teleporter.active) {
+                            teleporter.active = true;
+                            info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
+                            const boss_surface = shared.planetSurfacePointNear(entity.transform.position, @floatFromInt(info.world.planet_radius), 15, 25, info.world.prng.random());
+                            _ = try info.world.spawn(.{
+                                .kind = .{ .enemy = .bloorpLord },
+                                .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
+                                .flags = .{ .is_teleporter_boss = true },
+                                .last_attack = info.elapsed_time,
+                            });
+                        } else {
+                            if (teleporter.charged == teleporter.max_charge and info.world.teleport_bosses.items.len == 0) {
+                                info.world.next_stage_requested = true;
+                            }
                         }
-                    }
+                    },
+                    else => {},
                 }
             }
         }
 
-        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
         const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
         const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
             nz.vec.normalize(fwd_proj)

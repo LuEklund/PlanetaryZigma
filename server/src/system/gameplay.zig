@@ -202,7 +202,7 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
         if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
-            teleporter.charged += info.delta_time + 100;
+            teleporter.charged += info.delta_time * 10;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
