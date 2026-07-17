@@ -1,3 +1,5 @@
+const Hud = @This();
+
 const std = @import("std");
 const nz = @import("shared").numz;
 const shared = @import("shared");
@@ -7,8 +9,25 @@ const Info = system.Info;
 const Ui = @import("../Renderer/Vulkan/Ui.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
-const Menu = @import("../Menu.zig");
 const Options = @import("../Options.zig");
+
+pub const Screen = enum {
+    main,
+    multiplayer,
+};
+
+pub const OptionsTab = enum {
+    gameplay,
+    keyboard_mouse,
+    video,
+    graphics,
+};
+
+pub const Overlay = union(enum) {
+    none,
+    pause,
+    options: struct { return_to_pause: bool },
+};
 
 pub const Request = union(enum) {
     none,
@@ -16,12 +35,16 @@ pub const Request = union(enum) {
     quit,
 };
 
+screen: Screen = .main,
+overlay: Overlay = .none,
+options_tab: OptionsTab = .gameplay,
+
 pub fn update(
+    hud: *Hud,
     info: *const Info,
     network_manager: *NetworkManager,
     ui: *Ui,
     controller: *Controller,
-    menu: *Menu,
     options: *Options,
 ) !Request {
     const tracy_scope = tracy.zone(@src());
@@ -35,14 +58,14 @@ pub fn update(
     });
     var request: Request = .none;
     if (network_manager.steam_client.server_conn == 0) {
-        request = try mainMenu(network_manager, ui, menu);
-        if (menu.mode == .options) optionsMenu(ui, menu, options, controller);
+        request = try mainMenu(network_manager, ui, hud);
+        if (hud.overlay == .options) optionsMenu(ui, hud, options, controller);
     } else {
         try inGame(info, network_manager, ui, options);
-        switch (menu.mode) {
+        switch (hud.overlay) {
             .none => {},
-            .pause => request = try pauseMenu(ui, menu),
-            .options => optionsMenu(ui, menu, options, controller),
+            .pause => request = try pauseMenu(ui, hud),
+            .options => optionsMenu(ui, hud, options, controller),
         }
     }
 
@@ -50,7 +73,7 @@ pub fn update(
     return request;
 }
 
-fn mainMenu(network_manager: *NetworkManager, ui: *Ui, menu: *Menu) !Request {
+fn mainMenu(network_manager: *NetworkManager, ui: *Ui, hud: *Hud) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
@@ -70,31 +93,31 @@ fn mainMenu(network_manager: *NetworkManager, ui: *Ui, menu: *Menu) !Request {
     const singleplayer_text = if (singleplayer_hosting) "Starting..." else if (singleplayer_failed) "Start Failed" else "Singleplayer";
 
     addMainMenuButton(ui, "menu_singleplayer", singleplayer_text, left, top, button_width, button_height, button_text_size, singleplayer_hosting, true);
-    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, menu.screen == .multiplayer, steam_logged_on);
-    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, menu.mode == .options, true);
+    addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, hud.screen == .multiplayer, steam_logged_on);
+    addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, hud.overlay == .options, true);
     addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false, true);
 
     if (ui.isActive("menu_singleplayer")) {
-        menu.screen = .main;
+        hud.screen = .main;
         network_manager.requestHost(.singleplayer);
     }
     if (steam_logged_on and ui.isActive("menu_multiplayer")) {
-        menu.screen = .multiplayer;
+        hud.screen = .multiplayer;
         if (!network_manager.server_list.refresh and network_manager.server_list.count == 0) {
             network_manager.server_list.refresh = true;
         }
     } else if (!steam_logged_on and ui.isActive("menu_multiplayer")) {
-        menu.screen = .multiplayer;
+        hud.screen = .multiplayer;
     }
     if (ui.isActive("menu_settings")) {
-        menu.screen = .main;
-        menu.mode = .{ .options = .{ .return_to_pause = false } };
+        hud.screen = .main;
+        hud.overlay = .{ .options = .{ .return_to_pause = false } };
     }
     if (ui.isActive("menu_quit")) {
         return .quit;
     }
 
-    switch (menu.screen) {
+    switch (hud.screen) {
         .main => {},
         .multiplayer => try multiplayerPanel(network_manager, ui, panel_left, panel_top, panel_width),
     }
@@ -237,7 +260,7 @@ fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f
     }
 }
 
-fn pauseMenu(ui: *Ui, menu: *Menu) !Request {
+fn pauseMenu(ui: *Ui, hud: *Hud) !Request {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
     const button_height = std.math.clamp(ui.screen_heigth * 0.058, @as(f32, 40), @as(f32, 52));
     const row_gap: f32 = 10;
@@ -272,10 +295,10 @@ fn pauseMenu(ui: *Ui, menu: *Menu) !Request {
     addPauseButton(ui, "pause_main_menu", "Main Menu", panel_width * 0.82, button_height);
 
     if (ui.isActive("pause_resume")) {
-        menu.mode = .none;
+        hud.overlay = .none;
     }
     if (ui.isActive("pause_options")) {
-        menu.mode = .{ .options = .{ .return_to_pause = true } };
+        hud.overlay = .{ .options = .{ .return_to_pause = true } };
     }
     if (ui.isActive("pause_main_menu")) {
         return .main_menu;
@@ -283,7 +306,7 @@ fn pauseMenu(ui: *Ui, menu: *Menu) !Request {
     return .none;
 }
 
-fn optionsMenu(ui: *Ui, menu: *Menu, options: *Options, controller: *Controller) void {
+fn optionsMenu(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) void {
     const max_width = @max(@as(f32, 260), ui.screen_width - 8);
     const max_height = @max(@as(f32, 320), ui.screen_heigth - 8);
     const panel_width = @min(max_width, @max(@as(f32, 740), ui.screen_width * 0.9));
@@ -296,7 +319,7 @@ fn optionsMenu(ui: *Ui, menu: *Menu, options: *Options, controller: *Controller)
     const title_height: f32 = 52;
     const tab_gap: f32 = 6;
     const tab_height: f32 = 36;
-    const tabs = [_]Menu.OptionsTab{ .gameplay, .keyboard_mouse, .video, .graphics };
+    const tabs = [_]OptionsTab{ .gameplay, .keyboard_mouse, .video, .graphics };
     const tab_width = (content_width - tab_gap * @as(f32, @floatFromInt(tabs.len - 1))) / @as(f32, @floatFromInt(tabs.len));
     const tabs_top = top + padding + title_height;
     const body_top = tabs_top + tab_height + 18;
@@ -321,11 +344,11 @@ fn optionsMenu(ui: *Ui, menu: *Menu, options: *Options, controller: *Controller)
 
     for (tabs, 0..) |tab, i| {
         const tab_left = content_left + (tab_width + tab_gap) * @as(f32, @floatFromInt(i));
-        addOptionsTab(ui, tab, menu.options_tab == tab, tab_left, tabs_top, tab_width, tab_height);
-        if (ui.isClicked(optionsTabName(tab))) menu.options_tab = tab;
+        addOptionsTab(ui, tab, hud.options_tab == tab, tab_left, tabs_top, tab_width, tab_height);
+        if (ui.isClicked(optionsTabName(tab))) hud.options_tab = tab;
     }
 
-    switch (menu.options_tab) {
+    switch (hud.options_tab) {
         .gameplay => optionsGameplay(ui, options, content_left, body_top, content_width),
         .keyboard_mouse => optionsKeyboardMouse(ui, options, controller, content_left, body_top, content_width),
         .video => optionsVideo(ui, options, content_left, body_top, content_width),
@@ -335,7 +358,7 @@ fn optionsMenu(ui: *Ui, menu: *Menu, options: *Options, controller: *Controller)
     const back_width: f32 = 150;
     addOptionsButton(ui, "options_back", "Back", content_left + content_width - back_width, body_top + body_height, back_width, 40);
     if (ui.isClicked("options_back")) {
-        menu.mode = if (menu.mode.options.return_to_pause) .pause else .none;
+        hud.overlay = if (hud.overlay.options.return_to_pause) .pause else .none;
     }
 }
 
@@ -396,7 +419,7 @@ fn optionsGraphics(ui: *Ui, controller: *Controller, left: f32, top: f32, width:
     }
 }
 
-fn addOptionsTab(ui: *Ui, tab: Menu.OptionsTab, selected: bool, left: f32, top: f32, width: f32, height: f32) void {
+fn addOptionsTab(ui: *Ui, tab: OptionsTab, selected: bool, left: f32, top: f32, width: f32, height: f32) void {
     const name = optionsTabName(tab);
     const hot = ui.isHot(name);
     ui.add(null, .{
@@ -509,7 +532,7 @@ fn bindingRowName(action: Controller.Action) []const u8 {
     };
 }
 
-fn optionsTabName(tab: Menu.OptionsTab) []const u8 {
+fn optionsTabName(tab: OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "options_tab_gameplay",
         .keyboard_mouse => "options_tab_keyboard_mouse",
@@ -518,7 +541,7 @@ fn optionsTabName(tab: Menu.OptionsTab) []const u8 {
     };
 }
 
-fn optionsTabLabel(tab: Menu.OptionsTab) []const u8 {
+fn optionsTabLabel(tab: OptionsTab) []const u8 {
     return switch (tab) {
         .gameplay => "Gameplay",
         .keyboard_mouse => "Keyboard-Mouse",

@@ -7,9 +7,8 @@ const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
-const menu_scene = @import("system/menu.zig");
 const Particle = @import("system/Particle.zig");
-pub const Menu = @import("Menu.zig");
+const menu = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
 
@@ -42,7 +41,7 @@ pub const Context = struct {
     network_manager: NetworkManager,
     animation: Animation,
     scene: Scene,
-    menu: Menu,
+    hud: Hud,
     options: Options,
     request_exit: bool = false,
     fullscreen_applied: bool = false,
@@ -68,10 +67,8 @@ pub const Context = struct {
         self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
-        self.scene = .menu;
-        self.menu = .{};
         self.options = .{};
-        try menu_scene.populate(data.world);
+        try self.enterScene(data.world, .menu);
         self.request_exit = false;
         self.fullscreen_applied = false;
         self.cursor_mode_applied = .normal;
@@ -83,16 +80,11 @@ pub const Context = struct {
         self.network_manager.deinit();
     }
 
-    pub fn isInGame(self: *const Context) bool {
-        return self.scene == .game;
-    }
-
-    fn setScene(self: *Context, info: *const Info, next: Scene) !void {
-        if (next == self.scene) return;
-        info.world.clearSession();
-        self.menu = .{};
+    fn enterScene(self: *Context, world: *World, next: Scene) !void {
+        world.clearSession();
+        self.hud = .{};
         switch (next) {
-            .menu => try menu_scene.populate(info.world),
+            .menu => try menu.populate(world),
             .game => {},
         }
         self.scene = next;
@@ -102,35 +94,23 @@ pub const Context = struct {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         // tracy.frameMark();
-        if (!self.isInGame()) {
-            switch (self.menu.mode) {
-                .pause => self.menu.mode = .none,
-                .options => |options_mode| if (options_mode.return_to_pause) {
-                    self.menu.mode = .none;
-                },
-                .none => {},
-            }
-        }
-        info.world.controller.update();
-        if (self.menu.paused()) info.world.controller.resetMouseDelta();
-
-        const paused_before_hud = self.menu.paused();
+        const paused_before_hud = self.hud.overlay != .none;
         Particle.update(&info.world.particles, info.delta_time);
-        if (self.scene == .menu) menu_scene.update(info.world, info.elapsed_time);
-        switch (try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, &self.menu, &self.options)) {
+        if (self.scene == .menu) menu.update(info.world, info.elapsed_time);
+        switch (try self.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, &self.options)) {
             .none => {},
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,
         }
-        if (paused_before_hud or self.menu.paused()) {
+        if (paused_before_hud or self.hud.overlay != .none) {
             info.world.controller.clearInput();
-            info.world.controller.resetMouseDelta();
         }
         try self.applyOptions(info);
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
-        try self.setScene(info, if (self.network_manager.connected()) .game else .menu);
+        const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
+        if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
         try info.world.flush();
         try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
@@ -138,7 +118,7 @@ pub const Context = struct {
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
         motion.evaluate(info, server_time);
 
-        if (!paused_before_hud and !self.menu.paused()) info.world.camera.update(info, &self.options);
+        if (!paused_before_hud and self.hud.overlay == .none) info.world.camera.update(info, &self.options);
         info.world.controller.resetMouseDelta();
         info.world.controller.mouse_wheel = 0;
         // std.log.debug("time : {d}", .{info.elapsed_time});
@@ -157,14 +137,14 @@ pub const Context = struct {
                 info.world.controller.suppress_escape_release = false;
                 return;
             }
-            if (key.state == .released and key.sym == .escape and self.menu.mode == .options) {
-                self.menu.mode = if (self.menu.mode.options.return_to_pause and self.isInGame()) .pause else .none;
+            if (key.state == .released and key.sym == .escape and self.hud.overlay == .options) {
+                self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
                 info.world.controller.clearInput();
                 info.world.controller.resetMouseDelta();
                 return;
             }
-            if (key.state == .released and key.sym == .escape and self.isInGame()) {
-                self.menu.mode = if (self.menu.mode == .pause) .none else .pause;
+            if (key.state == .released and key.sym == .escape and self.scene == .game) {
+                self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
                 info.world.controller.clearInput();
                 info.world.controller.resetMouseDelta();
                 return;
@@ -180,7 +160,7 @@ pub const Context = struct {
             try self.window.setMode(self.desktop, mode);
             self.fullscreen_applied = self.options.fullscreen;
         }
-        const wants_cursor_lock = self.isInGame() and !self.menu.paused() and self.window.focused;
+        const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
         const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .locked else .normal;
         if (self.cursor_mode_applied != cursor_mode) {
             try self.window.setCursorMode(self.desktop, cursor_mode);

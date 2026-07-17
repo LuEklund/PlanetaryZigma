@@ -106,7 +106,6 @@ pub const Bindings = struct {
 };
 
 mouse_pos: [2]f64 = .{ 0, 0 },
-mouse_prev_pos: [2]f64 = .{ 0, 0 },
 mouse_delta: [2]f64 = .{ 0, 0 },
 mouse_wheel: f64 = 0,
 mouse_button_left: bool = false,
@@ -117,11 +116,6 @@ rebinding_action: ?Action = null,
 suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
-
-pub fn update(self: *Controller) void {
-    self.mouse_prev_pos[0] = self.mouse_pos[0];
-    self.mouse_prev_pos[1] = self.mouse_pos[1];
-}
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};
@@ -135,7 +129,6 @@ pub fn releaseMouseButtons(self: *Controller) void {
 
 pub fn resetMouseDelta(self: *Controller) void {
     self.mouse_delta = .{ 0, 0 };
-    self.mouse_prev_pos = self.mouse_pos;
 }
 
 pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
