@@ -41,10 +41,22 @@ float shadowFactor() {
   vec2 uv = ndc.xy * 0.5 + 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0)
     return 1.0;
+
+  const vec2 poisson[12] = vec2[](
+    vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457),
+    vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
+    vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064),
+    vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
   float texel = 1.0 / 2048.0;
-  uv = clamp(uv, vec2(texel), vec2(1.0 - texel)); // keep hw PCF inside this cascade's tile
-  uv.x = (uv.x + float(cascade)) / 3.0;
-  return texture(shadow_map, vec3(uv, ndc.z - 0.0015));
+  float pcf_radius = 2.0 * texel;
+  float depth_ref = ndc.z - 0.0015;
+  float sum = 0.0;
+  for (int i = 0; i < 12; i++) {
+    vec2 tap = clamp(uv + poisson[i] * pcf_radius, vec2(texel), vec2(1.0 - texel));
+    tap.x = (tap.x + float(cascade)) / 3.0;
+    sum += texture(shadow_map, vec3(tap, depth_ref));
+  }
+  return sum / 12.0;
 }
 
 void main() {
