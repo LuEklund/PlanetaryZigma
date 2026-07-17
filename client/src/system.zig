@@ -7,6 +7,7 @@ const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
+const Particle = @import("system/Particle.zig");
 pub const Renderer = @import("Renderer.zig");
 
 pub const Camera = @import("system/Camera.zig");
@@ -86,7 +87,7 @@ pub const Context = struct {
         if (info.world.pause_menu_open or info.world.options_menu_open) info.world.controller.resetMouseDelta();
 
         const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
-        info.world.updateParticles(info.delta_time);
+        Particle.update(&info.world.particles, info.delta_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         if (info.world.request_main_menu) {
             info.world.request_main_menu = false;

@@ -4,6 +4,7 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
+const Particle = @import("Particle.zig");
 const World = system.World;
 const Info = system.Info;
 const nz = shared.numz;
@@ -344,7 +345,7 @@ fn handleCommand(
                     info.world.attack_events.appendAssumeCapacity(id);
                 },
                 .rocket_impact => |position| {
-                    info.world.spawnRocketExplosion(position);
+                    Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
                 },
             }
         },
