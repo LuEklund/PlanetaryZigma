@@ -7,45 +7,6 @@ const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 const Particle = @import("system/Particle.zig");
 
-pub const MenuScreen = enum {
-    main,
-    multiplayer,
-};
-
-pub const OptionsTab = enum {
-    gameplay,
-    keyboard_mouse,
-    video,
-    graphics,
-};
-
-pub const Options = struct {
-    tab: OptionsTab = .gameplay,
-    show_hud_stats: bool = true,
-    show_crosshair: bool = true,
-    mouse_sensitivity: f32 = 1.0,
-    invert_y: bool = false,
-    fullscreen: bool = false,
-    fov_rad: f32 = 1.5,
-
-    pub fn cycleMouseSensitivity(self: *Options) void {
-        const values = [_]f32{ 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
-        self.mouse_sensitivity = cycleF32(values, self.mouse_sensitivity);
-    }
-
-    pub fn cycleFov(self: *Options) void {
-        const values = [_]f32{ 1.2, 1.35, 1.5, 1.65, 1.8 };
-        self.fov_rad = cycleF32(values, self.fov_rad);
-    }
-
-    fn cycleF32(comptime values: anytype, current: f32) f32 {
-        for (values, 0..) |value, i| {
-            if (@abs(value - current) < 0.001) return values[(i + 1) % values.len];
-        }
-        return values[0];
-    }
-};
-
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
     entity_despawned: shared.entity.Id,
@@ -69,13 +30,6 @@ controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
-menu_screen: MenuScreen = .main,
-options: Options = .{},
-pause_menu_open: bool = false,
-options_menu_open: bool = false,
-options_menu_return_to_pause: bool = false,
-request_quit: bool = false,
-request_main_menu: bool = false,
 stage: u32 = 0,
 prng: std.Random.DefaultPrng,
 
@@ -157,10 +111,6 @@ pub fn clearSession(self: *World) void {
     self.teleporter_id = .none;
     self.player_id = .none;
     self.planet_radius = 0;
-    self.menu_screen = .main;
-    self.pause_menu_open = false;
-    self.options_menu_open = false;
-    self.options_menu_return_to_pause = false;
     self.stage = 0;
 }
 
