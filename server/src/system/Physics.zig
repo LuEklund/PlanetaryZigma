@@ -304,4 +304,3 @@ pub fn moveTowardsOnPlanet(
 
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
 }
-

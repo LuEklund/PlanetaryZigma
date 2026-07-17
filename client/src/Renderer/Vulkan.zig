@@ -898,10 +898,10 @@ fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
 fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
     const f = 1.0 / std.math.tan(fovy_rad / 2.0);
     return .new(.{
-        f / aspect, 0,  0,                           0,
-        0,          -f, 0,                           0, // flip Y for Vulkan
-        0,          0,  far / (near - far),          -1,
-        0,          0,  (far * near) / (near - far), 0,
+        f / aspect, 0, 0, 0,
+        0, -f, 0,                           0, // flip Y for Vulkan
+        0, 0,  far / (near - far),          -1,
+        0, 0,  (far * near) / (near - far), 0,
     });
 }
 
@@ -954,9 +954,9 @@ fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice
 
 fn shadowOrtho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
     return .new(.{
-        2.0 / (right - left),             0,                             0,                  0,
-        0,                                -2.0 / (top - bottom),         0,                  0,
-        0,                                0,                             1.0 / (near - far), 0,
+        2.0 / (right - left),             0,                               0,                   0,
+        0,                                -2.0 / (top - bottom),           0,                   0,
+        0,                                0,                               1.0 / (near - far),  0,
         -(right + left) / (right - left), (top + bottom) / (top - bottom), near / (near - far), 1,
     });
 }

@@ -264,4 +264,3 @@ pub fn clearPendingPlayerNames(self: *World) void {
     }
     self.pending_player_names.clearRetainingCapacity();
 }
-

@@ -620,7 +620,6 @@ fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
     return ui.print("{s}...", .{text[0 .. max_len - 3]});
 }
 
-
 fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options: *Options) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
@@ -638,7 +637,6 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options:
         .offset = .{ .left = ui.screen_width - ping_size.width - 12, .top = 10 },
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
-
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
