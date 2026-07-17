@@ -414,6 +414,8 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     self.resources.writeCascades(frame_index, &cascades);
 
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
     shadow_barrier.transition(
         c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
