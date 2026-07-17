@@ -19,11 +19,9 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, cont
         .right_click = controller.mouse_button_right,
     });
     if (network_manager.steam_client.server_conn == 0) {
-        info.world.show_menu_scene = true;
         try mainMenu(info, network_manager, ui);
         if (info.world.options_menu_open) optionsMenu(info, ui);
     } else {
-        info.world.show_menu_scene = false;
         try inGame(info, network_manager, ui);
         if (info.world.pause_menu_open) {
             try pauseMenu(info, ui);

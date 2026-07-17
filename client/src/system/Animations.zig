@@ -39,8 +39,10 @@ pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(
         const model = instance.model;
         if (model.clips.len == 0) continue;
 
-        const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
-        const state: shared.entity.State = if (speed > 0.5) .walk else .idle;
+        const state: shared.entity.State = entity.animation_state orelse state: {
+            const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
+            break :state if (speed > 0.5) .walk else .idle;
+        };
         const clip_index = model.state_clips.get(state);
         if (clip_index != instance.player.active) {
             instance.playClip(clip_index);

@@ -7,6 +7,7 @@ const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
+const menu = @import("system/menu.zig");
 const Particle = @import("system/Particle.zig");
 pub const Renderer = @import("Renderer.zig");
 
@@ -64,6 +65,7 @@ pub const Context = struct {
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.scene = .menu;
+        try menu.populate(data.world);
         self.request_exit = false;
         self.fullscreen_applied = false;
         self.cursor_mode_applied = .normal;
@@ -79,9 +81,13 @@ pub const Context = struct {
         return self.scene == .game;
     }
 
-    fn setScene(self: *Context, info: *const Info, next: Scene) void {
+    fn setScene(self: *Context, info: *const Info, next: Scene) !void {
         if (next == self.scene) return;
         info.world.clearSession();
+        switch (next) {
+            .menu => try menu.populate(info.world),
+            .game => {},
+        }
         self.scene = next;
     }
 
@@ -101,6 +107,7 @@ pub const Context = struct {
 
         const paused_for_input = info.world.pause_menu_open or info.world.options_menu_open;
         Particle.update(&info.world.particles, info.delta_time);
+        if (self.scene == .menu) menu.update(info.world, info.elapsed_time);
         try Hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller);
         if (info.world.request_main_menu) {
             info.world.request_main_menu = false;
@@ -115,7 +122,7 @@ pub const Context = struct {
         try self.renderer.update(info);
         try self.asset_server.update();
         try self.network_manager.update(info);
-        self.setScene(info, if (self.network_manager.connected()) .game else .menu);
+        try self.setScene(info, if (self.network_manager.connected()) .game else .menu);
         try info.world.flush();
         try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
@@ -170,7 +177,7 @@ pub const Context = struct {
     }
 
     fn applyOptions(self: *Context, info: *const Info) !void {
-        info.world.camera.fov_rad = info.world.options.fov_rad;
+        if (self.scene == .game) info.world.camera.fov_rad = info.world.options.fov_rad;
         if (self.fullscreen_applied != info.world.options.fullscreen) {
             const mode: yes.Window.Mode = if (info.world.options.fullscreen) .fullscreen else .windowed;
             try self.window.setMode(self.desktop, mode);

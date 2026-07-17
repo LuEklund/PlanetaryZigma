@@ -16,7 +16,6 @@ pub const Kind = enum {
     unknown,
     player,
     planet,
-    menu_planet,
     cube_projectile,
     teleporter,
     tubloid,
@@ -59,7 +58,7 @@ pub const Kind = enum {
         const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
         const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
         return switch (kind) {
-            .unknown, .planet, .menu_planet, .cube_projectile, .explosion_particle => .{ .path = null, .skinned = false, .clip_names = null },
+            .unknown, .planet, .cube_projectile, .explosion_particle => .{ .path = null, .skinned = false, .clip_names = null },
             .player => .{
                 .path = "objects/BenBozo.glb",
                 .offset = player_offset,

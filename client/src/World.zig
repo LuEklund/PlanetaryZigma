@@ -46,19 +46,6 @@ pub const Options = struct {
     }
 };
 
-pub const MenuTuning = struct {
-    camera_target: nz.Vec3(f32) = .{ 6, -5, -45 },
-    camera_yaw: f32 = -0.35,
-    camera_pitch: f32 = -0.22,
-    camera_distance: f32 = 50,
-    fov_rad: f32 = 1.25,
-    planet_position: nz.Vec3(f32) = .{ 6, -16, -52 },
-    planet_scale: f32 = 0.75,
-    bozo_screen: [2]f32 = .{ 0.53, 0.49 },
-    bozo_surface_offset: f32 = 3.5,
-    player_scale: f32 = 4.4,
-};
-
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
     entity_despawned: shared.entity.Id,
@@ -83,9 +70,7 @@ teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 menu_screen: MenuScreen = .main,
-menu_tuning: MenuTuning = .{},
 options: Options = .{},
-show_menu_scene: bool = true,
 pause_menu_open: bool = false,
 options_menu_open: bool = false,
 options_menu_return_to_pause: bool = false,
@@ -106,6 +91,7 @@ pub const Entity = struct {
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
+    animation_state: ?shared.entity.State = null,
 
     transform: nz.Transform3D(f32) = .{},
 
@@ -172,7 +158,6 @@ pub fn clearSession(self: *World) void {
     self.player_id = .none;
     self.planet_radius = 0;
     self.menu_screen = .main;
-    self.show_menu_scene = true;
     self.pause_menu_open = false;
     self.options_menu_open = false;
     self.options_menu_return_to_pause = false;
