@@ -33,7 +33,10 @@ float shadowFactor() {
   else if (dist < cascade_data.splits.z) cascade = 2;
   else return 1.0;
 
-  vec4 light_pos = cascade_data.light_view_proj[cascade] * vec4(in_world_pos, 1.0);
+  float texel_world = 2.0 / (cascade_data.light_view_proj[cascade][0][0] * 2048.0);
+  vec3 sample_pos = in_world_pos + normalize(in_normal) * texel_world * 1.5;
+
+  vec4 light_pos = cascade_data.light_view_proj[cascade] * vec4(sample_pos, 1.0);
   vec3 ndc = light_pos.xyz; // orthographic: w == 1
   vec2 uv = ndc.xy * 0.5 + 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0)
