@@ -42,6 +42,7 @@ options_tab: OptionsTab = .gameplay,
 pub fn update(
     hud: *Hud,
     info: *const Info,
+    scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
     controller: *Controller,
@@ -57,7 +58,7 @@ pub fn update(
         .right_click = controller.mouse_button_right,
     });
     var request: Request = .none;
-    if (network_manager.steam_client.server_conn == 0) {
+    if (scene == .menu) {
         request = try mainMenu(network_manager, ui, hud);
         if (hud.overlay == .options) optionsMenu(ui, hud, options, controller);
     } else {

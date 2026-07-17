@@ -97,7 +97,7 @@ pub const Context = struct {
         const paused_before_hud = self.hud.overlay != .none;
         Particle.update(&info.world.particles, info.delta_time);
         if (self.scene == .menu) menu.update(info.world, info.elapsed_time);
-        switch (try self.hud.update(info, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, &self.options)) {
+        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, &self.options)) {
             .none => {},
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,
