@@ -620,7 +620,6 @@ fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
     return ui.print("{s}...", .{text[0 .. max_len - 3]});
 }
 
-
 fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options: *Options) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
@@ -638,7 +637,6 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options:
         .offset = .{ .left = ui.screen_width - ping_size.width - 12, .top = 10 },
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
-
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
@@ -735,10 +733,37 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options:
         ui.add(
             "HUD",
             .{
+                .name = "info",
+                .axis_align = .vertical,
                 .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
-                .text = .{ .data = ui.print("stage: {d}", .{info.world.stage}) },
             },
         );
+        const stage_text = ui.print("stage: {d}", .{info.world.stage});
+
+        ui.add(
+            "info",
+            .{
+                .name = "stage",
+                .size = .{ .fixed = ui.textSize(stage_text, 18) },
+                .text = .{ .data = stage_text, .size = 18 },
+            },
+        );
+        if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+            const teleporter = entity.teleporter;
+            // const active = entity.teleporter.active;
+            ui.add(
+                "info",
+                .{
+                    .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
+                    .text = .{
+                        .data = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}),
+                        .size = 18,
+                    },
+                },
+            );
+            // if (teleporter.charged != teleporter.max_charge and active) {
+            // }
+        }
 
         if (options.show_crosshair) {
             ui.add(null, .{
@@ -787,23 +812,20 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options:
             }
         }
 
-        const portal = info.world.getPtr(info.world.teleporter_id);
-        const teleporter_active = if (portal) |entity| entity.teleporter.active else false;
-        if (teleporter_active == false) {
-            if (portal) |entity| {
-                if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
-                    ui.add(
-                        null,
-                        .{
-                            .name = "active_teleport",
-                            .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                            .text = .{ .data = "E" },
-                            .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
-                        },
-                    );
-                }
-            }
-        } else {
+        if (player.interacting != .none) {
+            ui.add(
+                null,
+                .{
+                    .name = "interacting",
+                    .size = .{ .fixed = .{ .heigth = 32, .width = 32 } },
+                    .text = .{ .data = "E" },
+                    .child_anchor = .{ .x = .center, .y = .center },
+                    .color = .new(0, 0, 0, 0.7),
+                    .offset = .{ .left = ui.screen_width / 2 + 32, .top = ui.screen_heigth / 2 + 32 },
+                },
+            );
+        }
+        if (info.world.teleporter_bosses.items.len > 0) {
             var total_boss_health: f32 = 0;
             var total_boss_max_health: f32 = 0;
             for (info.world.teleporter_bosses.items) |boss_id| {
@@ -822,30 +844,6 @@ fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, options:
                 .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
                 .color = .new(1, 0, 0, 1),
             });
-            if (portal) |entity| {
-                const teleporter = entity.teleporter;
-                if (teleporter.charged == teleporter.max_charge and info.world.teleporter_bosses.items.len == 0) {
-                    if (nz.vec.length(player.transform.position - entity.transform.position) < shared.teleporter.intertact_distance) {
-                        ui.add(
-                            null,
-                            .{
-                                .name = "active_teleport",
-                                .size = .{ .fixed = .{ .heigth = 0, .width = 0 } },
-                                .text = .{ .data = "E" },
-                                .offset = .{ .left = ui.screen_width / 2, .top = ui.screen_heigth / 2 },
-                            },
-                        );
-                    }
-                } else {
-                    ui.add(
-                        "info",
-                        .{
-                            .size = .{ .percent = .{ .heigth = 1, .width = 0.5 } },
-                            .text = .{ .data = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}) },
-                        },
-                    );
-                }
-            }
         }
     }
 }

@@ -353,6 +353,10 @@ fn handleCommand(
                 .rocket_impact => |position| {
                     Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
                 },
+                .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {
+                    std.log.debug("interacting", .{});
+                    entity.interacting = interact.interacted;
+                },
             }
         },
         .update_inventory => |inventory| {
