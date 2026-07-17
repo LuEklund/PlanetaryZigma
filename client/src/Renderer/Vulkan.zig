@@ -412,6 +412,15 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const frame_index = self.current_frame_inflight % self.frames.len;
     self.resources.writeCascades(frame_index, &cascades);
 
+    for (info.world.entities.values()) |*entity| {
+        const model = self.resources.models.getPtr(.fromKind(entity.kind));
+        if (model.isEmpty() or !model.isSkinned()) continue;
+        const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+        for (skeleton.joint_matrices) |*matrices| {
+            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
+        }
+    }
+
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
@@ -475,9 +484,6 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
             const model = self.resources.models.getPtr(.fromKind(entity.kind));
             if (model.isEmpty() or !model.isSkinned()) continue;
             const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-            for (skeleton.joint_matrices) |*matrices| {
-                matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
-            }
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
             try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
         }
@@ -508,9 +514,6 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         const model = self.resources.models.getPtr(.fromKind(entity.kind));
         if (model.isEmpty() or !model.isSkinned()) continue;
         const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-        for (skeleton.joint_matrices) |*matrices| {
-            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
-        }
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawSkeletal(self, cmd, skeleton, current_frame, base_matrix);
     }
