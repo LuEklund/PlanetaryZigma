@@ -10,6 +10,9 @@ const check = @import("utils.zig").check;
 
 image: Image,
 sampler: c.VkSampler,
+// TEMP-COMMENT: the atlas's slot in the global texture pool; set by Resources.reloadFont
+// after each load. Ui reads this instead of the old hardcoded enum slot 1.
+atlas_texture: Image.Handle,
 
 device: Device,
 vma: Vma,
@@ -35,7 +38,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, path: []const u8) 
         .vma = vma,
         .name = try gpa.dupe(u8, path),
         .image = undefined,
-        .sampler = undefined,
+        // TEMP-COMMENT: null (not undefined) so reloadFont can tell first-load from reload
+        // when deciding whether there's an old sampler to destroy.
+        .sampler = null,
+        .atlas_texture = undefined,
         .glyphs = undefined,
         .size = 32,
     };
@@ -147,7 +153,9 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
 }
 
 pub fn deinit(self: *Font, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    self.image.deinit(vma, device);
+    _ = vma;
+    // TEMP-COMMENT: image no longer destroyed here — the atlas lives in Resources.images
+    // (registered via registerImage) and the pool destroys it with every other texture.
     c.vkDestroySampler(device.handle, self.sampler, null);
     gpa.free(self.name);
 }

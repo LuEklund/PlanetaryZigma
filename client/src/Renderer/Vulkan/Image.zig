@@ -21,6 +21,13 @@ const Kind = enum(u8) {
     cube_map = 2,
 };
 
+pub const Handle = enum(u32) {
+    _,
+    // TEMP-COMMENT: slot 0 is always the 1x1 white image created first in Resources.init,
+    // so `.blank` is a stable named handle without any lookup.
+    pub const blank: Handle = @enumFromInt(0);
+};
+
 pub fn init(
     vma: Vma,
     device: Device,

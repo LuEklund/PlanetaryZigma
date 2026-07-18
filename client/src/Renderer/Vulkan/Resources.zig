@@ -15,7 +15,6 @@ const Material = @import("Material.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
-const Ui = @import("Ui.zig");
 const Font = @import("Font.zig");
 const FrameData = @import("FrameData.zig");
 const AssetServer = @import("shared").AssetServer;
@@ -24,6 +23,7 @@ const check = @import("utils.zig").check;
 
 pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
+pub const max_textures = 256;
 const explosion_particle_material_name: []const u8 = "explosion_particle";
 const explosion_particle_texture_size: u32 = 32;
 
@@ -40,10 +40,11 @@ samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
-ui_texture_buffer: Buffer,
+texture_descriptor_buffer: Buffer,
+texture_binding_offset: c.VkDeviceSize,
+texture_keys: std.StringHashMapUnmanaged(Image.Handle),
 identity_joint_buffer: Buffer,
 font: Font,
-ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
 skybox: Image,
 vma: Vma,
 device: Device,
@@ -84,7 +85,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .ui = try .init(device, &.{
             .{
                 .binding = 0,
-                .descriptorCount = 64,
+                .descriptorCount = max_textures,
                 .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .pImmutableSamplers = null,
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -108,11 +109,14 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     var ui_set_size: c.VkDeviceSize = 0;
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.ui).handle, &ui_set_size);
 
-    const ui_texture_buffer: Buffer = try .init(
+    var texture_binding_offset: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.ui).handle, 0, &texture_binding_offset);
+
+    const texture_descriptor_buffer: Buffer = try .init(
         device,
         vma,
         u8,
-        ui_set_size * 64,
+        ui_set_size,
         c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
             c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
@@ -186,17 +190,18 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .images = images,
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
-        .ui_texture_buffer = ui_texture_buffer,
+        .texture_descriptor_buffer = texture_descriptor_buffer,
+        .texture_binding_offset = texture_binding_offset,
+        .texture_keys = .empty,
         .identity_joint_buffer = identity_joint_buffer,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
-        .ui_image_indices = .initFill(null),
         .skybox = undefined,
         .skybox_material_index = undefined,
         .vma = vma,
         .device = device,
     };
+    for (0..max_textures) |slot| self.writeTextureDescriptor(@intCast(slot), default_texture.vk_imageview, default_sampler);
     try asset_server.loadAndWatch(Resources, self, self.font.name, reloadFont);
-    try self.loadUiTextures(gpa, vma, device);
     try self.loadSkybox(gpa);
 
     for (std.enums.values(Shader.Kind)) |kind| {
@@ -209,11 +214,6 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         try asset_server.loadAndWatch(Resources, self, shader_spec.path, reloadShader);
     }
 
-    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
-        if (comptime texture.path()) |texture_path| {
-            try asset_server.watch(Resources, self, texture_path["assets/".len..], reloadUiTexture);
-        }
-    }
     try asset_server.watch(Resources, self, "textures/skybox_cubemap.png", reloadSkybox);
 
     for (std.enums.values(Model.Kind)) |kind| {
@@ -244,7 +244,120 @@ fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file:
 fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
     _ = file_path;
     const self: *Resources = @ptrCast(@alignCast(user_data));
+    // TEMP-COMMENT: font.load creates a NEW image+sampler each call; before this change the old
+    // ones leaked on every hot reload. registerImage destroys the old image (same key = same
+    // slot override), the old sampler we destroy here ourselves since the pool doesn't own samplers.
+    const old_sampler = self.font.sampler;
     try self.font.load(gpa, io, file);
+    // TEMP-COMMENT: atlas joins the pool like any texture, keyed "font_atlas" so reloads
+    // overwrite the same slot; Ui reads default_font.atlas_texture instead of enum slot 1.
+    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", self.font.image, self.font.sampler);
+    if (old_sampler != null) c.vkDestroySampler(self.device.handle, old_sampler, null);
+}
+
+// TEMP-COMMENT: the ONE place a descriptor slot gets written. slot == index into images ==
+// @intFromEnum(Image.Handle) — no mapping tables anywhere.
+fn writeTextureDescriptor(self: *Resources, slot: u32, view: c.VkImageView, sampler: c.VkSampler) void {
+    const image_info: c.VkDescriptorImageInfo = .{
+        .sampler = sampler,
+        .imageView = view,
+        .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+        .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .data = .{ .pCombinedImageSampler = &image_info },
+    };
+    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.texture_descriptor_buffer.info.pMappedData);
+    ext.vkGetDescriptorEXT(
+        self.device.handle,
+        &descriptor_get_info,
+        self.combined_image_sampler_descriptor_size,
+        descriptor_buffer_bytes + self.texture_binding_offset + slot * self.combined_image_sampler_descriptor_size,
+    );
+}
+
+// TEMP-COMMENT: the ONE door into the texture pool. key=null → anonymous append (generated
+// textures). Known key → OVERRIDE: destroy old image, reuse the same slot, rewrite descriptor —
+// every holder of the handle sees the new texture for free. This is what makes hot reload
+// (including GLTF re-loads later) stop growing the pool.
+pub fn registerImage(self: *Resources, gpa: std.mem.Allocator, key: ?[]const u8, image: Image, sampler: c.VkSampler) !Image.Handle {
+    if (key) |existing_key| if (self.texture_keys.get(existing_key)) |handle| {
+        const slot = @intFromEnum(handle);
+        // TEMP-COMMENT: GPU may still be sampling the old image this frame → wait before destroy.
+        try check(c.vkDeviceWaitIdle(self.device.handle));
+        self.images.items[slot].deinit(self.vma, self.device);
+        self.images.items[slot] = image;
+        self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
+        return handle;
+    };
+    // TEMP-COMMENT: the cap assert you asked for; descriptor array in the shader is max_textures big.
+    std.debug.assert(self.images.items.len < max_textures);
+    try self.images.append(gpa, image);
+    const slot: u32 = @intCast(self.images.items.len - 1);
+    self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
+    if (key) |new_key| try self.texture_keys.put(gpa, try gpa.dupe(u8, new_key), @enumFromInt(slot));
+    // TEMP-COMMENT: running texture count print you asked for.
+    std.log.debug("texture {d}/{d}: {s}", .{ slot + 1, max_textures, key orelse "unnamed" });
+    return @enumFromInt(slot);
+}
+
+// TEMP-COMMENT: path is relative to assets/ (same convention as asset_server.watch), deduped by
+// path → second loadTexture of the same file returns the same handle without touching disk.
+pub fn loadTexture(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer, path: []const u8) !Image.Handle {
+    if (self.texture_keys.get(path)) |handle| return handle;
+
+    var uri_buffer: [256]u8 = undefined;
+    const uri = try std.fmt.bufPrintZ(&uri_buffer, "assets/{s}", .{path});
+    var decoded: Image.Decoded = .{};
+    defer decoded.deinit();
+    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = uri }};
+    try Image.decodeImages(gpa, &decode_tasks);
+    if (decoded.err) |err| return err;
+    try if (decoded.pixels == null) error.LoadingStbi;
+
+    var image: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer image.deinit(self.vma, self.device);
+    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
+
+    const handle = try self.registerImage(gpa, path, image, self.samplers.items[0]);
+    // TEMP-COMMENT: watch needs a string that outlives this call → reuse the key the map duped.
+    try asset_server.watch(Resources, self, self.texture_keys.getKey(path).?, reloadTexture);
+    return handle;
+}
+
+// TEMP-COMMENT: replaces reloadUiTexture's comptime enum loop with a map lookup. Builds a fresh
+// image and slot-overrides via registerImage → the old same-size-only restriction is gone
+// (resize = new image at same slot, descriptor rewritten).
+fn reloadTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
+    const self: *Resources = @ptrCast(@alignCast(user_data));
+    if (self.texture_keys.get(file_path) == null) return;
+
+    var decoded = try decodeFile(gpa, io, file);
+    defer decoded.deinit();
+
+    var image: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer image.deinit(self.vma, self.device);
+    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
+    _ = try self.registerImage(gpa, file_path, image, self.samplers.items[0]);
 }
 
 pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
@@ -365,27 +478,6 @@ fn createStaticMeshWithMaterial(
     model.offset = .{};
 }
 
-fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
-        if (comptime texture.path()) |texture_path| {
-            if (std.mem.eql(u8, texture_path["assets/".len..], file_path)) {
-                const image_index = self.ui_image_indices.get(texture) orelse return;
-                const image = &self.images.items[image_index];
-
-                var decoded = try decodeFile(gpa, io, file);
-                defer decoded.deinit();
-
-                //TODO: same-size reload only, resize needs new image + descriptor rewrite -> restart
-                if (@as(u32, @intCast(decoded.width)) != image.extent.width or
-                    @as(u32, @intCast(decoded.height)) != image.extent.height) return;
-                try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
-                return;
-            }
-        }
-    }
-}
-
 fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
     var decoded: Image.Decoded = .{};
     defer decoded.deinit();
@@ -491,75 +583,6 @@ fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file:
     try self.uploadSkyboxFaces(gpa, decoded);
 }
 
-fn loadUiTextures(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) !void {
-    const loadable_textures = comptime blk: {
-        var textures: []const Ui.Texture = &.{};
-        for (std.enums.values(Ui.Texture)) |texture| {
-            if (texture.path() != null) textures = textures ++ .{texture};
-        }
-        break :blk textures;
-    };
-
-    var decoded_ui_images: [loadable_textures.len]Image.Decoded = @splat(.{});
-    defer for (&decoded_ui_images) |*decoded_ui_image| decoded_ui_image.deinit();
-
-    var ui_decode_tasks: [loadable_textures.len]Image.DecodeTask = undefined;
-    inline for (loadable_textures, 0..) |texture, task_index| {
-        ui_decode_tasks[task_index] = .{ .result = &decoded_ui_images[task_index], .uri = texture.path().? };
-    }
-    try Image.decodeImages(gpa, &ui_decode_tasks);
-
-    var ui_views: std.EnumArray(Ui.Texture, c.VkImageView) = .initFill(self.images.items[0].vk_imageview);
-    ui_views.set(.font_atlas, self.font.image.vk_imageview);
-    inline for (loadable_textures, 0..) |texture, task_index| {
-        const decoded_ui_image = decoded_ui_images[task_index];
-        var ui_image: Image = try .init(
-            vma,
-            device,
-            c.VK_FORMAT_R8G8B8A8_UNORM,
-            .{
-                .width = @intCast(decoded_ui_image.width),
-                .height = @intCast(decoded_ui_image.height),
-                .depth = 1,
-            },
-            .@"2d",
-            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-            c.VK_IMAGE_ASPECT_COLOR_BIT,
-            false,
-        );
-        try ui_image.uploadDataToImage(vma, device, decoded_ui_image.pixels, 4, 0);
-        try self.images.append(gpa, ui_image);
-        self.ui_image_indices.set(texture, self.images.items.len - 1);
-        ui_views.set(texture, ui_image.vk_imageview);
-    }
-
-    var binding_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, self.descriptor_layouts.get(.ui).handle, 0, &binding_offset);
-
-    for (0..64) |slot_index| {
-        const texture: Ui.Texture = if (slot_index < std.enums.values(Ui.Texture).len) @enumFromInt(slot_index) else .blank;
-        const sampler = if (texture == .font_atlas) self.font.sampler else self.samplers.items[0];
-
-        const image_info: c.VkDescriptorImageInfo = .{
-            .sampler = sampler,
-            .imageView = ui_views.get(texture),
-            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-        const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .data = .{ .pCombinedImageSampler = &image_info },
-        };
-        const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.ui_texture_buffer.info.pMappedData);
-        ext.vkGetDescriptorEXT(
-            device.handle,
-            &descriptor_get_info,
-            self.combined_image_sampler_descriptor_size,
-            descriptor_buffer_bytes + binding_offset + slot_index * self.combined_image_sampler_descriptor_size,
-        );
-    }
-}
-
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
     for (self.materials.items) |*material| {
         material.deinit(gpa, vma);
@@ -590,8 +613,13 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     for (&self.pipeline_layouts.values) |*layout| {
         layout.deinit(device);
     }
-    self.ui_texture_buffer.deinit(vma);
+    self.texture_descriptor_buffer.deinit(vma);
     self.identity_joint_buffer.deinit(vma);
+    // TEMP-COMMENT: pool owns duped key strings; images themselves are destroyed in the
+    // images loop above (font atlas included — Font.deinit no longer destroys its image).
+    var key_iterator = self.texture_keys.keyIterator();
+    while (key_iterator.next()) |texture_key| gpa.free(texture_key.*);
+    self.texture_keys.deinit(gpa);
     self.font.deinit(gpa, vma, device);
     gpa.destroy(self);
 }

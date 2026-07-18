@@ -7,36 +7,9 @@ const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Font = @import("Font.zig");
+const Image = @import("Image.zig");
 
 pub const max_ui_quads: usize = 1024;
-
-pub const Texture = enum {
-    blank,
-    font_atlas,
-    damage_item,
-    rocket_item,
-    crosshair,
-    oxygen_tank,
-    energy_drink,
-    pickaxe,
-
-    pub fn toInt(self: Texture) u32 {
-        return @intFromEnum(self);
-    }
-
-    pub fn path(self: Texture) ?[:0]const u8 {
-        const root = "assets/textures/";
-        return switch (self) {
-            .blank, .font_atlas => null,
-            .damage_item => root ++ "damage.png",
-            .oxygen_tank => root ++ "oxygen_tank.png",
-            .crosshair => root ++ "crosshair.png",
-            .energy_drink => root ++ "energy_drink.png",
-            .pickaxe => root ++ "pickaxe.png",
-            .rocket_item => root ++ "Rocket.png",
-        };
-    }
-};
 
 pub const Vertex = extern struct {
     position: [2]f32,
@@ -121,7 +94,9 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
-    texture: Texture = .blank,
+    // TEMP-COMMENT: was the `Texture` enum; now a pool handle. .blank = slot 0 = the
+    // 1x1 white image, so untextured quads render exactly as before.
+    texture: Image.Handle = .blank,
     gap: f32 = 0,
     text: ?Text = null,
     name: ?[]const u8 = null,
@@ -329,10 +304,10 @@ fn pushQuads(self: *Ui) void {
             const colors: [4]f32 = node.layout.color.toVec();
             //left_top, right_top, right_bottom, left_bottom
             self.quads.appendAssumeCapacity(.{ .vertices = .{
-                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
-                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture.toInt() },
+                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
             } });
         }
         if (node.layout.text) |text| {
@@ -356,10 +331,10 @@ fn pushQuads(self: *Ui) void {
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.heigth * scale;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
-                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = Texture.font_atlas.toInt() },
-                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = Texture.font_atlas.toInt() },
-                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 }, .is_sdf = 1, .texture_index = Texture.font_atlas.toInt() },
-                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 }, .is_sdf = 1, .texture_index = Texture.font_atlas.toInt() },
+                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
+                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
+                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
+                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
                 } });
                 pen.x += glyph.xadvance * scale;
             }

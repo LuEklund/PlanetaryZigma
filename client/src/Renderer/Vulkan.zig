@@ -549,7 +549,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const ui_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-            .address = self.resources.ui_texture_buffer.getGPUAddress(),
+            .address = self.resources.texture_descriptor_buffer.getGPUAddress(),
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },

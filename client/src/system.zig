@@ -68,6 +68,9 @@ pub const Context = struct {
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.options = .{};
+        // TEMP-COMMENT: hud init resolves its texture handles once; must come after renderer
+        // (needs the pool) and before enterScene (which resets hud screens).
+        self.hud = try .init(data.gpa, data.asset_server, self.renderer.inner.resources);
         try self.enterScene(data.world, .menu);
         self.request_exit = false;
         self.fullscreen_applied = false;
@@ -82,7 +85,8 @@ pub const Context = struct {
 
     fn enterScene(self: *Context, world: *World, next: Scene) !void {
         world.clearSession();
-        self.hud = .{};
+        // TEMP-COMMENT: was `self.hud = .{}` — that would wipe the texture handles now.
+        self.hud.resetScreens();
         switch (next) {
             .menu => try menu.populate(world),
             .game => {},
