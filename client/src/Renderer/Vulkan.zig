@@ -347,95 +347,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         }
     }
 
-    var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
-    shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
-    shadow_barrier.transition(
-        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-    );
-    var shadow_depth_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = self.resources.shadow_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
-    };
-    var shadow_render_info: c.VkRenderingInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = .{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = .{
-                .width = Resources.shadow_map_size * Resources.shadow_cascade_count,
-                .height = Resources.shadow_map_size,
-            },
-        },
-        .layerCount = 1,
-        .colorAttachmentCount = 0,
-        .pDepthAttachment = &shadow_depth_attachment,
-    };
-    ext.vkCmdBeginRendering(cmd, &shadow_render_info);
-    {
-        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_shadow_static).handle, null };
-        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
-    }
-    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthBias(cmd, 0.0, 0.0, 3.0);
-    for (cascade_vps, 0..) |cascade_vp, cascade_index| {
-        const shadow_viewport: c.VkViewport = .{
-            .x = @floatFromInt(cascade_index * Resources.shadow_map_size),
-            .width = @floatFromInt(Resources.shadow_map_size),
-            .height = @floatFromInt(Resources.shadow_map_size),
-            .maxDepth = 1,
-        };
-        const shadow_scissor: c.VkRect2D = .{
-            .offset = .{ .x = @intCast(cascade_index * Resources.shadow_map_size), .y = 0 },
-            .extent = .{ .width = Resources.shadow_map_size, .height = Resources.shadow_map_size },
-        };
-        ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
-        ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
-
-        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_static));
-        for (info.world.entities.values()) |*entity| {
-            const model = self.resources.getModelPtr(entity.model);
-            if (model.isEmpty() or model.isSkinned()) continue;
-            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
-            try drawStatic(self, cmd, model, base_matrix);
-        }
-        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_skinned));
-        for (info.world.entities.values()) |*entity| {
-            const model = self.resources.getModelPtr(entity.model);
-            if (model.isEmpty() or !model.isSkinned()) continue;
-            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
-            try drawSkeletal(self, cmd, skeleton, base_matrix);
-        }
-    }
-    ext.vkCmdEndRendering(cmd);
-    shadow_barrier.transition(
-        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        c.VK_ACCESS_SHADER_READ_BIT,
-    );
-    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
-    const full_viewport: c.VkViewport = .{
-        .width = width,
-        .height = height,
-        .maxDepth = 1,
-    };
-    const full_scissor: c.VkRect2D = .{
-        .extent = .{
-            .width = self.swapchain.draw_image.extent.width,
-            .height = self.swapchain.draw_image.extent.height,
-        },
-    };
-    ext.vkCmdSetViewportWithCountEXT(cmd, 1, &full_viewport);
-    ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
+    try renderShadowPass(self, cmd, info, cascade_vps);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
     try renderWorldPass(self, cmd, current_frame, info);
@@ -526,6 +438,98 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
     ext.vkCmdSetLogicOpEnableEXT(cmd, c.VK_FALSE);
 
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
+}
+
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
+    var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    );
+    var shadow_depth_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = self.resources.shadow_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
+    };
+    var shadow_render_info: c.VkRenderingInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = .{
+                .width = Resources.shadow_map_size * Resources.shadow_cascade_count,
+                .height = Resources.shadow_map_size,
+            },
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 0,
+        .pDepthAttachment = &shadow_depth_attachment,
+    };
+    ext.vkCmdBeginRendering(cmd, &shadow_render_info);
+    {
+        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
+        const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_shadow_static).handle, null };
+        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
+    }
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
+    c.vkCmdSetDepthBias(cmd, 0.0, 0.0, 3.0);
+    for (cascade_vps, 0..) |cascade_vp, cascade_index| {
+        const shadow_viewport: c.VkViewport = .{
+            .x = @floatFromInt(cascade_index * Resources.shadow_map_size),
+            .width = @floatFromInt(Resources.shadow_map_size),
+            .height = @floatFromInt(Resources.shadow_map_size),
+            .maxDepth = 1,
+        };
+        const shadow_scissor: c.VkRect2D = .{
+            .offset = .{ .x = @intCast(cascade_index * Resources.shadow_map_size), .y = 0 },
+            .extent = .{ .width = Resources.shadow_map_size, .height = Resources.shadow_map_size },
+        };
+        ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
+        ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
+
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_static));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.getModelPtr(entity.model);
+            if (model.isEmpty() or model.isSkinned()) continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawStatic(self, cmd, model, base_matrix);
+        }
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_skinned));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.getModelPtr(entity.model);
+            if (model.isEmpty() or !model.isSkinned()) continue;
+            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawSkeletal(self, cmd, skeleton, base_matrix);
+        }
+    }
+    ext.vkCmdEndRendering(cmd);
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        c.VK_ACCESS_SHADER_READ_BIT,
+    );
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
+    const full_viewport: c.VkViewport = .{
+        .width = @floatFromInt(self.swapchain.draw_image.extent.width),
+        .height = @floatFromInt(self.swapchain.draw_image.extent.height),
+        .maxDepth = 1,
+    };
+    const full_scissor: c.VkRect2D = .{
+        .extent = .{
+            .width = self.swapchain.draw_image.extent.width,
+            .height = self.swapchain.draw_image.extent.height,
+        },
+    };
+    ext.vkCmdSetViewportWithCountEXT(cmd, 1, &full_viewport);
+    ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
