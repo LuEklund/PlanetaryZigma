@@ -12,7 +12,7 @@ count: u32,
 pub const Kind = enum {
     scene,
     material,
-    ui,
+    textures,
 };
 
 pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DesrciptorLayout {

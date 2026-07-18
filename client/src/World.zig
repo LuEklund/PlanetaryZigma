@@ -6,6 +6,7 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 const Particle = @import("system/Particle.zig");
+const Model = @import("Renderer/Vulkan/Model.zig");
 
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
@@ -46,6 +47,8 @@ pub const Entity = struct {
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
     animation_state: ?shared.entity.State = null,
+    spawn_anim: f32 = 0,
+    model: Model.Handle = .default,
 
     transform: nz.Transform3D(f32) = .{},
 
@@ -67,7 +70,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .pending_player_names = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
-        .render_outbox = try .initCapacity(gpa, shared.max_entities * 2),
+        .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .particles = try .initCapacity(gpa, 512),
         .prng = .init(0x5EED_BA11),
     };
@@ -151,7 +154,6 @@ pub fn flush(self: *World) !void {
         try self.applySpawnData(entity, entity_info);
         switch (entity_info.kind) {
             .player => {
-                self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
                 if (entity_info.id == self.player_id) {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
                     self.controller.free_camera = false;
@@ -171,10 +173,10 @@ pub fn flush(self: *World) !void {
                     entity.transform.scale = @splat(5);
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
-                self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
             },
             .unknown, .item, .lootbox => {},
         }
+        self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }
 
     for (self.pending_player_names.items) |player_name| {

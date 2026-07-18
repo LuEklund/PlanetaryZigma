@@ -8,13 +8,12 @@ const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
 const check = @import("utils.zig").check;
 
-image: Image,
 sampler: c.VkSampler,
+atlas_texture: Image.Handle,
 
 device: Device,
 vma: Vma,
 glyphs: [96]Glyph,
-name: []const u8,
 size: f32,
 
 pub const Glyph = struct {
@@ -29,19 +28,18 @@ pub const Glyph = struct {
     xadvance: f32,
 };
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, path: []const u8) !Font {
+pub fn init(vma: Vma, device: Device) Font {
     return .{
         .device = device,
         .vma = vma,
-        .name = try gpa.dupe(u8, path),
-        .image = undefined,
-        .sampler = undefined,
+        .sampler = null,
+        .atlas_texture = undefined,
         .glyphs = undefined,
         .size = 32,
     };
 }
 
-pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
+pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image {
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     const content = try reader.interface.allocRemaining(gpa, .unlimited);
@@ -123,7 +121,7 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         }
     }
 
-    self.image = try .init(
+    var atlas_image: Image = try .init(
         self.vma,
         self.device,
         c.VK_FORMAT_R8_UNORM,
@@ -133,7 +131,7 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         c.VK_IMAGE_ASPECT_COLOR_BIT,
         false,
     );
-    try self.image.uploadDataToImage(self.vma, self.device, coverage.ptr, 1, 0);
+    try atlas_image.uploadDataToImage(self.vma, self.device, coverage.ptr, 1, 0);
 
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -144,10 +142,9 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     };
     try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &self.sampler));
+    return atlas_image;
 }
 
-pub fn deinit(self: *Font, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    self.image.deinit(vma, device);
+pub fn deinit(self: *Font, device: Device) void {
     c.vkDestroySampler(device.handle, self.sampler, null);
-    gpa.free(self.name);
 }

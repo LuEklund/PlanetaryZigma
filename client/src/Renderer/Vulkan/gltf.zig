@@ -9,7 +9,6 @@ const Mesh = @import("Mesh.zig");
 const Node = @import("Node.zig");
 const Skin = @import("Skin.zig");
 const AnimationClip = @import("AnimationClip.zig");
-const Material = @import("Material.zig");
 const Buffer = @import("Buffer.zig");
 const Resources = @import("Resources.zig");
 const check = @import("utils.zig").check;
@@ -45,6 +44,7 @@ pub fn parseScene(
     vma: Vma,
     device: Device,
     resources: *Resources,
+    texture_key_prefix: []const u8,
     gltf: zgltf.Gltf,
     bin: []const u8,
     out_nodes: *std.ArrayList(Node),
@@ -92,9 +92,11 @@ pub fn parseScene(
         }
     }
 
-    const original_image_count = resources.images.items.len;
+    var image_handles: []Image.Handle = &.{};
+    defer gpa.free(image_handles);
     {
         if (gltf.images) |images| {
+            image_handles = try gpa.alloc(Image.Handle, images.len);
             std.log.info("image count was {d}", .{images.len});
             var decoded_images = try gpa.alloc(Image.Decoded, images.len);
             defer {
@@ -137,7 +139,7 @@ pub fn parseScene(
                 upload_buffers.deinit(gpa);
             }
             const upload_cmd = try device.beginImmediateCommand();
-            for (decoded_images) |*decoded_image| {
+            for (decoded_images, 0..) |*decoded_image, image_index| {
                 if (decoded_image.err) |err| return err;
                 try if (decoded_image.pixels == null) error.LoadingStbi;
                 var new_image: Image = try .init(
@@ -163,7 +165,9 @@ pub fn parseScene(
                     );
                 }
                 decoded_image.deinit();
-                try resources.images.append(gpa, new_image);
+                var key_buffer: [512]u8 = undefined;
+                const key = try std.fmt.bufPrint(&key_buffer, "{s}#{d}", .{ texture_key_prefix, image_index });
+                image_handles[image_index] = try resources.registerImage(gpa, key, new_image, resources.samplers.items[0]);
             }
             try device.endImmediateCommand(upload_cmd);
         } else {
@@ -171,30 +175,25 @@ pub fn parseScene(
         }
     }
 
-    const original_material_count = resources.materials.items.len;
+    var material_textures: []Image.Handle = &.{};
+    defer gpa.free(material_textures);
     {
-        if (gltf.materials) |materials| for (materials) |material| {
-            var sampler = resources.samplers.items[0];
-            var image_view = resources.images.items[0].vk_imageview;
-            if (material.pbrMetallicRoughness) |metallic_roughness| {
-                if (metallic_roughness.baseColorTexture) |base_texture| {
-                    const texture_info = gltf.textures.?[base_texture.index];
-                    if (texture_info.sampler) |sampler_index| sampler = resources.samplers.items[original_sample_count + sampler_index];
-                    if (texture_info.source) |image_index| image_view = resources.images.items[original_image_count + image_index].vk_imageview;
+        if (gltf.materials) |materials| {
+            material_textures = try gpa.alloc(Image.Handle, materials.len);
+            for (materials, material_textures) |material, *material_texture| {
+                material_texture.* = .blank;
+                if (material.pbrMetallicRoughness) |metallic_roughness| {
+                    if (metallic_roughness.baseColorTexture) |base_texture| {
+                        const texture_info = gltf.textures.?[base_texture.index];
+                        if (texture_info.source) |image_index| {
+                            material_texture.* = image_handles[image_index];
+                            if (texture_info.sampler) |sampler_index|
+                                resources.setTextureSampler(image_handles[image_index], resources.samplers.items[original_sample_count + sampler_index]);
+                        }
+                    }
                 }
             }
-            const new_material: Material = try .init(
-                gpa,
-                material.name orelse "material",
-                device,
-                vma,
-                resources.set_size,
-                resources.combined_image_sampler_descriptor_size,
-                sampler,
-                image_view,
-            );
-            try resources.materials.append(gpa, new_material);
-        };
+        }
     }
 
     const original_mesh_count = resources.meshes.items.len;
@@ -259,7 +258,7 @@ pub fn parseScene(
                 surfaces.appendAssumeCapacity(.{
                     .index_count = indices_count,
                     .index_start = indices_start,
-                    .material_index = if (primitive.material) |material_index| original_material_count + material_index else null,
+                    .texture = if (primitive.material) |material_index| material_textures[material_index] else .blank,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
@@ -319,12 +318,12 @@ pub fn parseScene(
                             .uv_y = if (uvs) |values| values[i][1] else 0,
                             .joint_indices = blk: {
                                 var joint_indices: [4]i32 = undefined;
-                                inline for (0..4) |j| joint_indices[j] = if (joints) |joint| joint[i][j] else undefined;
+                                inline for (0..4) |j| joint_indices[j] = if (joints) |joint| joint[i][j] else 0;
                                 break :blk joint_indices;
                             },
                             .joint_weights = blk: {
                                 var joint_weights: [4]f32 = undefined;
-                                inline for (0..4) |j| joint_weights[j] = if (weights) |weight| weight[i][j] else -1;
+                                inline for (0..4) |j| joint_weights[j] = if (weights) |weight| weight[i][j] else if (j == 0) 1 else 0;
                                 break :blk joint_weights;
                             },
                         };
@@ -430,7 +429,7 @@ pub fn parseScene(
             } else {
                 std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
                 for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-                std.log.err("in Model.Kind.spec assign one of these", .{});
+                std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
                 return error.LookBoneNotFound;
             };
         }
@@ -442,7 +441,7 @@ pub fn parseScene(
         } else {
             std.log.err("overlay root \"{s}\" not found; nodes in this file:", .{root_name});
             for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-            std.log.err("in Model.Kind.spec assign one of these", .{});
+            std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
             return error.OverlayRootNotFound;
         };
     }

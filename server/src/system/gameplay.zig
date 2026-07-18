@@ -60,7 +60,7 @@ pub fn updateEnemies(info: *const Info) !void {
                         .owner_id = enemy.id,
                         .transform = .{
                             .position = enemy.transform.position + nz.vec.scale(forward_dir, 1.5),
-                            .rotation = projectileRotation(.cube, forward_dir, planet_up),
+                            .rotation = shared.entity.projectileRotation(.cube, forward_dir, planet_up),
                         },
                         .velocity = muzzle_velocity,
                         .lifetime = 2,
@@ -99,7 +99,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = projectileRotation(projectile_kind, entity.velocity, surfaceUp(entity.transform.position));
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.velocity, surfaceUp(entity.transform.position));
         entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 
@@ -134,15 +134,6 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
 fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
     const distance = nz.vec.length(position);
     return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else .{ 0, 1, 0 };
-}
-
-fn projectileRotation(kind: shared.entity.ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
-    if (nz.vec.length(direction) < 0.001) return .identity;
-    const base = nz.quat.Hamiltonian(f32).lookAt(direction, up_hint).normalize();
-    return switch (kind) {
-        .cube => base,
-        .rocket => base.mul(nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 })).normalize(),
-    };
 }
 
 fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32), base_damage: f32) void {

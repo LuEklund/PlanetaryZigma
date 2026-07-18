@@ -11,8 +11,6 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec4 light_color;
 } scene_data;
 
-layout(set = 1, binding = 0) uniform sampler2D texSampler;
-
 struct Vertex {
   vec3 position;
   float uv_x;
@@ -35,6 +33,7 @@ layout(push_constant, std430) uniform pc {
   mat4 model_matrix;
   VertexBuffer vertex_buffer;
   JointMatrices joint_matrices;
+  uint texture_index;
 } push_constant;
 
 layout(location = 0) out vec4 out_frag_color;
@@ -48,20 +47,14 @@ void main() {
   float y = v.position.y;
   float z = v.position.z;
 
-  if (v.joint_weights.x != -1) {
-    mat4 skin_mat =
-      v.joint_weights.x * push_constant.joint_matrices.matrices[int(v.joint_indices.x)] +
-        v.joint_weights.y * push_constant.joint_matrices.matrices[int(v.joint_indices.y)] +
-        v.joint_weights.z * push_constant.joint_matrices.matrices[int(v.joint_indices.z)] +
-        v.joint_weights.w * push_constant.joint_matrices.matrices[int(v.joint_indices.w)];
+  mat4 skin_mat =
+    v.joint_weights.x * push_constant.joint_matrices.matrices[v.joint_indices.x] +
+      v.joint_weights.y * push_constant.joint_matrices.matrices[v.joint_indices.y] +
+      v.joint_weights.z * push_constant.joint_matrices.matrices[v.joint_indices.z] +
+      v.joint_weights.w * push_constant.joint_matrices.matrices[v.joint_indices.w];
 
-    gl_Position = scene_data.proj_view * push_constant.model_matrix * skin_mat * vec4(x, y, z, 1.0);
-    out_normal = (push_constant.model_matrix * skin_mat * vec4(v.normal, 0)).xyz;
-  }
-  else {
-    out_normal = (push_constant.model_matrix * vec4(v.normal, 0)).xyz;
-    gl_Position = scene_data.proj_view * push_constant.model_matrix * vec4(x, y, z, 1.0);
-  }
+  gl_Position = scene_data.proj_view * push_constant.model_matrix * skin_mat * vec4(x, y, z, 1.0);
+  out_normal = (push_constant.model_matrix * skin_mat * vec4(v.normal, 0)).xyz;
 
   // gl_Position = scene_data.proj_view * vec4(x, y, z, 1.0);
 

@@ -11,45 +11,96 @@ const DescriptorLayout = @import("DesrciptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Mesh = @import("Mesh.zig");
 const Model = @import("Model.zig");
-const Material = @import("Material.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
-const Ui = @import("Ui.zig");
 const Font = @import("Font.zig");
 const FrameData = @import("FrameData.zig");
 const AssetServer = @import("shared").AssetServer;
+const entity = @import("shared").entity;
 
 const check = @import("utils.zig").check;
 
-pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
-const explosion_particle_material_name: []const u8 = "explosion_particle";
+pub const explosion_particle_name: []const u8 = "explosion_particle";
+pub const max_textures = 256;
 const explosion_particle_texture_size: u32 = 32;
 
-pub const PipelineLayoutKind = enum { world, ui };
+pub const PipelineLayoutKind = enum { world, sky, ui };
+
+const skybox_texture_key = "textures/skybox_cubemap.png";
+pub const crosshair_texture_key = "textures/crosshair.png";
+const font_files = [_][]const u8{"Roboto-Regular.ttf"};
+
+const shader_kinds = std.enums.values(Shader.Kind);
+const shader_files = blk: {
+    var files: [shader_kinds.len][]const u8 = undefined;
+    for (shader_kinds, 0..) |kind, i| files[i] = Shader.specs.get(kind).path["shaders/".len..];
+    break :blk files;
+};
+
+const model_file_keys = blk: {
+    var keys: []const []const u8 = &.{};
+    for (entity.all_kinds) |kind| {
+        const key = entity.modelSpec(kind).key;
+        if (!std.mem.endsWith(u8, key, ".glb")) continue;
+        for (keys) |existing| {
+            if (std.mem.eql(u8, existing, key)) break;
+        } else keys = keys ++ .{key};
+    }
+    break :blk keys;
+};
+const model_files = blk: {
+    var files: [model_file_keys.len][]const u8 = undefined;
+    for (model_file_keys, 0..) |key, i| files[i] = key["objects/".len..];
+    break :blk files;
+};
+
+const texture_file_keys = blk: {
+    var keys: []const []const u8 = &.{ skybox_texture_key, crosshair_texture_key };
+    for (entity.all_kinds) |kind| {
+        const icon = entity.spec(kind).icon orelse continue;
+        for (keys) |existing| {
+            if (std.mem.eql(u8, existing, icon)) break;
+        } else keys = keys ++ .{icon};
+    }
+    break :blk keys;
+};
+const texture_files = blk: {
+    var files: [texture_file_keys.len][]const u8 = undefined;
+    for (texture_file_keys, 0..) |key, i| {
+        std.debug.assert(std.mem.startsWith(u8, key, "textures/"));
+        files[i] = key["textures/".len..];
+    }
+    break :blk files;
+};
 
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
-models: std.EnumArray(Model.Kind, Model),
+models: std.ArrayList(Model),
+model_keys: std.StringHashMapUnmanaged(Model.Handle),
 shaders: std.EnumArray(Shader.Kind, Shader),
-materials: std.ArrayList(Material),
-skybox_material_index: usize,
+skybox_descriptor: Buffer,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
-ui_texture_buffer: Buffer,
+texture_descriptor_buffer: Buffer,
+texture_binding_offset: c.VkDeviceSize,
+texture_keys: std.StringHashMapUnmanaged(Image.Handle),
+identity_joint_buffer: Buffer,
 font: Font,
-ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
-skybox: Image,
+skybox: ?Image,
+font_loader: AssetServer.Loader,
+shader_loader: AssetServer.Loader,
+model_loader: AssetServer.Loader,
+texture_loader: AssetServer.Loader,
 vma: Vma,
 device: Device,
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*Resources {
     const meshes: std.ArrayList(Mesh) = .empty;
-    var materials: std.ArrayList(Material) = .empty;
     var samplers: std.ArrayList(c.VkSampler) = .empty;
     var images: std.ArrayList(Image) = .empty;
 
@@ -80,10 +131,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
-        .ui = try .init(device, &.{
+        .textures = try .init(device, &.{
             .{
                 .binding = 0,
-                .descriptorCount = 64,
+                .descriptorCount = max_textures,
                 .descriptorType = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .pImmutableSamplers = null,
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -92,12 +143,16 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     });
 
     const pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout) = .init(.{
-        .world = try .init(device, Shader.AnimationPushConstant, &.{
+        .world = try .init(device, Shader.WorldPushConstant, &.{
+            descriptor_layouts.get(.scene).handle,
+            descriptor_layouts.get(.textures).handle,
+        }),
+        .sky = try .init(device, Shader.WorldPushConstant, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),
         .ui = try .init(device, Shader.UiPushConstant, &.{
-            descriptor_layouts.get(.ui).handle,
+            descriptor_layouts.get(.textures).handle,
         }),
     });
 
@@ -105,13 +160,16 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.material).handle, &set_size);
 
     var ui_set_size: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.ui).handle, &ui_set_size);
+    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.textures).handle, &ui_set_size);
 
-    const ui_texture_buffer: Buffer = try .init(
+    var texture_binding_offset: c.VkDeviceSize = 0;
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.textures).handle, 0, &texture_binding_offset);
+
+    const texture_descriptor_buffer: Buffer = try .init(
         device,
         vma,
         u8,
-        ui_set_size * 64,
+        ui_set_size,
         c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
             c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
@@ -148,95 +206,208 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     try check(c.vkCreateSampler(device.handle, &sampler_info, null, &default_sampler));
     try samplers.append(gpa, default_sampler);
 
-    const default_material: Material = try .init(
-        gpa,
-        default_material_name,
+    var identity_joint_buffer: Buffer = try .init(
         device,
         vma,
-        set_size,
-        db_props.combinedImageSamplerDescriptorSize,
-        default_sampler,
-        default_texture.vk_imageview,
+        nz.Mat4x4(f32),
+        1,
+        c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+        .{
+            .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+            .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        },
     );
-    try materials.append(gpa, default_material);
+    identity_joint_buffer.copy(nz.Mat4x4(f32), &.{.identity});
 
     const self = try gpa.create(Resources);
     self.* = .{
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
         .meshes = meshes,
-        .models = .initFill(.empty),
+        .models = .empty,
+        .model_keys = .empty,
         .shaders = undefined,
-        .materials = materials,
         .samplers = samplers,
         .images = images,
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
-        .ui_texture_buffer = ui_texture_buffer,
-        .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
-        .ui_image_indices = .initFill(null),
-        .skybox = undefined,
-        .skybox_material_index = undefined,
+        .texture_descriptor_buffer = texture_descriptor_buffer,
+        .texture_binding_offset = texture_binding_offset,
+        .texture_keys = .empty,
+        .identity_joint_buffer = identity_joint_buffer,
+        .font = .init(vma, device),
+        .skybox = null,
+        .skybox_descriptor = try .init(
+            device,
+            vma,
+            u8,
+            set_size,
+            c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
+        ),
+        .font_loader = .{ .root_path = "fonts", .files = &font_files, .load = fontLoaderLoad },
+        .shader_loader = .{ .root_path = "shaders", .files = &shader_files, .load = shaderLoaderLoad },
+        .model_loader = .{ .root_path = "objects", .files = &model_files, .load = modelLoaderLoad },
+        .texture_loader = .{ .root_path = "textures", .files = &texture_files, .load = textureLoaderLoad },
         .vma = vma,
         .device = device,
     };
-    try asset_server.loadAndWatch(Resources, self, self.font.name, reloadFont);
-    try self.loadUiTextures(gpa, vma, device);
-    try self.loadSkybox(gpa);
+    for (0..max_textures) |slot| self.writeTextureDescriptor(slot, default_texture.vk_imageview, default_sampler);
+    try asset_server.addLoader(&self.font_loader);
+    try asset_server.addLoader(&self.shader_loader);
+    try asset_server.addLoader(&self.model_loader);
+    try asset_server.addLoader(&self.texture_loader);
 
     for (std.enums.values(Shader.Kind)) |kind| {
         const shader_spec = Shader.specs.get(kind);
         const layout_handles: []const c.VkDescriptorSetLayout = switch (shader_spec.layout) {
-            .scene_material => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
-            .ui => &.{descriptor_layouts.get(.ui).handle},
+            .scene_textures => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.textures).handle },
+            .sky => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
+            .ui => &.{descriptor_layouts.get(.textures).handle},
         };
         self.shaders.set(kind, .init(device, kind, layout_handles));
-        try asset_server.loadAndWatch(Resources, self, shader_spec.path, reloadShader);
     }
 
-    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
-        if (comptime texture.path()) |texture_path| {
-            try asset_server.watch(Resources, self, texture_path["assets/".len..], reloadUiTexture);
-        }
-    }
-    try asset_server.watch(Resources, self, "textures/skybox_cubemap.png", reloadSkybox);
-
-    for (std.enums.values(Model.Kind)) |kind| {
-        const path = kind.spec().path orelse continue;
-        try asset_server.loadAndWatch(Resources, self, path, reloadModel);
-    }
+    const default_model = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
+    std.debug.assert(default_model == Model.Handle.default);
+    _ = try self.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
+    _ = try self.createExplosionParticleResources(gpa);
+    try self.registerEntityModels(gpa);
 
     return self;
 }
 
-fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    const kind = for (std.enums.values(Model.Kind)) |kind| {
-        const spec_path = kind.spec().path orelse continue;
-        if (std.mem.eql(u8, spec_path, file_path)) break kind;
+fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("model_loader", loader);
+    const file = try err_file;
+    const key = model_file_keys[index];
+    const spec = for (entity.all_kinds) |kind| {
+        const model_spec = entity.modelSpec(kind);
+        if (std.mem.eql(u8, model_spec.key, key)) break model_spec;
     } else return error.UnknownModelPath;
-    try self.models.getPtr(kind).loadGlb(gpa, io, file, self.vma, self.device, self, kind.spec());
+    const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
+    try self.models.items[handle.index()].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
 }
 
-fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    const kind = for (std.enums.values(Shader.Kind)) |kind| {
-        if (std.mem.eql(u8, Shader.specs.get(kind).path, file_path)) break kind;
-    } else return error.UnknownShaderPath;
-    try self.shaders.getPtr(kind).load(gpa, io, file);
+fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("shader_loader", loader);
+    const file = try err_file;
+    try self.shaders.getPtr(shader_kinds[index]).load(gpa, io, file);
 }
 
-fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    try self.font.load(gpa, io, file);
+fn fontLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    _ = index;
+    const self: *Resources = @fieldParentPtr("font_loader", loader);
+    const file = try err_file;
+    const old_sampler = self.font.sampler;
+    const atlas_image = try self.font.load(gpa, io, file);
+    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", atlas_image, self.font.sampler);
+    if (old_sampler != null) c.vkDestroySampler(self.device.handle, old_sampler, null);
 }
 
-pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
-    try self.createStaticMeshWithMaterial(gpa, name, vertices, indices, model_kind, null);
+fn textureLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("texture_loader", loader);
+    const file = try err_file;
+    const key = texture_file_keys[index];
+    if (std.mem.eql(u8, key, skybox_texture_key)) return self.skyboxFromFile(gpa, io, file);
+
+    var decoded = try decodeFile(gpa, io, file);
+    defer decoded.deinit();
+
+    var image: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer image.deinit(self.vma, self.device);
+    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
+    _ = try self.registerImage(gpa, key, image, self.samplers.items[0]);
 }
 
-pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !void {
+pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) !Model.Handle {
+    if (self.model_keys.get(key)) |handle| return handle;
+    try self.models.append(gpa, .empty);
+    const handle: Model.Handle = @enumFromInt(self.models.items.len - 1);
+    try self.model_keys.put(gpa, key, handle);
+    return handle;
+}
+
+pub fn registerEntityModels(self: *Resources, gpa: std.mem.Allocator) !void {
+    for (entity.all_kinds) |kind| {
+        _ = try self.registerModel(gpa, entity.modelSpec(kind).key);
+    }
+}
+
+pub fn textureHandle(self: *Resources, key: []const u8) Image.Handle {
+    return self.texture_keys.get(key).?;
+}
+
+pub fn modelHandle(self: *Resources, key: []const u8) Model.Handle {
+    return self.model_keys.get(key).?;
+}
+
+pub fn modelForKind(self: *Resources, kind: entity.Kind) *Model {
+    return self.getModelPtr(self.model_keys.get(entity.modelSpec(kind).key).?);
+}
+
+fn writeTextureDescriptor(self: *Resources, slot: usize, view: c.VkImageView, sampler: c.VkSampler) void {
+    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.texture_descriptor_buffer.info.pMappedData);
+    self.writeCombinedSamplerDescriptor(descriptor_buffer_bytes + self.texture_binding_offset + slot * self.combined_image_sampler_descriptor_size, view, sampler);
+}
+
+fn writeCombinedSamplerDescriptor(self: *Resources, destination: [*]u8, view: c.VkImageView, sampler: c.VkSampler) void {
+    const image_info: c.VkDescriptorImageInfo = .{
+        .sampler = sampler,
+        .imageView = view,
+        .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+        .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .data = .{ .pCombinedImageSampler = &image_info },
+    };
+    ext.vkGetDescriptorEXT(
+        self.device.handle,
+        &descriptor_get_info,
+        self.combined_image_sampler_descriptor_size,
+        destination,
+    );
+}
+
+pub fn registerImage(self: *Resources, gpa: std.mem.Allocator, key: ?[]const u8, image: Image, sampler: c.VkSampler) !Image.Handle {
+    if (key) |existing_key| if (self.texture_keys.get(existing_key)) |handle| {
+        const slot = handle.index();
+        try check(c.vkDeviceWaitIdle(self.device.handle));
+        self.images.items[slot].deinit(self.vma, self.device);
+        self.images.items[slot] = image;
+        self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
+        return handle;
+    };
+    std.debug.assert(self.images.items.len < max_textures);
+    try self.images.append(gpa, image);
+    const slot = self.images.items.len - 1;
+    self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
+    if (key) |new_key| try self.texture_keys.put(gpa, try gpa.dupe(u8, new_key), @enumFromInt(slot));
+    std.log.debug("texture {d}/{d}: {s}", .{ slot + 1, max_textures, key orelse "unnamed" });
+    return @enumFromInt(slot);
+}
+
+pub fn setTextureSampler(self: *Resources, handle: Image.Handle, sampler: c.VkSampler) void {
+    const slot = handle.index();
+    self.writeTextureDescriptor(slot, self.images.items[slot].vk_imageview, sampler);
+}
+
+pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32) !Model.Handle {
+    return self.createStaticMeshWithTexture(gpa, name, vertices, indices, .blank);
+}
+
+pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !Model.Handle {
     var texture = try Image.init(
         self.vma,
         self.device,
@@ -257,30 +428,13 @@ pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator
     fillExplosionParticleTexture(&pixels);
     try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
 
-    const material = try Material.init(
+    const texture_handle = try self.registerImage(gpa, explosion_particle_name, texture, self.samplers.items[0]);
+    return self.createStaticMeshWithTexture(
         gpa,
-        explosion_particle_material_name,
-        self.device,
-        self.vma,
-        self.set_size,
-        self.combined_image_sampler_descriptor_size,
-        self.samplers.items[0],
-        texture.vk_imageview,
-    );
-    errdefer {
-        var material_copy = material;
-        material_copy.deinit(gpa, self.vma);
-    }
-
-    try self.images.append(gpa, texture);
-    try self.materials.append(gpa, material);
-    try self.createStaticMeshWithMaterial(
-        gpa,
-        "explosion_particle",
+        explosion_particle_name,
         Mesh.explosion_particle.verticies,
         Mesh.explosion_particle.indicies,
-        .explosion_particle,
-        self.materials.items.len - 1,
+        texture_handle,
     );
 }
 
@@ -307,15 +461,14 @@ fn fillExplosionParticleTexture(pixels: *[explosion_particle_texture_size * expl
     }
 }
 
-fn createStaticMeshWithMaterial(
+fn createStaticMeshWithTexture(
     self: *Resources,
     gpa: std.mem.Allocator,
     name: []const u8,
     vertices: []const Mesh.StaticVertex,
     indices: []const u32,
-    model_kind: Model.Kind,
-    material_index: ?usize,
-) !void {
+    texture: Image.Handle,
+) !Model.Handle {
     const existing_index = for (self.meshes.items, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.name, name)) break index;
     } else null;
@@ -332,7 +485,7 @@ fn createStaticMeshWithMaterial(
         &.{.{
             .index_start = 0,
             .index_count = @intCast(indices.len),
-            .material_index = material_index,
+            .texture = texture,
         }},
     );
     const mesh_id = if (existing_index) |index| blk: {
@@ -344,43 +497,25 @@ fn createStaticMeshWithMaterial(
         break :blk self.meshes.items.len - 1;
     };
 
-    const model = self.models.getPtr(model_kind);
+    const handle = try self.registerModel(gpa, name);
+    const model = &self.models.items[handle.index()];
     model.clear(gpa);
     try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
     model.offset = .{};
+    return handle;
 }
 
-fn reloadUiTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    inline for (comptime std.enums.values(Ui.Texture)) |texture| {
-        if (comptime texture.path()) |texture_path| {
-            if (std.mem.eql(u8, texture_path["assets/".len..], file_path)) {
-                const image_index = self.ui_image_indices.get(texture) orelse return;
-                const image = &self.images.items[image_index];
-
-                var decoded = try decodeFile(gpa, io, file);
-                defer decoded.deinit();
-
-                //TODO: same-size reload only, resize needs new image + descriptor rewrite -> restart
-                if (@as(u32, @intCast(decoded.width)) != image.extent.width or
-                    @as(u32, @intCast(decoded.height)) != image.extent.height) return;
-                try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
-                return;
-            }
-        }
-    }
-}
-
-fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
-    var decoded: Image.Decoded = .{};
+fn skyboxFromFile(self: *Resources, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
+    var decoded = try decodeFile(gpa, io, file);
     defer decoded.deinit();
-    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = "assets/textures/skybox_cubemap.png" }};
-    try Image.decodeImages(gpa, &decode_tasks);
-    if (decoded.err) |err| return err;
-    try if (decoded.pixels == null) error.LoadingStbi;
 
     const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
-    std.log.debug("res: {d}, face. {d}", .{ decoded.width, face_size });
+    if (self.skybox != null) {
+        //TODO: same-size reload only, resize needs a new image + descriptor rewrite -> restart
+        if (face_size != self.skybox.?.extent.width) return;
+        try self.uploadSkyboxFaces(gpa, decoded);
+        return;
+    }
 
     self.skybox = try .init(
         self.vma,
@@ -398,18 +533,7 @@ fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
     );
     try self.uploadSkyboxFaces(gpa, decoded);
 
-    const sky_material: Material = try .init(
-        gpa,
-        "skybox",
-        self.device,
-        self.vma,
-        self.set_size,
-        self.combined_image_sampler_descriptor_size,
-        self.samplers.items[0],
-        self.skybox.vk_imageview,
-    );
-    try self.materials.append(gpa, sky_material);
-    self.skybox_material_index = self.materials.items.len - 1;
+    self.writeCombinedSamplerDescriptor(@ptrCast(self.skybox_descriptor.info.pMappedData), self.skybox.?.vk_imageview, self.samplers.items[0]);
 }
 
 fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
@@ -438,7 +562,7 @@ fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.De
             @memcpy(data[dst..][0..row_bytes], decoded.pixels[src..][0..row_bytes]);
         }
 
-        try self.skybox.uploadDataToImage(
+        try self.skybox.?.uploadDataToImage(
             self.vma,
             self.device,
             data,
@@ -464,98 +588,13 @@ fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image.Deco
     return decoded;
 }
 
-fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-
-    var decoded = try decodeFile(gpa, io, file);
-    defer decoded.deinit();
-
-    const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
-    if (face_size != self.skybox.extent.width) return;
-    try self.uploadSkyboxFaces(gpa, decoded);
-}
-
-fn loadUiTextures(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) !void {
-    const loadable_textures = comptime blk: {
-        var textures: []const Ui.Texture = &.{};
-        for (std.enums.values(Ui.Texture)) |texture| {
-            if (texture.path() != null) textures = textures ++ .{texture};
-        }
-        break :blk textures;
-    };
-
-    var decoded_ui_images: [loadable_textures.len]Image.Decoded = @splat(.{});
-    defer for (&decoded_ui_images) |*decoded_ui_image| decoded_ui_image.deinit();
-
-    var ui_decode_tasks: [loadable_textures.len]Image.DecodeTask = undefined;
-    inline for (loadable_textures, 0..) |texture, task_index| {
-        ui_decode_tasks[task_index] = .{ .result = &decoded_ui_images[task_index], .uri = texture.path().? };
-    }
-    try Image.decodeImages(gpa, &ui_decode_tasks);
-
-    var ui_views: std.EnumArray(Ui.Texture, c.VkImageView) = .initFill(self.images.items[0].vk_imageview);
-    ui_views.set(.font_atlas, self.font.image.vk_imageview);
-    inline for (loadable_textures, 0..) |texture, task_index| {
-        const decoded_ui_image = decoded_ui_images[task_index];
-        var ui_image: Image = try .init(
-            vma,
-            device,
-            c.VK_FORMAT_R8G8B8A8_UNORM,
-            .{
-                .width = @intCast(decoded_ui_image.width),
-                .height = @intCast(decoded_ui_image.height),
-                .depth = 1,
-            },
-            .@"2d",
-            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-            c.VK_IMAGE_ASPECT_COLOR_BIT,
-            false,
-        );
-        try ui_image.uploadDataToImage(vma, device, decoded_ui_image.pixels, 4, 0);
-        try self.images.append(gpa, ui_image);
-        self.ui_image_indices.set(texture, self.images.items.len - 1);
-        ui_views.set(texture, ui_image.vk_imageview);
-    }
-
-    var binding_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, self.descriptor_layouts.get(.ui).handle, 0, &binding_offset);
-
-    for (0..64) |slot_index| {
-        const texture: Ui.Texture = if (slot_index < std.enums.values(Ui.Texture).len) @enumFromInt(slot_index) else .blank;
-        const sampler = if (texture == .font_atlas) self.font.sampler else self.samplers.items[0];
-
-        const image_info: c.VkDescriptorImageInfo = .{
-            .sampler = sampler,
-            .imageView = ui_views.get(texture),
-            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-        const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .data = .{ .pCombinedImageSampler = &image_info },
-        };
-        const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.ui_texture_buffer.info.pMappedData);
-        ext.vkGetDescriptorEXT(
-            device.handle,
-            &descriptor_get_info,
-            self.combined_image_sampler_descriptor_size,
-            descriptor_buffer_bytes + binding_offset + slot_index * self.combined_image_sampler_descriptor_size,
-        );
-    }
-}
-
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    for (self.materials.items) |*material| {
-        material.deinit(gpa, vma);
-    }
-    self.materials.deinit(gpa);
-
     for (self.images.items) |*image| {
         image.deinit(vma, device);
     }
     self.images.deinit(gpa);
-    self.skybox.deinit(vma, device);
+    if (self.skybox != null) self.skybox.?.deinit(vma, device);
+    self.skybox_descriptor.deinit(vma);
 
     for (self.samplers.items) |sampler| {
         c.vkDestroySampler(device.handle, sampler, null);
@@ -566,7 +605,9 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
         mesh.deinit(gpa, vma);
     }
     self.meshes.deinit(gpa);
-    for (&self.models.values) |*model| model.deinit(gpa);
+    for (self.models.items) |*model| model.deinit(gpa);
+    self.models.deinit(gpa);
+    self.model_keys.deinit(gpa);
     for (&self.shaders.values) |*shader| shader.deinit();
 
     for (self.descriptor_layouts.values) |layout| {
@@ -575,14 +616,18 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     for (&self.pipeline_layouts.values) |*layout| {
         layout.deinit(device);
     }
-    self.ui_texture_buffer.deinit(vma);
-    self.font.deinit(gpa, vma, device);
+    self.texture_descriptor_buffer.deinit(vma);
+    self.identity_joint_buffer.deinit(vma);
+    var key_iterator = self.texture_keys.keyIterator();
+    while (key_iterator.next()) |texture_key| gpa.free(texture_key.*);
+    self.texture_keys.deinit(gpa);
+    self.font.deinit(device);
     gpa.destroy(self);
 }
 
 pub fn getMeshPtr(self: *Resources, index: usize) *Mesh {
     return &self.meshes.items[index];
 }
-pub fn getMaterialPtr(self: *Resources, index: ?usize) *Material {
-    return &self.materials.items[index orelse 0];
+pub fn getModelPtr(self: *Resources, handle: Model.Handle) *Model {
+    return &self.models.items[handle.index()];
 }

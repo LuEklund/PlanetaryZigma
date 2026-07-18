@@ -21,6 +21,15 @@ const Kind = enum(u8) {
     cube_map = 2,
 };
 
+pub const Handle = enum(u32) {
+    blank = 0,
+    _,
+
+    pub fn index(self: Handle) usize {
+        return @intFromEnum(self);
+    }
+};
+
 pub fn init(
     vma: Vma,
     device: Device,

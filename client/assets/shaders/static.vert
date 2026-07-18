@@ -10,8 +10,6 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec4 light_color;
 } scene_data;
 
-layout(set = 1, binding = 0) uniform sampler2D texSampler;
-
 struct Vertex {
   vec3 position;
   float uv_x;

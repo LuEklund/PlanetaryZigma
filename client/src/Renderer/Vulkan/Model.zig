@@ -12,80 +12,14 @@ const AnimationClip = @import("AnimationClip.zig");
 const Resources = @import("Resources.zig");
 const gltf = @import("gltf.zig");
 
-pub const Kind = enum {
-    unknown,
-    player,
-    planet,
-    cube_projectile,
-    teleporter,
-    tubloid,
-    tubloida,
-    bloorpLord,
-    health,
-    speed,
-    damage,
-    attack_speed,
-    rocket,
-    explosion_particle,
-    lootbox,
+pub const Spec = shared.entity.ModelSpec;
 
-    pub fn fromKind(kind: shared.entity.Kind) Kind {
-        return switch (kind) {
-            .unknown => .unknown,
-            .player => .player,
-            .planet => .planet,
-            .projectile_cube => .cube_projectile,
-            .projectile_rocket => .rocket,
-            .teleporter => .teleporter,
-            .lootbox => .lootbox,
-            .enemy => |enemy_kind| switch (enemy_kind) {
-                .tubloid => .tubloid,
-                .tubloida => .tubloida,
-                .bloorpLord => .bloorpLord,
-            },
-            .item => |item_kind| switch (item_kind) {
-                .health => .health,
-                .speed => .speed,
-                .damage => .damage,
-                .attack_speed => .attack_speed,
-                .rocket => .rocket,
-            },
-        };
-    }
+pub const Handle = enum(u32) {
+    default = 0,
+    _,
 
-    pub fn spec(kind: Kind) Spec {
-        const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-        const player_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
-        const enemy_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
-        return switch (kind) {
-            .unknown, .planet, .cube_projectile, .explosion_particle => .{ .path = null, .skinned = false, .clip_names = null },
-            .player => .{
-                .path = "objects/BenBozo.glb",
-                .offset = player_offset,
-                .skinned = true,
-                .clip_names = .{
-                    .idle = "Idle",
-                    .walk = "Run",
-                    .attack = "shoot",
-                },
-                .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
-                .overlay_root_name = "mixamorig:Spine1",
-            },
-            .teleporter => .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
-            .tubloid => .{ .path = "objects/Tubloid.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
-            .tubloida => .{ .path = "objects/Tubloida.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
-            .bloorpLord => .{ .path = "objects/BloorpLord.glb", .offset = enemy_offset, .skinned = true, .clip_names = .{
-                .idle = "Idle",
-                .walk = "Walking",
-                .attack = "Spawn_Enemy",
-            } },
-            .health => .{ .path = "objects/oxigen_tank.glb", .skinned = false, .clip_names = null },
-            .speed => .{ .path = "objects/energy_drink.glb", .skinned = false, .clip_names = null },
-            .damage => .{ .path = "objects/gun.glb", .skinned = false, .clip_names = null },
-            .attack_speed => .{ .path = "objects/pickaxe2.glb", .skinned = false, .clip_names = null },
-            .rocket => .{ .path = "objects/rocket.glb", .skinned = false, .clip_names = null },
-            .lootbox => .{ .path = "objects/lootbox.glb", .skinned = false, .clip_names = null },
-        };
+    pub fn index(self: Handle) usize {
+        return @intFromEnum(self);
     }
 };
 
@@ -107,27 +41,6 @@ pub const empty: Model = .{
     .overlay_mask = null,
     .state_clips = .initFill(0),
     .offset = .{},
-};
-
-const ClipNames = struct {
-    idle: ?[]const u8,
-    walk: []const u8,
-    attack: []const u8,
-};
-
-const LookNodeNames = struct {
-    spine: ?[]const u8,
-    neck: ?[]const u8,
-    head: ?[]const u8,
-};
-
-const Spec = struct {
-    path: ?[]const u8,
-    offset: nz.Transform3D(f32) = .{},
-    skinned: bool,
-    clip_names: ?ClipNames,
-    look_node_names: ?LookNodeNames = null,
-    overlay_root_name: ?[]const u8 = null,
 };
 
 const Surface = struct {
@@ -171,7 +84,7 @@ pub fn loadGlb(
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
         var overlay_root: usize = undefined;
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
+        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, spec.key, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
         if (spec.overlay_root_name != null) {
             const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
             for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -180,7 +93,7 @@ pub fn loadGlb(
             self.overlay_mask = overlay_mask;
         }
     } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
+        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, spec.key, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
     }
     computeMatrices(self.nodes.items);
 
@@ -210,9 +123,9 @@ fn clipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
-    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path.? });
+    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.key });
     for (self.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
-    std.log.err("in Model.Kind.spec assign null or one of these", .{});
+    std.log.err("in the model spec assign null or one of these", .{});
     return error.ClipNotFound;
 }
 

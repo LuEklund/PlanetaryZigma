@@ -1,4 +1,5 @@
 const std = @import("std");
+const nz = @import("numz");
 const Item = @import("inventory.zig").Item;
 
 pub const Id = enum(u32) {
@@ -17,11 +18,17 @@ pub const ProjectileKind = enum(u16) {
     rocket = 1,
 };
 
-pub fn hasCollider(kind: Kind) bool {
+pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
+    if (nz.vec.length(direction) < 0.001) return .identity;
+    const base = nz.quat.Hamiltonian(f32).lookAt(direction, up_hint).normalize();
     return switch (kind) {
-        .unknown, .projectile_cube, .projectile_rocket => false,
-        else => true,
+        .cube => base,
+        .rocket => base.mul(nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 })).normalize(),
     };
+}
+
+pub fn hasCollider(kind: Kind) bool {
+    return kind == .planet or spec(kind).collider != null;
 }
 
 pub const ColliderShape = union(enum) {
@@ -35,18 +42,141 @@ pub const ColliderShape = union(enum) {
 };
 
 pub fn colliderShape(kind: Kind) ?ColliderShape {
+    return spec(kind).collider;
+}
+
+pub const ModelClipNames = struct {
+    idle: ?[]const u8,
+    walk: []const u8,
+    attack: []const u8,
+};
+
+pub const ModelLookNodeNames = struct {
+    spine: ?[]const u8,
+    neck: ?[]const u8,
+    head: ?[]const u8,
+};
+
+pub const ModelSpec = struct {
+    key: []const u8,
+    offset: nz.Transform3D(f32) = .{},
+    skinned: bool,
+    clip_names: ?ModelClipNames,
+    look_node_names: ?ModelLookNodeNames = null,
+    overlay_root_name: ?[]const u8 = null,
+};
+
+const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
+const player_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
+const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
+
+pub fn modelSpec(kind: Kind) ModelSpec {
+    return spec(kind).model;
+}
+
+pub const Spec = struct {
+    collider: ?ColliderShape,
+    model: ModelSpec,
+    icon: ?[]const u8 = null,
+    has_health: bool,
+    expects_model: bool,
+};
+
+pub fn spec(kind: Kind) Spec {
     return switch (kind) {
-        .unknown, .projectile_cube, .projectile_rocket, .planet => null,
-        .player => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
-        .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid, .tubloida => .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
-            .bloorpLord => .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+        .unknown => .{
+            .collider = null,
+            .model = .{ .key = "default", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = false,
         },
-        .teleporter => .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
-        .item => .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
-        .lootbox => .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+        .player => .{
+            .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+            .model = .{
+                .key = "objects/BenBozo.glb",
+                .offset = player_model_offset,
+                .skinned = true,
+                .clip_names = .{
+                    .idle = "Idle",
+                    .walk = "Run",
+                    .attack = "shoot",
+                },
+                .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
+                .overlay_root_name = "mixamorig:Spine1",
+            },
+            .has_health = true,
+            .expects_model = true,
+        },
+        .planet => .{
+            .collider = null,
+            .model = .{ .key = "planet", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = true,
+        },
+        .teleporter => .{
+            .collider = .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
+            .model = .{ .key = "objects/pillar.glb", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = false,
+        },
+        .lootbox => .{
+            .collider = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+            .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = true,
+        },
+        .projectile_cube => .{
+            .collider = null,
+            .model = .{ .key = "cube_projectile", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = true,
+        },
+        .projectile_rocket => .{
+            .collider = null,
+            .model = .{ .key = "objects/rocket.glb", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = true,
+        },
+        .enemy => |enemy_kind| switch (enemy_kind) {
+            .tubloid => .{
+                .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+                .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
+                .has_health = true,
+                .expects_model = true,
+            },
+            .tubloida => .{
+                .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+                .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
+                .has_health = true,
+                .expects_model = true,
+            },
+            .bloorpLord => .{
+                .collider = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+                .model = .{ .key = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                    .idle = "Idle",
+                    .walk = "Walking",
+                    .attack = "Spawn_Enemy",
+                } },
+                .has_health = true,
+                .expects_model = true,
+            },
+        },
+        .item => |item_kind| .{
+            .collider = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+            .model = .{ .key = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
+            .icon = Item.spec(item_kind).icon,
+            .has_health = false,
+            .expects_model = true,
+        },
     };
 }
+
+pub const all_kinds: []const Kind = blk: {
+    var kinds: []const Kind = &.{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
+    for (std.enums.values(EnemyKind)) |enemy_kind| kinds = kinds ++ .{Kind{ .enemy = enemy_kind }};
+    for (std.enums.values(Item.Kind)) |item_kind| kinds = kinds ++ .{Kind{ .item = item_kind }};
+    break :blk kinds;
+};
 
 pub const Kind = union(enum) {
     unknown,
@@ -67,7 +197,7 @@ pub const Kind = union(enum) {
     }
 
     pub fn hasHealth(kind: Kind) bool {
-        return kind == .enemy or kind == .player;
+        return spec(kind).has_health;
     }
 
     pub fn projectileKind(kind: Kind) ?ProjectileKind {
@@ -79,10 +209,7 @@ pub const Kind = union(enum) {
     }
 
     pub fn expectsModel(kind: Kind) bool {
-        return switch (kind) {
-            .player, .planet, .enemy, .item, .projectile_cube, .projectile_rocket, .lootbox => true,
-            .unknown, .teleporter => false,
-        };
+        return spec(kind).expects_model;
     }
 };
 

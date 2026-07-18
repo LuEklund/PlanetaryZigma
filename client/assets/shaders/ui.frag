@@ -8,7 +8,7 @@ layout(location = 2) in flat uint in_texture_index;
 layout(location = 3) in flat uint in_is_sdf;
 layout(location = 0) out vec4 out_frag_color;
 
-layout(set = 0, binding = 0) uniform sampler2D textures[64];
+layout(set = 0, binding = 0) uniform sampler2D textures[256];
 void main() {
   vec4 texture = texture(textures[nonuniformEXT(in_texture_index)], in_uv);
   if (in_is_sdf == 1) {

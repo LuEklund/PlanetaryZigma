@@ -8,7 +8,7 @@ const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
 const Particle = @import("system/Particle.zig");
-const menu = @import("system/menu.zig");
+const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
 
@@ -84,7 +84,7 @@ pub const Context = struct {
         world.clearSession();
         self.hud = .{};
         switch (next) {
-            .menu => try menu.populate(world),
+            .menu => try menu_world.populate(world),
             .game => {},
         }
         self.scene = next;
@@ -96,8 +96,8 @@ pub const Context = struct {
         // tracy.frameMark();
         const paused_before_hud = self.hud.overlay != .none;
         Particle.update(&info.world.particles, info.delta_time);
-        if (self.scene == .menu) menu.update(info.world, info.elapsed_time);
-        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, &info.world.controller, &self.options)) {
+        if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
+        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, self.renderer.inner.resources, &info.world.controller, &self.options)) {
             .none => {},
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,
@@ -107,7 +107,7 @@ pub const Context = struct {
         }
         try self.applyOptions(info);
         try self.renderer.update(info);
-        try self.asset_server.update();
+        try self.asset_server.reloadChangedAssets();
         try self.network_manager.update(info);
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);

@@ -8,7 +8,7 @@ handle: c.VkPipelineLayout,
 
 pub fn init(device: Device, comptime PushConstant: type, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
     const ranges: c.VkPushConstantRange = .{
-        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
+        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,
         .size = @sizeOf(PushConstant),
     };
