@@ -28,10 +28,11 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
+            std.log.debug("pres", .{});
             player.last_attack = info.elapsed_time;
             _ = try info.world.spawn(
                 .{
-                    .kind = .{ .item = .gun },
+                    .kind = .{ .item = .rocket },
                     .transform = player.transform,
                 },
             );
@@ -75,7 +76,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 switch (entity.kind) {
                     .lootbox => {
                         info.world.queueDespawn(entity.id);
-                        try Director.spawnItem(info.world, .oxygen_tank, entity.transform.position);
+                        try Director.spawnItem(info.world, .rocket, entity.transform.position);
                     },
                     .teleporter => {
                         const teleporter = &entity.teleporter;
