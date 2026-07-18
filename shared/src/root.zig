@@ -14,9 +14,7 @@ pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
 pub const Watcher = @import("Watcher.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
-/// Deprecated; use `AssetServer2`.
 pub const AssetServer = @import("AssetServer.zig");
-pub const AssetServer2 = @import("AssetServer2.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
 const inventory = @import("inventory.zig");

@@ -17,6 +17,7 @@ const Shader = @import("Shader.zig");
 const Font = @import("Font.zig");
 const FrameData = @import("FrameData.zig");
 const AssetServer = @import("shared").AssetServer;
+const entity = @import("shared").entity;
 
 const check = @import("utils.zig").check;
 
@@ -26,6 +27,59 @@ pub const max_textures = 256;
 const explosion_particle_texture_size: u32 = 32;
 
 pub const PipelineLayoutKind = enum { world, sky, ui };
+
+// TEMP-COMMENT: AssetServer2-style loaders — one per asset subdirectory, file lists derived
+// AT COMPTIME from the shared tables (entity.all_kinds, Item.spec, Shader.specs,
+// Hud.texture_paths). Loader `files` are basenames (inotify events are basenames); the
+// parallel *_keys arrays keep the full "subdir/name" pool keys for the callbacks.
+const skybox_texture_key = "textures/skybox_cubemap.png";
+pub const crosshair_texture_key = "textures/crosshair.png";
+const font_files = [_][]const u8{"Roboto-Regular.ttf"};
+
+const shader_kinds = std.enums.values(Shader.Kind);
+const shader_files = blk: {
+    var files: [shader_kinds.len][]const u8 = undefined;
+    for (shader_kinds, 0..) |kind, i| files[i] = Shader.specs.get(kind).path["shaders/".len..];
+    break :blk files;
+};
+
+const model_file_keys = blk: {
+    var keys: []const []const u8 = &.{};
+    for (entity.all_kinds) |kind| {
+        const key = entity.modelSpec(kind).key;
+        if (!std.mem.endsWith(u8, key, ".glb")) continue;
+        for (keys) |existing| {
+            if (std.mem.eql(u8, existing, key)) break;
+        } else keys = keys ++ .{key};
+    }
+    break :blk keys;
+};
+const model_files = blk: {
+    var files: [model_file_keys.len][]const u8 = undefined;
+    for (model_file_keys, 0..) |key, i| files[i] = key["objects/".len..];
+    break :blk files;
+};
+
+const texture_file_keys = blk: {
+    var keys: []const []const u8 = &.{ skybox_texture_key, crosshair_texture_key };
+    for (entity.all_kinds) |kind| {
+        const icon = entity.spec(kind).icon orelse continue;
+        for (keys) |existing| {
+            if (std.mem.eql(u8, existing, icon)) break;
+        } else keys = keys ++ .{icon};
+    }
+    break :blk keys;
+};
+const texture_files = blk: {
+    var files: [texture_file_keys.len][]const u8 = undefined;
+    for (texture_file_keys, 0..) |key, i| {
+        std.debug.assert(std.mem.startsWith(u8, key, "textures/"));
+        files[i] = key["textures/".len..];
+    }
+    break :blk files;
+};
+
+
 
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
@@ -48,7 +102,13 @@ texture_binding_offset: c.VkDeviceSize,
 texture_keys: std.StringHashMapUnmanaged(Image.Handle),
 identity_joint_buffer: Buffer,
 font: Font,
-skybox: Image,
+// TEMP-COMMENT: null until the texture loader's first skybox load creates the cube image
+// and writes its descriptor (loads now come through asset_server.load(), not init).
+skybox: ?Image,
+font_loader: AssetServer.Loader,
+shader_loader: AssetServer.Loader,
+model_loader: AssetServer.Loader,
+texture_loader: AssetServer.Loader,
 vma: Vma,
 device: Device,
 
@@ -189,14 +249,28 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .texture_keys = .empty,
         .identity_joint_buffer = identity_joint_buffer,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
-        .skybox = undefined,
-        .skybox_descriptor = undefined,
+        .skybox = null,
+        .skybox_descriptor = try .init(
+            device,
+            vma,
+            u8,
+            set_size,
+            c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
+        ),
+        .font_loader = .{ .root_path = "fonts", .files = &font_files, .load = fontLoaderLoad },
+        .shader_loader = .{ .root_path = "shaders", .files = &shader_files, .load = shaderLoaderLoad },
+        .model_loader = .{ .root_path = "objects", .files = &model_files, .load = modelLoaderLoad },
+        .texture_loader = .{ .root_path = "textures", .files = &texture_files, .load = textureLoaderLoad },
         .vma = vma,
         .device = device,
     };
     for (0..max_textures) |slot| self.writeTextureDescriptor(@intCast(slot), default_texture.vk_imageview, default_sampler);
-    try asset_server.loadAndWatch(Resources, self, self.font.name, reloadFont);
-    try self.loadSkybox(gpa);
+    try asset_server.addLoader(&self.font_loader);
+    try asset_server.addLoader(&self.shader_loader);
+    try asset_server.addLoader(&self.model_loader);
+    try asset_server.addLoader(&self.texture_loader);
 
     for (std.enums.values(Shader.Kind)) |kind| {
         const shader_spec = Shader.specs.get(kind);
@@ -206,25 +280,75 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
             .ui => &.{descriptor_layouts.get(.textures).handle},
         };
         self.shaders.set(kind, .init(device, kind, layout_handles));
-        try asset_server.loadAndWatch(Resources, self, shader_spec.path, reloadShader);
     }
 
-    try asset_server.watch(Resources, self, "textures/skybox_cubemap.png", reloadSkybox);
+    // TEMP-COMMENT: generated meshes + entity model keys are Resources' own data — seeded
+    // here so the model loader (asset_server.load(), driven by the caller) finds every
+    // handle already registered.
+    _ = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
+    _ = try self.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
+    _ = try self.createExplosionParticleResources(gpa);
+    try self.registerEntityModels(gpa);
 
     return self;
 }
 
-fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
+fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("model_loader", loader);
+    const file = try err_file;
+    const key = model_file_keys[index];
     // TEMP-COMMENT: the spec is DERIVED from the shared table by key, not stored on the
     // model — one source of truth, and an edited spec is picked up on the next reload.
-    const entity = @import("shared").entity;
     const spec = for (entity.all_kinds) |kind| {
         const model_spec = entity.modelSpec(kind);
-        if (std.mem.eql(u8, model_spec.key, file_path)) break model_spec;
+        if (std.mem.eql(u8, model_spec.key, key)) break model_spec;
     } else return error.UnknownModelPath;
-    const handle = self.model_keys.get(file_path) orelse return error.UnknownModelPath;
+    const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
     try self.models.items[@intFromEnum(handle)].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
+}
+
+fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("shader_loader", loader);
+    const file = try err_file;
+    // TEMP-COMMENT: shader_files is built in Shader.Kind order → index IS the kind.
+    try self.shaders.getPtr(shader_kinds[index]).load(gpa, io, file);
+}
+
+fn fontLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    _ = index;
+    const self: *Resources = @fieldParentPtr("font_loader", loader);
+    const file = try err_file;
+    // TEMP-COMMENT: font.load creates a NEW image+sampler each call; registerImage destroys
+    // the old image (same key = same slot override), the old sampler we destroy here since
+    // the pool doesn't own samplers.
+    const old_sampler = self.font.sampler;
+    try self.font.load(gpa, io, file);
+    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", self.font.image, self.font.sampler);
+    if (old_sampler != null) c.vkDestroySampler(self.device.handle, old_sampler, null);
+}
+
+fn textureLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+    const self: *Resources = @fieldParentPtr("texture_loader", loader);
+    const file = try err_file;
+    const key = texture_file_keys[index];
+    if (std.mem.eql(u8, key, skybox_texture_key)) return self.skyboxFromFile(gpa, io, file);
+
+    var decoded = try decodeFile(gpa, io, file);
+    defer decoded.deinit();
+
+    var image: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer image.deinit(self.vma, self.device);
+    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
+    _ = try self.registerImage(gpa, key, image, self.samplers.items[0]);
 }
 
 // TEMP-COMMENT: the one door into the model pool; existing key = same handle back (dedupe),
@@ -237,31 +361,12 @@ pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) 
     return handle;
 }
 
-// TEMP-COMMENT: only glb keys declared in the shared entity table can load — reloadModel
-// derives their spec from all_kinds. A model outside the table needs a new entry there.
-pub fn loadModel(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer, key: []const u8) !Model.Handle {
-    if (self.model_keys.get(key)) |handle| return handle;
-    const handle = try self.registerModel(gpa, key);
-    try asset_server.loadAndWatch(Resources, self, key, reloadModel);
-    return handle;
-}
-
-// TEMP-COMMENT: "iterate the shared table and add it" — the one loop that loads every
-// entity model declared in shared/entity.zig. Non-.glb keys are generated meshes the
-// client registers manually (createStaticMesh); registering them here just reserves the
-// handle so order does not matter.
-pub fn loadEntityAssets(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer) !void {
-    const entity = @import("shared").entity;
+// TEMP-COMMENT: registration only, NO file IO — reserves a pool handle per model key so
+// the model loader (which runs at asset_server.load()) can look handles up by key. Actual
+// bytes arrive through the loaders.
+pub fn registerEntityModels(self: *Resources, gpa: std.mem.Allocator) !void {
     for (entity.all_kinds) |kind| {
-        const entity_spec = entity.spec(kind);
-        // TEMP-COMMENT: icons load here with everything else; consumers (Hud) just fetch
-        // the handle by key via texture().
-        if (entity_spec.icon) |icon_path| _ = try self.loadTexture(gpa, asset_server, icon_path);
-        if (std.mem.endsWith(u8, entity_spec.model.key, ".glb")) {
-            _ = try self.loadModel(gpa, asset_server, entity_spec.model.key);
-        } else {
-            _ = try self.registerModel(gpa, entity_spec.model.key);
-        }
+        _ = try self.registerModel(gpa, entity.modelSpec(kind).key);
     }
 }
 
@@ -275,32 +380,10 @@ pub fn modelHandle(self: *Resources, key: []const u8) Model.Handle {
     return self.model_keys.get(key).?;
 }
 
-pub fn modelForKind(self: *Resources, kind: @import("shared").entity.Kind) *Model {
+pub fn modelForKind(self: *Resources, kind: entity.Kind) *Model {
     // ponytail: string-hash lookup per draw; becomes a per-entity ModelHandle component
     // when entities grow components on the ECS step.
-    return self.getModelPtr(self.model_keys.get(@import("shared").entity.modelSpec(kind).key).?);
-}
-
-fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    const kind = for (std.enums.values(Shader.Kind)) |kind| {
-        if (std.mem.eql(u8, Shader.specs.get(kind).path, file_path)) break kind;
-    } else return error.UnknownShaderPath;
-    try self.shaders.getPtr(kind).load(gpa, io, file);
-}
-
-fn reloadFont(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    // TEMP-COMMENT: font.load creates a NEW image+sampler each call; before this change the old
-    // ones leaked on every hot reload. registerImage destroys the old image (same key = same
-    // slot override), the old sampler we destroy here ourselves since the pool doesn't own samplers.
-    const old_sampler = self.font.sampler;
-    try self.font.load(gpa, io, file);
-    // TEMP-COMMENT: atlas joins the pool like any texture, keyed "font_atlas" so reloads
-    // overwrite the same slot; Ui reads default_font.atlas_texture instead of enum slot 1.
-    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", self.font.image, self.font.sampler);
-    if (old_sampler != null) c.vkDestroySampler(self.device.handle, old_sampler, null);
+    return self.getModelPtr(self.model_keys.get(entity.modelSpec(kind).key).?);
 }
 
 // TEMP-COMMENT: the ONE place a descriptor slot gets written. slot == index into images ==
@@ -356,64 +439,6 @@ pub fn registerImage(self: *Resources, gpa: std.mem.Allocator, key: ?[]const u8,
 pub fn setTextureSampler(self: *Resources, handle: Image.Handle, sampler: c.VkSampler) void {
     const slot = @intFromEnum(handle);
     self.writeTextureDescriptor(slot, self.images.items[slot].vk_imageview, sampler);
-}
-
-// TEMP-COMMENT: path is relative to assets/ (same convention as asset_server.watch), deduped by
-// path → second loadTexture of the same file returns the same handle without touching disk.
-pub fn loadTexture(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer, path: []const u8) !Image.Handle {
-    if (self.texture_keys.get(path)) |handle| return handle;
-
-    var uri_buffer: [256]u8 = undefined;
-    const uri = try std.fmt.bufPrintZ(&uri_buffer, "assets/{s}", .{path});
-    var decoded: Image.Decoded = .{};
-    defer decoded.deinit();
-    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = uri }};
-    try Image.decodeImages(gpa, &decode_tasks);
-    if (decoded.err) |err| return err;
-    try if (decoded.pixels == null) error.LoadingStbi;
-
-    var image: Image = try .init(
-        self.vma,
-        self.device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    errdefer image.deinit(self.vma, self.device);
-    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
-
-    const handle = try self.registerImage(gpa, path, image, self.samplers.items[0]);
-    // TEMP-COMMENT: watch needs a string that outlives this call → reuse the key the map duped.
-    try asset_server.watch(Resources, self, self.texture_keys.getKey(path).?, reloadTexture);
-    return handle;
-}
-
-// TEMP-COMMENT: replaces reloadUiTexture's comptime enum loop with a map lookup. Builds a fresh
-// image and slot-overrides via registerImage → the old same-size-only restriction is gone
-// (resize = new image at same slot, descriptor rewritten).
-fn reloadTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-    if (self.texture_keys.get(file_path) == null) return;
-
-    var decoded = try decodeFile(gpa, io, file);
-    defer decoded.deinit();
-
-    var image: Image = try .init(
-        self.vma,
-        self.device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = @intCast(decoded.width), .height = @intCast(decoded.height), .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    errdefer image.deinit(self.vma, self.device);
-    try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
-    _ = try self.registerImage(gpa, file_path, image, self.samplers.items[0]);
 }
 
 pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32) !Model.Handle {
@@ -520,16 +545,20 @@ fn createStaticMeshWithTexture(
     return handle;
 }
 
-fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
-    var decoded: Image.Decoded = .{};
+// TEMP-COMMENT: first load creates the cube image and writes the skybox descriptor
+// (the descriptor BUFFER is made in init since it only needs set_size); later loads are
+// same-size-only face uploads, as before.
+fn skyboxFromFile(self: *Resources, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
+    var decoded = try decodeFile(gpa, io, file);
     defer decoded.deinit();
-    var decode_tasks = [_]Image.DecodeTask{.{ .result = &decoded, .uri = "assets/textures/skybox_cubemap.png" }};
-    try Image.decodeImages(gpa, &decode_tasks);
-    if (decoded.err) |err| return err;
-    try if (decoded.pixels == null) error.LoadingStbi;
 
     const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
-    std.log.debug("res: {d}, face. {d}", .{ decoded.width, face_size });
+    if (self.skybox != null) {
+        //TODO: same-size reload only, resize needs a new image + descriptor rewrite -> restart
+        if (face_size != self.skybox.?.extent.width) return;
+        try self.uploadSkyboxFaces(gpa, decoded);
+        return;
+    }
 
     self.skybox = try .init(
         self.vma,
@@ -547,20 +576,9 @@ fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
     );
     try self.uploadSkyboxFaces(gpa, decoded);
 
-    // TEMP-COMMENT: what Material.init used to do, inlined for the ONE remaining user —
-    // a single-descriptor buffer for the cube sampler (can't live in the sampler2D array).
-    self.skybox_descriptor = try .init(
-        self.device,
-        self.vma,
-        u8,
-        self.set_size,
-        c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-            c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
-    );
     const image_info: c.VkDescriptorImageInfo = .{
         .sampler = self.samplers.items[0],
-        .imageView = self.skybox.vk_imageview,
+        .imageView = self.skybox.?.vk_imageview,
         .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
     const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
@@ -603,7 +621,7 @@ fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.De
             @memcpy(data[dst..][0..row_bytes], decoded.pixels[src..][0..row_bytes]);
         }
 
-        try self.skybox.uploadDataToImage(
+        try self.skybox.?.uploadDataToImage(
             self.vma,
             self.device,
             data,
@@ -629,24 +647,12 @@ fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image.Deco
     return decoded;
 }
 
-fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
-    _ = file_path;
-    const self: *Resources = @ptrCast(@alignCast(user_data));
-
-    var decoded = try decodeFile(gpa, io, file);
-    defer decoded.deinit();
-
-    const face_size: u32 = @intCast(@divTrunc(decoded.width, 4));
-    if (face_size != self.skybox.extent.width) return;
-    try self.uploadSkyboxFaces(gpa, decoded);
-}
-
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
     for (self.images.items) |*image| {
         image.deinit(vma, device);
     }
     self.images.deinit(gpa);
-    self.skybox.deinit(vma, device);
+    if (self.skybox != null) self.skybox.?.deinit(vma, device);
     self.skybox_descriptor.deinit(vma);
 
     for (self.samplers.items) |sampler| {

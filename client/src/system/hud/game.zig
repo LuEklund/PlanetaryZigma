@@ -168,7 +168,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = resources.textureHandle(Hud.crosshair_texture),
+                        .texture = resources.textureHandle(Resources.crosshair_texture_key),
                     },
                 },
             });

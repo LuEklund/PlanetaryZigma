@@ -107,7 +107,7 @@ pub const Context = struct {
         }
         try self.applyOptions(info);
         try self.renderer.update(info);
-        try self.asset_server.update();
+        try self.asset_server.reloadChangedAssets();
         try self.network_manager.update(info);
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);

@@ -103,12 +103,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     }
 
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
-    _ = try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
-    _ = try self.resources.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
-    _ = try self.resources.createExplosionParticleResources(gpa);
-    try self.resources.loadEntityAssets(gpa, asset_server);
-    // TEMP-COMMENT: HUD-own textures (not entity assets) — Hud declares, loader loads.
-    for (system.Hud.texture_paths) |path| _ = try self.resources.loadTexture(gpa, asset_server, path);
+    // TEMP-COMMENT: ONE call drives every file load through the loaders Resources registered
+    // (fonts, shaders, models incl. glb-embedded textures, textures incl. icons/skybox).
+    try asset_server.load();
 
     self.ui = try .init(
         gpa,
