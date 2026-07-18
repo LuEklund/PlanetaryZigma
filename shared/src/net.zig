@@ -179,12 +179,17 @@ pub const Event = union(enum) {
         interacted: entity.Id,
     };
 
+    pub const Effect = union(enum) {
+        rocket_impact: @Vector(3, f32),
+        lightning: [5]entity.Id,
+    };
+
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
     attack: entity.Id,
     interact: Interact,
-    rocket_impact: @Vector(3, f32),
+    effect: Effect,
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {
@@ -225,10 +230,10 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
                 try writer.splatByteAll(0, (4 - (value.len % 4)) % 4);
             } else try writer.writeSliceEndian(pointer.child, value, endian);
         },
-        .array => |array| if (array.child == u8)
-            try writer.writeAll(&value)
-        else for (value) |item| {
-            try marshal(writer, item);
+        .array => |array| {
+            if (array.child == u8) {
+                try writer.writeAll(&value);
+            } else try writer.writeSliceEndian(array.child, &value, endian);
         },
         .vector => |vector| inline for (0..vector.len) |i| {
             try marshal(writer, value[i]);
@@ -260,6 +265,13 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         .int => try reader.takeInt(Out, endian),
         .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
         .@"enum" => try reader.takeEnum(Out, endian),
+        .array => |array| out: {
+            var val: Out = undefined;
+            if (array.child == u8) {
+                try reader.readSliceAll(&val);
+            } else try reader.readSliceEndian(array.child, &val, endian);
+            break :out val;
+        },
         .vector => |vector| out: {
             var val: Out = @splat(0);
             inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);

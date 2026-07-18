@@ -148,6 +148,7 @@ pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
                     return;
                 }
             }
+            if (key.sym == .k) self.input_map.keys.k = pressed;
             for (bindable_actions) |action| {
                 if (self.bindings.get(action).eql(.{ .key = key.sym })) {
                     self.applyAction(action, pressed);

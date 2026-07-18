@@ -71,7 +71,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_player_names = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .particles = try .initCapacity(gpa, 512),
+        .particles = try .initCapacity(gpa, 4096),
         .prng = .init(0x5EED_BA11),
     };
 }

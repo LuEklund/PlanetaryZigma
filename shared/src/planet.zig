@@ -190,7 +190,8 @@ fn buildCellSlice(task: *SliceTask) void {
             while (z < task.bound) : (z += 1) {
                 const cell_position: nz.Vec3(f32) = .{ x, y, z };
                 const cell_center: nz.Vec3(f32) = cell_position + @as(nz.Vec3(f32), @splat(0.5));
-                if (nz.vec.length(cell_center) > task.bound) continue;
+                const shell_half_width = noise_amplitude + cell_margin;
+                if (@abs(nz.vec.length(cell_center) - task.radius) > shell_half_width) continue;
                 var checksum: u8 = 0;
                 var corners: [8]nz.Vec3(f32) = undefined;
                 var corner_sdf: [8]f32 = undefined;

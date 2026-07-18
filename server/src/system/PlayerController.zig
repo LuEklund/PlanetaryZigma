@@ -32,7 +32,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             player.last_attack = info.elapsed_time;
             _ = try info.world.spawn(
                 .{
-                    .kind = .{ .item = .rocket },
+                    .kind = .{ .item = .lightning },
                     .transform = player.transform,
                 },
             );

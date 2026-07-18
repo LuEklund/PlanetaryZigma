@@ -10,7 +10,6 @@ const Vma = @import("Vma.zig");
 const Image = @import("Image.zig");
 
 pub const box = @import("Mesh/box.zig");
-pub const explosion_particle = @import("Mesh/explosion_particle.zig");
 
 surfaces: std.ArrayList(GeoSurface),
 index_buffer: Buffer,

@@ -8,6 +8,7 @@ pub const Item = struct {
         gun = 2,
         pickaxe = 3,
         rocket = 4,
+        lightning = 5,
 
         pub fn getAttributeValues(kind: Kind) Attribute {
             return spec(kind).attributes;
@@ -47,6 +48,11 @@ pub const Item = struct {
                 .model = "objects/rocket.glb",
                 .icon = "textures/rocket.png",
             },
+            .lightning => .{
+                .attributes = .{ .lightning_chance = 0.05 },
+                .model = "objects/lightning.glb",
+                .icon = "textures/lightning.png",
+            },
         };
     }
 
@@ -57,6 +63,7 @@ pub const Item = struct {
         attack_speed: f32 = 0,
         range: f32 = 0,
         rocket_chance: f32 = 0,
+        lightning_chance: f32 = 0,
 
         pub fn get(self: Attribute, kind: Stat.Kind) f32 {
             return switch (kind) {
