@@ -18,9 +18,16 @@ pub const ProjectileKind = enum(u16) {
     rocket = 1,
 };
 
+pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
+    if (nz.vec.length(direction) < 0.001) return .identity;
+    const base = nz.quat.Hamiltonian(f32).lookAt(direction, up_hint).normalize();
+    return switch (kind) {
+        .cube => base,
+        .rocket => base.mul(nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 })).normalize(),
+    };
+}
+
 pub fn hasCollider(kind: Kind) bool {
-    // TEMP-COMMENT: planet gets a physics body but its collider is the generated planet
-    // MESH (assigned by planet setup), not a primitive — hence the special case.
     return kind == .planet or spec(kind).collider != null;
 }
 
@@ -38,9 +45,6 @@ pub fn colliderShape(kind: Kind) ?ColliderShape {
     return spec(kind).collider;
 }
 
-// TEMP-COMMENT: per-kind render-asset data, same pattern as colliderShape above — adding an
-// entity now declares its collider AND its model in this ONE file. The server compiles the
-// strings and ignores them; the client's Resources iterates all_kinds and loads everything.
 pub const ModelClipNames = struct {
     idle: ?[]const u8,
     walk: []const u8,
@@ -54,8 +58,6 @@ pub const ModelLookNodeNames = struct {
 };
 
 pub const ModelSpec = struct {
-    // TEMP-COMMENT: pool key. Keys ending in ".glb" are loaded (and hot-reload watched) from
-    // assets/; any other key is a generated mesh the client registers manually (box, planet).
     key: []const u8,
     offset: nz.Transform3D(f32) = .{},
     skinned: bool,
@@ -72,14 +74,9 @@ pub fn modelSpec(kind: Kind) ModelSpec {
     return spec(kind).model;
 }
 
-// TEMP-COMMENT: ONE row per entity kind — collider, model, flags together. Adding an
-// entity = one arm here (+ one row in Item.spec if it is an item). The old per-question
-// switches (colliderShape/modelSpec/hasHealth/expectsModel) are now one-line reads.
 pub const Spec = struct {
     collider: ?ColliderShape,
     model: ModelSpec,
-    // TEMP-COMMENT: per-entity icon texture path; null = none yet (defaulted so arms can
-    // just omit it — generated icons for enemies etc. can fill these in later).
     icon: ?[]const u8 = null,
     has_health: bool,
     expects_model: bool,
@@ -164,8 +161,6 @@ pub fn spec(kind: Kind) Spec {
                 .expects_model = true,
             },
         },
-        // TEMP-COMMENT: entity-generic parts (collider, flags) written once for ALL items;
-        // the per-item part (model) delegates to the item row. New item = zero edits here.
         .item => |item_kind| .{
             .collider = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
             .model = .{ .key = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
@@ -176,8 +171,6 @@ pub fn spec(kind: Kind) Spec {
     };
 }
 
-// TEMP-COMMENT: every concrete Kind value (union payloads expanded) so the client can loop
-// them once at init and load every model — no per-kind enum anywhere client-side.
 pub const all_kinds: []const Kind = blk: {
     var kinds: []const Kind = &.{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
     for (std.enums.values(EnemyKind)) |enemy_kind| kinds = kinds ++ .{Kind{ .enemy = enemy_kind }};

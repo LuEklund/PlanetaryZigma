@@ -301,8 +301,8 @@ fn fontLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.I
     const self: *Resources = @fieldParentPtr("font_loader", loader);
     const file = try err_file;
     const old_sampler = self.font.sampler;
-    try self.font.load(gpa, io, file);
-    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", self.font.image, self.font.sampler);
+    const atlas_image = try self.font.load(gpa, io, file);
+    self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", atlas_image, self.font.sampler);
     if (old_sampler != null) c.vkDestroySampler(self.device.handle, old_sampler, null);
 }
 

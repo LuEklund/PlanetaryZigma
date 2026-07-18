@@ -156,7 +156,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 .owner_id = player.id,
                 .transform = .{
                     .position = player.transform.position + nz.vec.scale(start_direction, 1.5),
-                    .rotation = projectileRotation(projectile_kind, start_direction, planet_up),
+                    .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
                 },
                 .velocity = projectile_velocity,
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
@@ -176,11 +176,3 @@ fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: n
     return ray_start + translation;
 }
 
-fn projectileRotation(kind: shared.entity.ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
-    if (nz.vec.length(direction) < 0.001) return .identity;
-    const base = nz.quat.Hamiltonian(f32).lookAt(direction, up_hint).normalize();
-    return switch (kind) {
-        .cube => base,
-        .rocket => base.mul(nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 })).normalize(),
-    };
-}

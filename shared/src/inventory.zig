@@ -2,8 +2,6 @@ const std = @import("std");
 const Stat = @import("stats.zig").Stat;
 
 pub const Item = struct {
-    // TEMP-COMMENT: kinds renamed to match their asset names (was health/speed/damage/
-    // attack_speed); wire values 0-4 unchanged so the order must stay.
     pub const Kind = enum(u16) {
         oxygen_tank = 0,
         energy_drink = 1,
@@ -16,9 +14,6 @@ pub const Item = struct {
         }
     };
 
-    // TEMP-COMMENT: ONE row per item: stats + world model + inventory icon. The entity
-    // side delegates here for its .item arm, Hud reads .icon — adding an item is adding
-    // one row. Step E swaps these internals for the Item2 table without moving consumers.
     pub const Spec = struct {
         attributes: Attribute,
         model: []const u8,

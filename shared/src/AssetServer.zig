@@ -11,17 +11,8 @@ dir: std.Io.Dir,
 assets_path: []const u8,
 
 loaders: std.ArrayList(*Loader) = .empty,
-// TEMP-COMMENT: linux only — one inotify watcher per loader, rooted at the loader's
-// subdirectory (assets/textures, assets/objects, ...). Files sit flat in those dirs, so a
-// non-recursive watch per subdir covers everything AND the basename-only inotify event
-// paths match loader.files entries directly.
 watchers: std.ArrayList(Watcher) = .empty,
-// TEMP-COMMENT: windows only — ReadDirectoryChangesW blocks the caller, so windows falls
-// back to v1-style mtime polling over each loader's file list (proven approach from the
-// old AssetServer). One timestamp slice per loader, parallel to loaders.
 file_mtimes: std.ArrayList([]std.Io.Timestamp) = .empty,
-// TEMP-COMMENT: linux reload that failed (file mid-write when the event fired) — retried
-// every frame until it loads. Windows gets retries for free (mtime only advances on success).
 retries: std.ArrayList(Retry) = .empty,
 
 const is_windows = builtin.os.tag == .windows;
@@ -34,9 +25,6 @@ const Retry = struct {
 pub const Loader = struct {
     root_path: [:0]const u8,
     files: []const []const u8,
-    // TEMP-COMMENT: no vtable, no unload — every consumer's unload was a no-op (GPU pools
-    // replace in place, deleted files = keep-last-good), and a one-entry vtable is just a
-    // function pointer. gpa/io are call parameters, not stored copies.
     load: *const fn (loader: *Loader, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File.OpenError!std.Io.File, index: usize) anyerror!void,
 };
 
@@ -117,8 +105,6 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
 
     if (is_windows) return self.pollChangedAssets();
 
-    // TEMP-COMMENT: retry pass first — a reload that failed mid-write gets another shot
-    // every frame until the file decodes.
     var retry_index: usize = 0;
     while (retry_index < self.retries.items.len) {
         const retry = self.retries.items[retry_index];
@@ -133,11 +119,7 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
         while (try watcher.next()) |event| {
             std.log.info("asset update: {t} {s}", .{ event.action, event.path });
             switch (event.action) {
-                // TEMP-COMMENT: created/deleted are ignored — the file set is fixed at
-                // comptime and deletion = keep-last-good (live GPU state survives).
                 .created, .deleted => {},
-                // TEMP-COMMENT: was load+load (double-load bug) — now load once; failed
-                // loads go to the retry list.
                 .modified => for (loader.files, 0..) |file_path, file_index| {
                     if (std.mem.eql(u8, file_path, event.path)) {
                         self.loadFile(loader_index, file_index) catch |err| {
@@ -151,9 +133,6 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
     }
 }
 
-// TEMP-COMMENT: windows path — same semantics as the old AssetServer: stat every watched
-// file, reload when mtime moved forward; mtime only advances on successful load, so
-// failures retry automatically next frame.
 fn pollChangedAssets(self: *AssetServer) !void {
     const io = self.io;
     for (self.loaders.items, self.file_mtimes.items, 0..) |loader, mtimes, loader_index| {
@@ -186,8 +165,6 @@ pub const Watcher = struct {
         };
     };
 
-    // TEMP-COMMENT: windows uses mtime polling (pollChangedAssets) instead of a watcher —
-    // ReadDirectoryChangesW is blocking and would freeze the frame loop.
     const InnerType = switch (builtin.os.tag) {
         .linux => Inotify,
         else => struct {},

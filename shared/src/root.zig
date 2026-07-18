@@ -18,9 +18,7 @@ pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
 const inventory = @import("inventory.zig");
-/// Deprecated; use `Item2`.
 pub const Item = inventory.Item;
-pub const Item2 = @import("Item.zig");
 pub const Inventory = inventory.Inventory;
 
 pub const entity = @import("entity.zig");
