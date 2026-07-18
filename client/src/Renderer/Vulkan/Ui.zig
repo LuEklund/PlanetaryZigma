@@ -94,8 +94,6 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
-    // TEMP-COMMENT: was the `Texture` enum; now a pool handle. .blank = slot 0 = the
-    // 1x1 white image, so untextured quads render exactly as before.
     texture: Image.Handle = .blank,
     gap: f32 = 0,
     text: ?Text = null,

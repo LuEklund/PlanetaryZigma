@@ -12,14 +12,16 @@ const AnimationClip = @import("AnimationClip.zig");
 const Resources = @import("Resources.zig");
 const gltf = @import("gltf.zig");
 
-// TEMP-COMMENT: the spec TYPE lives in shared/entity.zig now (it is pure data), declared
-// next to each entity kind. These are aliases so render code keeps its names.
 pub const Spec = shared.entity.ModelSpec;
 
-// TEMP-COMMENT: Model.Kind + fromKind + the spec() switch are DELETED. Models are pool
-// entries addressed by Handle; the entity.Kind -> Handle mapping lives in EntityModels.zig
-// (resolved once at init), and each model's Spec is stored ON the model at registration.
-pub const Handle = enum(u32) { _ };
+pub const Handle = enum(u32) {
+    default = 0,
+    _,
+
+    pub fn index(self: Handle) usize {
+        return @intFromEnum(self);
+    }
+};
 
 surfaces: std.ArrayList(Surface),
 nodes: std.ArrayList(Node),

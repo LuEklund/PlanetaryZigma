@@ -103,8 +103,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     }
 
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
-    // TEMP-COMMENT: ONE call drives every file load through the loaders Resources registered
-    // (fonts, shaders, models incl. glb-embedded textures, textures incl. icons/skybox).
     try asset_server.load();
 
     self.ui = try .init(
@@ -415,14 +413,12 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
 }
 
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
-    // TEMP-COMMENT: [scene, texture array] bound ONCE for every world draw; emitNode no longer
-    // rebinds descriptors per surface — per-draw texture choice is just a push-constant index.
     self.bindWorldDescriptors(cmd, current_frame);
 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
     bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
     for (info.world.entities.values()) |*entity| {
-        const model = self.resources.modelForKind(entity.kind);
+        const model = self.resources.getModelPtr(entity.model);
         if (model.isEmpty() or model.isSkinned()) continue;
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawStatic(self, cmd, model, base_matrix);
@@ -430,7 +426,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
     for (info.world.entities.values()) |*entity| {
-        const model = self.resources.modelForKind(entity.kind);
+        const model = self.resources.getModelPtr(entity.model);
         if (model.isEmpty() or !model.isSkinned()) continue;
         const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
         for (skeleton.joint_matrices) |*matrices| {
@@ -466,8 +462,6 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     };
     ext.vkCmdBindDescriptorBuffersEXT(cmd, sky_bindings.len, &sky_bindings[0]);
     {
-        // TEMP-COMMENT: sky uses its OWN pipeline layout ([scene, single-sampler]) — the world
-        // layout's set 1 is the 256-array now, incompatible with the skybox's one-descriptor set.
         const sky_pipeline_layout_handle = self.resources.pipeline_layouts.get(.sky).handle;
         const buf_idx_0: u32 = 0;
         const off_0: c.VkDeviceSize = 0;
@@ -478,8 +472,6 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    // TEMP-COMMENT: sky rebound the descriptor buffers for its private set; restore the
-    // world binding for the passes after this one (particles go through emitNode again).
     self.bindWorldDescriptors(cmd, current_frame);
 }
 
@@ -729,9 +721,6 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
 
-// TEMP-COMMENT: was: rebind scene+material descriptor buffers PER SURFACE (two bind calls +
-// two offset calls per submesh, every draw, every frame). Now descriptors are bound once per
-// frame (bindWorldDescriptors) and a surface is just: index into the texture array + draw.
 fn emitNode(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
@@ -787,7 +776,11 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !void {
     for (world.render_outbox.items) |command| switch (command) {
-        .entity_spawned => |spawned| try self.ensureSkeleton(gpa, spawned.id, spawned.kind),
+        .entity_spawned => |spawned| {
+            const entity = world.getPtr(spawned.id) orelse continue;
+            entity.model = self.resources.modelHandle(shared.entity.modelSpec(spawned.kind).key);
+            try self.ensureSkeleton(gpa, spawned.id, spawned.kind, entity.model);
+        },
         .entity_despawned => |id| self.removeSkeleton(gpa, id),
         .planet_spawned => |radius| try self.buildPlanet(gpa, radius),
     };
@@ -797,14 +790,12 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World)
 fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32) !void {
     var planet: shared.Planet(.renderable) = try .init(gpa, radius);
     defer planet.deinit(gpa);
-    // TEMP-COMMENT: registerModel dedupe means this rebuild lands at the same handle
-    // entity_models.planet resolved at init — nothing to re-point.
     _ = try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices);
 }
 
-fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
+fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind, model_handle: Model.Handle) !void {
     if (self.skeletons.contains(entity_id)) return;
-    const model = self.resources.modelForKind(entity_kind);
+    const model = self.resources.getModelPtr(model_handle);
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
     }
@@ -835,18 +826,9 @@ fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
 fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
     const f = 1.0 / std.math.tan(fovy_rad / 2.0);
     return .new(.{
-        f / aspect, 0,  0,                           0,
-        0,          -f, 0,                           0, // flip Y for Vulkan
-        0,          0,  far / (near - far),          -1,
-        0,          0,  (far * near) / (near - far), 0,
-    });
-}
-
-fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    return .new(.{
-        2.0 / (right - left),             0.0,                              0.0,                          0.0,
-        0.0,                              2.0 / (top - bottom),             0.0,                          0.0,
-        0.0,                              0.0,                              -2.0 / (far - near),          0.0,
-        -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0,
+        f / aspect, 0, 0, 0,
+        0, -f, 0,                           0, // flip Y for Vulkan
+        0, 0,  far / (near - far),          -1,
+        0, 0,  (far * near) / (near - far), 0,
     });
 }

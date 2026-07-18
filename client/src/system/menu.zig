@@ -27,6 +27,7 @@ pub fn populate(world: *World) !void {
     };
     world.planet_radius = @floatFromInt(planet_mesh_radius);
     world.render_outbox.appendAssumeCapacity(.{ .planet_spawned = planet_mesh_radius });
+    world.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = planet_id, .kind = .planet } });
 
     const stand_height = @as(f32, @floatFromInt(planet_mesh_radius)) * planet_scale + bozo_surface_offset;
     const bozo = try world.spawn(bozo_id);

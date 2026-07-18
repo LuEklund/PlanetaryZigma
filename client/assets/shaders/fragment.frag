@@ -18,8 +18,6 @@ layout(set = 0, binding = 0) uniform sceneData {
 
 layout(set = 1, binding = 0) uniform sampler2D textures[256];
 
-// TEMP-COMMENT: texture_index sits at offset 80 of WorldPushConstant
-// (mat4 64 + two buffer addresses 16); the offset qualifier skips redeclaring those.
 layout(push_constant, std430) uniform pc {
   layout(offset = 80) uint texture_index;
 } push_constant;

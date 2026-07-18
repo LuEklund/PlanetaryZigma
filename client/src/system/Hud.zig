@@ -45,10 +45,6 @@ screen: Screen = .main,
 overlay: Overlay = .none,
 options_tab: OptionsTab = .gameplay,
 
-// TEMP-COMMENT: Hud stores NO texture handles — it declares its texture paths here, the
-// renderer loads them at init with everything else (Vulkan.init loop), and draw code
-// resolves handles by key each frame. Hud is back to pure screen-state (enterScene can
-// `hud = .{}` again).
 pub const crosshair_texture = "textures/crosshair.png";
 pub const texture_paths = [_][]const u8{crosshair_texture};
 

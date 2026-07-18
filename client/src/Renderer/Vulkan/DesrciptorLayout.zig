@@ -11,9 +11,7 @@ count: u32,
 
 pub const Kind = enum {
     scene,
-    // TEMP-COMMENT: .material = single combined sampler set; only the skybox uses it now.
     material,
-    // TEMP-COMMENT: renamed from .ui — the 256-texture array set, shared by world AND ui.
     textures,
 };
 

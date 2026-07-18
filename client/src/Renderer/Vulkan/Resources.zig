@@ -28,10 +28,6 @@ const explosion_particle_texture_size: u32 = 32;
 
 pub const PipelineLayoutKind = enum { world, sky, ui };
 
-// TEMP-COMMENT: AssetServer2-style loaders — one per asset subdirectory, file lists derived
-// AT COMPTIME from the shared tables (entity.all_kinds, Item.spec, Shader.specs,
-// Hud.texture_paths). Loader `files` are basenames (inotify events are basenames); the
-// parallel *_keys arrays keep the full "subdir/name" pool keys for the callbacks.
 const skybox_texture_key = "textures/skybox_cubemap.png";
 pub const crosshair_texture_key = "textures/crosshair.png";
 const font_files = [_][]const u8{"Roboto-Regular.ttf"};
@@ -79,19 +75,12 @@ const texture_files = blk: {
     break :blk files;
 };
 
-
-
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
 models: std.ArrayList(Model),
-// TEMP-COMMENT: same pattern as texture_keys — key = glb path (or generated-mesh name).
-// Keys are comptime literals from EntityModels/init call sites, so they're borrowed, not duped.
 model_keys: std.StringHashMapUnmanaged(Model.Handle),
 shaders: std.EnumArray(Shader.Kind, Shader),
-// TEMP-COMMENT: materials list deleted — a "material" was one descriptor buffer around one
-// texture; surfaces now carry Image.Handle directly. Skybox keeps ONE private descriptor
-// buffer (cube sampler can't live in the sampler2D array; typed cube array = later upgrade).
 skybox_descriptor: Buffer,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
@@ -102,8 +91,6 @@ texture_binding_offset: c.VkDeviceSize,
 texture_keys: std.StringHashMapUnmanaged(Image.Handle),
 identity_joint_buffer: Buffer,
 font: Font,
-// TEMP-COMMENT: null until the texture loader's first skybox load creates the cube image
-// and writes its descriptor (loads now come through asset_server.load(), not init).
 skybox: ?Image,
 font_loader: AssetServer.Loader,
 shader_loader: AssetServer.Loader,
@@ -248,7 +235,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .texture_binding_offset = texture_binding_offset,
         .texture_keys = .empty,
         .identity_joint_buffer = identity_joint_buffer,
-        .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
+        .font = .init(vma, device),
         .skybox = null,
         .skybox_descriptor = try .init(
             device,
@@ -266,7 +253,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .vma = vma,
         .device = device,
     };
-    for (0..max_textures) |slot| self.writeTextureDescriptor(@intCast(slot), default_texture.vk_imageview, default_sampler);
+    for (0..max_textures) |slot| self.writeTextureDescriptor(slot, default_texture.vk_imageview, default_sampler);
     try asset_server.addLoader(&self.font_loader);
     try asset_server.addLoader(&self.shader_loader);
     try asset_server.addLoader(&self.model_loader);
@@ -282,10 +269,8 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         self.shaders.set(kind, .init(device, kind, layout_handles));
     }
 
-    // TEMP-COMMENT: generated meshes + entity model keys are Resources' own data — seeded
-    // here so the model loader (asset_server.load(), driven by the caller) finds every
-    // handle already registered.
-    _ = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
+    const default_model = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
+    std.debug.assert(default_model == Model.Handle.default);
     _ = try self.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
     _ = try self.createExplosionParticleResources(gpa);
     try self.registerEntityModels(gpa);
@@ -297,20 +282,17 @@ fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.
     const self: *Resources = @fieldParentPtr("model_loader", loader);
     const file = try err_file;
     const key = model_file_keys[index];
-    // TEMP-COMMENT: the spec is DERIVED from the shared table by key, not stored on the
-    // model — one source of truth, and an edited spec is picked up on the next reload.
     const spec = for (entity.all_kinds) |kind| {
         const model_spec = entity.modelSpec(kind);
         if (std.mem.eql(u8, model_spec.key, key)) break model_spec;
     } else return error.UnknownModelPath;
     const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
-    try self.models.items[@intFromEnum(handle)].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
+    try self.models.items[handle.index()].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
 }
 
 fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *Resources = @fieldParentPtr("shader_loader", loader);
     const file = try err_file;
-    // TEMP-COMMENT: shader_files is built in Shader.Kind order → index IS the kind.
     try self.shaders.getPtr(shader_kinds[index]).load(gpa, io, file);
 }
 
@@ -318,9 +300,6 @@ fn fontLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.I
     _ = index;
     const self: *Resources = @fieldParentPtr("font_loader", loader);
     const file = try err_file;
-    // TEMP-COMMENT: font.load creates a NEW image+sampler each call; registerImage destroys
-    // the old image (same key = same slot override), the old sampler we destroy here since
-    // the pool doesn't own samplers.
     const old_sampler = self.font.sampler;
     try self.font.load(gpa, io, file);
     self.font.atlas_texture = try self.registerImage(gpa, "font_atlas", self.font.image, self.font.sampler);
@@ -351,8 +330,6 @@ fn textureLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: st
     _ = try self.registerImage(gpa, key, image, self.samplers.items[0]);
 }
 
-// TEMP-COMMENT: the one door into the model pool; existing key = same handle back (dedupe),
-// new key = fresh empty slot. Mirrors registerImage.
 pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) !Model.Handle {
     if (self.model_keys.get(key)) |handle| return handle;
     try self.models.append(gpa, .empty);
@@ -361,17 +338,12 @@ pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) 
     return handle;
 }
 
-// TEMP-COMMENT: registration only, NO file IO — reserves a pool handle per model key so
-// the model loader (which runs at asset_server.load()) can look handles up by key. Actual
-// bytes arrive through the loaders.
 pub fn registerEntityModels(self: *Resources, gpa: std.mem.Allocator) !void {
     for (entity.all_kinds) |kind| {
         _ = try self.registerModel(gpa, entity.modelSpec(kind).key);
     }
 }
 
-// TEMP-COMMENT: handle lookup for an already-loaded texture; asserts the key was loaded
-// (loadEntityAssets or an explicit loadTexture) — a typo'd key fails loudly at init.
 pub fn textureHandle(self: *Resources, key: []const u8) Image.Handle {
     return self.texture_keys.get(key).?;
 }
@@ -381,14 +353,15 @@ pub fn modelHandle(self: *Resources, key: []const u8) Model.Handle {
 }
 
 pub fn modelForKind(self: *Resources, kind: entity.Kind) *Model {
-    // ponytail: string-hash lookup per draw; becomes a per-entity ModelHandle component
-    // when entities grow components on the ECS step.
     return self.getModelPtr(self.model_keys.get(entity.modelSpec(kind).key).?);
 }
 
-// TEMP-COMMENT: the ONE place a descriptor slot gets written. slot == index into images ==
-// @intFromEnum(Image.Handle) — no mapping tables anywhere.
-fn writeTextureDescriptor(self: *Resources, slot: u32, view: c.VkImageView, sampler: c.VkSampler) void {
+fn writeTextureDescriptor(self: *Resources, slot: usize, view: c.VkImageView, sampler: c.VkSampler) void {
+    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.texture_descriptor_buffer.info.pMappedData);
+    self.writeCombinedSamplerDescriptor(descriptor_buffer_bytes + self.texture_binding_offset + slot * self.combined_image_sampler_descriptor_size, view, sampler);
+}
+
+fn writeCombinedSamplerDescriptor(self: *Resources, destination: [*]u8, view: c.VkImageView, sampler: c.VkSampler) void {
     const image_info: c.VkDescriptorImageInfo = .{
         .sampler = sampler,
         .imageView = view,
@@ -399,45 +372,34 @@ fn writeTextureDescriptor(self: *Resources, slot: u32, view: c.VkImageView, samp
         .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .data = .{ .pCombinedImageSampler = &image_info },
     };
-    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.texture_descriptor_buffer.info.pMappedData);
     ext.vkGetDescriptorEXT(
         self.device.handle,
         &descriptor_get_info,
         self.combined_image_sampler_descriptor_size,
-        descriptor_buffer_bytes + self.texture_binding_offset + slot * self.combined_image_sampler_descriptor_size,
+        destination,
     );
 }
 
-// TEMP-COMMENT: the ONE door into the texture pool. key=null → anonymous append (generated
-// textures). Known key → OVERRIDE: destroy old image, reuse the same slot, rewrite descriptor —
-// every holder of the handle sees the new texture for free. This is what makes hot reload
-// (including GLTF re-loads later) stop growing the pool.
 pub fn registerImage(self: *Resources, gpa: std.mem.Allocator, key: ?[]const u8, image: Image, sampler: c.VkSampler) !Image.Handle {
     if (key) |existing_key| if (self.texture_keys.get(existing_key)) |handle| {
-        const slot = @intFromEnum(handle);
-        // TEMP-COMMENT: GPU may still be sampling the old image this frame → wait before destroy.
+        const slot = handle.index();
         try check(c.vkDeviceWaitIdle(self.device.handle));
         self.images.items[slot].deinit(self.vma, self.device);
         self.images.items[slot] = image;
         self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
         return handle;
     };
-    // TEMP-COMMENT: the cap assert you asked for; descriptor array in the shader is max_textures big.
     std.debug.assert(self.images.items.len < max_textures);
     try self.images.append(gpa, image);
-    const slot: u32 = @intCast(self.images.items.len - 1);
+    const slot = self.images.items.len - 1;
     self.writeTextureDescriptor(slot, image.vk_imageview, sampler);
     if (key) |new_key| try self.texture_keys.put(gpa, try gpa.dupe(u8, new_key), @enumFromInt(slot));
-    // TEMP-COMMENT: running texture count print you asked for.
     std.log.debug("texture {d}/{d}: {s}", .{ slot + 1, max_textures, key orelse "unnamed" });
     return @enumFromInt(slot);
 }
 
-// TEMP-COMMENT: gltf materials can pair an image with their own sampler (nearest-filter etc.);
-// the image is registered with the default sampler first, this rewrites the slot's descriptor
-// with the material's sampler. Combined-image-sampler descriptors bake the pair together.
 pub fn setTextureSampler(self: *Resources, handle: Image.Handle, sampler: c.VkSampler) void {
-    const slot = @intFromEnum(handle);
+    const slot = handle.index();
     self.writeTextureDescriptor(slot, self.images.items[slot].vk_imageview, sampler);
 }
 
@@ -466,8 +428,6 @@ pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator
     fillExplosionParticleTexture(&pixels);
     try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
 
-    // TEMP-COMMENT: generated texture goes through the same pool door as file textures;
-    // keyed so a second call (hot-reload recreate) overrides the slot instead of appending.
     const texture_handle = try self.registerImage(gpa, explosion_particle_name, texture, self.samplers.items[0]);
     return self.createStaticMeshWithTexture(
         gpa,
@@ -538,16 +498,13 @@ fn createStaticMeshWithTexture(
     };
 
     const handle = try self.registerModel(gpa, name);
-    const model = &self.models.items[@intFromEnum(handle)];
+    const model = &self.models.items[handle.index()];
     model.clear(gpa);
     try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
     model.offset = .{};
     return handle;
 }
 
-// TEMP-COMMENT: first load creates the cube image and writes the skybox descriptor
-// (the descriptor BUFFER is made in init since it only needs set_size); later loads are
-// same-size-only face uploads, as before.
 fn skyboxFromFile(self: *Resources, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
     var decoded = try decodeFile(gpa, io, file);
     defer decoded.deinit();
@@ -576,23 +533,7 @@ fn skyboxFromFile(self: *Resources, gpa: std.mem.Allocator, io: std.Io, file: st
     );
     try self.uploadSkyboxFaces(gpa, decoded);
 
-    const image_info: c.VkDescriptorImageInfo = .{
-        .sampler = self.samplers.items[0],
-        .imageView = self.skybox.?.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    };
-    const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
-        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-        .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .data = .{ .pCombinedImageSampler = &image_info },
-    };
-    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.skybox_descriptor.info.pMappedData);
-    ext.vkGetDescriptorEXT(
-        self.device.handle,
-        &descriptor_get_info,
-        self.combined_image_sampler_descriptor_size,
-        descriptor_buffer_bytes,
-    );
+    self.writeCombinedSamplerDescriptor(@ptrCast(self.skybox_descriptor.info.pMappedData), self.skybox.?.vk_imageview, self.samplers.items[0]);
 }
 
 fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
@@ -677,12 +618,10 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     }
     self.texture_descriptor_buffer.deinit(vma);
     self.identity_joint_buffer.deinit(vma);
-    // TEMP-COMMENT: pool owns duped key strings; images themselves are destroyed in the
-    // images loop above (font atlas included — Font.deinit no longer destroys its image).
     var key_iterator = self.texture_keys.keyIterator();
     while (key_iterator.next()) |texture_key| gpa.free(texture_key.*);
     self.texture_keys.deinit(gpa);
-    self.font.deinit(gpa, vma, device);
+    self.font.deinit(device);
     gpa.destroy(self);
 }
 
@@ -690,5 +629,5 @@ pub fn getMeshPtr(self: *Resources, index: usize) *Mesh {
     return &self.meshes.items[index];
 }
 pub fn getModelPtr(self: *Resources, handle: Model.Handle) *Model {
-    return &self.models.items[@intFromEnum(handle)];
+    return &self.models.items[handle.index()];
 }

@@ -23,8 +23,6 @@ pub const SkinnedVertex = shared.SkinnedVertex;
 pub const GeoSurface = struct {
     index_start: u32,
     index_count: u32,
-    // TEMP-COMMENT: was material_index: ?usize into the materials list; a material was a
-    // whole descriptor buffer wrapping one texture. Now just the texture's pool handle.
     texture: Image.Handle,
 };
 

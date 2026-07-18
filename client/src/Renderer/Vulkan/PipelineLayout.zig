@@ -7,8 +7,6 @@ const check = @import("utils.zig").check;
 handle: c.VkPipelineLayout,
 
 pub fn init(device: Device, comptime PushConstant: type, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
-    // TEMP-COMMENT: was VERTEX-only; fragment shaders now read texture_index from the
-    // push constant, and vkCmdPushConstants stage flags must match the range.
     const ranges: c.VkPushConstantRange = .{
         .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,

@@ -11,7 +11,6 @@ device: Device,
 shader_create_info: c.VkShaderCreateInfoEXT,
 descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
 descriptor_set_count: u32,
-shader_name: []const u8,
 push_constant_size: u32,
 
 pub const specs: std.EnumArray(Kind, Spec) = .init(.{
@@ -31,8 +30,6 @@ pub const Spec = struct {
     path: []const u8,
     push_constant_size: u32,
     stage_bit: c.VkShaderStageFlagBits,
-    // TEMP-COMMENT: .sky keeps the old [scene, single-sampler] pair for the skybox's
-    // private descriptor; .scene_textures = [scene, 256-array] shared by all world draws.
     layout: enum { scene_textures, sky, ui },
 };
 
@@ -49,10 +46,6 @@ pub const Kind = enum(u16) {
     frag_debug,
 };
 
-// TEMP-COMMENT: ONE push constant for every world draw (was AnimationPushConstant +
-// StaticPushConstant). Reason: fragment.frag is shared by the static AND skinned passes,
-// so texture_index must sit at ONE offset (80) — two differently-sized structs would put
-// it at 72 vs 80. Static draws just leave joint_matrices_address unused.
 pub const WorldPushConstant = extern struct {
     model_matrix: [16]f32,
     vertex_buffer_address: c.VkDeviceAddress,
@@ -76,7 +69,6 @@ pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDesc
             .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
             .pName = "main",
         },
-        .shader_name = shader_spec.path,
         .handle = null,
         .push_constant_size = shader_spec.push_constant_size,
         .descriptor_set_count = @intCast(descriptor_set_layouts.len),

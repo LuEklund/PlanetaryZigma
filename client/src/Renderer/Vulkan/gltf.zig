@@ -44,8 +44,6 @@ pub fn parseScene(
     vma: Vma,
     device: Device,
     resources: *Resources,
-    // TEMP-COMMENT: the glb's asset path; keys the embedded images in the texture pool so a
-    // hot reload of the glb OVERRIDES the same slots instead of growing the pool forever.
     texture_key_prefix: []const u8,
     gltf: zgltf.Gltf,
     bin: []const u8,
@@ -94,8 +92,6 @@ pub fn parseScene(
         }
     }
 
-    // TEMP-COMMENT: handles returned by registerImage — on reload these are EXISTING slots,
-    // so "original_image_count + index" math would be wrong; the handles are the truth.
     var image_handles: []Image.Handle = &.{};
     defer gpa.free(image_handles);
     {
@@ -179,8 +175,6 @@ pub fn parseScene(
         }
     }
 
-    // TEMP-COMMENT: a gltf "material" collapses to: which pool handle + which sampler.
-    // No descriptor buffer per material anymore — surfaces carry the handle directly.
     var material_textures: []Image.Handle = &.{};
     defer gpa.free(material_textures);
     {
