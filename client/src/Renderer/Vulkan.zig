@@ -607,7 +607,7 @@ fn drawSkeletal(
             .joint_matrices_address = if (node.skin_id) |skin_index|
                 skeleton.joint_matrices[skin_index].gpu.getGPUAddress()
             else
-                0,
+                self.resources.identity_joint_buffer.getGPUAddress(),
         };
         try emitNode(self, cmd, current_frame, mesh, &push);
     }

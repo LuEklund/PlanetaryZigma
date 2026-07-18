@@ -41,6 +41,7 @@ images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 ui_texture_buffer: Buffer,
+identity_joint_buffer: Buffer,
 font: Font,
 ui_image_indices: std.EnumArray(Ui.Texture, ?usize),
 skybox: Image,
@@ -160,6 +161,19 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     );
     try materials.append(gpa, default_material);
 
+    var identity_joint_buffer: Buffer = try .init(
+        device,
+        vma,
+        nz.Mat4x4(f32),
+        1,
+        c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+        .{
+            .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+            .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        },
+    );
+    identity_joint_buffer.copy(nz.Mat4x4(f32), &.{.identity});
+
     const self = try gpa.create(Resources);
     self.* = .{
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
@@ -173,6 +187,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .ui_texture_buffer = ui_texture_buffer,
+        .identity_joint_buffer = identity_joint_buffer,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
         .ui_image_indices = .initFill(null),
         .skybox = undefined,
@@ -576,6 +591,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
         layout.deinit(device);
     }
     self.ui_texture_buffer.deinit(vma);
+    self.identity_joint_buffer.deinit(vma);
     self.font.deinit(gpa, vma, device);
     gpa.destroy(self);
 }

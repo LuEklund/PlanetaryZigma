@@ -319,12 +319,12 @@ pub fn parseScene(
                             .uv_y = if (uvs) |values| values[i][1] else 0,
                             .joint_indices = blk: {
                                 var joint_indices: [4]i32 = undefined;
-                                inline for (0..4) |j| joint_indices[j] = if (joints) |joint| joint[i][j] else undefined;
+                                inline for (0..4) |j| joint_indices[j] = if (joints) |joint| joint[i][j] else 0;
                                 break :blk joint_indices;
                             },
                             .joint_weights = blk: {
                                 var joint_weights: [4]f32 = undefined;
-                                inline for (0..4) |j| joint_weights[j] = if (weights) |weight| weight[i][j] else -1;
+                                inline for (0..4) |j| joint_weights[j] = if (weights) |weight| weight[i][j] else if (j == 0) 1 else 0;
                                 break :blk joint_weights;
                             },
                         };
