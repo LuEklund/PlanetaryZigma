@@ -32,10 +32,10 @@ pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
 
     const f = 1.0 / std.math.tan(self.fov_rad / 2.0);
     const proj: nz.Mat4x4(f32) = .new(.{
-        f / aspect, 0,  0,                           0,
-        0,          -f, 0,                           0, // flip Y for Vulkan
-        0,          0,  far / (near - far),          -1,
-        0,          0,  (far * near) / (near - far), 0,
+        f / aspect, 0, 0, 0,
+        0, -f, 0,                           0, // flip Y for Vulkan
+        0, 0,  far / (near - far),          -1,
+        0, 0,  (far * near) / (near - far), 0,
     });
     return proj.mul(view);
 }

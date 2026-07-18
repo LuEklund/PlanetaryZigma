@@ -25,6 +25,8 @@ pub const specs: std.EnumArray(Kind, Spec) = .init(.{
     .frag_particle = .{ .path = "shaders/particle.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
     .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
     .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+    .vert_shadow_static = .{ .path = "shaders/shadow_static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+    .vert_shadow_skinned = .{ .path = "shaders/shadow_skinned.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
 });
 
 pub const Spec = struct {
@@ -41,6 +43,8 @@ pub const Kind = enum(u16) {
     vert_ui,
     vert_sky,
     vert_debug,
+    vert_shadow_static,
+    vert_shadow_skinned,
     frag_ui,
     frag_sky,
     frag_mesh,

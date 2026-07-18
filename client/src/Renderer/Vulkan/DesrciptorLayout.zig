@@ -13,6 +13,7 @@ pub const Kind = enum {
     scene,
     material,
     textures,
+    shadow,
 };
 
 pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DesrciptorLayout {
