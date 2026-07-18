@@ -65,13 +65,6 @@ pub fn deinit(self: *NetworkManager) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
-    _ = self;
-    _ = pre_reload;
-    // Steam connection state lives in main.zig and survives reload; nothing to
-    // tear down or rebuild here.
-}
-
 fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
     return switch (packet) {
         .connect => |connect| connect: {

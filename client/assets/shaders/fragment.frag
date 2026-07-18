@@ -19,7 +19,10 @@ layout(set = 0, binding = 0) uniform sceneData {
 layout(set = 1, binding = 0) uniform sampler2D textures[256];
 
 layout(push_constant, std430) uniform pc {
-  layout(offset = 80) uint texture_index;
+  mat4 model_matrix;
+  uvec2 vertex_buffer_address;
+  uvec2 joint_matrices_address;
+  uint texture_index;
 } push_constant;
 
 void main() {
