@@ -11,8 +11,6 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec4 light_color;
 } scene_data;
 
-layout(set = 1, binding = 0) uniform sampler2D texSampler;
-
 struct Vertex {
   vec3 position;
   float uv_x;
@@ -35,6 +33,7 @@ layout(push_constant, std430) uniform pc {
   mat4 model_matrix;
   VertexBuffer vertex_buffer;
   JointMatrices joint_matrices;
+  uint texture_index;
 } push_constant;
 
 layout(location = 0) out vec4 out_frag_color;

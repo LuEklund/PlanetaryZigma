@@ -7,6 +7,7 @@ const nz = @import("shared").numz;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
+const Image = @import("Image.zig");
 
 pub const box = @import("Mesh/box.zig");
 pub const explosion_particle = @import("Mesh/explosion_particle.zig");
@@ -22,7 +23,9 @@ pub const SkinnedVertex = shared.SkinnedVertex;
 pub const GeoSurface = struct {
     index_start: u32,
     index_count: u32,
-    material_index: ?usize,
+    // TEMP-COMMENT: was material_index: ?usize into the materials list; a material was a
+    // whole descriptor buffer wrapping one texture. Now just the texture's pool handle.
+    texture: Image.Handle,
 };
 
 pub fn init(

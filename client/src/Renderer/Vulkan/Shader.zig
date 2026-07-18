@@ -15,23 +15,25 @@ shader_name: []const u8,
 push_constant_size: u32,
 
 pub const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
+    .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+    .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
     .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
     .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
-    .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    .frag_particle = .{ .path = "shaders/particle.frag.spv", .push_constant_size = @sizeOf(AnimationPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
-    .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_material },
-    .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(StaticPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_material },
+    .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .sky },
+    .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .sky },
+    .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+    .frag_particle = .{ .path = "shaders/particle.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+    .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+    .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
 });
 
 pub const Spec = struct {
     path: []const u8,
     push_constant_size: u32,
     stage_bit: c.VkShaderStageFlagBits,
-    layout: enum { scene_material, ui },
+    // TEMP-COMMENT: .sky keeps the old [scene, single-sampler] pair for the skybox's
+    // private descriptor; .scene_textures = [scene, 256-array] shared by all world draws.
+    layout: enum { scene_textures, sky, ui },
 };
 
 pub const Kind = enum(u16) {
@@ -47,14 +49,16 @@ pub const Kind = enum(u16) {
     frag_debug,
 };
 
-pub const AnimationPushConstant = extern struct {
+// TEMP-COMMENT: ONE push constant for every world draw (was AnimationPushConstant +
+// StaticPushConstant). Reason: fragment.frag is shared by the static AND skinned passes,
+// so texture_index must sit at ONE offset (80) — two differently-sized structs would put
+// it at 72 vs 80. Static draws just leave joint_matrices_address unused.
+pub const WorldPushConstant = extern struct {
     model_matrix: [16]f32,
     vertex_buffer_address: c.VkDeviceAddress,
     joint_matrices_address: c.VkDeviceAddress,
-};
-pub const StaticPushConstant = extern struct {
-    model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
+    texture_index: u32,
+    _: u32 = 0,
 };
 pub const UiPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,

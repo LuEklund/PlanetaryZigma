@@ -16,11 +16,17 @@ layout(set = 0, binding = 0) uniform sceneData {
   vec4 light_color;
 } scene_data;
 
-layout(set = 1, binding = 0) uniform sampler2D texSampler;
+layout(set = 1, binding = 0) uniform sampler2D textures[256];
+
+// TEMP-COMMENT: texture_index sits at offset 80 of WorldPushConstant
+// (mat4 64 + two buffer addresses 16); the offset qualifier skips redeclaring those.
+layout(push_constant, std430) uniform pc {
+  layout(offset = 80) uint texture_index;
+} push_constant;
 
 void main() {
   float diff = max(dot(normalize(in_normal), normalize(scene_data.global_light_direction)), 0.4);
-  vec4 tex = texture(texSampler, in_uv);
+  vec4 tex = texture(textures[push_constant.texture_index], in_uv);
   out_frag_color = vec4((tex.xyz * in_color.xyz * diff) * scene_data.light_color.xyz, tex.a * in_color.a);
   // out_frag_color = vec4(in_color.xyz * diff * scene_data.light_color.xyz, 1);
 }

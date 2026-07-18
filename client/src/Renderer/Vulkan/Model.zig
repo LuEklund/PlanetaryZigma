@@ -171,7 +171,7 @@ pub fn loadGlb(
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
         var overlay_root: usize = undefined;
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
+        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, spec.path.?, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
         if (spec.overlay_root_name != null) {
             const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
             for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -180,7 +180,7 @@ pub fn loadGlb(
             self.overlay_mask = overlay_mask;
         }
     } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
+        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, spec.path.?, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
     }
     computeMatrices(self.nodes.items);
 

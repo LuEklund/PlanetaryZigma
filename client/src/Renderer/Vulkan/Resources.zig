@@ -11,7 +11,6 @@ const DescriptorLayout = @import("DesrciptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Mesh = @import("Mesh.zig");
 const Model = @import("Model.zig");
-const Material = @import("Material.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
@@ -21,21 +20,21 @@ const AssetServer = @import("shared").AssetServer;
 
 const check = @import("utils.zig").check;
 
-pub const default_material_name: []const u8 = "default";
 pub const default_mesh_name: []const u8 = "default";
 pub const max_textures = 256;
-const explosion_particle_material_name: []const u8 = "explosion_particle";
 const explosion_particle_texture_size: u32 = 32;
 
-pub const PipelineLayoutKind = enum { world, ui };
+pub const PipelineLayoutKind = enum { world, sky, ui };
 
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
 models: std.EnumArray(Model.Kind, Model),
 shaders: std.EnumArray(Shader.Kind, Shader),
-materials: std.ArrayList(Material),
-skybox_material_index: usize,
+// TEMP-COMMENT: materials list deleted — a "material" was one descriptor buffer around one
+// texture; surfaces now carry Image.Handle directly. Skybox keeps ONE private descriptor
+// buffer (cube sampler can't live in the sampler2D array; typed cube array = later upgrade).
+skybox_descriptor: Buffer,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
@@ -51,7 +50,6 @@ device: Device,
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, asset_server: *AssetServer) !*Resources {
     const meshes: std.ArrayList(Mesh) = .empty;
-    var materials: std.ArrayList(Material) = .empty;
     var samplers: std.ArrayList(c.VkSampler) = .empty;
     var images: std.ArrayList(Image) = .empty;
 
@@ -82,7 +80,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
-        .ui = try .init(device, &.{
+        .textures = try .init(device, &.{
             .{
                 .binding = 0,
                 .descriptorCount = max_textures,
@@ -94,12 +92,16 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     });
 
     const pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout) = .init(.{
-        .world = try .init(device, Shader.AnimationPushConstant, &.{
+        .world = try .init(device, Shader.WorldPushConstant, &.{
+            descriptor_layouts.get(.scene).handle,
+            descriptor_layouts.get(.textures).handle,
+        }),
+        .sky = try .init(device, Shader.WorldPushConstant, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),
         .ui = try .init(device, Shader.UiPushConstant, &.{
-            descriptor_layouts.get(.ui).handle,
+            descriptor_layouts.get(.textures).handle,
         }),
     });
 
@@ -107,10 +109,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.material).handle, &set_size);
 
     var ui_set_size: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.ui).handle, &ui_set_size);
+    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.textures).handle, &ui_set_size);
 
     var texture_binding_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.ui).handle, 0, &texture_binding_offset);
+    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.textures).handle, 0, &texture_binding_offset);
 
     const texture_descriptor_buffer: Buffer = try .init(
         device,
@@ -153,18 +155,6 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     try check(c.vkCreateSampler(device.handle, &sampler_info, null, &default_sampler));
     try samplers.append(gpa, default_sampler);
 
-    const default_material: Material = try .init(
-        gpa,
-        default_material_name,
-        device,
-        vma,
-        set_size,
-        db_props.combinedImageSamplerDescriptorSize,
-        default_sampler,
-        default_texture.vk_imageview,
-    );
-    try materials.append(gpa, default_material);
-
     var identity_joint_buffer: Buffer = try .init(
         device,
         vma,
@@ -185,7 +175,6 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .meshes = meshes,
         .models = .initFill(.empty),
         .shaders = undefined,
-        .materials = materials,
         .samplers = samplers,
         .images = images,
         .descriptor_layouts = descriptor_layouts,
@@ -196,7 +185,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .identity_joint_buffer = identity_joint_buffer,
         .font = try .init(gpa, vma, device, "fonts/Roboto-Regular.ttf"),
         .skybox = undefined,
-        .skybox_material_index = undefined,
+        .skybox_descriptor = undefined,
         .vma = vma,
         .device = device,
     };
@@ -207,8 +196,9 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     for (std.enums.values(Shader.Kind)) |kind| {
         const shader_spec = Shader.specs.get(kind);
         const layout_handles: []const c.VkDescriptorSetLayout = switch (shader_spec.layout) {
-            .scene_material => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
-            .ui => &.{descriptor_layouts.get(.ui).handle},
+            .scene_textures => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.textures).handle },
+            .sky => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
+            .ui => &.{descriptor_layouts.get(.textures).handle},
         };
         self.shaders.set(kind, .init(device, kind, layout_handles));
         try asset_server.loadAndWatch(Resources, self, shader_spec.path, reloadShader);
@@ -302,6 +292,14 @@ pub fn registerImage(self: *Resources, gpa: std.mem.Allocator, key: ?[]const u8,
     return @enumFromInt(slot);
 }
 
+// TEMP-COMMENT: gltf materials can pair an image with their own sampler (nearest-filter etc.);
+// the image is registered with the default sampler first, this rewrites the slot's descriptor
+// with the material's sampler. Combined-image-sampler descriptors bake the pair together.
+pub fn setTextureSampler(self: *Resources, handle: Image.Handle, sampler: c.VkSampler) void {
+    const slot = @intFromEnum(handle);
+    self.writeTextureDescriptor(slot, self.images.items[slot].vk_imageview, sampler);
+}
+
 // TEMP-COMMENT: path is relative to assets/ (same convention as asset_server.watch), deduped by
 // path → second loadTexture of the same file returns the same handle without touching disk.
 pub fn loadTexture(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer, path: []const u8) !Image.Handle {
@@ -361,7 +359,7 @@ fn reloadTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file
 }
 
 pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
-    try self.createStaticMeshWithMaterial(gpa, name, vertices, indices, model_kind, null);
+    try self.createStaticMeshWithTexture(gpa, name, vertices, indices, model_kind, .blank);
 }
 
 pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !void {
@@ -385,30 +383,16 @@ pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator
     fillExplosionParticleTexture(&pixels);
     try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
 
-    const material = try Material.init(
-        gpa,
-        explosion_particle_material_name,
-        self.device,
-        self.vma,
-        self.set_size,
-        self.combined_image_sampler_descriptor_size,
-        self.samplers.items[0],
-        texture.vk_imageview,
-    );
-    errdefer {
-        var material_copy = material;
-        material_copy.deinit(gpa, self.vma);
-    }
-
-    try self.images.append(gpa, texture);
-    try self.materials.append(gpa, material);
-    try self.createStaticMeshWithMaterial(
+    // TEMP-COMMENT: generated texture goes through the same pool door as file textures;
+    // keyed so a second call (hot-reload recreate) overrides the slot instead of appending.
+    const texture_handle = try self.registerImage(gpa, "explosion_particle", texture, self.samplers.items[0]);
+    try self.createStaticMeshWithTexture(
         gpa,
         "explosion_particle",
         Mesh.explosion_particle.verticies,
         Mesh.explosion_particle.indicies,
         .explosion_particle,
-        self.materials.items.len - 1,
+        texture_handle,
     );
 }
 
@@ -435,14 +419,14 @@ fn fillExplosionParticleTexture(pixels: *[explosion_particle_texture_size * expl
     }
 }
 
-fn createStaticMeshWithMaterial(
+fn createStaticMeshWithTexture(
     self: *Resources,
     gpa: std.mem.Allocator,
     name: []const u8,
     vertices: []const Mesh.StaticVertex,
     indices: []const u32,
     model_kind: Model.Kind,
-    material_index: ?usize,
+    texture: Image.Handle,
 ) !void {
     const existing_index = for (self.meshes.items, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.name, name)) break index;
@@ -460,7 +444,7 @@ fn createStaticMeshWithMaterial(
         &.{.{
             .index_start = 0,
             .index_count = @intCast(indices.len),
-            .material_index = material_index,
+            .texture = texture,
         }},
     );
     const mesh_id = if (existing_index) |index| blk: {
@@ -505,18 +489,34 @@ fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
     );
     try self.uploadSkyboxFaces(gpa, decoded);
 
-    const sky_material: Material = try .init(
-        gpa,
-        "skybox",
+    // TEMP-COMMENT: what Material.init used to do, inlined for the ONE remaining user —
+    // a single-descriptor buffer for the cube sampler (can't live in the sampler2D array).
+    self.skybox_descriptor = try .init(
         self.device,
         self.vma,
+        u8,
         self.set_size,
-        self.combined_image_sampler_descriptor_size,
-        self.samplers.items[0],
-        self.skybox.vk_imageview,
+        c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+            c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
     );
-    try self.materials.append(gpa, sky_material);
-    self.skybox_material_index = self.materials.items.len - 1;
+    const image_info: c.VkDescriptorImageInfo = .{
+        .sampler = self.samplers.items[0],
+        .imageView = self.skybox.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    const descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+        .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .data = .{ .pCombinedImageSampler = &image_info },
+    };
+    const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.skybox_descriptor.info.pMappedData);
+    ext.vkGetDescriptorEXT(
+        self.device.handle,
+        &descriptor_get_info,
+        self.combined_image_sampler_descriptor_size,
+        descriptor_buffer_bytes,
+    );
 }
 
 fn uploadSkyboxFaces(self: *Resources, gpa: std.mem.Allocator, decoded: Image.Decoded) !void {
@@ -584,16 +584,12 @@ fn reloadSkybox(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file:
 }
 
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    for (self.materials.items) |*material| {
-        material.deinit(gpa, vma);
-    }
-    self.materials.deinit(gpa);
-
     for (self.images.items) |*image| {
         image.deinit(vma, device);
     }
     self.images.deinit(gpa);
     self.skybox.deinit(vma, device);
+    self.skybox_descriptor.deinit(vma);
 
     for (self.samplers.items) |sampler| {
         c.vkDestroySampler(device.handle, sampler, null);
@@ -626,7 +622,4 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
 
 pub fn getMeshPtr(self: *Resources, index: usize) *Mesh {
     return &self.meshes.items[index];
-}
-pub fn getMaterialPtr(self: *Resources, index: ?usize) *Material {
-    return &self.materials.items[index orelse 0];
 }
