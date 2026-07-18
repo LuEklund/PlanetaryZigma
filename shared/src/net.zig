@@ -174,11 +174,16 @@ pub const SetCurrency = struct {
 };
 
 pub const Event = union(enum) {
+    pub const Interact = struct {
+        interactor: entity.Id,
+        interacted: entity.Id,
+    };
+
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
     attack: entity.Id,
-    interact: struct { interactor: entity.Id, interacted: entity.Id },
+    interact: Interact,
     rocket_impact: @Vector(3, f32),
 };
 

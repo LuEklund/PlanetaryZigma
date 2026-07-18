@@ -191,7 +191,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                         );
                         try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
                         if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                            if (entity.teleporter.active) {
+                            if (entity.teleporter.state == .active) {
                                 try client.sendCommand(writer, .{
                                     .update_event = .teleport_start,
                                 }, .reliable);

@@ -81,15 +81,15 @@ pub fn updateEnemies(info: *const Info) !void {
             .bloorpLord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
-                if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
-                    enemy.last_attack = info.elapsed_time;
-                    _ = info.world.spawn(.{
-                        .kind = .{ .enemy = .tubloid },
-                        .transform = .{ .position = enemy.transform.position },
-                        .last_attack = info.elapsed_time,
-                    }) catch {};
-                    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
-                }
+                // if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
+                //     enemy.last_attack = info.elapsed_time;
+                //     _ = info.world.spawn(.{
+                //         .kind = .{ .enemy = .tubloid },
+                //         .transform = .{ .position = enemy.transform.position },
+                //         .last_attack = info.elapsed_time,
+                //     }) catch {};
+                //     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                // }
             },
         }
     }
@@ -188,11 +188,12 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
     const teleporter = &entity.teleporter;
     if (teleporter.charged == teleporter.max_charge) {
         director.spawning = false;
+        teleporter.state = .completed;
         return;
     }
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
-        if (teleporter.active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
+        if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
             teleporter.charged += info.delta_time * 10;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }

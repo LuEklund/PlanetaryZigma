@@ -32,6 +32,8 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
+    self.spawning = false;
+
     if (info.world.next_stage_requested) {
         info.world.next_stage_requested = false;
         try self.startStage(info.world, physics);

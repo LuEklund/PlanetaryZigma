@@ -242,12 +242,13 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 total_boss_health += boss_health.current;
                 total_boss_max_health += boss_health.max;
             }
-            const boss_healthbar_width: f32 = (ui.screen_width * 0.9) * (total_boss_health / total_boss_max_health);
+            const boss_healthbar_max_width: f32 = (ui.screen_width * 0.9);
+            const boss_healthbar_width: f32 = boss_healthbar_max_width * (total_boss_health / total_boss_max_health);
             const boss_healthbar_heigth: f32 = 30;
             ui.add(null, .{
                 .offset = .{
                     .top = 20,
-                    .left = ui.screen_width / 2 - boss_healthbar_width / 2,
+                    .left = ui.screen_width / 2 - boss_healthbar_max_width / 2,
                 },
                 .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
                 .color = .new(1, 0, 0, 1),

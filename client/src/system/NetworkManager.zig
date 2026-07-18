@@ -338,7 +338,7 @@ fn handleCommand(
         .update_event => |event| {
             switch (event) {
                 .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                    entity.teleporter.active = true;
+                    entity.teleporter.state = .active;
                 },
                 .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                     entity.teleporter.charged = charged;

@@ -60,15 +60,18 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         }
         if (player.interacting != hit_id) {
             player.interacting = hit_id;
-            if (info.world.getPtr(hit_id)) |hit_entity| {
+            const interact_id: shared.entity.Id = if (info.world.getPtr(hit_id)) |hit_entity|
                 switch (hit_entity.kind) {
-                    .lootbox, .item, .teleporter => info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = hit_id } } }),
-                    else => info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } }),
+                    .lootbox, .item => hit_id,
+                    .teleporter => switch (hit_entity.teleporter.state) {
+                        .active => .none,
+                        else => hit_id,
+                    },
+                    else => .none,
                 }
-                std.log.debug("player ID {d}, hit tag {t}", .{ player_id, hit_entity.kind });
-            } else {
-                info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-            }
+            else
+                .none;
+            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
         }
 
         if (player.controller.input.keys.e) {
@@ -87,9 +90,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                     },
                     .teleporter => {
                         const teleporter = &entity.teleporter;
-                        if (!teleporter.active) {
-                            teleporter.active = true;
+                        if (teleporter.state == .idle) {
+                            teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
+                            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
                             const boss_surface = shared.planetSurfacePointNear(entity.transform.position, @floatFromInt(info.world.planet_radius), 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorpLord },
