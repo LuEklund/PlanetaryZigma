@@ -17,6 +17,7 @@ ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
 particle_buffer: Buffer,
 
+pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
 pub const max_particles: u32 = 4096;
 

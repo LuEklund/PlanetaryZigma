@@ -33,7 +33,8 @@ const check = @import("Vulkan/utils.zig").check;
 
 pub const Info = system.Info;
 pub const c = @import("vulkan");
-const max_frames_inflight: usize = 3;
+const max_frames_inflight: usize = FrameData.max_frames_inflight;
+const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
 pub const Model = @import("Vulkan/Model.zig");
 
@@ -308,11 +309,12 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     var proj = perspective(fov_rad, aspect, 0.01, 1000);
     const proj_view = proj.mul(view);
 
-    const light_time = info.elapsed_time * 0.01;
+    const light_time = info.elapsed_time * 0.01 + 0.9;
+    const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_view_proj = proj_view.inverse().d,
-        .global_light_direction = .{ @cos(light_time), @sin(light_time), 0 },
+        .global_light_direction = light_dir,
         .time = elapsed_time,
         .camera_position = camera_transform.position,
         .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
@@ -324,6 +326,28 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         },
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
+
+    var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
+    var cascades: Resources.GPUCascades = undefined;
+    cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
+    for (0..Resources.shadow_cascade_count) |cascade_index| {
+        const slice_near: f32 = if (cascade_index == 0) 0.05 else shadow_splits[cascade_index - 1];
+        cascade_vps[cascade_index] = cascadeViewProj(camera_transform, fov_rad, aspect, slice_near, shadow_splits[cascade_index], light_dir);
+        cascades.light_view_proj[cascade_index] = cascade_vps[cascade_index].d;
+    }
+    const frame_index = self.current_frame_inflight % self.frames.len;
+    self.resources.writeCascades(frame_index, &cascades);
+
+    for (info.world.entities.values()) |*entity| {
+        const model = self.resources.getModelPtr(entity.model);
+        if (model.isEmpty() or !model.isSkinned()) continue;
+        const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+        for (skeleton.joint_matrices) |*matrices| {
+            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
+        }
+    }
+
+    try renderShadowPass(self, cmd, info, cascade_vps);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
     try renderWorldPass(self, cmd, current_frame, info);
@@ -416,6 +440,98 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
 }
 
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
+    var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    );
+    var shadow_depth_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = self.resources.shadow_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
+    };
+    var shadow_render_info: c.VkRenderingInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = .{
+                .width = Resources.shadow_map_size * Resources.shadow_cascade_count,
+                .height = Resources.shadow_map_size,
+            },
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 0,
+        .pDepthAttachment = &shadow_depth_attachment,
+    };
+    ext.vkCmdBeginRendering(cmd, &shadow_render_info);
+    {
+        const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
+        const handles = [_]c.VkShaderEXT{ self.resources.shaders.get(.vert_shadow_static).handle, null };
+        ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
+    }
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
+    c.vkCmdSetDepthBias(cmd, 0.0, 0.0, 3.0);
+    for (cascade_vps, 0..) |cascade_vp, cascade_index| {
+        const shadow_viewport: c.VkViewport = .{
+            .x = @floatFromInt(cascade_index * Resources.shadow_map_size),
+            .width = @floatFromInt(Resources.shadow_map_size),
+            .height = @floatFromInt(Resources.shadow_map_size),
+            .maxDepth = 1,
+        };
+        const shadow_scissor: c.VkRect2D = .{
+            .offset = .{ .x = @intCast(cascade_index * Resources.shadow_map_size), .y = 0 },
+            .extent = .{ .width = Resources.shadow_map_size, .height = Resources.shadow_map_size },
+        };
+        ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
+        ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
+
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_static));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.getModelPtr(entity.model);
+            if (model.isEmpty() or model.isSkinned()) continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawStatic(self, cmd, model, base_matrix);
+        }
+        bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_shadow_skinned));
+        for (info.world.entities.values()) |*entity| {
+            const model = self.resources.getModelPtr(entity.model);
+            if (model.isEmpty() or !model.isSkinned()) continue;
+            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            try drawSkeletal(self, cmd, skeleton, base_matrix);
+        }
+    }
+    ext.vkCmdEndRendering(cmd);
+    shadow_barrier.transition(
+        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        c.VK_ACCESS_SHADER_READ_BIT,
+    );
+    ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_FALSE);
+    const full_viewport: c.VkViewport = .{
+        .width = @floatFromInt(self.swapchain.draw_image.extent.width),
+        .height = @floatFromInt(self.swapchain.draw_image.extent.height),
+        .maxDepth = 1,
+    };
+    const full_scissor: c.VkRect2D = .{
+        .extent = .{
+            .width = self.swapchain.draw_image.extent.width,
+            .height = self.swapchain.draw_image.extent.height,
+        },
+    };
+    ext.vkCmdSetViewportWithCountEXT(cmd, 1, &full_viewport);
+    ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
+}
+
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
     self.bindWorldDescriptors(cmd, current_frame);
 
@@ -433,9 +549,6 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         const model = self.resources.getModelPtr(entity.model);
         if (model.isEmpty() or !model.isSkinned()) continue;
         const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-        for (skeleton.joint_matrices) |*matrices| {
-            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
-        }
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawSkeletal(self, cmd, skeleton, base_matrix);
     }
@@ -755,6 +868,7 @@ fn emitNode(
 
 fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData) void {
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
+    const shadow_descriptor_buffer = &self.resources.shadow_descriptor_buffers[self.current_frame_inflight % self.frames.len];
     const world_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{
             .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
@@ -767,6 +881,12 @@ fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *c
             .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                 c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
         },
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+            .address = shadow_descriptor_buffer.getGPUAddress(),
+            .usage = c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT,
+        },
     };
     ext.vkCmdBindDescriptorBuffersEXT(cmd, world_bindings.len, &world_bindings[0]);
     const buf_idx_0: u32 = 0;
@@ -775,6 +895,9 @@ fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *c
     const buf_idx_1: u32 = 1;
     const off_1: c.VkDeviceSize = 0;
     ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
+    const buf_idx_2: u32 = 2;
+    const off_2: c.VkDeviceSize = 0;
+    ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 2, 1, &buf_idx_2, &off_2);
 }
 
 pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
@@ -847,5 +970,82 @@ fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
         0, -f, 0,                           0, // flip Y for Vulkan
         0, 0,  far / (near - far),          -1,
         0, 0,  (far * near) / (near - far), 0,
+    });
+}
+
+fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice_near: f32, slice_far: f32, light_dir: nz.Vec3(f32)) nz.Mat4x4(f32) {
+    const forward = camera.rotation.rotateVec(.{ 0, 0, -1 });
+    const right = camera.rotation.rotateVec(.{ 1, 0, 0 });
+    const up = camera.rotation.rotateVec(.{ 0, 1, 0 });
+    const tan_half_fov = @tan(fov_rad * 0.5);
+
+    var corners: [8]nz.Vec3(f32) = undefined;
+    for ([2]f32{ slice_near, slice_far }, 0..) |plane_distance, plane| {
+        const half_height = plane_distance * tan_half_fov;
+        const half_width = half_height * aspect;
+        const plane_center = camera.position + nz.vec.scale(forward, plane_distance);
+        for (0..4) |corner| {
+            const sign_x: f32 = if (corner & 1 == 0) -1 else 1;
+            const sign_y: f32 = if (corner & 2 == 0) -1 else 1;
+            corners[plane * 4 + corner] = plane_center +
+                nz.vec.scale(right, sign_x * half_width) +
+                nz.vec.scale(up, sign_y * half_height);
+        }
+    }
+
+    var center: nz.Vec3(f32) = .{ 0, 0, 0 };
+    for (corners) |corner| center += corner;
+    center = nz.vec.scale(center, 1.0 / 8.0);
+    var radius: f32 = 0;
+    for (corners) |corner| radius = @max(radius, nz.vec.length(corner - center));
+
+    const normalized_light = nz.vec.normalize(light_dir);
+    const up_reference: nz.Vec3(f32) = if (@abs(normalized_light[1]) > 0.99) .{ 0, 0, 1 } else .{ 0, 1, 0 };
+    const light_view = nz.Mat4x4(f32).lookAt(.{ 0, 0, 0 }, -normalized_light, up_reference);
+
+    const center_light = light_view.mulVec4(.{ center[0], center[1], center[2], 1 });
+    const texel_size = radius * 2.0 / @as(f32, @floatFromInt(Resources.shadow_map_size));
+    const snapped_x = @floor(center_light[0] / texel_size) * texel_size;
+    const snapped_y = @floor(center_light[1] / texel_size) * texel_size;
+
+    const caster_pad: f32 = 80; // room behind the slice for off-screen casters
+    const proj = shadowOrtho(
+        snapped_x - radius,
+        snapped_x + radius,
+        snapped_y - radius,
+        snapped_y + radius,
+        -(center_light[2] + radius + caster_pad),
+        -(center_light[2] - radius),
+    );
+    return proj.mul(light_view);
+}
+
+const shadow_caster_radius: f32 = 16;
+
+fn cascadeContains(cascade_vp: *const nz.Mat4x4(f32), position: nz.Vec3(f32)) bool {
+    const clip = cascade_vp.mulVec4(.{ position[0], position[1], position[2], 1 });
+    const margin_x = shadow_caster_radius * @abs(cascade_vp.d[0]);
+    const margin_y = shadow_caster_radius * @abs(cascade_vp.d[5]);
+    const margin_z = shadow_caster_radius * @abs(cascade_vp.d[10]);
+    return @abs(clip[0]) <= 1 + margin_x and
+        @abs(clip[1]) <= 1 + margin_y and
+        clip[2] >= -margin_z and clip[2] <= 1 + margin_z;
+}
+
+fn shadowOrtho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
+    return .new(.{
+        2.0 / (right - left),             0,                               0,                   0,
+        0,                                -2.0 / (top - bottom),           0,                   0,
+        0,                                0,                               1.0 / (near - far),  0,
+        -(right + left) / (right - left), (top + bottom) / (top - bottom), near / (near - far), 1,
+    });
+}
+
+fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
+    return .new(.{
+        2.0 / (right - left),             0.0,                              0.0,                          0.0,
+        0.0,                              2.0 / (top - bottom),             0.0,                          0.0,
+        0.0,                              0.0,                              -2.0 / (far - near),          0.0,
+        -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0,
     });
 }
