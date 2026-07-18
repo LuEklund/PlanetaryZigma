@@ -7,9 +7,7 @@ const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const Ui = @import("../Renderer/Vulkan/Ui.zig");
-const Image = @import("../Renderer/Vulkan/Image.zig");
 const Resources = @import("../Renderer/Vulkan/Resources.zig");
-const AssetServer = shared.AssetServer;
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -41,38 +39,13 @@ pub const Request = union(enum) {
 screen: Screen = .main,
 overlay: Overlay = .none,
 options_tab: OptionsTab = .gameplay,
-// TEMP-COMMENT: pool handles resolved ONCE here (no defaults on purpose — forces going
-// through init, which is why enterScene now calls resetScreens instead of `hud = .{}`).
-crosshair: Image.Handle,
-icons: std.EnumArray(shared.Item.Kind, Image.Handle),
 
-// TEMP-COMMENT: kind→path table; when the shared data-driven items table lands (your friend's
-// design), this table moves to shared and the init loop below stays as-is.
-const icon_paths: std.EnumArray(shared.Item.Kind, []const u8) = .init(.{
-    .health = "textures/oxygen_tank.png",
-    .speed = "textures/energy_drink.png",
-    .damage = "textures/damage.png",
-    .attack_speed = "textures/pickaxe.png",
-    .rocket = "textures/Rocket.png",
-});
-
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, resources: *Resources) !Hud {
-    var icons: std.EnumArray(shared.Item.Kind, Image.Handle) = undefined;
-    for (std.enums.values(shared.Item.Kind)) |item_kind| {
-        icons.set(item_kind, try resources.loadTexture(gpa, asset_server, icon_paths.get(item_kind)));
-    }
-    return .{
-        .crosshair = try resources.loadTexture(gpa, asset_server, "textures/crosshair.png"),
-        .icons = icons,
-    };
-}
-
-// TEMP-COMMENT: what `self.hud = .{}` used to do on scene change, minus wiping the handles.
-pub fn resetScreens(self: *Hud) void {
-    self.screen = .main;
-    self.overlay = .none;
-    self.options_tab = .gameplay;
-}
+// TEMP-COMMENT: Hud stores NO texture handles — it declares its texture paths here, the
+// renderer loads them at init with everything else (Vulkan.init loop), and draw code
+// resolves handles by key each frame. Hud is back to pure screen-state (enterScene can
+// `hud = .{}` again).
+const crosshair_texture = "textures/crosshair.png";
+pub const texture_paths = [_][]const u8{crosshair_texture};
 
 pub fn update(
     hud: *Hud,
@@ -80,6 +53,7 @@ pub fn update(
     scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
+    resources: *Resources,
     controller: *Controller,
     options: *Options,
 ) !Request {
@@ -97,7 +71,7 @@ pub fn update(
         request = try mainMenu(network_manager, ui, hud);
         if (hud.overlay == .options) optionsMenu(ui, hud, options, controller);
     } else {
-        try inGame(hud, info, network_manager, ui, options);
+        try inGame(info, network_manager, ui, resources, options);
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pauseMenu(ui, hud),
@@ -655,7 +629,7 @@ fn clippedText(ui: *Ui, text: []const u8, max_len: usize) []const u8 {
     return ui.print("{s}...", .{text[0 .. max_len - 3]});
 }
 
-fn inGame(hud: *const Hud, info: *const Info, network_manager: *NetworkManager, ui: *Ui, options: *Options) !void {
+fn inGame(info: *const Info, network_manager: *NetworkManager, ui: *Ui, resources: *Resources, options: *Options) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -726,7 +700,7 @@ fn inGame(hud: *const Hud, info: *const Info, network_manager: *NetworkManager, 
 
                 .color = .new(1, 1, 1, 1),
                 .name = ui.print("{t}", .{item_kind}),
-                .texture = hud.icons.get(item_kind),
+                .texture = resources.textureHandle(shared.Item.spec(item_kind).icon),
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
                     .size = .{ .fixed = ui.textSize(amount_text, 32) },
@@ -811,7 +785,7 @@ fn inGame(hud: *const Hud, info: *const Info, network_manager: *NetworkManager, 
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = hud.crosshair,
+                        .texture = resources.textureHandle(crosshair_texture),
                     },
                 },
             });

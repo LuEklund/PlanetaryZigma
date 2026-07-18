@@ -103,9 +103,12 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     }
 
     self.resources = try .init(gpa, self.vma, self.physical_device, self.device, asset_server);
-    try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies, .unknown);
-    try self.resources.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies, .cube_projectile);
-    try self.resources.createExplosionParticleResources(gpa);
+    _ = try self.resources.createStaticMesh(gpa, Resources.default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
+    _ = try self.resources.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
+    _ = try self.resources.createExplosionParticleResources(gpa);
+    try self.resources.loadEntityAssets(gpa, asset_server);
+    // TEMP-COMMENT: HUD-own textures (not entity assets) — Hud declares, loader loads.
+    for (system.Hud.texture_paths) |path| _ = try self.resources.loadTexture(gpa, asset_server, path);
 
     self.ui = try .init(
         gpa,
@@ -422,7 +425,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
     bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_mesh));
     for (info.world.entities.values()) |*entity| {
-        const model = self.resources.models.getPtr(.fromKind(entity.kind));
+        const model = self.resources.modelForKind(entity.kind);
         if (model.isEmpty() or model.isSkinned()) continue;
         const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
         try drawStatic(self, cmd, model, base_matrix);
@@ -430,7 +433,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_skinned));
     for (info.world.entities.values()) |*entity| {
-        const model = self.resources.models.getPtr(.fromKind(entity.kind));
+        const model = self.resources.modelForKind(entity.kind);
         if (model.isEmpty() or !model.isSkinned()) continue;
         const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
         for (skeleton.joint_matrices) |*matrices| {
@@ -490,7 +493,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, 
     bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
     bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
     {
-        const model = self.resources.models.getPtr(.explosion_particle);
+        const model = self.resources.getModelPtr(self.resources.modelHandle(Resources.explosion_particle_name));
         if (!model.isEmpty()) {
             for (info.world.particles.items) |particle| {
                 const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
@@ -797,12 +800,14 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World)
 fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32) !void {
     var planet: shared.Planet(.renderable) = try .init(gpa, radius);
     defer planet.deinit(gpa);
-    try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices, .planet);
+    // TEMP-COMMENT: registerModel dedupe means this rebuild lands at the same handle
+    // entity_models.planet resolved at init — nothing to re-point.
+    _ = try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices);
 }
 
 fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind) !void {
     if (self.skeletons.contains(entity_id)) return;
-    const model = self.resources.models.getPtr(.fromKind(entity_kind));
+    const model = self.resources.modelForKind(entity_kind);
     if (model.isEmpty() and entity_kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
     }

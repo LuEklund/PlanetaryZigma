@@ -19,11 +19,11 @@ const StageItemSpawn = struct {
 };
 
 const stage_item_spawns = [_]StageItemSpawn{
-    .{ .kind = .attack_speed, .count = 5 },
-    .{ .kind = .speed, .count = 5 },
-    .{ .kind = .damage, .count = 5 },
+    .{ .kind = .pickaxe, .count = 5 },
+    .{ .kind = .energy_drink, .count = 5 },
+    .{ .kind = .gun, .count = 5 },
     .{ .kind = .rocket, .count = 5 },
-    .{ .kind = .health, .count = 5 },
+    .{ .kind = .oxygen_tank, .count = 5 },
 };
 
 const item_surface_offset: f32 = 1.2;

@@ -21,6 +21,7 @@ const AssetServer = @import("shared").AssetServer;
 const check = @import("utils.zig").check;
 
 pub const default_mesh_name: []const u8 = "default";
+pub const explosion_particle_name: []const u8 = "explosion_particle";
 pub const max_textures = 256;
 const explosion_particle_texture_size: u32 = 32;
 
@@ -29,7 +30,10 @@ pub const PipelineLayoutKind = enum { world, sky, ui };
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
-models: std.EnumArray(Model.Kind, Model),
+models: std.ArrayList(Model),
+// TEMP-COMMENT: same pattern as texture_keys — key = glb path (or generated-mesh name).
+// Keys are comptime literals from EntityModels/init call sites, so they're borrowed, not duped.
+model_keys: std.StringHashMapUnmanaged(Model.Handle),
 shaders: std.EnumArray(Shader.Kind, Shader),
 // TEMP-COMMENT: materials list deleted — a "material" was one descriptor buffer around one
 // texture; surfaces now carry Image.Handle directly. Skybox keeps ONE private descriptor
@@ -173,7 +177,8 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
         .meshes = meshes,
-        .models = .initFill(.empty),
+        .models = .empty,
+        .model_keys = .empty,
         .shaders = undefined,
         .samplers = samplers,
         .images = images,
@@ -206,21 +211,74 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
 
     try asset_server.watch(Resources, self, "textures/skybox_cubemap.png", reloadSkybox);
 
-    for (std.enums.values(Model.Kind)) |kind| {
-        const path = kind.spec().path orelse continue;
-        try asset_server.loadAndWatch(Resources, self, path, reloadModel);
-    }
-
     return self;
 }
 
 fn reloadModel(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
     const self: *Resources = @ptrCast(@alignCast(user_data));
-    const kind = for (std.enums.values(Model.Kind)) |kind| {
-        const spec_path = kind.spec().path orelse continue;
-        if (std.mem.eql(u8, spec_path, file_path)) break kind;
+    // TEMP-COMMENT: the spec is DERIVED from the shared table by key, not stored on the
+    // model — one source of truth, and an edited spec is picked up on the next reload.
+    const entity = @import("shared").entity;
+    const spec = for (entity.all_kinds) |kind| {
+        const model_spec = entity.modelSpec(kind);
+        if (std.mem.eql(u8, model_spec.key, file_path)) break model_spec;
     } else return error.UnknownModelPath;
-    try self.models.getPtr(kind).loadGlb(gpa, io, file, self.vma, self.device, self, kind.spec());
+    const handle = self.model_keys.get(file_path) orelse return error.UnknownModelPath;
+    try self.models.items[@intFromEnum(handle)].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
+}
+
+// TEMP-COMMENT: the one door into the model pool; existing key = same handle back (dedupe),
+// new key = fresh empty slot. Mirrors registerImage.
+pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) !Model.Handle {
+    if (self.model_keys.get(key)) |handle| return handle;
+    try self.models.append(gpa, .empty);
+    const handle: Model.Handle = @enumFromInt(self.models.items.len - 1);
+    try self.model_keys.put(gpa, key, handle);
+    return handle;
+}
+
+// TEMP-COMMENT: only glb keys declared in the shared entity table can load — reloadModel
+// derives their spec from all_kinds. A model outside the table needs a new entry there.
+pub fn loadModel(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer, key: []const u8) !Model.Handle {
+    if (self.model_keys.get(key)) |handle| return handle;
+    const handle = try self.registerModel(gpa, key);
+    try asset_server.loadAndWatch(Resources, self, key, reloadModel);
+    return handle;
+}
+
+// TEMP-COMMENT: "iterate the shared table and add it" — the one loop that loads every
+// entity model declared in shared/entity.zig. Non-.glb keys are generated meshes the
+// client registers manually (createStaticMesh); registering them here just reserves the
+// handle so order does not matter.
+pub fn loadEntityAssets(self: *Resources, gpa: std.mem.Allocator, asset_server: *AssetServer) !void {
+    const entity = @import("shared").entity;
+    for (entity.all_kinds) |kind| {
+        const entity_spec = entity.spec(kind);
+        // TEMP-COMMENT: icons load here with everything else; consumers (Hud) just fetch
+        // the handle by key via texture().
+        if (entity_spec.icon) |icon_path| _ = try self.loadTexture(gpa, asset_server, icon_path);
+        if (std.mem.endsWith(u8, entity_spec.model.key, ".glb")) {
+            _ = try self.loadModel(gpa, asset_server, entity_spec.model.key);
+        } else {
+            _ = try self.registerModel(gpa, entity_spec.model.key);
+        }
+    }
+}
+
+// TEMP-COMMENT: handle lookup for an already-loaded texture; asserts the key was loaded
+// (loadEntityAssets or an explicit loadTexture) — a typo'd key fails loudly at init.
+pub fn textureHandle(self: *Resources, key: []const u8) Image.Handle {
+    return self.texture_keys.get(key).?;
+}
+
+pub fn modelHandle(self: *Resources, key: []const u8) Model.Handle {
+    return self.model_keys.get(key).?;
+}
+
+pub fn modelForKind(self: *Resources, kind: @import("shared").entity.Kind) *Model {
+    // ponytail: string-hash lookup per draw; becomes a per-entity ModelHandle component
+    // when entities grow components on the ECS step.
+    return self.getModelPtr(self.model_keys.get(@import("shared").entity.modelSpec(kind).key).?);
 }
 
 fn reloadShader(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File, file_path: []const u8) !void {
@@ -358,11 +416,11 @@ fn reloadTexture(user_data: *anyopaque, gpa: std.mem.Allocator, io: std.Io, file
     _ = try self.registerImage(gpa, file_path, image, self.samplers.items[0]);
 }
 
-pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32, model_kind: Model.Kind) !void {
-    try self.createStaticMeshWithTexture(gpa, name, vertices, indices, model_kind, .blank);
+pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const u8, vertices: []const Mesh.StaticVertex, indices: []const u32) !Model.Handle {
+    return self.createStaticMeshWithTexture(gpa, name, vertices, indices, .blank);
 }
 
-pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !void {
+pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !Model.Handle {
     var texture = try Image.init(
         self.vma,
         self.device,
@@ -385,13 +443,12 @@ pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator
 
     // TEMP-COMMENT: generated texture goes through the same pool door as file textures;
     // keyed so a second call (hot-reload recreate) overrides the slot instead of appending.
-    const texture_handle = try self.registerImage(gpa, "explosion_particle", texture, self.samplers.items[0]);
-    try self.createStaticMeshWithTexture(
+    const texture_handle = try self.registerImage(gpa, explosion_particle_name, texture, self.samplers.items[0]);
+    return self.createStaticMeshWithTexture(
         gpa,
-        "explosion_particle",
+        explosion_particle_name,
         Mesh.explosion_particle.verticies,
         Mesh.explosion_particle.indicies,
-        .explosion_particle,
         texture_handle,
     );
 }
@@ -425,9 +482,8 @@ fn createStaticMeshWithTexture(
     name: []const u8,
     vertices: []const Mesh.StaticVertex,
     indices: []const u32,
-    model_kind: Model.Kind,
     texture: Image.Handle,
-) !void {
+) !Model.Handle {
     const existing_index = for (self.meshes.items, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.name, name)) break index;
     } else null;
@@ -456,10 +512,12 @@ fn createStaticMeshWithTexture(
         break :blk self.meshes.items.len - 1;
     };
 
-    const model = self.models.getPtr(model_kind);
+    const handle = try self.registerModel(gpa, name);
+    const model = &self.models.items[@intFromEnum(handle)];
     model.clear(gpa);
     try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
     model.offset = .{};
+    return handle;
 }
 
 fn loadSkybox(self: *Resources, gpa: std.mem.Allocator) !void {
@@ -600,7 +658,9 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
         mesh.deinit(gpa, vma);
     }
     self.meshes.deinit(gpa);
-    for (&self.models.values) |*model| model.deinit(gpa);
+    for (self.models.items) |*model| model.deinit(gpa);
+    self.models.deinit(gpa);
+    self.model_keys.deinit(gpa);
     for (&self.shaders.values) |*shader| shader.deinit();
 
     for (self.descriptor_layouts.values) |layout| {
@@ -622,4 +682,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
 
 pub fn getMeshPtr(self: *Resources, index: usize) *Mesh {
     return &self.meshes.items[index];
+}
+pub fn getModelPtr(self: *Resources, handle: Model.Handle) *Model {
+    return &self.models.items[@intFromEnum(handle)];
 }

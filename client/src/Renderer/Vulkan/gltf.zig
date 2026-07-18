@@ -435,7 +435,7 @@ pub fn parseScene(
             } else {
                 std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
                 for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-                std.log.err("in Model.Kind.spec assign one of these", .{});
+                std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
                 return error.LookBoneNotFound;
             };
         }
@@ -447,7 +447,7 @@ pub fn parseScene(
         } else {
             std.log.err("overlay root \"{s}\" not found; nodes in this file:", .{root_name});
             for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-            std.log.err("in Model.Kind.spec assign one of these", .{});
+            std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
             return error.OverlayRootNotFound;
         };
     }

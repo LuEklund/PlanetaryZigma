@@ -2,23 +2,58 @@ const std = @import("std");
 const Stat = @import("stats.zig").Stat;
 
 pub const Item = struct {
+    // TEMP-COMMENT: kinds renamed to match their asset names (was health/speed/damage/
+    // attack_speed); wire values 0-4 unchanged so the order must stay.
     pub const Kind = enum(u16) {
-        health = 0,
-        speed = 1,
-        damage = 2,
-        attack_speed = 3,
+        oxygen_tank = 0,
+        energy_drink = 1,
+        gun = 2,
+        pickaxe = 3,
         rocket = 4,
 
         pub fn getAttributeValues(kind: Kind) Attribute {
-            return switch (kind) {
-                .health => .{ .health = 10 },
-                .speed => .{ .speed = 1 },
-                .damage => .{ .damage = 1 },
-                .attack_speed => .{ .attack_speed = 0.2 },
-                .rocket => .{ .rocket_chance = 0.05 },
-            };
+            return spec(kind).attributes;
         }
     };
+
+    // TEMP-COMMENT: ONE row per item: stats + world model + inventory icon. The entity
+    // side delegates here for its .item arm, Hud reads .icon — adding an item is adding
+    // one row. Step E swaps these internals for the Item2 table without moving consumers.
+    pub const Spec = struct {
+        attributes: Attribute,
+        model: []const u8,
+        icon: []const u8,
+    };
+
+    pub fn spec(kind: Kind) Spec {
+        return switch (kind) {
+            .oxygen_tank => .{
+                .attributes = .{ .health = 10 },
+                .model = "objects/oxigen_tank.glb",
+                .icon = "textures/oxygen_tank.png",
+            },
+            .energy_drink => .{
+                .attributes = .{ .speed = 1 },
+                .model = "objects/energy_drink.glb",
+                .icon = "textures/energy_drink.png",
+            },
+            .gun => .{
+                .attributes = .{ .damage = 1 },
+                .model = "objects/gun.glb",
+                .icon = "textures/gun.png",
+            },
+            .pickaxe => .{
+                .attributes = .{ .attack_speed = 0.2 },
+                .model = "objects/pickaxe.glb",
+                .icon = "textures/pickaxe.png",
+            },
+            .rocket => .{
+                .attributes = .{ .rocket_chance = 0.05 },
+                .model = "objects/rocket.glb",
+                .icon = "textures/rocket.png",
+            },
+        };
+    }
 
     pub const Attribute = struct {
         health: f32 = 0,
