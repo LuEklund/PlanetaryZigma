@@ -16,6 +16,7 @@ push_constant_size: u32,
 pub const specs: std.EnumArray(Kind, Spec) = .init(.{
     .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
     .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+    .vert_particle = .{ .path = "shaders/particle.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
     .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
     .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
     .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .sky },
@@ -36,6 +37,7 @@ pub const Spec = struct {
 pub const Kind = enum(u16) {
     vert_skinned,
     vert_static,
+    vert_particle,
     vert_ui,
     vert_sky,
     vert_debug,

@@ -338,7 +338,7 @@ fn handleCommand(
         .update_event => |event| {
             switch (event) {
                 .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                    entity.teleporter.active = true;
+                    entity.teleporter.state = .active;
                 },
                 .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                     entity.teleporter.charged = charged;
@@ -350,11 +350,18 @@ fn handleCommand(
                 .attack => |id| {
                     info.world.attack_events.appendAssumeCapacity(id);
                 },
-                .rocket_impact => |position| {
-                    Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
+                .effect => |effect| switch (effect) {
+                    .rocket_impact => |position| {
+                        Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
+                    },
+                    .lightning => |chain| if (info.world.getPtr(chain[0])) |center| {
+                        for (chain[1..]) |id| {
+                            const target = info.world.getPtr(id) orelse continue;
+                            Particle.spawnLightningArc(&info.world.particles, info.world.prng.random(), center.transform.position, target.transform.position);
+                        }
+                    },
                 },
                 .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {
-                    std.log.debug("interacting", .{});
                     entity.interacting = interact.interacted;
                 },
             }
@@ -374,8 +381,9 @@ fn handleCommand(
             if (entity.kind == .player) try info.world.setPlayerName(entity, player_name.name);
         },
         .set_currency => |set_currency| {
-            const entity = info.world.getPtr(set_currency.id) orelse return;
-            entity.currency = set_currency.amount;
+            if (info.world.getPtr(set_currency.id)) |entity| {
+                entity.currency = set_currency.amount;
+            }
         },
     }
 }

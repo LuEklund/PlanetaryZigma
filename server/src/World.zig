@@ -160,8 +160,9 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
         },
         .player => {
             entity.currency = 100;
-            entity.stats.init(100, 10, 10, 10, 10);
+            entity.stats.init(100, 10, 0.1, 10, 10);
         },
+        .lootbox => entity.currency = 10,
         else => {},
     }
     self.new_spawns.appendAssumeCapacity(id);

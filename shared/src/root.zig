@@ -44,7 +44,11 @@ pub const teleporter = struct {
     pub const charge_distance: f32 = 12;
 
     pub const State = struct {
-        active: bool = false,
+        state: enum(u32) {
+            idle,
+            active,
+            completed,
+        } = .idle,
         charged: f32 = 0,
         max_charge: f32 = 100,
     };

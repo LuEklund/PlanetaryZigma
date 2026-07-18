@@ -49,7 +49,6 @@ pub const Context = struct {
             .request_exit = false,
         };
 
-        // TODO: Move somewhere smarter when know how to move stages.
         try self.director.startStage(self.world, &self.physics);
     }
 
@@ -86,7 +85,6 @@ pub const Context = struct {
     fn reload(self: *Context, pre_reload: bool) !void {
         std.log.debug("before-1", .{});
         try self.physics.reload(pre_reload, self.world);
-        try self.network_manager.reload(pre_reload);
         std.log.debug("before-0", .{});
     }
 };

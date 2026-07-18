@@ -23,8 +23,9 @@ const check = @import("utils.zig").check;
 
 pub const default_mesh_name: []const u8 = "default";
 pub const explosion_particle_name: []const u8 = "explosion_particle";
+pub const lightning_particle_name: []const u8 = "lightning_particle";
 pub const max_textures = 256;
-const explosion_particle_texture_size: u32 = 32;
+const explosion_particle_texture_size: u32 = 64;
 
 pub const PipelineLayoutKind = enum { world, sky, ui };
 
@@ -272,7 +273,14 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     const default_model = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
     std.debug.assert(default_model == Model.Handle.default);
     _ = try self.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
-    _ = try self.createExplosionParticleResources(gpa);
+    try self.createParticleResources(gpa, explosion_particle_name, .{
+        .edge_color = .{ 255, 70, 12 },
+        .center_color = .{ 255, 235, 48 },
+    });
+    try self.createParticleResources(gpa, lightning_particle_name, .{
+        .edge_color = .{ 110, 160, 255 },
+        .center_color = .{ 255, 255, 255 },
+    });
     try self.registerEntityModels(gpa);
 
     return self;
@@ -407,7 +415,17 @@ pub fn createStaticMesh(self: *Resources, gpa: std.mem.Allocator, name: []const 
     return self.createStaticMeshWithTexture(gpa, name, vertices, indices, .blank);
 }
 
-pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator) !Model.Handle {
+pub const ParticleColorRamp = struct {
+    edge_color: [3]f32,
+    center_color: [3]f32,
+};
+
+pub fn createParticleResources(
+    self: *Resources,
+    gpa: std.mem.Allocator,
+    name: []const u8,
+    ramp: ParticleColorRamp,
+) !void {
     var texture = try Image.init(
         self.vma,
         self.device,
@@ -425,20 +443,6 @@ pub fn createExplosionParticleResources(self: *Resources, gpa: std.mem.Allocator
     errdefer texture.deinit(self.vma, self.device);
 
     var pixels: [explosion_particle_texture_size * explosion_particle_texture_size * 4]u8 = undefined;
-    fillExplosionParticleTexture(&pixels);
-    try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
-
-    const texture_handle = try self.registerImage(gpa, explosion_particle_name, texture, self.samplers.items[0]);
-    return self.createStaticMeshWithTexture(
-        gpa,
-        explosion_particle_name,
-        Mesh.explosion_particle.verticies,
-        Mesh.explosion_particle.indicies,
-        texture_handle,
-    );
-}
-
-fn fillExplosionParticleTexture(pixels: *[explosion_particle_texture_size * explosion_particle_texture_size * 4]u8) void {
     const size_f: f32 = @floatFromInt(explosion_particle_texture_size);
     const center = (size_f - 1.0) * 0.5;
     const radius = center;
@@ -453,12 +457,15 @@ fn fillExplosionParticleTexture(pixels: *[explosion_particle_texture_size * expl
             const alpha = core * core;
             const heat = @sqrt(core);
             const pixel_index = (y * explosion_particle_texture_size + x) * 4;
-            pixels[pixel_index + 0] = 255;
-            pixels[pixel_index + 1] = @intFromFloat(70.0 + 165.0 * heat);
-            pixels[pixel_index + 2] = @intFromFloat(12.0 + 36.0 * core);
+            for (0..3) |channel| {
+                pixels[pixel_index + channel] = @intFromFloat(ramp.edge_color[channel] + (ramp.center_color[channel] - ramp.edge_color[channel]) * heat);
+            }
             pixels[pixel_index + 3] = @intFromFloat(alpha * 255.0);
         }
     }
+    try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
+
+    _ = try self.registerImage(gpa, name, texture, self.samplers.items[0]);
 }
 
 fn createStaticMeshWithTexture(

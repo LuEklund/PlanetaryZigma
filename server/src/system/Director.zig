@@ -40,7 +40,7 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
     if (self.spawning and info.world.players.items.len != 0) {
         if (info.elapsed_time - self.last_salary >= 1.0) {
             self.last_salary = info.elapsed_time;
-            self.credits += self.salary_per_second;
+            self.credits += self.salary_per_second * 15;
         }
         const rand = info.world.prng.random();
         if (self.credits >= self.enemy_cost) {
@@ -72,7 +72,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = random.intRangeAtMost(u32, shared.planet_min_radius, 60);
+    world.planet_radius = random.intRangeAtMost(u32, 60, 80);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
     _ = try world.spawn(.{

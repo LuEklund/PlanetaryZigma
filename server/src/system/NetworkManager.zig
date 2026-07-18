@@ -65,13 +65,6 @@ pub fn deinit(self: *NetworkManager) !void {
     self.last_motions.deinit();
 }
 
-pub fn reload(self: *NetworkManager, pre_reload: bool) !void {
-    _ = self;
-    _ = pre_reload;
-    // Steam connection state lives in main.zig and survives reload; nothing to
-    // tear down or rebuild here.
-}
-
 fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
     return switch (packet) {
         .connect => |connect| connect: {
@@ -198,7 +191,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                         );
                         try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
                         if (info.world.getPtr(info.world.teleporter_id)) |entity| {
-                            if (entity.teleporter.active) {
+                            if (entity.teleporter.state == .active) {
                                 try client.sendCommand(writer, .{
                                     .update_event = .teleport_start,
                                 }, .reliable);

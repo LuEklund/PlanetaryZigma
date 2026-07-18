@@ -318,13 +318,17 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
             1, 0.5, 0.5, 1,
         },
+        .camera_up = up: {
+            const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
+            break :up .{ up[0], up[1], up[2], 0 };
+        },
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
     try renderWorldPass(self, cmd, current_frame, info);
     renderSkyPass(self, cmd, current_frame);
-    try renderParticlePass(self, cmd, info, camera_transform);
+    renderParticlePass(self, cmd, current_frame, info);
     try renderDebugPass(self, cmd, current_frame, info);
     renderUiPass(self, cmd, current_frame, width, height);
     ext.vkCmdEndRendering(cmd);
@@ -475,32 +479,45 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     self.bindWorldDescriptors(cmd, current_frame);
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, camera_transform: nz.Transform3D(f32)) !void {
+fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) void {
+    const explosion_texture_index = self.resources.textureHandle(Resources.explosion_particle_name).index();
+    const lightning_texture_index = self.resources.textureHandle(Resources.lightning_particle_name).index();
+
+    const gpu_particles: [*]FrameData.GPUParticle = @ptrCast(@alignCast(current_frame.particle_buffer.info.pMappedData));
+    const particle_count: u32 = @intCast(@min(info.world.particles.items.len, FrameData.max_particles));
+    for (info.world.particles.items[0..particle_count], gpu_particles[0..particle_count]) |particle, *gpu_particle| {
+        const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
+        gpu_particle.* = .{
+            .position = particle.position,
+            .scale = particle.scale * lifetime_fraction,
+            .texture_index = @intCast(switch (particle.kind) {
+                .explosion => explosion_texture_index,
+                .lightning => lightning_texture_index,
+            }),
+            .alpha = switch (particle.kind) {
+                .explosion => 1,
+                .lightning => 0.45,
+            },
+        };
+    }
+    if (particle_count == 0) return;
+
     var color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
-    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_static));
+    bindVertexShader(cmd, self.resources.shaders.getPtr(.vert_particle));
     bindFragmentShader(cmd, self.resources.shaders.getPtr(.frag_particle));
-    {
-        const model = self.resources.getModelPtr(self.resources.modelHandle(Resources.explosion_particle_name));
-        if (!model.isEmpty()) {
-            for (info.world.particles.items) |particle| {
-                const lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime);
-                const scale = particle.scale * lifetime_fraction;
-                var transform: nz.Transform3D(f32) = .{ .position = particle.position };
-                const camera_delta = camera_transform.position - particle.position;
-                const camera_distance = nz.vec.length(camera_delta);
-                const card_forward: nz.Vec3(f32) = if (camera_distance > 0.001)
-                    nz.vec.scale(camera_delta, 1.0 / camera_distance)
-                else
-                    .{ 0, 0, -1 };
-                const camera_up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
-                transform.rotation = nz.Quat(f32).lookAt(card_forward, camera_up);
-                transform.scale = @splat(scale);
-                try drawStatic(self, cmd, model, transform.toMat4x4());
-            }
-        }
-    }
+
+    const push: Shader.WorldPushConstant = .{
+        .model_matrix = nz.Mat4x4(f32).identity.d,
+        .vertex_buffer_address = current_frame.particle_buffer.getGPUAddress(),
+        .joint_matrices_address = 0,
+        .texture_index = 0,
+    };
+    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
+    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
+    c.vkCmdDraw(cmd, 6, particle_count, 0, 0);
+
     color_blend_enables = c.VK_FALSE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
 }

@@ -4,6 +4,9 @@ const nz = shared.numz;
 
 const Particle = @This();
 
+pub const Kind = enum { explosion, lightning };
+
+kind: Kind,
 position: nz.Vec3(f32),
 velocity: nz.Vec3(f32),
 lifetime: f32,
@@ -53,6 +56,7 @@ pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, 
     for (center_particles) |particle| {
         const tangent_offset = particle.offset - nz.vec.scale(surface_up, nz.vec.dot(particle.offset, surface_up));
         append(list, .{
+            .kind = .explosion,
             .position = spawn_position + tangent_offset,
             .velocity = particle.velocity + nz.vec.scale(surface_up, 1.4),
             .lifetime = particle.lifetime,
@@ -70,6 +74,7 @@ pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, 
             const speed = 12.0 + random.float(f32) * 7.0 + burst_f * 4.0;
             const scale = (0.3 + random.float(f32) * 0.22) * (1.0 - burst_f * 0.15);
             append(list, .{
+                .kind = .explosion,
                 .position = spawn_position + nz.vec.scale(direction, burst_f * 0.35 + spark_f * 0.01),
                 .velocity = nz.vec.scale(direction, speed),
                 .lifetime = lifetime,
@@ -77,6 +82,42 @@ pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, 
                 .scale = scale,
             });
         }
+    }
+}
+
+pub fn spawnLightningArc(list: *std.ArrayList(Particle), random: std.Random, from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
+    const segment = to - from;
+    const length = nz.vec.length(segment);
+    if (length < 0.001) return;
+    const direction = nz.vec.scale(segment, 1.0 / length);
+    const lifetime = 0.22 + random.float(f32) * 0.08;
+
+    const node_count: usize = @intFromFloat(@max(2, @ceil(length / 1.5)));
+    var previous_node = from;
+    for (1..node_count + 1) |node_index| {
+        const t = @as(f32, @floatFromInt(node_index)) / @as(f32, @floatFromInt(node_count));
+        var node = from + nz.vec.scale(segment, t);
+        if (node_index < node_count) {
+            const raw = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            const perpendicular = raw - nz.vec.scale(direction, nz.vec.dot(raw, direction));
+            node += nz.vec.scale(perpendicular, 0.6);
+        }
+
+        const piece = node - previous_node;
+        const piece_length = nz.vec.length(piece);
+        const step_count: usize = @intFromFloat(@max(1, @ceil(piece_length / 0.12)));
+        for (0..step_count) |step_index| {
+            const step_t = @as(f32, @floatFromInt(step_index)) / @as(f32, @floatFromInt(step_count));
+            append(list, .{
+                .kind = .lightning,
+                .position = previous_node + nz.vec.scale(piece, step_t),
+                .velocity = .{ 0, 0, 0 },
+                .lifetime = lifetime,
+                .max_lifetime = lifetime,
+                .scale = 0.55 + random.float(f32) * 0.15,
+            });
+        }
+        previous_node = node;
     }
 }
 
