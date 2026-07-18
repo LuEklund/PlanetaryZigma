@@ -75,8 +75,15 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             if (info.world.getPtr(player.interacting)) |entity| {
                 switch (entity.kind) {
                     .lootbox => {
-                        info.world.queueDespawn(entity.id);
-                        try Director.spawnItem(info.world, .rocket, entity.transform.position);
+                        if (player.currency >= entity.currency) {
+                            info.world.queueDespawn(entity.id);
+
+                            const random = info.world.prng.random();
+                            const item_kind = random.enumValue(shared.Item.Kind);
+                            try Director.spawnItem(info.world, item_kind, entity.transform.position);
+                            player.currency -= entity.currency;
+                            info.world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
+                        }
                     },
                     .teleporter => {
                         const teleporter = &entity.teleporter;
@@ -175,4 +182,3 @@ fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: n
     if (result.hit) return Physics.toVec(result.point);
     return ray_start + translation;
 }
-

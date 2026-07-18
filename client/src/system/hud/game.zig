@@ -199,17 +199,39 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
         }
 
         if (player.interacting != .none) {
-            ui.add(
-                null,
-                .{
-                    .name = "interacting",
-                    .size = .{ .fixed = .{ .heigth = 32, .width = 32 } },
-                    .text = .{ .data = "E" },
-                    .child_anchor = .{ .x = .center, .y = .center },
-                    .color = .new(0, 0, 0, 0.7),
-                    .offset = .{ .left = ui.screen_width / 2 + 32, .top = ui.screen_heigth / 2 + 32 },
-                },
-            );
+            if (info.world.getPtr(player.interacting)) |entity| {
+                ui.add(
+                    null,
+                    .{
+                        .name = "interacting",
+                        .size = .{ .fixed = .{ .heigth = 32, .width = 32 } },
+                        .color = .new(0, 0, 0, 0.7),
+                        .offset = .{ .left = ui.screen_width / 2 + 32, .top = ui.screen_heigth / 2 + 32 },
+                        .gap = 5,
+                    },
+                );
+                ui.add(
+                    "interacting",
+                    .{
+                        .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
+                        .text = .{ .data = "E" },
+                        .child_anchor = .{ .x = .center, .y = .center },
+                    },
+                );
+                if (entity.kind == .lootbox) {
+                    const cost_text = ui.print("${d}", .{entity.currency});
+                    ui.add(
+                        "interacting",
+                        .{
+                            .size = .{ .fixed = ui.textSize(cost_text, 32) },
+                            .text = .{ .data = cost_text, .color = .new(1, 1, 0, 1) },
+                            .child_anchor = .{ .x = .center, .y = .center },
+
+                            .color = .new(0, 0, 0, 0.5),
+                        },
+                    );
+                }
+            }
         }
         if (info.world.teleporter_bosses.items.len > 0) {
             var total_boss_health: f32 = 0;
