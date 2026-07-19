@@ -71,6 +71,7 @@ pub const Entity = struct {
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     stats: shared.Stats = .init(.initFill(0)),
+    regen_carry: f32 = 0,
 
     last_attack: f32 = 0,
 
@@ -198,25 +199,27 @@ pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8
     return item_count;
 }
 
-pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
-    if (!entity.kind.hasHealth()) return false;
-    if (entity.flags.invinsible) return false;
+pub const HealthChange = enum { ignored, changed, killed };
+
+pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
+    if (entity.flags.invinsible) return .ignored;
     return self.addHealth(entity, -amount, source);
 }
 
-//TODO: bool the right kind of return?
-pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
-    if (!entity.kind.hasHealth()) return false;
+pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
+    if (!entity.kind.hasHealth()) return .ignored;
+    const before = entity.stats.current.get(.health);
+    if (before <= 0) return .ignored;
     const current = entity.stats.addCurrent(.health, amount);
+    if (current == before) return .ignored;
     if (current <= 0) self.queueDespawn(entity.id);
-    if (current <= 0 or entity.stats.max.get(.health) <= current) return true;
     self.client_updates.appendAssumeCapacity(.{ .stat = .{
         .id = entity.id,
         .stat_kind = .health,
         .source = if (source) |source_entity| source_entity.id else .none,
         .amount = .{ .set_current = @floatCast(current) },
     } });
-    return true;
+    return if (current <= 0) .killed else .changed;
 }
 
 pub fn flush(self: *World, physics: *Physics) !void {
