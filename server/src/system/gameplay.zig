@@ -48,9 +48,9 @@ pub fn updateEnemies(info: *const Info) !void {
         }
 
         const forward_dir = enemy.transform.forward();
-        const speed = enemy.stats.get(.speed).current;
-        const damage = enemy.stats.get(.damage).current;
-        const range = enemy.stats.get(.range).current;
+        const speed = enemy.stats.current.get(.speed);
+        const damage = enemy.stats.current.get(.damage);
+        const range = enemy.stats.current.get(.range);
         switch (enemy.kind.enemy) {
             .tubloida => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
@@ -71,7 +71,7 @@ pub fn updateEnemies(info: *const Info) !void {
                         .velocity = muzzle_velocity,
                         .lifetime = 2,
                     });
-                    bullet.stats.setCurrent(.damage, damage);
+                    bullet.stats.current.set(.damage, damage);
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
@@ -128,12 +128,12 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
 
         switch (projectile_kind) {
             .cube => {
-                if (info.world.removeHealth(hit_entity, entity.stats.get(.damage).current, owner_entity)) {
-                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.get(.damage).current);
+                if (info.world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity)) {
+                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.current.get(.damage));
                 }
             },
             .rocket => {
-                damageRocketImpact(info, owner_entity, impact_position, entity.stats.get(.damage).current);
+                damageRocketImpact(info, owner_entity, impact_position, entity.stats.current.get(.damage));
                 info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
             },
         }
@@ -143,7 +143,8 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
 
 fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {
     const lightning_jumps = owner_entity.inventory.get(.lightning);
-    const lightning_chance = shared.Item.lightning.attributes().lightning_chance;
+    // ponytail: flat chance on purpose; stacks buy jumps, not proc rate.
+    const lightning_chance = shared.Item.lightning.attributes().get(.lightning_chance);
     if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;
@@ -263,7 +264,7 @@ pub fn updateLifetimes(info: *const Info) void {
 pub fn playerRegen(info: *const Info) void {
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
-        const regen = player.stats.get(.regen).current;
+        const regen = player.stats.current.get(.regen);
         _ = info.world.addHealth(player, info.delta_time * regen, null);
     }
 }

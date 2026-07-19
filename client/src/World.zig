@@ -42,7 +42,7 @@ pub const Entity = struct {
     player_name: []const u8 = "",
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
-    stats: shared.Stats = .{},
+    stats: shared.Stats = .init(.initFill(0)),
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
     update_motion: ?shared.net.UpdateMotion = null,
@@ -238,12 +238,12 @@ pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.Spa
 
 pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) void {
     if (command.stat_kind == .health and command.source != .none and command.amount == .set_current) {
-        const delta = entity.stats.get(.health).current - command.amount.set_current;
+        const delta = entity.stats.current.get(.health) - command.amount.set_current;
         self.addDamagePopup(entity, command.source, delta);
     }
     switch (command.amount) {
-        .set_current => |value| entity.stats.setCurrent(command.stat_kind, value),
-        .set_max => |value| entity.stats.setMax(command.stat_kind, value),
+        .set_current => |value| entity.stats.current.set(command.stat_kind, value),
+        .set_max => |value| entity.stats.max.set(command.stat_kind, value),
     }
 }
 

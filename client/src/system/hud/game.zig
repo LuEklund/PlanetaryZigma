@@ -36,16 +36,17 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
         addEnemyHealthBars(info, ui);
         addDamagePopups(info, ui);
 
-        const health = player.stats.get(.health);
+        const health_current = player.stats.current.get(.health);
+        const health_max = player.stats.max.get(.health);
         const healthbar_heigth: f32 = 50;
         addHealthBar(ui, .{
             .left = 10,
             .top = ui.screen_heigth - healthbar_heigth - 10,
             .width = 200,
             .heigth = healthbar_heigth,
-            .fraction = health.current / health.max,
+            .fraction = health_current / health_max,
             .fill_color = .new(0, 1, 0, 1),
-            .text = .{ .data = ui.print("{d:.0} / {d}", .{ health.current, health.max }), .size = 40 },
+            .text = .{ .data = ui.print("{d:.0} / {d}", .{ health_current, health_max }), .size = 40 },
         });
 
         const inventory_width: f32 = ui.screen_width * 0.6;
@@ -100,10 +101,10 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             if (ui.isHot(ui.print("{t}", .{item_kind}))) {
                 const attributes = item_kind.attributes();
                 var tool_tip_text: []const u8 = "";
-                inline for (std.meta.fields(shared.Item.Attribute)) |field| {
-                    const value = @field(attributes, field.name);
+                for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
+                    const value = attributes.get(stat_kind);
                     if (value != 0) {
-                        tool_tip_text = ui.print("{s}{s}: {d}", .{ tool_tip_text, field.name, value });
+                        tool_tip_text = ui.print("{s}{t}: {d}", .{ tool_tip_text, stat_kind, value });
                     }
                 }
                 ui.add(
@@ -185,10 +186,9 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 // .child_anchor = .{ .x = .end, .y = .start },
                 .gap = 10,
             });
-            for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
-                const stat = player.stats.get(stat_kind);
+            for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
                 ui.add("stats", .{
-                    .text = .{ .data = ui.print("{t} : {d:.2}", .{ stat_kind, stat.current }) },
+                    .text = .{ .data = ui.print("{t} : {d:.2}", .{ stat_kind, player.stats.current.get(stat_kind) }) },
                     .color = .grey,
                     .size = .{ .percent = .{
                         .heigth = 0.2,
@@ -238,9 +238,8 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             var total_boss_max_health: f32 = 0;
             for (info.world.teleporter_bosses.items) |boss_id| {
                 const boss = info.world.getPtr(boss_id) orelse continue;
-                const boss_health = boss.stats.get(.health);
-                total_boss_health += boss_health.current;
-                total_boss_max_health += boss_health.max;
+                total_boss_health += boss.stats.current.get(.health);
+                total_boss_max_health += boss.stats.max.get(.health);
             }
             const boss_healthbar_width: f32 = (ui.screen_width * 0.9);
             addHealthBar(ui, .{
@@ -289,8 +288,9 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (info.world.entities.values()) |*entity| {
         if (entity.kind != .enemy) continue;
-        const health = entity.stats.get(.health);
-        if (health.max <= 0 or health.current <= 0 or health.current >= health.max) continue;
+        const health_current = entity.stats.current.get(.health);
+        const health_max = entity.stats.max.get(.health);
+        if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
 
         const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
@@ -302,7 +302,7 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
             .top = screen[1] - bar_heigth,
             .width = bar_width,
             .heigth = bar_heigth,
-            .fraction = health.current / health.max,
+            .fraction = health_current / health_max,
             .fill_color = .new(0.9, 0.2, 0.15, 0.9),
         });
     }

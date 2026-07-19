@@ -1,6 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
 const Item = @import("inventory.zig").Item;
+const Stats = @import("Stats.zig");
 
 pub const Id = enum(u32) {
     none = 0,
@@ -74,23 +75,13 @@ pub fn modelSpec(kind: Kind) ModelSpec {
     return spec(kind).model;
 }
 
-//TODO: should be from stats
-pub const StatsSpec = struct {
-    health: f32,
-    speed: f32,
-    damage: f32,
-    attack_speed: f32,
-    range: f32,
-    regen: f32 = 0,
-};
-
 pub const Spec = struct {
     collider: ?ColliderShape,
     model: ModelSpec,
     icon: ?[]const u8 = null,
     has_health: bool,
     expects_model: bool,
-    stats: ?StatsSpec = null,
+    stats: ?Stats.Values = null,
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
@@ -120,7 +111,7 @@ pub fn spec(kind: Kind) Spec {
             },
             .has_health = true,
             .expects_model = true,
-            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 },
+            .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
             .currency = 100,
         },
         .planet => .{
@@ -161,7 +152,7 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 },
+                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 }),
                 .currency = 5,
             },
             .tubloida => .{
@@ -169,7 +160,7 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 },
+                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
             },
             .bloorpLord => .{
@@ -181,7 +172,7 @@ pub fn spec(kind: Kind) Spec {
                 } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 },
+                .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
                 .currency = 100,
             },
         },
