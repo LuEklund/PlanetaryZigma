@@ -69,7 +69,7 @@ pub fn update(
     });
     var request: Request = .none;
     if (scene == .menu) {
-        request = try main_menu.update(network_manager, ui, hud);
+        request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
         try game_hud.update(info, network_manager, ui, resources, options);

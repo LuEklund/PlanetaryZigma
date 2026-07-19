@@ -25,6 +25,7 @@ host_state: HostState = .none,
 host_intent: HostIntent = .none,
 steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
+dev_mode: bool = false,
 
 pub const HostState = enum(u8) {
     none,
@@ -97,7 +98,8 @@ pub fn returnToMainMenu(self: *NetworkManager) !void {
     self.host_intent = .none;
 }
 
-pub fn requestHost(self: *NetworkManager, intent: HostIntent) void {
+pub fn requestHost(self: *NetworkManager, intent: HostIntent, dev_mode: bool) void {
+    self.dev_mode = dev_mode;
     if (intent == .multiplayer and !self.steam_logged_on) {
         self.host_state = .steam_offline;
         self.host_intent = intent;
@@ -144,7 +146,9 @@ fn spawnHostServer(self: *NetworkManager) void {
     var host_steam_id_buf: [20]u8 = undefined;
     const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
     const argv: []const []const u8 = if (self.host_intent == .singleplayer)
-        &.{ host_server.exe_path, "--local-singleplayer" }
+        if (self.dev_mode) &.{ host_server.exe_path, "--dev", "--local-singleplayer" } else &.{ host_server.exe_path, "--local-singleplayer" }
+    else if (self.dev_mode)
+        &.{ host_server.exe_path, "--dev", host_steam_id_text }
     else
         &.{ host_server.exe_path, host_steam_id_text };
     self.server_process = std.process.spawn(self.io, .{
@@ -269,6 +273,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
         var input = info.world.controller.input_map;
         if (info.world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
+        info.world.controller.input_map.dev_command = .none;
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
     if (info.world.getPtr(info.world.player_id)) |player| {

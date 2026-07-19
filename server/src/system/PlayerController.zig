@@ -27,17 +27,6 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const planet_up = nz.vec.normalize(transform.position);
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
-        if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
-            std.log.debug("pres", .{});
-            player.last_attack = info.elapsed_time;
-            _ = info.world.giveItem(player, .rocket, 1);
-            _ = info.world.giveItem(player, .lightning, 1);
-            // _ = info.world.spawn(.{
-            //     .kind = .{ .enemy = .tubloida },
-            //     .transform = .{ .position = player.transform.position },
-            //     .last_attack = info.elapsed_time,
-            // });
-        }
 
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);

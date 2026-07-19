@@ -67,8 +67,8 @@ pub const Bindings = struct {
     interact: Binding = .{ .key = .e },
     attack: Binding = .{ .mouse = .left },
     aim: Binding = .{ .mouse = .right },
-    free_camera: Binding = .{ .key = .f1 },
-    debug_colliders: Binding = .{ .key = .f2 },
+    free_camera: Binding = .{ .key = .f },
+    debug_colliders: Binding = .{ .key = .g },
 
     pub fn get(self: *const Bindings, action: Action) Binding {
         return switch (action) {
@@ -148,7 +148,21 @@ pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
                     return;
                 }
             }
-            if (key.sym == .k) self.input_map.keys.k = pressed;
+            if (pressed) switch (key.sym) {
+                .f1 => self.input_map.dev_command = .f1,
+                .f2 => self.input_map.dev_command = .f2,
+                .f3 => self.input_map.dev_command = .f3,
+                .f4 => self.input_map.dev_command = .f4,
+                .f5 => self.input_map.dev_command = .f5,
+                .f6 => self.input_map.dev_command = .f6,
+                .f7 => self.input_map.dev_command = .f7,
+                .f8 => self.input_map.dev_command = .f8,
+                .f9 => self.input_map.dev_command = .f9,
+                .f10 => self.input_map.dev_command = .f10,
+                .f11 => self.input_map.dev_command = .f11,
+                .f12 => self.input_map.dev_command = .f12,
+                else => {},
+            };
             for (bindable_actions) |action| {
                 if (self.bindings.get(action).eql(.{ .key = key.sym })) {
                     self.applyAction(action, pressed);

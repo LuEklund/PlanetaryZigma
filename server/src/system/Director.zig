@@ -18,15 +18,9 @@ const StageItemSpawn = struct {
     count: u32,
 };
 
-const stage_item_spawns = [_]StageItemSpawn{
-    .{ .kind = .pickaxe, .count = 5 },
-    .{ .kind = .energy_drink, .count = 5 },
-    .{ .kind = .gun, .count = 5 },
-    .{ .kind = .rocket, .count = 5 },
-    .{ .kind = .oxygen_tank, .count = 5 },
-};
-
 const item_surface_offset: f32 = 1.2;
+const dev_lootbox_min_distance: f32 = 5;
+const dev_lootbox_max_distance: f32 = 10;
 
 pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !void {
     const tracy_scope = tracy.zone(@src());
@@ -35,6 +29,12 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
     if (info.world.next_stage_requested) {
         info.world.next_stage_requested = false;
         try self.startStage(info.world, physics);
+    }
+
+    if (info.world.toggle_spawning_requested) {
+        info.world.toggle_spawning_requested = false;
+        self.spawning = !self.spawning;
+        std.log.debug("dev: enemy spawning {s}", .{if (self.spawning) "on" else "off"});
     }
 
     if (self.spawning and info.world.players.items.len != 0) {
@@ -72,7 +72,10 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = random.intRangeAtMost(u32, 60, 80);
+    world.planet_radius = if (world.dev_mode)
+        random.intRangeAtMost(u32, shared.planet_dev_radius_min, shared.planet_dev_radius_max)
+    else
+        random.intRangeAtMost(u32, 60, 80);
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
     _ = try world.spawn(.{
@@ -109,16 +112,12 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         }
     }
 
-    //NOTE: TEST ITEMS
-    // for (stage_item_spawns) |spawn_spec| {
-    //     const random_spawn_count = if (spawn_spec.count > 0) spawn_spec.count - 1 else 0;
-    //     for (0..random_spawn_count) |_| {
-    //         // const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    //         try spawnItem(world, spawn_spec.kind, .{ 0, 1, 0 });
-    //     }
-    // }
+    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
     for (0..25) |_| {
-        const vector_direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        const vector_direction = if (world.dev_mode)
+            nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, @floatFromInt(world.planet_radius), dev_lootbox_min_distance, dev_lootbox_max_distance, random))
+        else
+            nz.vec.randomUnitVector(nz.Vec3(f32), random);
         const transform = surfaceTransform(world, vector_direction);
         _ = try world.spawn(.{
             .kind = .lootbox,
@@ -126,7 +125,6 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         });
     }
 
-    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
     const teleporter = try world.spawn(.{
         .kind = .teleporter,
         .transform = .{ .position = teleporter_position },

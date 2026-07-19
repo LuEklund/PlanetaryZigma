@@ -24,11 +24,16 @@ pub fn main(init: std.process.Init) !void {
     defer args_iterator.deinit();
     _ = args_iterator.next();
     var host_steam_id: u64 = 0;
+    var dev_mode = false;
     var server_mode: shared.SteamNet.Server.Mode = .steam_p2p;
     while (args_iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "--local-singleplayer")) {
             server_mode = .local_singleplayer;
             host_steam_id = 0;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--dev")) {
+            dev_mode = true;
             continue;
         }
         host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
@@ -46,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
     defer watcher.deinit(io);
     try watcher.load(io);
 
-    var world: World = try .init(gpa);
+    var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
     var system_context: system.Context = undefined;
