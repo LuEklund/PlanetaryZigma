@@ -28,6 +28,16 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
 
+        switch (input.dev_command) {
+            .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
+            .f2 => {
+                _ = info.world.giveItem(player, .rocket, 1);
+                _ = info.world.giveItem(player, .lightning, 1);
+            },
+            .f3 => info.world.toggle_spawning_requested = true,
+            else => {},
+        }
+
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);

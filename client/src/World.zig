@@ -50,6 +50,7 @@ pub const Entity = struct {
     position_error: nz.Vec3(f32) = @splat(0),
     animation_state: ?shared.entity.State = null,
     spawn_anim: f32 = 0,
+    death_anim: f32 = 0,
     model: Model.Handle = .default,
 
     transform: nz.Transform3D(f32) = .{},
@@ -132,7 +133,7 @@ pub fn clearPendingSpawns(self: *World) void {
     self.pending_spawn.clearRetainingCapacity();
 }
 
-pub fn flush(self: *World) !void {
+pub fn flush(self: *World, delta_time: f32) !void {
     defer self.clearPendingSpawns();
 
     for (self.pending_spawn.items) |entity_info| {
@@ -202,7 +203,20 @@ pub fn flush(self: *World) !void {
     }
     self.pending_inventory.clearRetainingCapacity();
 
-    for (self.pending_despawn.items) |id| {
+    var despawn_index: usize = 0;
+    while (despawn_index < self.pending_despawn.items.len) {
+        const id = self.pending_despawn.items[despawn_index];
+        if (self.getPtr(id)) |entity| {
+            const death_duration = shared.entity.spec(entity.kind).death_duration;
+            if (death_duration > 0) {
+                entity.death_anim = @min(entity.death_anim + delta_time / death_duration, 1.0);
+                if (entity.death_anim < 1.0) {
+                    despawn_index += 1;
+                    continue;
+                }
+            }
+        }
+        _ = self.pending_despawn.swapRemove(despawn_index);
         if (self.getPtr(id) == null) continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
@@ -211,7 +225,6 @@ pub fn flush(self: *World) !void {
         self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
         _ = self.despawn(id);
     }
-    self.pending_despawn.clearRetainingCapacity();
 }
 
 pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.SpawnEntity) !void {
