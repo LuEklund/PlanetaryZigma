@@ -68,7 +68,7 @@ pub fn updateEnemies(info: *const Info) !void {
                             .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
                             .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
                         },
-                        .velocity = muzzle_velocity,
+                        .replicated_velocity = muzzle_velocity,
                         .lifetime = 2,
                     });
                     bullet.stats.current.set(.damage, damage);
@@ -80,7 +80,7 @@ pub fn updateEnemies(info: *const Info) !void {
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
-                    if (!info.world.removeHealth(player, damage, enemy)) std.log.debug("did not take damage", .{});
+                    if (info.world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
@@ -105,8 +105,8 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
-        entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.position += nz.vec.scale(entity.replicated_velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 
         const ray_hit = Physics.c.b3World_CastRayClosest(
@@ -128,7 +128,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
 
         switch (projectile_kind) {
             .cube => {
-                if (info.world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity)) {
+                if (info.world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity) != .ignored) {
                     tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.current.get(.damage));
                 }
             },
@@ -264,7 +264,10 @@ pub fn updateLifetimes(info: *const Info) void {
 pub fn playerRegen(info: *const Info) void {
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
-        const regen = player.stats.current.get(.regen);
-        _ = info.world.addHealth(player, info.delta_time * regen, null);
+        player.regen_carry += info.delta_time * player.stats.current.get(.regen);
+        if (player.regen_carry < 1) continue;
+        const whole_points = @floor(player.regen_carry);
+        player.regen_carry -= whole_points;
+        _ = info.world.addHealth(player, whole_points, null);
     }
 }

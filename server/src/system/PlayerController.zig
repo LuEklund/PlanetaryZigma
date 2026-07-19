@@ -33,9 +33,31 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 _ = info.world.giveItem(player, .rocket, 1);
                 _ = info.world.giveItem(player, .lightning, 1);
             },
-            .f3 => info.world.toggle_spawning_requested = true,
+            .f3 => {
+                info.world.toggle_spawning_requested = true;
+                for (info.world.entities.values()) |*entity| {
+                    if (entity.kind == .enemy) info.world.queueDespawn(entity.id);
+                }
+            },
+            .f4 => if (info.world.getPtr(info.world.teleporter_id)) |teleporter| {
+                const teleporter_up = shared.planetUp(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                _ = info.world.spawn(.{
+                    .kind = .{ .item = .lightning },
+                    .transform = .{
+                        .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
+                        .rotation = teleporter.transform.rotation,
+                    },
+                    .spawn_impulse = shared.planetSurfaceLaunch(
+                        teleporter.transform.position,
+                        nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random()),
+                        system.World.item_launch_angle,
+                        system.World.item_throw_speed,
+                    ),
+                }) catch {};
+            },
             else => {},
         }
+        input.dev_command = .none;
 
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
@@ -78,7 +100,15 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             const random = info.world.prng.random();
                             var item_kind = random.enumValue(shared.Item);
                             if (item_kind == .lightning) item_kind = .oxygen_tank;
-                            try info.world.spawnItem(item_kind, entity.transform.position);
+                            const chest_up = shared.planetUp(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                            _ = try info.world.spawn(.{
+                                .kind = .{ .item = item_kind },
+                                .transform = .{
+                                    .position = entity.transform.position + nz.vec.scale(chest_up, system.World.spawn_hover),
+                                    .rotation = entity.transform.rotation,
+                                },
+                                .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
+                            });
                             player.currency -= entity.currency;
                             info.world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
                         }
@@ -89,7 +119,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planetSurfacePointNear(entity.transform.position, @floatFromInt(info.world.planet_radius), 15, 25, info.world.prng.random());
+                            const boss_surface = shared.planetSurfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorpLord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
@@ -162,7 +192,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                     .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
                     .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
                 },
-                .velocity = projectile_velocity,
+                .replicated_velocity = projectile_velocity,
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
             });
             projectile.stats.current.set(.damage, player.stats.current.get(.damage));
@@ -173,7 +203,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
 fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
-    const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth + 1.5);
+    const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
     const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
     if (result.hit) return Physics.toVec(result.point);

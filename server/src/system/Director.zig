@@ -45,7 +45,7 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
         if (self.credits >= self.enemy_cost) {
             const player_index = rand.uintLessThan(usize, info.world.players.items.len);
             if (info.world.getPtr(info.world.players.items[player_index])) |player| {
-                const radius_float: f32 = @floatFromInt(info.world.planet_radius);
+                const radius_float = info.world.planet_radius;
                 const max_distance = radius_float * (std.math.pi / 2.0);
                 const min_distance = @min(15.0, max_distance * 0.5);
                 const surface = shared.planetSurfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
@@ -71,12 +71,12 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
-    world.planet_radius = if (world.dev_mode)
+    world.planet_radius = @floatFromInt(if (world.dev_mode)
         random.intRangeAtMost(u32, shared.planet_dev_radius_min, shared.planet_dev_radius_max)
     else
-        random.intRangeAtMost(u32, 60, 80);
+        random.intRangeAtMost(u32, 60, 80));
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
-    const planet: shared.Planet(.logical) = try .init(world.gpa, world.planet_radius);
+    const planet: shared.Planet(.logical) = try .init(world.gpa, @intFromFloat(world.planet_radius));
     _ = try world.spawn(.{
         .kind = .planet,
         .transform = .{},
@@ -93,12 +93,12 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     });
     try world.flush(physics);
 
-    const player_spawn_surface = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
+    const player_spawn_surface = shared.planetSurfacePoint(.{ 0, 1, 0 }, world.planet_radius);
     const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
     for (world.entities.values()) |*player| {
         if (player.kind != .player) continue;
         player.transform.position = player_spawn_position;
-        player.velocity = .{ 0, 0, 0 };
+        player.replicated_velocity = .{ 0, 0, 0 };
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
             player.stats.current.set(.health, player.stats.max.get(.health));
@@ -111,13 +111,13 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         }
     }
 
-    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, @floatFromInt(world.planet_radius));
+    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, world.planet_radius);
     for (0..25) |_| {
         const vector_direction = if (world.dev_mode)
-            nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, @floatFromInt(world.planet_radius), dev_lootbox_min_distance, dev_lootbox_max_distance, random))
+            nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, world.planet_radius, dev_lootbox_min_distance, dev_lootbox_max_distance, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        const transform = world.surfaceTransform(vector_direction);
+        const transform = shared.planetSurfaceTransform(vector_direction, world.planet_radius, system.World.spawn_hover);
         _ = try world.spawn(.{
             .kind = .lootbox,
             .transform = transform,

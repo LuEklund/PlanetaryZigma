@@ -42,7 +42,17 @@ pub const ColliderShape = union(enum) {
     };
 };
 
-pub fn colliderShape(kind: Kind) ?ColliderShape {
+pub const MotionType = enum { static, kinematic, dynamic };
+
+pub const ObjectLayer = enum { non_moving, moving, planet_only };
+
+pub const Collider = struct {
+    shape: ColliderShape,
+    motion: MotionType,
+    layer: ObjectLayer,
+};
+
+pub fn collider(kind: Kind) ?Collider {
     return spec(kind).collider;
 }
 
@@ -76,7 +86,7 @@ pub fn modelSpec(kind: Kind) ModelSpec {
 }
 
 pub const Spec = struct {
-    collider: ?ColliderShape,
+    collider: ?Collider,
     model: ModelSpec,
     icon: ?[]const u8 = null,
     has_health: bool,
@@ -96,7 +106,7 @@ pub fn spec(kind: Kind) Spec {
             .expects_model = false,
         },
         .player => .{
-            .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+            .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
                 .key = "objects/BenBozo.glb",
                 .offset = player_model_offset,
@@ -121,13 +131,13 @@ pub fn spec(kind: Kind) Spec {
             .expects_model = true,
         },
         .teleporter => .{
-            .collider = .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
+            .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
             .model = .{ .key = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = false,
         },
         .lootbox => .{
-            .collider = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+            .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .static, .layer = .moving },
             .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
@@ -148,7 +158,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
-                .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
                 .has_health = true,
                 .expects_model = true,
@@ -156,7 +166,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 5,
             },
             .tubloida => .{
-                .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
                 .has_health = true,
                 .expects_model = true,
@@ -164,7 +174,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 7,
             },
             .bloorpLord => .{
-                .collider = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .key = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
                     .idle = "Idle",
                     .walk = "Walking",
@@ -177,7 +187,7 @@ pub fn spec(kind: Kind) Spec {
             },
         },
         .item => |item_kind| .{
-            .collider = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+            .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
             .model = .{ .key = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
             .icon = Item.spec(item_kind).icon,
             .has_health = false,
