@@ -12,6 +12,8 @@ pub const planetSdf = @import("planet.zig").sdf;
 pub const planetUp = @import("planet.zig").up;
 pub const planetSurfacePoint = @import("planet.zig").surfacePoint;
 pub const planetSurfacePointNear = @import("planet.zig").surfacePointNear;
+pub const planetSurfaceTransform = @import("planet.zig").surfaceTransform;
+pub const planetSurfaceLaunch = @import("planet.zig").surfaceLaunch;
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 

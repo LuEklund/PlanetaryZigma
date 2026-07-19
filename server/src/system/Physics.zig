@@ -20,21 +20,16 @@ gpa: std.mem.Allocator,
 io: std.Io,
 world: c.b3WorldId,
 
-pub const MotionType = enum { static, kinematic, dynamic };
+pub const MotionType = shared.entity.MotionType;
+pub const ObjectLayer = shared.entity.ObjectLayer;
 
-pub const ObjectLayer = enum {
-    non_moving,
-    moving,
-    planet_only,
-
-    fn filter(self: ObjectLayer) c.b3Filter {
-        return switch (self) {
-            .non_moving => .{ .categoryBits = Category.non_moving, .maskBits = Category.moving | Category.planet_only, .groupIndex = 0 },
-            .moving => .{ .categoryBits = Category.moving, .maskBits = Category.non_moving | Category.moving, .groupIndex = 0 },
-            .planet_only => .{ .categoryBits = Category.planet_only, .maskBits = Category.non_moving, .groupIndex = 0 },
-        };
-    }
-};
+fn layerFilter(layer: ObjectLayer) c.b3Filter {
+    return switch (layer) {
+        .non_moving => .{ .categoryBits = Category.non_moving, .maskBits = Category.moving | Category.planet_only, .groupIndex = 0 },
+        .moving => .{ .categoryBits = Category.moving, .maskBits = Category.non_moving | Category.moving, .groupIndex = 0 },
+        .planet_only => .{ .categoryBits = Category.planet_only, .maskBits = Category.non_moving, .groupIndex = 0 },
+    };
+}
 
 pub const Collider = struct {
     const Mesh = struct {
@@ -90,11 +85,11 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         self.world = makeWorld();
         for (world.entities.values()) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
-            if (shared.entity.colliderShape(entity.kind)) |primitive_shape| {
-                entity.collider.shape = .{ .primitive = primitive_shape };
+            if (shared.entity.collider(entity.kind)) |kind_collider| {
+                entity.collider.shape = .{ .primitive = kind_collider.shape };
+                entity.collider.motion_type = kind_collider.motion;
+                entity.collider.object_layer = kind_collider.layer;
             }
-            entity.collider.motion_type = system.World.motionType(entity.kind);
-            entity.collider.object_layer = system.World.objectLayer(entity.kind);
             entity.collider.body_id = null;
             try self.createBody(entity);
         }
@@ -113,7 +108,7 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
-            var point = shared.planetSurfacePoint(direction, @floatFromInt(info.world.planet_radius));
+            var point = shared.planetSurfacePoint(direction, info.world.planet_radius);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
@@ -148,7 +143,7 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         const pos = c.b3Body_GetPosition(body_id);
         entity.transform.position = .{ pos.x, pos.y, pos.z };
         entity.transform.rotation = quatFromB3(c.b3Body_GetRotation(body_id));
-        entity.velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
+        entity.replicated_velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
     }
 }
 
@@ -199,10 +194,11 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
     body_def.enableSleep = false;
     body_def.userData = @ptrFromInt(@intFromEnum(entity.id));
     const body_id = c.b3CreateBody(self.world, &body_def);
+    if (collider.motion_type == .dynamic) c.b3Body_SetLinearVelocity(body_id, toB3(entity.spawn_impulse));
 
     var shape_def = c.b3DefaultShapeDef();
     shape_def.density = 1;
-    shape_def.filter = collider.object_layer.filter();
+    shape_def.filter = layerFilter(collider.object_layer);
 
     switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {

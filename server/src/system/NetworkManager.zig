@@ -174,7 +174,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = .{ 0, @as(f32, @floatFromInt(info.world.planet_radius)) + 10, 0 } },
+                            .transform = .{ .position = .{ 0, info.world.planet_radius + 10, 0 } },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 
@@ -237,7 +237,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
             entry.value_ptr.* = .{
                 .id = entity.id,
                 .position = position,
-                .velocity = entity.velocity,
+                .velocity = entity.replicated_velocity,
                 .rotation = rotation,
                 .tick = info.tick,
             };
@@ -249,13 +249,13 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
         const predicted = last_motion.position + nz.vec.scale(last_motion.velocity, elapsed);
         const position_drift = nz.vec.length(position - predicted);
         const rotation_drift = 1.0 - @abs(nz.vec.dot(rotation, last_motion.rotation));
-        const velocity_drift = nz.vec.length(entity.velocity - last_motion.velocity);
+        const velocity_drift = nz.vec.length(entity.replicated_velocity - last_motion.velocity);
 
         if (position_drift > 0.25 or rotation_drift > 0.01 or velocity_drift > 1.0) {
             last_motion.* = .{
                 .id = entity.id,
                 .position = position,
-                .velocity = entity.velocity,
+                .velocity = entity.replicated_velocity,
                 .rotation = rotation,
                 .tick = info.tick,
             };
@@ -349,7 +349,7 @@ fn motionPacket(info: *const Info, entity: *const system.Entity) shared.net.Upda
     return .{
         .id = entity.id,
         .position = entity.transform.position,
-        .velocity = entity.velocity,
+        .velocity = entity.replicated_velocity,
         .rotation = entity.transform.rotation.toVec(),
         .tick = info.tick,
     };
@@ -371,11 +371,11 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
         .kind = entity.kind,
         .position = entity.transform.position,
         .rotation = entity.transform.rotation.toVec(),
-        .velocity = entity.velocity,
+        .velocity = entity.replicated_velocity,
         .tick = info.tick,
         .currency = entity.currency,
         .data = switch (entity.kind) {
-            .planet => .{ .planet_radius = info.world.planet_radius },
+            .planet => .{ .planet_radius = @intFromFloat(info.world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
             .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,

@@ -234,6 +234,37 @@ pub fn up(position: nz.Vec3(f32)) ?nz.Vec3(f32) {
     return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else null;
 }
 
+pub fn surfaceLaunch(position: nz.Vec3(f32), direction: nz.Vec3(f32), angle: f32, speed: f32) nz.Vec3(f32) {
+    const surface_up = up(position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const flat_direction = direction - nz.vec.scale(surface_up, nz.vec.dot(direction, surface_up));
+    const heading = if (nz.vec.length(flat_direction) > 0.001)
+        nz.vec.normalize(flat_direction)
+    else heading: {
+        const helper: nz.Vec3(f32) = if (@abs(surface_up[1]) < 0.9) .{ 0, 1, 0 } else .{ 1, 0, 0 };
+        break :heading nz.vec.normalize(nz.vec.cross(surface_up, helper));
+    };
+    const launch = nz.vec.scale(heading, @cos(angle)) + nz.vec.scale(surface_up, @sin(angle));
+    return nz.vec.scale(launch, speed);
+}
+
+pub fn surfaceTransform(direction: nz.Vec3(f32), radius: f32, hover: f32) nz.Transform3D(f32) {
+    const surface = surfacePoint(direction, radius);
+    const surface_up = up(surface) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, surface_up), -1.0, 1.0);
+    const rotation: nz.quat.Hamiltonian(f32) = if (dot >= 0.9999) .identity else rot: {
+        const axis = if (dot > -0.9999)
+            nz.vec.normalize(nz.vec.cross(default_up, surface_up))
+        else
+            nz.Vec3(f32){ 1, 0, 0 };
+        break :rot .angleAxis(std.math.acos(dot), axis);
+    };
+    return .{
+        .position = surface + nz.vec.scale(surface_up, hover),
+        .rotation = rotation,
+    };
+}
+
 pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
     const unit_direction = nz.vec.normalize(direction);
     var inner: f32 = @max(radius - noise_amplitude - cell_margin, 0);

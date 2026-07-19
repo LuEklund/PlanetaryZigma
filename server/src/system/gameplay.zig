@@ -68,7 +68,7 @@ pub fn updateEnemies(info: *const Info) !void {
                             .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
                             .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
                         },
-                        .velocity = muzzle_velocity,
+                        .replicated_velocity = muzzle_velocity,
                         .lifetime = 2,
                     });
                     bullet.stats.current.set(.damage, damage);
@@ -105,8 +105,8 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
-        entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.position += nz.vec.scale(entity.replicated_velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 
         const ray_hit = Physics.c.b3World_CastRayClosest(
@@ -268,6 +268,6 @@ pub fn playerRegen(info: *const Info) void {
         if (player.regen_carry < 1) continue;
         const whole_points = @floor(player.regen_carry);
         player.regen_carry -= whole_points;
-        _ = info.world.addHealth(player, whole_points, player);
+        _ = info.world.addHealth(player, whole_points, null);
     }
 }

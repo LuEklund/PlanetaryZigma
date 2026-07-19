@@ -670,7 +670,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
     var debug_vertex_count: u32 = 0;
     for (info.world.entities.values()) |*entity| {
-        const collider_shape = shared.entity.colliderShape(entity.kind) orelse continue;
+        const collider_shape = (shared.entity.collider(entity.kind) orelse continue).shape;
         const first_vertex = debug_vertex_count;
         switch (collider_shape) {
             .capsule => |capsule| try appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
