@@ -143,28 +143,15 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
-    switch (entity.kind) {
-        .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid => {
-                entity.stats.init(20, 3, 1, 1, 2);
-                entity.currency = 5;
-            },
-            .tubloida => {
-                entity.stats.init(20, 3, 1, 0.2, 10);
-                entity.currency = 7;
-            },
-            .bloorpLord => {
-                entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40);
-                entity.currency = 100;
-            },
-        },
-        .player => {
-            entity.currency = 100;
-            entity.stats.init(100, 10, 0.1, 10, 10);
-        },
-        .lootbox => entity.currency = 10,
-        else => {},
+    const kind_spec = shared.entity.spec(entity.kind);
+    if (kind_spec.stats) |stats_spec| {
+        var health = stats_spec.health;
+        if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
+            health *= @as(f32, @floatFromInt(self.next_stage));
+        }
+        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range);
     }
+    entity.currency = kind_spec.currency;
     self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }
@@ -189,17 +176,41 @@ pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
-pub fn removeHealth(self: *World, entity: *Entity, amount: f32) bool {
-    if (!entity.kind.hasHealth()) return false;
-    if (entity.flags.invinsible) return false;
-    return self.addHealth(entity, -amount);
+pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {
+    if (player.inventory.get(item) >= 255) return null;
+    const item_count = player.inventory.add(item, count);
+    player.stats.gain(item, @floatFromInt(count));
+    player.stats.refresh(player.inventory);
+    self.client_updates.appendAssumeCapacity(.{ .inventory = .{
+        .id = player.id,
+        .item_kind = item,
+        .set = item_count,
+    } });
+    for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
+        if (item.attributes().get(stat_kind) == 0) continue;
+        const stat = player.stats.get(stat_kind);
+        self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(stat.max) } } });
+        self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(stat.current) } } });
+    }
+    return item_count;
 }
 
-pub fn addHealth(self: *World, entity: *Entity, amount: f32) bool {
+pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
+    if (!entity.kind.hasHealth()) return false;
+    if (entity.flags.invinsible) return false;
+    return self.addHealth(entity, -amount, source);
+}
+
+pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
-    self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = entity.id, .stat_kind = .health, .amount = .{ .set_current = @floatCast(current) } } });
+    self.client_updates.appendAssumeCapacity(.{ .stat = .{
+        .id = entity.id,
+        .stat_kind = .health,
+        .source = if (source) |source_entity| source_entity.id else .none,
+        .amount = .{ .set_current = @floatCast(current) },
+    } });
     return true;
 }
 

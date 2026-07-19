@@ -234,6 +234,11 @@ pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
     return nz.vec.length(position) - radius + noise;
 }
 
+pub fn up(position: nz.Vec3(f32)) ?nz.Vec3(f32) {
+    const distance = nz.vec.length(position);
+    return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else null;
+}
+
 pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
     const unit_direction = nz.vec.normalize(direction);
     var inner: f32 = @max(radius - noise_amplitude - cell_margin, 0);

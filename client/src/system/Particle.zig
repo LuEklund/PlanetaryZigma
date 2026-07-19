@@ -20,11 +20,6 @@ fn append(list: *std.ArrayList(Particle), particle: Particle) void {
     list.appendAssumeCapacity(particle);
 }
 
-fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
-    const distance = nz.vec.length(position);
-    return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else .{ 0, 1, 0 };
-}
-
 fn surfaceBiasedDirection(random: std.Random, surface_up: nz.Vec3(f32)) nz.Vec3(f32) {
     var direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
     const outward = nz.vec.dot(direction, surface_up);
@@ -35,7 +30,7 @@ fn surfaceBiasedDirection(random: std.Random, surface_up: nz.Vec3(f32)) nz.Vec3(
 }
 
 pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, position: nz.Vec3(f32)) void {
-    const surface_up = surfaceUp(position);
+    const surface_up = shared.planetUp(position) orelse .{ 0, 1, 0 };
     const spawn_position = position + nz.vec.scale(surface_up, 1.15);
     const center_particles = [_]struct {
         offset: nz.Vec3(f32),
@@ -91,12 +86,14 @@ pub fn spawnLightningArc(list: *std.ArrayList(Particle), random: std.Random, fro
     if (length < 0.001) return;
     const direction = nz.vec.scale(segment, 1.0 / length);
     const lifetime = 0.22 + random.float(f32) * 0.08;
+    const up = shared.planetUp(from) orelse .{ 0, 1, 0 };
+    const arch_height = length * 0.35;
 
     const node_count: usize = @intFromFloat(@max(2, @ceil(length / 1.5)));
     var previous_node = from;
     for (1..node_count + 1) |node_index| {
         const t = @as(f32, @floatFromInt(node_index)) / @as(f32, @floatFromInt(node_count));
-        var node = from + nz.vec.scale(segment, t);
+        var node = from + nz.vec.scale(segment, t) + nz.vec.scale(up, arch_height * 4 * t * (1 - t));
         if (node_index < node_count) {
             const raw = nz.vec.randomUnitVector(nz.Vec3(f32), random);
             const perpendicular = raw - nz.vec.scale(direction, nz.vec.dot(raw, direction));

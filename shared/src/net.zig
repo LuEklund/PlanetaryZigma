@@ -104,6 +104,7 @@ pub const SpawnEntity = struct {
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     velocity: @Vector(3, f32) = @splat(0),
     tick: u32 = 0,
+    currency: u32 = 0,
     data: SpawnEntityData,
 };
 
@@ -154,6 +155,7 @@ pub const UpdateTransform = struct {
 pub const UpdateStat = struct {
     id: entity.Id,
     stat_kind: root.Stat.Kind,
+    source: entity.Id,
     amount: UpdateStatAmount,
 };
 
@@ -164,7 +166,7 @@ pub const UpdateStatAmount = union(enum) {
 
 pub const UpdateInventory = struct {
     id: entity.Id,
-    item_kind: root.Item.Kind,
+    item_kind: root.Item,
     set: u8,
 };
 
@@ -180,8 +182,15 @@ pub const Event = union(enum) {
     };
 
     pub const Effect = union(enum) {
+        pub const Lightning = struct {
+            pub const max_targets = 4;
+
+            start_position: @Vector(3, f32),
+            targets: [max_targets]entity.Id,
+        };
+
         rocket_impact: @Vector(3, f32),
-        lightning: [5]entity.Id,
+        lightning: Lightning,
     };
 
     teleport_start: void,

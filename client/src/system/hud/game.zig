@@ -9,6 +9,7 @@ const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
+const DamagePopup = @import("../DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
@@ -32,19 +33,18 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
+        addEnemyHealthBars(info, ui);
+        addDamagePopups(info, ui);
 
         const health = player.stats.get(.health);
-        const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 50;
-        ui.add(null, .{
-            .name = "health",
-            .offset = .{
-                .top = ui.screen_heigth - healthbar_heigth - 10,
-                .left = 10,
-            },
-            .child_anchor = .{ .x = .center, .y = .center },
-            .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
-            .color = .new(0, 1, 0, 1),
+        addHealthBar(ui, .{
+            .left = 10,
+            .top = ui.screen_heigth - healthbar_heigth - 10,
+            .width = 200,
+            .heigth = healthbar_heigth,
+            .fraction = health.current / health.max,
+            .fill_color = .new(0, 1, 0, 1),
             .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
@@ -71,7 +71,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             .axis_align = .horizontal,
             .gap = 10,
         });
-        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             const amount_text = ui.print("{d}", .{amount});
@@ -94,11 +94,11 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 }},
             });
         }
-        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             if (ui.isHot(ui.print("{t}", .{item_kind}))) {
-                const attributes = item_kind.getAttributeValues();
+                const attributes = item_kind.attributes();
                 var tool_tip_text: []const u8 = "";
                 inline for (std.meta.fields(shared.Item.Attribute)) |field| {
                     const value = @field(attributes, field.name);
@@ -242,18 +242,90 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 total_boss_health += boss_health.current;
                 total_boss_max_health += boss_health.max;
             }
-            const boss_healthbar_max_width: f32 = (ui.screen_width * 0.9);
-            const boss_healthbar_width: f32 = boss_healthbar_max_width * (total_boss_health / total_boss_max_health);
-            const boss_healthbar_heigth: f32 = 30;
-            ui.add(null, .{
-                .offset = .{
-                    .top = 20,
-                    .left = ui.screen_width / 2 - boss_healthbar_max_width / 2,
-                },
-                .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
-                .color = .new(1, 0, 0, 1),
+            const boss_healthbar_width: f32 = (ui.screen_width * 0.9);
+            addHealthBar(ui, .{
+                .left = ui.screen_width / 2 - boss_healthbar_width / 2,
+                .top = 20,
+                .width = boss_healthbar_width,
+                .heigth = 30,
+                .fraction = total_boss_health / total_boss_max_health,
+                .fill_color = .new(1, 0, 0, 1),
             });
         }
+    }
+}
+
+fn addHealthBar(ui: *Ui, args: struct {
+    left: f32,
+    top: f32,
+    width: f32,
+    heigth: f32,
+    fraction: f32,
+    fill_color: nz.color.Rgba(f32),
+    text: ?Ui.Layout.Text = null,
+}) void {
+    const fraction = std.math.clamp(args.fraction, 0, 1);
+    ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width, .heigth = args.heigth } },
+        .color = .new(0, 0, 0, 0.55),
+    });
+    ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width * fraction, .heigth = args.heigth } },
+        .color = args.fill_color,
+    });
+    if (args.text) |bar_text| ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width, .heigth = args.heigth } },
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = bar_text,
+    });
+}
+
+fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
+    const bar_width: f32 = 46;
+    const bar_heigth: f32 = 4;
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+    for (info.world.entities.values()) |*entity| {
+        if (entity.kind != .enemy) continue;
+        const health = entity.stats.get(.health);
+        if (health.max <= 0 or health.current <= 0 or health.current >= health.max) continue;
+
+        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
+        if (isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
+        const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
+
+        addHealthBar(ui, .{
+            .left = screen[0] - bar_width / 2,
+            .top = screen[1] - bar_heigth,
+            .width = bar_width,
+            .heigth = bar_heigth,
+            .fraction = health.current / health.max,
+            .fill_color = .new(0.9, 0.2, 0.15, 0.9),
+        });
+    }
+}
+
+fn addDamagePopups(info: *const Info, ui: *Ui) void {
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+    for (info.world.damage_popups.items) |popup| {
+        const up = shared.planetUp(popup.position) orelse .{ 0, 1, 0 };
+        const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
+        const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
+        const alpha = 1 - popup.age / DamagePopup.lifetime;
+        const rounded = @round(@abs(popup.amount) * 10) / 10;
+        const text = if (popup.amount < 0)
+            ui.print("+{d}", .{rounded})
+        else
+            ui.print("{d}", .{rounded});
+        const text_size = ui.textSize(text, 24);
+        ui.add(null, .{
+            .offset = .{ .left = screen[0] - text_size.width / 2, .top = screen[1] },
+            .size = .{ .fixed = text_size },
+            .text = .{ .data = text, .size = 24, .color = .new(popup.color[0], popup.color[1], popup.color[2], alpha) },
+        });
     }
 }
 
@@ -261,6 +333,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     const label_size: f32 = 18;
     const padding_x: f32 = 8;
     const padding_y: f32 = 3;
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
 
     for (info.world.entities.values()) |*entity| {
         if (entity.kind != .player) continue;
@@ -270,13 +343,10 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
         else
             ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
 
-        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
-            nz.vec.normalize(entity.transform.position)
-        else
-            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
         if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
-        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;
         const text_size = ui.textSize(name, label_size);
         const tag_width = text_size.width + padding_x * 2;
         const tag_heigth = text_size.heigth + padding_y * 2;
@@ -302,21 +372,6 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
             }},
         });
     }
-}
-
-fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
-    if (width <= 0 or heigth <= 0) return null;
-
-    const aspect = width / heigth;
-    const clip = camera.viewProj(aspect).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
-    if (clip[3] <= 0.001) return null;
-
-    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
-    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
-    return .{
-        (ndc[0] * 0.5 + 0.5) * width,
-        (ndc[1] * 0.5 + 0.5) * heigth,
-    };
 }
 
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {

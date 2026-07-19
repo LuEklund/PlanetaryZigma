@@ -30,12 +30,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             std.log.debug("pres", .{});
             player.last_attack = info.elapsed_time;
-            _ = try info.world.spawn(
-                .{
-                    .kind = .{ .item = .lightning },
-                    .transform = player.transform,
-                },
-            );
+            _ = info.world.giveItem(player, .pickaxe, 1);
             // _ = info.world.spawn(.{
             //     .kind = .{ .enemy = .tubloida },
             //     .transform = .{ .position = player.transform.position },
@@ -82,7 +77,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             info.world.queueDespawn(entity.id);
 
                             const random = info.world.prng.random();
-                            const item_kind = random.enumValue(shared.Item.Kind);
+                            const item_kind = random.enumValue(shared.Item);
                             try Director.spawnItem(info.world, item_kind, entity.transform.position);
                             player.currency -= entity.currency;
                             info.world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
@@ -153,7 +148,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             const start_direction = nz.vec.normalize(aim_point - transform.position);
             const rocket_chance = @min(
                 @as(f32, @floatFromInt(player.inventory.get(.rocket))) *
-                    shared.Item.Kind.rocket.getAttributeValues().rocket_chance,
+                    shared.Item.rocket.attributes().rocket_chance,
                 1.0,
             );
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;

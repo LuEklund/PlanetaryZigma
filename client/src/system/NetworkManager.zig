@@ -333,7 +333,7 @@ fn handleCommand(
                 info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            World.applyStat(entity, update_stat_command);
+            info.world.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {
@@ -354,11 +354,9 @@ fn handleCommand(
                     .rocket_impact => |position| {
                         Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
                     },
-                    .lightning => |chain| if (info.world.getPtr(chain[0])) |center| {
-                        for (chain[1..]) |id| {
-                            const target = info.world.getPtr(id) orelse continue;
-                            Particle.spawnLightningArc(&info.world.particles, info.world.prng.random(), center.transform.position, target.transform.position);
-                        }
+                    .lightning => |bolt| for (bolt.targets) |id| {
+                        const target = info.world.getPtr(id) orelse continue;
+                        Particle.spawnLightningArc(&info.world.particles, info.world.prng.random(), bolt.start_position, target.transform.position);
                     },
                 },
                 .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {
