@@ -33,10 +33,9 @@ const skybox_texture_key = "textures/skybox_cubemap.png";
 pub const crosshair_texture_key = "textures/crosshair.png";
 const font_files = [_][]const u8{"Roboto-Regular.ttf"};
 
-const shader_kinds = std.enums.values(Shader.Kind);
 const shader_files = blk: {
-    var files: [shader_kinds.len][]const u8 = undefined;
-    for (shader_kinds, 0..) |kind, i| files[i] = Shader.specs.get(kind).path["shaders/".len..];
+    var files: [Shader.all_kinds.len][]const u8 = undefined;
+    for (Shader.all_kinds, 0..) |kind, i| files[i] = Shader.spec(kind).path["shaders/".len..];
     break :blk files;
 };
 
@@ -89,7 +88,7 @@ combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
 models: std.ArrayList(Model),
 model_keys: std.StringHashMapUnmanaged(Model.Handle),
-shaders: std.EnumArray(Shader.Kind, Shader),
+shaders: [Shader.all_kinds.len]Shader,
 skybox_descriptor: Buffer,
 samplers: std.ArrayList(c.VkSampler),
 images: std.ArrayList(Image),
@@ -354,15 +353,16 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     try asset_server.addLoader(&self.model_loader);
     try asset_server.addLoader(&self.texture_loader);
 
-    for (std.enums.values(Shader.Kind)) |kind| {
-        const shader_spec = Shader.specs.get(kind);
+    for (Shader.all_kinds) |kind| {
+        const shader_spec = Shader.spec(kind);
         const layout_handles: []const c.VkDescriptorSetLayout = switch (shader_spec.layout) {
             .scene_textures => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.textures).handle, descriptor_layouts.get(.shadow).handle },
             .sky => &.{ descriptor_layouts.get(.scene).handle, descriptor_layouts.get(.material).handle },
             .ui => &.{descriptor_layouts.get(.textures).handle},
         };
-        self.shaders.set(kind, .init(device, kind, layout_handles));
+        self.shaders[Shader.index(kind)] = .init(device, kind, layout_handles);
     }
+
 
     const default_model = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
     std.debug.assert(default_model == Model.Handle.default);
@@ -394,8 +394,11 @@ fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.
 
 fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *Resources = @fieldParentPtr("shader_loader", loader);
-    const file = try err_file;
-    try self.shaders.getPtr(shader_kinds[index]).load(gpa, io, file);
+    const file = err_file catch |err| std.debug.panic(
+        "shader missing: assets/shaders/{s} ({t}) -- check the path in Shader.specs",
+        .{ shader_files[index], err },
+    );
+    try self.shaders[index].load(gpa, io, file);
 }
 
 fn fontLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -444,6 +447,10 @@ pub fn registerEntityModels(self: *Resources, gpa: std.mem.Allocator) !void {
     for (entity.all_kinds) |kind| {
         _ = try self.registerModel(gpa, entity.modelSpec(kind).key);
     }
+}
+
+pub fn shaderPtr(self: *Resources, kind: Shader.Kind) *Shader {
+    return &self.shaders[Shader.index(kind)];
 }
 
 pub fn textureHandle(self: *Resources, key: []const u8) Image.Handle {
@@ -709,7 +716,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     for (self.models.items) |*model| model.deinit(gpa);
     self.models.deinit(gpa);
     self.model_keys.deinit(gpa);
-    for (&self.shaders.values) |*shader| shader.deinit();
+    for (&self.shaders) |*shader| shader.deinit();
 
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);

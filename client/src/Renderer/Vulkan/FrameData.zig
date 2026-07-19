@@ -26,7 +26,8 @@ pub const GPUParticle = extern struct {
     scale: f32,
     texture_index: u32,
     alpha: f32,
-    _: [2]u32 = .{ 0, 0 },
+    lifetime_fraction: f32,
+    seed: f32,
 };
 
 pub const DebugVertex = extern struct {

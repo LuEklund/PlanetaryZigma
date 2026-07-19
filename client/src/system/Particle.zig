@@ -4,14 +4,15 @@ const nz = shared.numz;
 
 const Particle = @This();
 
-pub const Kind = enum { explosion, lightning };
+const Shader = @import("../Renderer/Vulkan/Shader.zig");
 
-kind: Kind,
+kind: Shader.FragParticle,
 position: nz.Vec3(f32),
 velocity: nz.Vec3(f32),
 lifetime: f32,
 max_lifetime: f32,
 scale: f32,
+seed: f32,
 
 fn append(list: *std.ArrayList(Particle), particle: Particle) void {
     if (list.items.len >= list.capacity and list.items.len > 0) {
@@ -57,6 +58,7 @@ pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, 
             .lifetime = particle.lifetime,
             .max_lifetime = particle.lifetime,
             .scale = particle.scale,
+            .seed = random.float(f32),
         });
     }
 
@@ -75,6 +77,7 @@ pub fn spawnRocketExplosion(list: *std.ArrayList(Particle), random: std.Random, 
                 .lifetime = lifetime,
                 .max_lifetime = lifetime,
                 .scale = scale,
+                .seed = random.float(f32),
             });
         }
     }
@@ -112,6 +115,7 @@ pub fn spawnLightningArc(list: *std.ArrayList(Particle), random: std.Random, fro
                 .lifetime = lifetime,
                 .max_lifetime = lifetime,
                 .scale = 0.55 + random.float(f32) * 0.15,
+                .seed = random.float(f32),
             });
         }
         previous_node = node;
