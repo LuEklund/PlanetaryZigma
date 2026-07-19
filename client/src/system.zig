@@ -7,7 +7,7 @@ const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
-const Particle = @import("system/Particle.zig");
+const Emitter = @import("system/Emitter.zig");
 const DamagePopup = @import("system/DamagePopup.zig");
 const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
@@ -96,7 +96,7 @@ pub const Context = struct {
         defer tracy_scope.end();
         // tracy.frameMark();
         const paused_before_hud = self.hud.overlay != .none;
-        Particle.update(&info.world.particles, info.delta_time);
+        Emitter.update(&info.world.emitters, info.elapsed_time);
         DamagePopup.update(&info.world.damage_popups, info.delta_time);
         if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
         switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, self.renderer.inner.resources, &info.world.controller, &self.options)) {
@@ -113,7 +113,7 @@ pub const Context = struct {
         try self.network_manager.update(info);
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
-        try info.world.flush();
+        try info.world.flush(info.delta_time);
         try self.renderer.inner.drainRenderCommands(self.gpa, info.world);
         try self.animation.update(info, &self.renderer.inner.skeletons);
 

@@ -17,7 +17,6 @@ const look_yaw_sign: f32 = 1;
 const look_yaw_deadzone: f32 = 0.05;
 
 const item_spin_speed: f32 = 1.5;
-const item_spawn_duration: f32 = 0.35;
 
 fn easeOutBack(x: f32) f32 {
     const c1: f32 = 1.70158;
@@ -124,8 +123,9 @@ pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(
     for (info.world.entities.values()) |*entity| {
         switch (entity.kind) {
             .item => {
-                if (entity.spawn_anim < 1.0) {
-                    entity.spawn_anim = @min(entity.spawn_anim + info.delta_time / item_spawn_duration, 1.0);
+                const spawn_duration = shared.entity.spec(entity.kind).spawn_duration;
+                if (entity.spawn_anim < 1.0 and spawn_duration > 0) {
+                    entity.spawn_anim = @min(entity.spawn_anim + info.delta_time / spawn_duration, 1.0);
                     entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(entity.spawn_anim));
                 }
                 if (entity.update_motion) |*motion| {

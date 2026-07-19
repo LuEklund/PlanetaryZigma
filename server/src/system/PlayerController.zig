@@ -27,15 +27,15 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const planet_up = nz.vec.normalize(transform.position);
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
-        if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
-            std.log.debug("pres", .{});
-            player.last_attack = info.elapsed_time;
-            _ = info.world.giveItem(player, .pickaxe, 1);
-            // _ = info.world.spawn(.{
-            //     .kind = .{ .enemy = .tubloida },
-            //     .transform = .{ .position = player.transform.position },
-            //     .last_attack = info.elapsed_time,
-            // });
+
+        switch (input.dev_command) {
+            .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
+            .f2 => {
+                _ = info.world.giveItem(player, .rocket, 1);
+                _ = info.world.giveItem(player, .lightning, 1);
+            },
+            .f3 => info.world.toggle_spawning_requested = true,
+            else => {},
         }
 
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
@@ -144,8 +144,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
         if (input.keys.mouse_button_left and info.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
             player.last_attack = info.elapsed_time;
+            //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+            const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
-            const start_direction = nz.vec.normalize(aim_point - transform.position);
+            const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = @min(
                 @as(f32, @floatFromInt(player.inventory.get(.rocket))) *
                     shared.Item.rocket.attributes().rocket_chance,
@@ -161,7 +163,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 },
                 .owner_id = player.id,
                 .transform = .{
-                    .position = player.transform.position + nz.vec.scale(start_direction, 1.5),
+                    .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
                     .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
                 },
                 .velocity = projectile_velocity,

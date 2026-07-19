@@ -57,13 +57,16 @@ pub fn updateEnemies(info: *const Info) !void {
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
-                    const muzzle_velocity = nz.vec.scale(forward_dir, 50);
+                    //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
+                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
                     const bullet = try info.world.spawn(.{
                         .kind = .projectile_cube,
                         .owner_id = enemy.id,
                         .transform = .{
-                            .position = enemy.transform.position + nz.vec.scale(forward_dir, 1.5),
-                            .rotation = shared.entity.projectileRotation(.cube, forward_dir, planet_up),
+                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
                         },
                         .velocity = muzzle_velocity,
                         .lifetime = 2,

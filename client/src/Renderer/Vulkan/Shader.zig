@@ -13,21 +13,49 @@ descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
 descriptor_set_count: u32,
 push_constant_size: u32,
 
-pub const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .vert_skinned = .{ .path = "shaders/animation.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-    .vert_static = .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-    .vert_particle = .{ .path = "shaders/particle.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-    .vert_ui = .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
-    .frag_ui = .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
-    .vert_sky = .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .sky },
-    .frag_sky = .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .sky },
-    .frag_mesh = .{ .path = "shaders/fragment.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
-    .frag_particle = .{ .path = "shaders/particle.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
-    .vert_debug = .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-    .frag_debug = .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
-    .vert_shadow_static = .{ .path = "shaders/shadow_static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-    .vert_shadow_skinned = .{ .path = "shaders/shadow_skinned.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
-});
+pub const Vert = enum { skinned, static, ui, sky, debug, shadow_static, shadow_skinned };
+pub const FragNormal = enum { ui, sky, mesh, debug };
+pub const ParticleEffect = enum { explosion, lightning };
+
+pub const Kind = union(enum) {
+    vert: Vert,
+    frag_normal: FragNormal,
+    vert_particle: ParticleEffect,
+    frag_particle: ParticleEffect,
+};
+
+pub const all_kinds: []const Kind = blk: {
+    var kinds: []const Kind = &.{};
+    for (std.enums.values(Vert)) |sub| kinds = kinds ++ .{Kind{ .vert = sub }};
+    for (std.enums.values(FragNormal)) |sub| kinds = kinds ++ .{Kind{ .frag_normal = sub }};
+    for (std.enums.values(ParticleEffect)) |sub| kinds = kinds ++ .{Kind{ .vert_particle = sub }};
+    for (std.enums.values(ParticleEffect)) |sub| kinds = kinds ++ .{Kind{ .frag_particle = sub }};
+    break :blk kinds;
+};
+
+pub fn index(kind: Kind) usize {
+    const vert_count = std.enums.values(Vert).len;
+    const frag_normal_count = std.enums.values(FragNormal).len;
+    const effect_count = std.enums.values(ParticleEffect).len;
+    return switch (kind) {
+        .vert => |sub| @intFromEnum(sub),
+        .frag_normal => |sub| vert_count + @intFromEnum(sub),
+        .vert_particle => |sub| vert_count + frag_normal_count + @intFromEnum(sub),
+        .frag_particle => |sub| vert_count + frag_normal_count + effect_count + @intFromEnum(sub),
+    };
+}
+
+pub const EffectSpec = struct {
+    particle_count: u32,
+    duration: f32,
+};
+
+pub fn effectSpec(effect: ParticleEffect) EffectSpec {
+    return switch (effect) {
+        .explosion => .{ .particle_count = 40, .duration = 0.8 },
+        .lightning => .{ .particle_count = 64, .duration = 0.3 },
+    };
+}
 
 pub const Spec = struct {
     path: []const u8,
@@ -36,28 +64,40 @@ pub const Spec = struct {
     layout: enum { scene_textures, sky, ui },
 };
 
-pub const Kind = enum(u16) {
-    vert_skinned,
-    vert_static,
-    vert_particle,
-    vert_ui,
-    vert_sky,
-    vert_debug,
-    vert_shadow_static,
-    vert_shadow_skinned,
-    frag_ui,
-    frag_sky,
-    frag_mesh,
-    frag_particle,
-    frag_debug,
-};
+pub fn spec(kind: Kind) Spec {
+    return switch (kind) {
+        .vert => |vert_kind| switch (vert_kind) {
+            .skinned => .{ .path = "shaders/skinned.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+            .static => .{ .path = "shaders/static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+            .ui => .{ .path = "shaders/ui.vert.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .ui },
+            .sky => .{ .path = "shaders/sky.vert.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .sky },
+            .debug => .{ .path = "shaders/debug.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+            .shadow_static => .{ .path = "shaders/shadow_static.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+            .shadow_skinned => .{ .path = "shaders/shadow_skinned.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+        },
+        .frag_normal => |frag_kind| switch (frag_kind) {
+            .ui => .{ .path = "shaders/ui.frag.spv", .push_constant_size = @sizeOf(UiPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .ui },
+            .sky => .{ .path = "shaders/sky.frag.spv", .push_constant_size = 0, .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .sky },
+            .mesh => .{ .path = "shaders/mesh.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+            .debug => .{ .path = "shaders/debug.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+        },
+        .vert_particle => |effect| switch (effect) {
+            .explosion => .{ .path = "shaders/particle/explosion.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+            .lightning => .{ .path = "shaders/particle/lightning.vert.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_VERTEX_BIT, .layout = .scene_textures },
+        },
+        .frag_particle => |effect| switch (effect) {
+            .explosion => .{ .path = "shaders/particle/explosion.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+            .lightning => .{ .path = "shaders/particle/lightning.frag.spv", .push_constant_size = @sizeOf(WorldPushConstant), .stage_bit = c.VK_SHADER_STAGE_FRAGMENT_BIT, .layout = .scene_textures },
+        },
+    };
+}
 
 pub const WorldPushConstant = extern struct {
     model_matrix: [16]f32,
     vertex_buffer_address: c.VkDeviceAddress,
     joint_matrices_address: c.VkDeviceAddress,
     texture_index: u32,
-    _: u32 = 0,
+    particle_count: u32 = 0,
 };
 pub const UiPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
@@ -65,7 +105,7 @@ pub const UiPushConstant = extern struct {
 };
 
 pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
-    const shader_spec = specs.get(kind);
+    const shader_spec = spec(kind);
     var self: Shader = .{
         .device = device,
         .shader_create_info = .{

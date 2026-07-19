@@ -12,13 +12,13 @@ const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud) !Request {
+pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
     const button_text_size = std.math.clamp(button_height * 0.55, @as(f32, 20), @as(f32, 25));
     const left = std.math.clamp(ui.screen_width * 0.07, @as(f32, 48), @as(f32, 132));
-    const total_height = button_height * 4 + button_gap * 3;
+    const total_height = button_height * 5 + button_gap * 4;
     const max_top = @max(@as(f32, 28), ui.screen_heigth - total_height - 28);
     const top = std.math.clamp((ui.screen_heigth - total_height) * 0.5, @as(f32, 28), max_top);
     const panel_gap = std.math.clamp(ui.screen_width * 0.025, @as(f32, 24), @as(f32, 48));
@@ -35,10 +35,15 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud) !Request {
     addMainMenuButton(ui, "menu_multiplayer", "Multiplayer", left, top + (button_height + button_gap), button_width, button_height, button_text_size, hud.screen == .multiplayer, steam_logged_on);
     addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, hud.overlay == .options, true);
     addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false, true);
+    addDevPlanetButton(ui, options.dev_planet, left, top + (button_height + button_gap) * 4, button_width, button_height, button_text_size);
+
+    if (ui.isClicked("menu_dev_planet")) {
+        options.dev_planet = !options.dev_planet;
+    }
 
     if (ui.isActive("menu_singleplayer")) {
         hud.screen = .main;
-        network_manager.requestHost(.singleplayer);
+        network_manager.requestHost(.singleplayer, options.dev_planet);
     }
     if (steam_logged_on and ui.isActive("menu_multiplayer")) {
         hud.screen = .multiplayer;
@@ -58,9 +63,30 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud) !Request {
 
     switch (hud.screen) {
         .main => {},
-        .multiplayer => try multiplayerPanel(network_manager, ui, panel_left, panel_top, panel_width),
+        .multiplayer => try multiplayerPanel(network_manager, ui, options, panel_left, panel_top, panel_width),
     }
     return .none;
+}
+
+fn addDevPlanetButton(ui: *Ui, dev_mode: bool, left: f32, top: f32, width: f32, height: f32, text_size: f32) void {
+    const hot = ui.isHot("menu_dev_planet");
+    const bg = if (dev_mode)
+        nz.color.Rgba(f32).new(0.16, if (hot) 0.72 else 0.58, 0.2, 1)
+    else
+        nz.color.Rgba(f32).new(if (hot) 0.78 else 0.62, 0.16, 0.16, 1);
+
+    ui.add(null, .{
+        .name = "menu_dev_planet",
+        .size = .{ .fixed = .{ .heigth = height, .width = width } },
+        .offset = .{ .left = left, .top = top },
+        .color = bg,
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = if (dev_mode) "Dev Planet: ON" else "Dev Planet: OFF",
+            .size = text_size,
+            .color = nz.color.Rgba(f32).new(0.94, 0.96, 0.9, 1),
+        },
+    });
 }
 
 fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool, enabled: bool) void {
@@ -88,7 +114,7 @@ fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top
     });
 }
 
-pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, top: f32, width: f32) !void {
+pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Options, left: f32, top: f32, width: f32) !void {
     const button_height: f32 = 42;
     const row_height: f32 = 64;
     const row_gap: f32 = 8;
@@ -122,7 +148,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, left: f32, to
         },
     });
     if (ui.isActive("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline)) {
-        network_manager.requestHost(.multiplayer);
+        network_manager.requestHost(.multiplayer, options.dev_planet);
     }
 
     if (network_manager.server_list.count == 0) {

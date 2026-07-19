@@ -89,6 +89,8 @@ pub const Spec = struct {
     has_health: bool,
     expects_model: bool,
     stats: ?StatsSpec = null,
+    spawn_duration: f32 = 0,
+    death_duration: f32 = 0,
     currency: u32 = 0,
 };
 
@@ -136,6 +138,7 @@ pub fn spec(kind: Kind) Spec {
             .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
+            .death_duration = 0.35,
             .currency = 10,
         },
         .projectile_cube => .{
@@ -186,6 +189,7 @@ pub fn spec(kind: Kind) Spec {
             .icon = Item.spec(item_kind).icon,
             .has_health = false,
             .expects_model = true,
+            .spawn_duration = 0.35,
         },
     };
 }

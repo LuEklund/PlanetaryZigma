@@ -5,6 +5,7 @@ show_crosshair: bool = true,
 mouse_sensitivity: f32 = 1.0,
 invert_y: bool = false,
 fullscreen: bool = false,
+dev_planet: bool = false,
 fov_rad: f32 = 1.5,
 
 pub fn cycleMouseSensitivity(options: *Options) void {

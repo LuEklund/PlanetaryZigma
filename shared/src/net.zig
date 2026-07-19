@@ -44,6 +44,22 @@ pub const ServerPacket = union(enum) {
 
 // ── Payloads ────────────────────────────────────────────────────────────────
 
+pub const DevCommand = enum(u8) {
+    none,
+    f1,
+    f2,
+    f3,
+    f4,
+    f5,
+    f6,
+    f7,
+    f8,
+    f9,
+    f10,
+    f11,
+    f12,
+};
+
 pub const Connect = struct {
     protocol_version: u32,
     name_len: u16,
@@ -128,12 +144,12 @@ pub const Input = struct {
         space: bool = false,
         l_shift: bool = false,
         r: bool = false,
-        k: bool = false,
         e: bool = false,
         mouse_button_left: bool = false,
         mouse_button_right: bool = false,
-        _padding: u5 = 0,
+        _padding: u6 = 0,
     } = .{},
+    dev_command: DevCommand = .none,
     camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     camera_position: @Vector(3, f32) = .{ 0, 0, 0 },
 };

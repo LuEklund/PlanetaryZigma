@@ -14,6 +14,8 @@ new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
+toggle_spawning_requested: bool,
+dev_mode: bool,
 teleporter_id: shared.entity.Id,
 planet_radius: u32,
 next_entity_id: u32,
@@ -91,7 +93,7 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !World {
+pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
     var entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty;
     try entities.ensureTotalCapacity(gpa, shared.max_entities);
 
@@ -104,6 +106,8 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
+        .toggle_spawning_requested = false,
+        .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
         .next_entity_id = 1,

@@ -6,6 +6,9 @@ const noise_amplitude = 2;
 const cell_margin = 1;
 
 pub const min_radius: u32 = 8;
+pub const radius_max: u32 = 80;
+pub const dev_radius_min: u32 = 20;
+pub const dev_radius_max: u32 = 30;
 
 pub const PlanetKind = enum {
     logical,
