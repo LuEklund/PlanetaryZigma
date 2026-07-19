@@ -14,7 +14,7 @@ enemy_cost: f32 = 10,
 spawning: bool = false,
 
 const StageItemSpawn = struct {
-    kind: shared.Item.Kind,
+    kind: shared.Item,
     count: u32,
 };
 
@@ -144,7 +144,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.teleporter_id = teleporter.id;
 }
 
-pub fn spawnItem(world: *system.World, kind: shared.Item.Kind, vector_direction: nz.Vec3(f32)) !void {
+pub fn spawnItem(world: *system.World, kind: shared.Item, vector_direction: nz.Vec3(f32)) !void {
     const transform = surfaceTransform(world, vector_direction);
     const item = try world.spawn(.{
         .kind = .{ .item = kind },

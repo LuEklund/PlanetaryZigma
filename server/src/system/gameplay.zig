@@ -147,7 +147,7 @@ fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
 
 fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {
     const lightning_jumps = owner_entity.inventory.get(.lightning);
-    const lightning_chance = shared.Item.Kind.lightning.attributes().lightning_chance;
+    const lightning_chance = shared.Item.lightning.attributes().lightning_chance;
     if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;

@@ -71,7 +71,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             .axis_align = .horizontal,
             .gap = 10,
         });
-        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             const amount_text = ui.print("{d}", .{amount});
@@ -94,7 +94,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 }},
             });
         }
-        for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             if (ui.isHot(ui.print("{t}", .{item_kind}))) {

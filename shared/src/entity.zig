@@ -116,7 +116,7 @@ pub fn spec(kind: Kind) Spec {
             },
             .has_health = true,
             .expects_model = true,
-            .stats = .{ .health = 100, .speed = 10, .damage = 0.1, .attack_speed = 10, .range = 10 },
+            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 10, .range = 10 },
             .currency = 100,
         },
         .planet => .{
@@ -193,7 +193,7 @@ pub fn spec(kind: Kind) Spec {
 pub const all_kinds: []const Kind = blk: {
     var kinds: []const Kind = &.{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
     for (std.enums.values(EnemyKind)) |enemy_kind| kinds = kinds ++ .{Kind{ .enemy = enemy_kind }};
-    for (std.enums.values(Item.Kind)) |item_kind| kinds = kinds ++ .{Kind{ .item = item_kind }};
+    for (std.enums.values(Item)) |item_kind| kinds = kinds ++ .{Kind{ .item = item_kind }};
     break :blk kinds;
 };
 
@@ -202,7 +202,7 @@ pub const Kind = union(enum) {
 
     player,
     enemy: EnemyKind,
-    item: Item.Kind,
+    item: Item,
 
     planet,
     teleporter,

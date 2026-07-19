@@ -165,7 +165,7 @@ pub const UpdateStatAmount = union(enum) {
 
 pub const UpdateInventory = struct {
     id: entity.Id,
-    item_kind: root.Item.Kind,
+    item_kind: root.Item,
     set: u8,
 };
 
