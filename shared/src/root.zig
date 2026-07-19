@@ -57,6 +57,4 @@ pub const teleporter = struct {
     };
 };
 
-const stats = @import("stats.zig");
-pub const Stat = stats.Stat;
-pub const Stats = stats.Stats;
+pub const Stats = @import("Stats.zig");

@@ -122,7 +122,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             if (input.keys.d) dir += move_right;
             if (input.keys.a) dir -= move_right;
 
-            const speed = player.stats.get(.speed).current;
+            const speed = player.stats.current.get(.speed);
 
             var vertical: f32 = 0;
             if (input.keys.space) vertical += speed;
@@ -148,11 +148,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
-            const rocket_chance = @min(
-                @as(f32, @floatFromInt(player.inventory.get(.rocket))) *
-                    shared.Item.rocket.attributes().rocket_chance,
-                1.0,
-            );
+            const rocket_chance = @min(player.stats.max.get(.rocket_chance), 1.0);
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;
             const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
             const projectile_velocity = nz.vec.scale(start_direction, if (fires_rocket) rocket_speed else bullet_speed);
@@ -169,7 +165,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 .velocity = projectile_velocity,
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
             });
-            projectile.stats.setCurrent(.damage, player.stats.get(.damage).current);
+            projectile.stats.current.set(.damage, player.stats.current.get(.damage));
             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });
         }
     }

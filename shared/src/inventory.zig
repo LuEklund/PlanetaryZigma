@@ -1,5 +1,5 @@
 const std = @import("std");
-const Stat = @import("stats.zig").Stat;
+const Stats = @import("Stats.zig");
 
 pub const Item = enum(u16) {
     oxygen_tank = 0,
@@ -10,70 +10,47 @@ pub const Item = enum(u16) {
     lightning = 5,
 
     pub const Spec = struct {
-        attributes: Attribute,
+        attributes: Stats.Values,
         model: []const u8,
         icon: []const u8,
-    };
-
-    //TODO: combine with stats?
-    pub const Attribute = struct {
-        health: f32 = 0,
-        speed: f32 = 0,
-        damage: f32 = 0,
-        regen: f32 = 0,
-        attack_speed: f32 = 0,
-        range: f32 = 0,
-        rocket_chance: f32 = 0,
-        lightning_chance: f32 = 0,
-
-        pub fn get(self: Attribute, kind: Stat.Kind) f32 {
-            return switch (kind) {
-                .health => self.health,
-                .speed => self.speed,
-                .damage => self.damage,
-                .attack_speed => self.attack_speed,
-                .range => self.range,
-                .regen => self.regen,
-            };
-        }
     };
 
     pub fn spec(item: Item) Spec {
         return switch (item) {
             .oxygen_tank => .{
-                .attributes = .{ .health = 10 },
+                .attributes = .initDefault(0, .{ .health = 10 }),
                 .model = "objects/oxigen_tank.glb",
                 .icon = "textures/oxygen_tank.png",
             },
             .energy_drink => .{
-                .attributes = .{ .speed = 1 },
+                .attributes = .initDefault(0, .{ .speed = 1 }),
                 .model = "objects/energy_drink.glb",
                 .icon = "textures/energy_drink.png",
             },
             .gun => .{
-                .attributes = .{ .damage = 1 },
+                .attributes = .initDefault(0, .{ .damage = 1 }),
                 .model = "objects/gun.glb",
                 .icon = "textures/gun.png",
             },
             .pickaxe => .{
-                .attributes = .{ .attack_speed = 0.2 },
+                .attributes = .initDefault(0, .{ .attack_speed = 0.2 }),
                 .model = "objects/pickaxe.glb",
                 .icon = "textures/pickaxe.png",
             },
             .rocket => .{
-                .attributes = .{ .rocket_chance = 0.05 },
+                .attributes = .initDefault(0, .{ .rocket_chance = 0.05 }),
                 .model = "objects/rocket.glb",
                 .icon = "textures/rocket.png",
             },
             .lightning => .{
-                .attributes = .{ .lightning_chance = 0.05 },
+                .attributes = .initDefault(0, .{ .lightning_chance = 0.05 }),
                 .model = "objects/lightning.glb",
                 .icon = "textures/lightning.png",
             },
         };
     }
 
-    pub fn attributes(item: Item) Attribute {
+    pub fn attributes(item: Item) Stats.Values {
         return item.spec().attributes;
     }
 };

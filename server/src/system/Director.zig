@@ -101,7 +101,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         player.velocity = .{ 0, 0, 0 };
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
-            player.stats.setCurrent(.health, player.stats.get(.health).max);
+            player.stats.current.set(.health, player.stats.max.get(.health));
             try physics.createBody(player);
             world.players.appendAssumeCapacity(player.id);
             world.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
