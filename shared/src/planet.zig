@@ -67,14 +67,6 @@ pub fn Planet(kind: PlanetKind) type {
                             try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius_float));
                             try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius_float));
 
-                            //NOTE: Later for video:
-                            // const centroids = node_map.values();
-                            // const base_vertex_index: u32 = @intCast(vertices.items.len);
-                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell), .{ 0, 0 }, radius_float));
-                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_b), .{ 1, 0 }, radius_float));
-                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_c), .{ 0, 1 }, radius_float));
-                            // try vertices.append(gpa, makeVertex(@floatFromInt(cell - quad_axis.perp_b - quad_axis.perp_c), .{ 1, 1 }, radius_float));
-
                             if (edge_start_solid) {
                                 try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
                             } else {
@@ -305,12 +297,6 @@ const cube_edges = [_][2]u3{
     .{ 5, 7 },
     .{ 6, 7 },
 };
-
-//
-//
-// NOTE: 'HARALDS NOT ALLOWED'
-//
-//
 
 const grad3 = [12][3]f32{
     .{ 1, 1, 0 }, .{ -1, 1, 0 }, .{ 1, -1, 0 }, .{ -1, -1, 0 },
