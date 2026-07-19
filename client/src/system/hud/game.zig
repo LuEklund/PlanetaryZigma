@@ -32,19 +32,17 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
+        addEnemyHealthBars(info, ui);
 
         const health = player.stats.get(.health);
-        const healthbar_width: f32 = 200 * health.current / health.max;
         const healthbar_heigth: f32 = 50;
-        ui.add(null, .{
-            .name = "health",
-            .offset = .{
-                .top = ui.screen_heigth - healthbar_heigth - 10,
-                .left = 10,
-            },
-            .child_anchor = .{ .x = .center, .y = .center },
-            .size = .{ .fixed = .{ .heigth = healthbar_heigth, .width = healthbar_width } },
-            .color = .new(0, 1, 0, 1),
+        addHealthBar(ui, .{
+            .left = 10,
+            .top = ui.screen_heigth - healthbar_heigth - 10,
+            .width = 200,
+            .heigth = healthbar_heigth,
+            .fraction = health.current / health.max,
+            .fill_color = .new(0, 1, 0, 1),
             .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
@@ -242,18 +240,71 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                 total_boss_health += boss_health.current;
                 total_boss_max_health += boss_health.max;
             }
-            const boss_healthbar_max_width: f32 = (ui.screen_width * 0.9);
-            const boss_healthbar_width: f32 = boss_healthbar_max_width * (total_boss_health / total_boss_max_health);
-            const boss_healthbar_heigth: f32 = 30;
-            ui.add(null, .{
-                .offset = .{
-                    .top = 20,
-                    .left = ui.screen_width / 2 - boss_healthbar_max_width / 2,
-                },
-                .size = .{ .fixed = .{ .heigth = boss_healthbar_heigth, .width = boss_healthbar_width } },
-                .color = .new(1, 0, 0, 1),
+            const boss_healthbar_width: f32 = (ui.screen_width * 0.9);
+            addHealthBar(ui, .{
+                .left = ui.screen_width / 2 - boss_healthbar_width / 2,
+                .top = 20,
+                .width = boss_healthbar_width,
+                .heigth = 30,
+                .fraction = total_boss_health / total_boss_max_health,
+                .fill_color = .new(1, 0, 0, 1),
             });
         }
+    }
+}
+
+fn addHealthBar(ui: *Ui, args: struct {
+    left: f32,
+    top: f32,
+    width: f32,
+    heigth: f32,
+    fraction: f32,
+    fill_color: nz.color.Rgba(f32),
+    text: ?Ui.Layout.Text = null,
+}) void {
+    const fraction = std.math.clamp(args.fraction, 0, 1);
+    ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width, .heigth = args.heigth } },
+        .color = .new(0, 0, 0, 0.55),
+    });
+    ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width * fraction, .heigth = args.heigth } },
+        .color = args.fill_color,
+    });
+    if (args.text) |bar_text| ui.add(null, .{
+        .offset = .{ .left = args.left, .top = args.top },
+        .size = .{ .fixed = .{ .width = args.width, .heigth = args.heigth } },
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = bar_text,
+    });
+}
+
+fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
+    const bar_width: f32 = 46;
+    const bar_heigth: f32 = 4;
+    for (info.world.entities.values()) |*entity| {
+        if (entity.kind != .enemy) continue;
+        const health = entity.stats.get(.health);
+        if (health.max <= 0 or health.current <= 0 or health.current >= health.max) continue;
+
+        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
+            nz.vec.normalize(entity.transform.position)
+        else
+            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
+        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
+        const screen = worldToScreen(info.world.camera, bar_position, ui.screen_width, ui.screen_heigth) orelse continue;
+
+        addHealthBar(ui, .{
+            .left = screen[0] - bar_width / 2,
+            .top = screen[1] - bar_heigth,
+            .width = bar_width,
+            .heigth = bar_heigth,
+            .fraction = health.current / health.max,
+            .fill_color = .new(0.9, 0.2, 0.15, 0.9),
+        });
     }
 }
 
