@@ -155,6 +155,7 @@ pub const UpdateTransform = struct {
 pub const UpdateStat = struct {
     id: entity.Id,
     stat_kind: root.Stat.Kind,
+    source: entity.Id,
     amount: UpdateStatAmount,
 };
 

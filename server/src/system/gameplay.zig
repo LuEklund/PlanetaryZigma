@@ -77,7 +77,7 @@ pub fn updateEnemies(info: *const Info) !void {
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
-                    if (!info.world.removeHealth(player, damage)) std.log.debug("did not take damage", .{});
+                    if (!info.world.removeHealth(player, damage, enemy)) std.log.debug("did not take damage", .{});
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
@@ -125,7 +125,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
 
         switch (projectile_kind) {
             .cube => {
-                if (info.world.removeHealth(hit_entity, entity.stats.get(.damage).current)) {
+                if (info.world.removeHealth(hit_entity, entity.stats.get(.damage).current, owner_entity)) {
                     tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.get(.damage).current);
                 }
             },
@@ -187,7 +187,7 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
             slot.* = kept.entity.id;
             visited[visited_count] = kept.entity.id;
             visited_count += 1;
-            _ = info.world.removeHealth(kept.entity, damage);
+            _ = info.world.removeHealth(kept.entity, damage, owner_entity);
             queue[queue_tail] = .{ .position = kept.entity.transform.position, .jumps_left = source.jumps_left - 1 };
             queue_tail += 1;
         }
@@ -209,7 +209,7 @@ fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, imp
 
         const falloff = 1.0 - distance / rocket_explosion_radius;
         const damage = base_damage * rocket_damage_multiplier * (0.5 + falloff * 0.5);
-        _ = info.world.removeHealth(candidate, damage);
+        _ = info.world.removeHealth(candidate, damage, owner_entity);
     }
     tryProcLightning(info, owner_entity, impact_position, null, base_damage);
 }
@@ -223,23 +223,7 @@ pub fn updateItems(info: *const Info) !void {
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
-            if (player.inventory.get(item_kind) >= 255) continue;
-
-            const item_count = player.inventory.add(item_kind, 1);
-            player.stats.gain(item_kind, 1);
-            player.stats.refresh(player.inventory);
-            info.world.client_updates.appendAssumeCapacity(.{ .inventory = .{
-                .id = player_id,
-                .item_kind = item_kind,
-                .set = item_count,
-            } });
-            for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
-                if (item_kind.attributes().get(stat_kind) == 0) continue;
-                const stat = player.stats.get(stat_kind);
-                info.world.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
-                info.world.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });
-            }
-
+            const item_count = info.world.giveItem(player, item_kind, 1) orelse continue;
             info.world.queueDespawn(entity.id);
             std.log.debug("item {t}, count: {d}", .{ item_kind, item_count });
         }

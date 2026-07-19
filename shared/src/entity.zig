@@ -116,7 +116,7 @@ pub fn spec(kind: Kind) Spec {
             },
             .has_health = true,
             .expects_model = true,
-            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 10, .range = 10 },
+            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10 },
             .currency = 100,
         },
         .planet => .{

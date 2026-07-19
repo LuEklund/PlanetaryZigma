@@ -6,6 +6,7 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 const Particle = @import("system/Particle.zig");
+const DamagePopup = @import("system/DamagePopup.zig");
 const Model = @import("Renderer/Vulkan/Model.zig");
 
 pub const RenderCommand = union(enum) {
@@ -26,6 +27,7 @@ pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
 particles: std.ArrayList(Particle) = .empty,
+damage_popups: std.ArrayList(DamagePopup) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
@@ -72,6 +74,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .particles = try .initCapacity(gpa, 4096),
+        .damage_popups = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
 }
@@ -91,6 +94,7 @@ pub fn deinit(self: *World) void {
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.particles.deinit(self.gpa);
+    self.damage_popups.deinit(self.gpa);
 }
 
 pub fn clearSession(self: *World) void {
@@ -106,6 +110,7 @@ pub fn clearSession(self: *World) void {
     self.pending_inventory.clearRetainingCapacity();
     clearPendingPlayerNames(self);
     self.attack_events.clearRetainingCapacity();
+    self.damage_popups.clearRetainingCapacity();
 
     self.camera = .{};
     self.controller.clearInput();
@@ -188,7 +193,7 @@ pub fn flush(self: *World) !void {
     self.clearPendingPlayerNames();
 
     for (self.pending_stats.items) |command| {
-        if (self.getPtr(command.id)) |entity| applyStat(entity, command);
+        if (self.getPtr(command.id)) |entity| self.applyStat(entity, command);
     }
     self.pending_stats.clearRetainingCapacity();
 
@@ -218,11 +223,27 @@ pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.Spa
     }
 }
 
-pub fn applyStat(entity: *Entity, command: shared.net.UpdateStat) void {
+pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) void {
+    if (command.stat_kind == .health and command.source != .none and command.amount == .set_current) {
+        const delta = entity.stats.get(.health).current - command.amount.set_current;
+        self.addDamagePopup(entity, command.source, delta);
+    }
     switch (command.amount) {
         .set_current => |value| entity.stats.setCurrent(command.stat_kind, value),
         .set_max => |value| entity.stats.setMax(command.stat_kind, value),
     }
+}
+
+fn addDamagePopup(self: *World, target: *const Entity, source: shared.entity.Id, delta: f32) void {
+    if (delta == 0) return;
+    if (source != self.player_id and target.id != self.player_id) return;
+    const color: [3]f32 = if (delta < 0)
+        .{ 0.3, 0.95, 0.35 }
+    else if (target.id == self.player_id)
+        .{ 0.95, 0.25, 0.2 }
+    else
+        .{ 1, 1, 1 };
+    DamagePopup.spawn(&self.damage_popups, self.prng.random(), target.transform.position, delta, color);
 }
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {

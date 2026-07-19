@@ -9,6 +9,7 @@ const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
+const DamagePopup = @import("../DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
@@ -33,6 +34,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
         addEnemyHealthBars(info, ui);
+        addDamagePopups(info, ui);
 
         const health = player.stats.get(.health);
         const healthbar_heigth: f32 = 50;
@@ -302,6 +304,27 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
             .heigth = bar_heigth,
             .fraction = health.current / health.max,
             .fill_color = .new(0.9, 0.2, 0.15, 0.9),
+        });
+    }
+}
+
+fn addDamagePopups(info: *const Info, ui: *Ui) void {
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+    for (info.world.damage_popups.items) |popup| {
+        const up = shared.planetUp(popup.position) orelse .{ 0, 1, 0 };
+        const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
+        const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
+        const alpha = 1 - popup.age / DamagePopup.lifetime;
+        const rounded = @round(@abs(popup.amount) * 10) / 10;
+        const text = if (popup.amount < 0)
+            ui.print("+{d}", .{rounded})
+        else
+            ui.print("{d}", .{rounded});
+        const text_size = ui.textSize(text, 24);
+        ui.add(null, .{
+            .offset = .{ .left = screen[0] - text_size.width / 2, .top = screen[1] },
+            .size = .{ .fixed = text_size },
+            .text = .{ .data = text, .size = 24, .color = .new(popup.color[0], popup.color[1], popup.color[2], alpha) },
         });
     }
 }

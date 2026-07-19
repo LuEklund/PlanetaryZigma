@@ -30,18 +30,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         if (player.controller.input.keys.k and info.elapsed_time - player.last_attack >= 0.1) {
             std.log.debug("pres", .{});
             player.last_attack = info.elapsed_time;
-            _ = try info.world.spawn(
-                .{
-                    .kind = .{ .item = .lightning },
-                    .transform = player.transform,
-                },
-            );
-            _ = try info.world.spawn(
-                .{
-                    .kind = .{ .item = .rocket },
-                    .transform = player.transform,
-                },
-            );
+            _ = info.world.giveItem(player, .pickaxe, 1);
             // _ = info.world.spawn(.{
             //     .kind = .{ .enemy = .tubloida },
             //     .transform = .{ .position = player.transform.position },

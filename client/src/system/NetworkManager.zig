@@ -333,7 +333,7 @@ fn handleCommand(
                 info.world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            World.applyStat(entity, update_stat_command);
+            info.world.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {

@@ -8,6 +8,7 @@ const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
 const Particle = @import("system/Particle.zig");
+const DamagePopup = @import("system/DamagePopup.zig");
 const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
@@ -96,6 +97,7 @@ pub const Context = struct {
         // tracy.frameMark();
         const paused_before_hud = self.hud.overlay != .none;
         Particle.update(&info.world.particles, info.delta_time);
+        DamagePopup.update(&info.world.damage_popups, info.delta_time);
         if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
         switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, self.renderer.inner.resources, &info.world.controller, &self.options)) {
             .none => {},
