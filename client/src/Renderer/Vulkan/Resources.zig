@@ -25,7 +25,7 @@ pub const default_mesh_name: []const u8 = "default";
 pub const explosion_particle_name: []const u8 = "explosion_particle";
 pub const lightning_particle_name: []const u8 = "lightning_particle";
 pub const max_textures = 256;
-const explosion_particle_texture_size: u32 = 64;
+const particle_texture_size: u32 = 64;
 
 pub const PipelineLayoutKind = enum { world, sky, ui };
 
@@ -525,8 +525,8 @@ pub fn createParticleResources(
         self.device,
         c.VK_FORMAT_R8G8B8A8_UNORM,
         .{
-            .width = explosion_particle_texture_size,
-            .height = explosion_particle_texture_size,
+            .width = particle_texture_size,
+            .height = particle_texture_size,
             .depth = 1,
         },
         .@"2d",
@@ -536,12 +536,12 @@ pub fn createParticleResources(
     );
     errdefer texture.deinit(self.vma, self.device);
 
-    var pixels: [explosion_particle_texture_size * explosion_particle_texture_size * 4]u8 = undefined;
-    const size_f: f32 = @floatFromInt(explosion_particle_texture_size);
+    var pixels: [particle_texture_size * particle_texture_size * 4]u8 = undefined;
+    const size_f: f32 = @floatFromInt(particle_texture_size);
     const center = (size_f - 1.0) * 0.5;
     const radius = center;
-    for (0..explosion_particle_texture_size) |y| {
-        for (0..explosion_particle_texture_size) |x| {
+    for (0..particle_texture_size) |y| {
+        for (0..particle_texture_size) |x| {
             const x_f: f32 = @floatFromInt(x);
             const y_f: f32 = @floatFromInt(y);
             const dx = (x_f - center) / radius;
@@ -550,7 +550,7 @@ pub fn createParticleResources(
             const core = std.math.clamp(1.0 - distance, 0.0, 1.0);
             const alpha = core * core;
             const heat = @sqrt(core);
-            const pixel_index = (y * explosion_particle_texture_size + x) * 4;
+            const pixel_index = (y * particle_texture_size + x) * 4;
             for (0..3) |channel| {
                 pixels[pixel_index + channel] = @intFromFloat(ramp.edge_color[channel] + (ramp.center_color[channel] - ramp.edge_color[channel]) * heat);
             }

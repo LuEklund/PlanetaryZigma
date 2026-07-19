@@ -143,28 +143,15 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
-    switch (entity.kind) {
-        .enemy => |enemy_kind| switch (enemy_kind) {
-            .tubloid => {
-                entity.stats.init(20, 3, 1, 1, 2);
-                entity.currency = 5;
-            },
-            .tubloida => {
-                entity.stats.init(20, 3, 1, 0.2, 10);
-                entity.currency = 7;
-            },
-            .bloorpLord => {
-                entity.stats.init(100 * @as(f32, @floatFromInt(self.next_stage)), 10, 1, 0.25, 40);
-                entity.currency = 100;
-            },
-        },
-        .player => {
-            entity.currency = 100;
-            entity.stats.init(100, 10, 0.1, 10, 10);
-        },
-        .lootbox => entity.currency = 10,
-        else => {},
+    const kind_spec = shared.entity.spec(entity.kind);
+    if (kind_spec.stats) |stats_spec| {
+        var health = stats_spec.health;
+        if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
+            health *= @as(f32, @floatFromInt(self.next_stage));
+        }
+        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range);
     }
+    entity.currency = kind_spec.currency;
     self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }

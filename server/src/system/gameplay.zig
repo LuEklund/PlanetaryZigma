@@ -147,7 +147,7 @@ fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
 
 fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {
     const lightning_jumps = owner_entity.inventory.get(.lightning);
-    const lightning_chance = shared.Item.Kind.lightning.getAttributeValues().lightning_chance;
+    const lightning_chance = shared.Item.Kind.lightning.attributes().lightning_chance;
     if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;
@@ -241,7 +241,7 @@ pub fn updateItems(info: *const Info) !void {
                 .set = item_count,
             } });
             for (std.enums.values(shared.Stat.Kind)) |stat_kind| {
-                if (item_kind.getAttributeValues().get(stat_kind) == 0) continue;
+                if (item_kind.attributes().get(stat_kind) == 0) continue;
                 const stat = player.stats.get(stat_kind);
                 info.world.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_max = @floatCast(stat.max) } } });
                 info.world.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player_id, .stat_kind = stat_kind, .amount = .{ .set_current = @floatCast(stat.current) } } });

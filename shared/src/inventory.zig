@@ -10,7 +10,7 @@ pub const Item = struct {
         rocket = 4,
         lightning = 5,
 
-        pub fn getAttributeValues(kind: Kind) Attribute {
+        pub fn attributes(kind: Kind) Attribute {
             return spec(kind).attributes;
         }
     };

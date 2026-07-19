@@ -159,7 +159,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             const start_direction = nz.vec.normalize(aim_point - transform.position);
             const rocket_chance = @min(
                 @as(f32, @floatFromInt(player.inventory.get(.rocket))) *
-                    shared.Item.Kind.rocket.getAttributeValues().rocket_chance,
+                    shared.Item.Kind.rocket.attributes().rocket_chance,
                 1.0,
             );
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;

@@ -55,7 +55,7 @@ pub const Stats = struct {
     }
 
     pub fn gain(self: *Stats, item_kind: Item.Kind, amount: f32) void {
-        const attributes = item_kind.getAttributeValues();
+        const attributes = item_kind.attributes();
         for (std.enums.values(Stat.Kind)) |kind| {
             self.getPtr(kind).current += attributes.get(kind) * amount;
         }
@@ -65,7 +65,7 @@ pub const Stats = struct {
         for (std.enums.values(Stat.Kind)) |kind| {
             var total: f32 = 0;
             for (std.enums.values(Item.Kind)) |item_kind| {
-                total += item_kind.getAttributeValues().get(kind) * @as(f32, @floatFromInt(inv.get(item_kind)));
+                total += item_kind.attributes().get(kind) * @as(f32, @floatFromInt(inv.get(item_kind)));
             }
             self.getPtr(kind).max = self.get(kind).base_max + total;
         }

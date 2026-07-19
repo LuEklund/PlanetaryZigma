@@ -98,7 +98,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             if (ui.isHot(ui.print("{t}", .{item_kind}))) {
-                const attributes = item_kind.getAttributeValues();
+                const attributes = item_kind.attributes();
                 var tool_tip_text: []const u8 = "";
                 inline for (std.meta.fields(shared.Item.Attribute)) |field| {
                     const value = @field(attributes, field.name);

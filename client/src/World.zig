@@ -139,6 +139,7 @@ pub fn flush(self: *World) !void {
         entity.* = .{
             .id = entity_info.id,
             .kind = entity_info.kind,
+            .currency = entity_info.currency,
             .transform = .{
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),

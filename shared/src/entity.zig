@@ -74,12 +74,22 @@ pub fn modelSpec(kind: Kind) ModelSpec {
     return spec(kind).model;
 }
 
+pub const StatsSpec = struct {
+    health: f32,
+    speed: f32,
+    damage: f32,
+    attack_speed: f32,
+    range: f32,
+};
+
 pub const Spec = struct {
     collider: ?ColliderShape,
     model: ModelSpec,
     icon: ?[]const u8 = null,
     has_health: bool,
     expects_model: bool,
+    stats: ?StatsSpec = null,
+    currency: u32 = 0,
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -106,6 +116,8 @@ pub fn spec(kind: Kind) Spec {
             },
             .has_health = true,
             .expects_model = true,
+            .stats = .{ .health = 100, .speed = 10, .damage = 0.1, .attack_speed = 10, .range = 10 },
+            .currency = 100,
         },
         .planet => .{
             .collider = null,
@@ -124,6 +136,7 @@ pub fn spec(kind: Kind) Spec {
             .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
+            .currency = 10,
         },
         .projectile_cube => .{
             .collider = null,
@@ -143,12 +156,16 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
                 .has_health = true,
                 .expects_model = true,
+                .stats = .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 },
+                .currency = 5,
             },
             .tubloida => .{
                 .collider = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } },
                 .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
                 .has_health = true,
                 .expects_model = true,
+                .stats = .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 },
+                .currency = 7,
             },
             .bloorpLord => .{
                 .collider = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } },
@@ -159,6 +176,8 @@ pub fn spec(kind: Kind) Spec {
                 } },
                 .has_health = true,
                 .expects_model = true,
+                .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 },
+                .currency = 100,
             },
         },
         .item => |item_kind| .{

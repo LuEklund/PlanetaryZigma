@@ -298,7 +298,6 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try client.sendCommand(writer, .{ .set_currency = .{ .id = entity.id, .amount = entity.currency } }, .reliable);
                 try sendStats(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
@@ -375,6 +374,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
         .rotation = entity.transform.rotation.toVec(),
         .velocity = entity.velocity,
         .tick = info.tick,
+        .currency = entity.currency,
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = info.world.planet_radius },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,

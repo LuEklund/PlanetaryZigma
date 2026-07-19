@@ -104,6 +104,7 @@ pub const SpawnEntity = struct {
     rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     velocity: @Vector(3, f32) = @splat(0),
     tick: u32 = 0,
+    currency: u32 = 0,
     data: SpawnEntityData,
 };
 
