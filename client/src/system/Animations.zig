@@ -122,6 +122,9 @@ pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(
 
     for (info.world.entities.values()) |*entity| {
         switch (entity.kind) {
+            .lootbox => {
+                if (entity.death_anim > 0) entity.transform.scale = @splat(1.0 - entity.death_anim);
+            },
             .item => {
                 const spawn_duration = shared.entity.spec(entity.kind).spawn_duration;
                 if (entity.spawn_anim < 1.0 and spawn_duration > 0) {

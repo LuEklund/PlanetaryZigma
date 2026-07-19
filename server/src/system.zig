@@ -79,6 +79,7 @@ pub const Context = struct {
         try gameplay.updateItems(info);
         gameplay.updateTeleporter(info, &self.director);
         gameplay.updateLifetimes(info);
+        gameplay.playerRegen(info);
         try self.world.flush(&self.physics);
     }
 

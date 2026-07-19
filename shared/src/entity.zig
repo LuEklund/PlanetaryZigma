@@ -74,12 +74,14 @@ pub fn modelSpec(kind: Kind) ModelSpec {
     return spec(kind).model;
 }
 
+//TODO: should be from stats
 pub const StatsSpec = struct {
     health: f32,
     speed: f32,
     damage: f32,
     attack_speed: f32,
     range: f32,
+    regen: f32 = 0,
 };
 
 pub const Spec = struct {
@@ -118,7 +120,7 @@ pub fn spec(kind: Kind) Spec {
             },
             .has_health = true,
             .expects_model = true,
-            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10 },
+            .stats = .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 },
             .currency = 100,
         },
         .planet => .{

@@ -153,7 +153,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
         if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
             health *= @as(f32, @floatFromInt(self.next_stage));
         }
-        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range);
+        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range, stats_spec.regen);
     }
     entity.currency = kind_spec.currency;
     self.new_spawns.appendAssumeCapacity(id);
@@ -205,10 +205,12 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     return self.addHealth(entity, -amount, source);
 }
 
+//TODO: bool the right kind of return?
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
+    if (current <= 0 or entity.stats.get(.health).max <= current) return true;
     self.client_updates.appendAssumeCapacity(.{ .stat = .{
         .id = entity.id,
         .stat_kind = .health,
@@ -252,6 +254,18 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
+                if (self.getPtr(self.teleporter_id)) |teleporter| {
+                    const random = self.prng.random();
+                    const spawn_direction = shared.planetUp(teleporter.transform.position) orelse .{ 0, 1, 0 };
+                    const transform = self.surfaceTransform(shared.planetSurfacePointNear(
+                        spawn_direction,
+                        @floatFromInt(self.planet_radius),
+                        10,
+                        20,
+                        random,
+                    ));
+                    _ = try self.spawn(.{ .kind = .{ .item = .lightning }, .transform = transform });
+                }
             }
             entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);
@@ -280,4 +294,33 @@ pub fn objectLayer(kind: shared.entity.Kind) Physics.ObjectLayer {
         .item => .planet_only,
         else => .moving,
     };
+}
+
+pub fn spawnItem(world: *World, kind: shared.Item, vector_direction: nz.Vec3(f32)) !void {
+    const transform = surfaceTransform(world, vector_direction);
+    const item = try world.spawn(.{
+        .kind = .{ .item = kind },
+        .transform = transform,
+    });
+    std.log.debug("spawn item {t} id={d}", .{ kind, item.id });
+}
+
+pub fn surfaceTransform(world: *World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
+    const surface = shared.planetSurfacePoint(vector_direction, @floatFromInt(world.planet_radius));
+    const planet_up = nz.vec.normalize(surface);
+    return .{
+        .position = surface + nz.vec.scale(planet_up, 1.5),
+        .rotation = alignUpToPlanet(planet_up),
+    };
+}
+
+pub fn alignUpToPlanet(planet_up: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, planet_up), -1.0, 1.0);
+    if (dot >= 0.9999) return .identity;
+    const axis = if (dot > -0.9999)
+        nz.vec.normalize(nz.vec.cross(default_up, planet_up))
+    else
+        nz.Vec3(f32){ 1, 0, 0 };
+    return nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
 }

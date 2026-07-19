@@ -27,7 +27,6 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const planet_up = nz.vec.normalize(transform.position);
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
-
         switch (input.dev_command) {
             .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
             .f2 => {
@@ -77,8 +76,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             info.world.queueDespawn(entity.id);
 
                             const random = info.world.prng.random();
-                            const item_kind = random.enumValue(shared.Item);
-                            try Director.spawnItem(info.world, item_kind, entity.transform.position);
+                            var item_kind = random.enumValue(shared.Item);
+                            if (item_kind == .lightning) item_kind = .oxygen_tank;
+                            try info.world.spawnItem(item_kind, entity.transform.position);
                             player.currency -= entity.currency;
                             info.world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
                         }

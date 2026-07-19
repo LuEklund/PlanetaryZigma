@@ -45,7 +45,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             .heigth = healthbar_heigth,
             .fraction = health.current / health.max,
             .fill_color = .new(0, 1, 0, 1),
-            .text = .{ .data = ui.print("{d} / {d}", .{ health.current, health.max }), .size = 40 },
+            .text = .{ .data = ui.print("{d:.0} / {d}", .{ health.current, health.max }), .size = 40 },
         });
 
         const inventory_width: f32 = ui.screen_width * 0.6;
@@ -67,7 +67,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             .name = "inventory",
             // .child_anchor = .{ .y = .end, .x = .end },
             .size = .{ .fixed = .{ .width = inventory_width, .heigth = inventory_heigth } },
-            .color = .new(0.5, 0.5, 0.5, 0.4),
+            .color = .new(0.5, 0.5, 0.5, 0.2),
             .axis_align = .horizontal,
             .gap = 10,
         });

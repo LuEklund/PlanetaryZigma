@@ -18,7 +18,6 @@ const StageItemSpawn = struct {
     count: u32,
 };
 
-const item_surface_offset: f32 = 1.2;
 const dev_lootbox_min_distance: f32 = 5;
 const dev_lootbox_max_distance: f32 = 10;
 
@@ -118,7 +117,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
             nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, @floatFromInt(world.planet_radius), dev_lootbox_min_distance, dev_lootbox_max_distance, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        const transform = surfaceTransform(world, vector_direction);
+        const transform = world.surfaceTransform(vector_direction);
         _ = try world.spawn(.{
             .kind = .lootbox,
             .transform = transform,
@@ -140,33 +139,4 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
     } else .identity;
     world.teleporter_id = teleporter.id;
-}
-
-pub fn spawnItem(world: *system.World, kind: shared.Item, vector_direction: nz.Vec3(f32)) !void {
-    const transform = surfaceTransform(world, vector_direction);
-    const item = try world.spawn(.{
-        .kind = .{ .item = kind },
-        .transform = transform,
-    });
-    std.log.debug("spawn item {t} id={d}", .{ kind, item.id });
-}
-
-fn surfaceTransform(world: *system.World, vector_direction: nz.Vec3(f32)) nz.Transform3D(f32) {
-    const surface = shared.planetSurfacePoint(vector_direction, @floatFromInt(world.planet_radius));
-    const planet_up = nz.vec.normalize(surface);
-    return .{
-        .position = surface + nz.vec.scale(planet_up, item_surface_offset),
-        .rotation = alignUpToPlanet(planet_up),
-    };
-}
-
-fn alignUpToPlanet(planet_up: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
-    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
-    const dot = std.math.clamp(nz.vec.dot(default_up, planet_up), -1.0, 1.0);
-    if (dot >= 0.9999) return .identity;
-    const axis = if (dot > -0.9999)
-        nz.vec.normalize(nz.vec.cross(default_up, planet_up))
-    else
-        nz.Vec3(f32){ 1, 0, 0 };
-    return nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
 }
