@@ -180,8 +180,15 @@ pub const Event = union(enum) {
     };
 
     pub const Effect = union(enum) {
+        pub const Lightning = struct {
+            pub const max_targets = 4;
+
+            start_position: @Vector(3, f32),
+            targets: [max_targets]entity.Id,
+        };
+
         rocket_impact: @Vector(3, f32),
-        lightning: [5]entity.Id,
+        lightning: Lightning,
     };
 
     teleport_start: void,

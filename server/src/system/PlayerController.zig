@@ -36,6 +36,12 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                     .transform = player.transform,
                 },
             );
+            _ = try info.world.spawn(
+                .{
+                    .kind = .{ .item = .rocket },
+                    .transform = player.transform,
+                },
+            );
             // _ = info.world.spawn(.{
             //     .kind = .{ .enemy = .tubloida },
             //     .transform = .{ .position = player.transform.position },

@@ -9,9 +9,11 @@ const Info = system.Info;
 
 const rocket_explosion_radius: f32 = 8;
 const rocket_damage_multiplier: f32 = 1.5;
-const lightning_chain_range: f32 = 12;
-const max_lightning_targets = 4;
-const max_lightning_victims = 64;
+const lightning = .{
+    .chain_range = @as(f32, 12),
+    .max_targets = shared.net.Event.Effect.Lightning.max_targets,
+    .max_victims = 64,
+};
 
 pub fn updateEnemies(info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
@@ -123,17 +125,12 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
         const hit_entity = info.world.getPtr(hit_id) orelse continue;
         if (owner_entity.kind.eql(hit_entity.kind)) continue;
 
-        const lightning_jumps = owner_entity.inventory.get(.lightning);
-        const lightning_chance = shared.Item.Kind.lightning.getAttributeValues().lightning_chance;
-        if (owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance) {
-            var visited: [max_lightning_victims]shared.entity.Id = undefined;
-            visited[0] = hit_entity.id;
-            var visited_count: usize = 1;
-            chainLightning(info, owner_entity, hit_entity, entity.stats.get(.damage).current, lightning_jumps, &visited, &visited_count);
-        }
-
         switch (projectile_kind) {
-            .cube => _ = info.world.removeHealth(hit_entity, entity.stats.get(.damage).current),
+            .cube => {
+                if (info.world.removeHealth(hit_entity, entity.stats.get(.damage).current)) {
+                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.get(.damage).current);
+                }
+            },
             .rocket => {
                 damageRocketImpact(info, owner_entity, impact_position, entity.stats.get(.damage).current);
                 info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
@@ -148,51 +145,63 @@ fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
     return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else .{ 0, 1, 0 };
 }
 
-fn chainLightning(
-    info: *const Info,
-    owner_entity: *const system.Entity,
-    source_entity: *system.Entity,
-    damage: f32,
-    jumps: u32,
-    visited: *[max_lightning_victims]shared.entity.Id,
-    visited_count: *usize,
-) void {
-    if (jumps == 0 or visited_count.* >= visited.len) return;
+fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {
+    const lightning_jumps = owner_entity.inventory.get(.lightning);
+    const lightning_chance = shared.Item.Kind.lightning.getAttributeValues().lightning_chance;
+    if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
 
-    const Chained = struct { entity: *system.Entity, distance: f32 };
-    var chained: [max_lightning_targets]Chained = undefined;
-    var chained_count: usize = 0;
-    const max_targets = @min(chained.len, visited.len - visited_count.*);
-    for (info.world.entities.values()) |*candidate| {
-        if (candidate.kind.eql(owner_entity.kind) or !candidate.kind.hasHealth()) continue;
-        if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count.*], candidate.id) != null) continue;
-        const candidate_distance = nz.vec.distance(candidate.transform.position, source_entity.transform.position);
-        if (candidate_distance > lightning_chain_range) continue;
-        if (chained_count < max_targets) {
-            chained_count += 1;
-        } else if (candidate_distance >= chained[chained_count - 1].distance) {
-            continue;
-        }
-        var index = chained_count - 1;
-        while (index > 0 and chained[index - 1].distance > candidate_distance) : (index -= 1) {
-            chained[index] = chained[index - 1];
-        }
-        chained[index] = .{ .entity = candidate, .distance = candidate_distance };
+    var visited: [lightning.max_victims]shared.entity.Id = undefined;
+    var visited_count: usize = 0;
+    if (hit_entity) |hit| {
+        visited[0] = hit.id;
+        visited_count = 1;
     }
-    if (chained_count == 0) return;
+    const Source = struct { position: nz.Vec3(f32), jumps_left: u32 };
+    var queue: [1 + lightning.max_victims]Source = undefined;
+    queue[0] = .{ .position = origin, .jumps_left = lightning_jumps };
+    var queue_head: usize = 0;
+    var queue_tail: usize = 1;
 
-    var chain: [1 + max_lightning_targets]shared.entity.Id = @splat(.none);
-    chain[0] = source_entity.id;
-    for (chained[0..chained_count], chain[1..][0..chained_count]) |kept, *slot| {
-        slot.* = kept.entity.id;
-        visited[visited_count.*] = kept.entity.id;
-        visited_count.* += 1;
-        _ = info.world.removeHealth(kept.entity, damage);
-    }
-    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .lightning = chain } } });
+    while (queue_head < queue_tail) {
+        const source = queue[queue_head];
+        queue_head += 1;
+        if (source.jumps_left == 0 or visited_count >= visited.len) continue;
 
-    for (chained[0..chained_count]) |kept| {
-        chainLightning(info, owner_entity, kept.entity, damage, jumps - 1, visited, visited_count);
+        const Chained = struct { entity: *system.Entity, distance: f32 };
+        var chained: [lightning.max_targets]Chained = undefined;
+        var chained_count: usize = 0;
+        const max_targets = @min(chained.len, visited.len - visited_count);
+        for (info.world.entities.values()) |*candidate| {
+            if (candidate.kind.eql(owner_entity.kind) or !candidate.kind.hasHealth()) continue;
+            if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count], candidate.id) != null) continue;
+            const candidate_distance = nz.vec.distance(candidate.transform.position, source.position);
+            if (candidate_distance > lightning.chain_range) continue;
+            if (chained_count < max_targets) {
+                chained_count += 1;
+            } else if (candidate_distance >= chained[chained_count - 1].distance) {
+                continue;
+            }
+            var index = chained_count - 1;
+            while (index > 0 and chained[index - 1].distance > candidate_distance) : (index -= 1) {
+                chained[index] = chained[index - 1];
+            }
+            chained[index] = .{ .entity = candidate, .distance = candidate_distance };
+        }
+        if (chained_count == 0) continue;
+
+        var targets: [lightning.max_targets]shared.entity.Id = @splat(.none);
+        for (chained[0..chained_count], targets[0..chained_count]) |kept, *slot| {
+            slot.* = kept.entity.id;
+            visited[visited_count] = kept.entity.id;
+            visited_count += 1;
+            _ = info.world.removeHealth(kept.entity, damage);
+            queue[queue_tail] = .{ .position = kept.entity.transform.position, .jumps_left = source.jumps_left - 1 };
+            queue_tail += 1;
+        }
+        info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .lightning = .{
+            .start_position = source.position,
+            .targets = targets,
+        } } } });
     }
 }
 
@@ -209,6 +218,7 @@ fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, imp
         const damage = base_damage * rocket_damage_multiplier * (0.5 + falloff * 0.5);
         _ = info.world.removeHealth(candidate, damage);
     }
+    tryProcLightning(info, owner_entity, impact_position, null, base_damage);
 }
 
 pub fn updateItems(info: *const Info) !void {
