@@ -6,7 +6,7 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../system.zig");
-const Particle = @import("Particle.zig");
+const Emitter = @import("Emitter.zig");
 const World = system.World;
 const Info = system.Info;
 const nz = shared.numz;
@@ -352,11 +352,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Particle.spawnRocketExplosion(&info.world.particles, info.world.prng.random(), position);
+                        Emitter.spawnRocketExplosion(&info.world.emitters, position, info.elapsed_time);
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = info.world.getPtr(id) orelse continue;
-                        Particle.spawnLightningArc(&info.world.particles, info.world.prng.random(), bolt.start_position, target.transform.position);
+                        Emitter.spawnLightningArc(&info.world.emitters, bolt.start_position, target.transform.position, info.elapsed_time);
                     },
                 },
                 .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {

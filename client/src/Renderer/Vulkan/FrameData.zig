@@ -15,19 +15,17 @@ command_buffer: c.VkCommandBuffer,
 gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
-particle_buffer: Buffer,
+emitter_buffer: Buffer,
 
 pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
-pub const max_particles: u32 = 4096;
+pub const max_emitters: u32 = 256;
 
-pub const GPUParticle = extern struct {
-    position: [3]f32,
-    scale: f32,
-    texture_index: u32,
-    alpha: f32,
-    lifetime_fraction: f32,
-    seed: f32,
+pub const GPUEmitter = extern struct {
+    origin: [3]f32,
+    spawn_time: f32,
+    target: [3]f32,
+    _: f32 = 0,
 };
 
 pub const DebugVertex = extern struct {
@@ -108,11 +106,11 @@ pub fn init(vma: Vma, device: Device) !FrameData {
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
             },
         ),
-        .particle_buffer = try .init(
+        .emitter_buffer = try .init(
             device,
             vma,
-            GPUParticle,
-            max_particles,
+            GPUEmitter,
+            max_emitters,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
@@ -129,5 +127,5 @@ pub fn deinit(self: *FrameData, vma: Vma, device: Device) void {
     self.gpu_scene.deinit(vma);
     self.ui_vertex_buffer.deinit(vma);
     self.debug_vertex_buffer.deinit(vma);
-    self.particle_buffer.deinit(vma);
+    self.emitter_buffer.deinit(vma);
 }

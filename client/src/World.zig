@@ -5,7 +5,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
-const Particle = @import("system/Particle.zig");
+const Emitter = @import("system/Emitter.zig");
 const DamagePopup = @import("system/DamagePopup.zig");
 const Model = @import("Renderer/Vulkan/Model.zig");
 
@@ -26,7 +26,7 @@ pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
-particles: std.ArrayList(Particle) = .empty,
+emitters: std.ArrayList(Emitter) = .empty,
 damage_popups: std.ArrayList(DamagePopup) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
@@ -73,7 +73,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_player_names = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .particles = try .initCapacity(gpa, 4096),
+        .emitters = try .initCapacity(gpa, 256),
         .damage_popups = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
@@ -93,7 +93,7 @@ pub fn deinit(self: *World) void {
     self.pending_player_names.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
-    self.particles.deinit(self.gpa);
+    self.emitters.deinit(self.gpa);
     self.damage_popups.deinit(self.gpa);
 }
 

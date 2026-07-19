@@ -15,8 +15,6 @@ watchers: std.ArrayList(Watcher) = .empty,
 file_mtimes: std.ArrayList([]std.Io.Timestamp) = .empty,
 retries: std.ArrayList(Retry) = .empty,
 
-const is_windows = builtin.os.tag == .windows;
-
 const Retry = struct {
     loader_index: usize,
     file_index: usize,
@@ -66,16 +64,9 @@ pub fn deinit(self: *AssetServer) void {
 
 pub fn addLoader(self: *AssetServer, loader: *Loader) !void {
     try self.loaders.append(self.gpa, loader);
-    if (is_windows) {
-        const mtimes = try self.gpa.alloc(std.Io.Timestamp, loader.files.len);
-        @memset(mtimes, .zero);
-        try self.file_mtimes.append(self.gpa, mtimes);
-    } else {
-        const path = try std.Io.Dir.path.joinZ(self.gpa, &.{ self.assets_path, loader.root_path });
-        defer self.gpa.free(path);
-        const watcher = try self.watchers.addOne(self.gpa);
-        watcher.* = try .init(path);
-    }
+    const mtimes = try self.gpa.alloc(std.Io.Timestamp, loader.files.len);
+    @memset(mtimes, .zero);
+    try self.file_mtimes.append(self.gpa, mtimes);
 }
 
 pub fn load(self: *AssetServer) !void {
@@ -83,7 +74,7 @@ pub fn load(self: *AssetServer) !void {
         const loader = self.loaders.items[loader_index];
         for (0..loader.files.len) |file_index| {
             try self.loadFile(loader_index, file_index);
-            if (is_windows) self.file_mtimes.items[loader_index][file_index] = .now(self.io, .real);
+            self.file_mtimes.items[loader_index][file_index] = .now(self.io, .real);
         }
     }
 }
@@ -103,8 +94,6 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    if (is_windows) return self.pollChangedAssets();
-
     var retry_index: usize = 0;
     while (retry_index < self.retries.items.len) {
         const retry = self.retries.items[retry_index];
@@ -114,23 +103,7 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
             retry_index += 1;
         }
     }
-
-    for (self.watchers.items, self.loaders.items, 0..) |*watcher, loader, loader_index| {
-        while (try watcher.next()) |event| {
-            std.log.info("asset update: {t} {s}", .{ event.action, event.path });
-            switch (event.action) {
-                .created, .deleted => {},
-                .modified => for (loader.files, 0..) |file_path, file_index| {
-                    if (std.mem.eql(u8, file_path, event.path)) {
-                        self.loadFile(loader_index, file_index) catch |err| {
-                            std.log.warn("reload failed {s}: {t}, retrying", .{ file_path, err });
-                            try self.retries.append(self.gpa, .{ .loader_index = loader_index, .file_index = file_index });
-                        };
-                    }
-                },
-            }
-        }
-    }
+    try self.pollChangedAssets();
 }
 
 fn pollChangedAssets(self: *AssetServer) !void {

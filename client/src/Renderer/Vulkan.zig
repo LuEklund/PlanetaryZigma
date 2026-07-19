@@ -593,59 +593,51 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
 }
 
 fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) void {
+    const emitter_count: u32 = @intCast(@min(info.world.emitters.items.len, FrameData.max_emitters));
+    if (emitter_count == 0) return;
+    const emitters = info.world.emitters.items[0..emitter_count];
     const explosion_texture_index = self.resources.textureHandle(Resources.explosion_particle_name).index();
     const lightning_texture_index = self.resources.textureHandle(Resources.lightning_particle_name).index();
-
-    const particle_count: u32 = @intCast(@min(info.world.particles.items.len, FrameData.max_particles));
-    if (particle_count == 0) return;
-    const live_particles = info.world.particles.items[0..particle_count];
-    var bucket_counts: std.EnumArray(Shader.FragParticle, u32) = .initFill(0);
-    for (live_particles) |particle| bucket_counts.getPtr(particle.kind).* += 1;
-
-    var bucket_starts: std.EnumArray(Shader.FragParticle, u32) = .initFill(0);
-    var running_start: u32 = 0;
-    for (std.enums.values(Shader.FragParticle)) |kind| {
-        bucket_starts.set(kind, running_start);
-        running_start += bucket_counts.get(kind);
-    }
-
-    const gpu_particles: [*]FrameData.GPUParticle = @ptrCast(@alignCast(current_frame.particle_buffer.info.pMappedData));
-    var bucket_cursors = bucket_starts;
-    for (live_particles) |particle| {
-        const cursor = bucket_cursors.getPtr(particle.kind);
-        gpu_particles[cursor.*] = .{
-            .position = particle.position,
-            .scale = particle.scale,
-            .texture_index = @intCast(switch (particle.kind) {
-                .lightning => lightning_texture_index,
-                .explosion => explosion_texture_index,
-            }),
-            .alpha = 1,
-            .lifetime_fraction = @max(@as(f32, 0), particle.lifetime / particle.max_lifetime),
-            .seed = particle.seed,
-        };
-        cursor.* += 1;
-    }
 
     var color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
-    bindVertexShader(cmd, self.resources.shaderPtr(.{ .vert = .particle }));
 
-    const push: Shader.WorldPushConstant = .{
-        .model_matrix = nz.Mat4x4(f32).identity.d,
-        .vertex_buffer_address = current_frame.particle_buffer.getGPUAddress(),
-        .joint_matrices_address = 0,
-        .texture_index = 0,
-    };
+    const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
 
-    for (std.enums.values(Shader.FragParticle)) |kind| {
-        const bucket_count = bucket_counts.get(kind);
-        if (bucket_count == 0) continue;
-        bindFragmentShader(cmd, self.resources.shaderPtr(.{ .frag_particle = kind }));
-        c.vkCmdDraw(cmd, 6, bucket_count, 0, bucket_starts.get(kind));
+    var first_instance: u32 = 0;
+    for (std.enums.values(Shader.ParticleEffect)) |effect| {
+        var effect_emitter_count: u32 = 0;
+        for (emitters) |emitter| {
+            if (emitter.effect != effect) continue;
+            gpu_emitters[first_instance + effect_emitter_count] = .{
+                .origin = emitter.origin,
+                .spawn_time = emitter.spawn_time,
+                .target = emitter.target,
+            };
+            effect_emitter_count += 1;
+        }
+        if (effect_emitter_count == 0) continue;
+
+        const effect_spec = Shader.effectSpec(effect);
+        bindVertexShader(cmd, self.resources.shaderPtr(.{ .vert_particle = effect }));
+        bindFragmentShader(cmd, self.resources.shaderPtr(.{ .frag_particle = effect }));
+
+        const push: Shader.WorldPushConstant = .{
+            .model_matrix = nz.Mat4x4(f32).identity.d,
+            .vertex_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
+                first_instance * @sizeOf(FrameData.GPUEmitter),
+            .joint_matrices_address = 0,
+            .texture_index = @intCast(switch (effect) {
+                .explosion => explosion_texture_index,
+                .lightning => lightning_texture_index,
+            }),
+            .particle_count = effect_spec.particle_count,
+        };
+        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
+        c.vkCmdDraw(cmd, 6, effect_emitter_count * effect_spec.particle_count, 0, 0);
+        first_instance += effect_emitter_count;
     }
 
     color_blend_enables = c.VK_FALSE;
