@@ -38,9 +38,7 @@ pub fn updateEnemies(info: *const Info) !void {
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
-        const up_len = nz.vec.length(enemy.transform.position);
-        if (up_len < 0.0001) continue;
-        const planet_up = nz.vec.scale(enemy.transform.position, 1.0 / up_len);
+        const planet_up = shared.planetUp(enemy.transform.position) orelse continue;
 
         const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
         if (nz.vec.length(fwd_proj) > 0.0001) {
@@ -104,7 +102,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.velocity, surfaceUp(entity.transform.position));
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
         entity.transform.position += nz.vec.scale(entity.velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 
@@ -138,11 +136,6 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
         }
         info.world.queueDespawn(entity.id);
     }
-}
-
-fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
-    const distance = nz.vec.length(position);
-    return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else .{ 0, 1, 0 };
 }
 
 fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {

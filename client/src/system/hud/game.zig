@@ -284,18 +284,16 @@ fn addHealthBar(ui: *Ui, args: struct {
 fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
     const bar_width: f32 = 46;
     const bar_heigth: f32 = 4;
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (info.world.entities.values()) |*entity| {
         if (entity.kind != .enemy) continue;
         const health = entity.stats.get(.health);
         if (health.max <= 0 or health.current <= 0 or health.current >= health.max) continue;
 
-        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
-            nz.vec.normalize(entity.transform.position)
-        else
-            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
-        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
-        const screen = worldToScreen(info.world.camera, bar_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        if (isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
+        const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
 
         addHealthBar(ui, .{
             .left = screen[0] - bar_width / 2,
@@ -312,6 +310,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     const label_size: f32 = 18;
     const padding_x: f32 = 8;
     const padding_y: f32 = 3;
+    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
 
     for (info.world.entities.values()) |*entity| {
         if (entity.kind != .player) continue;
@@ -321,13 +320,10 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
         else
             ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
 
-        const up: nz.Vec3(f32) = if (nz.vec.length(entity.transform.position) > 0.001)
-            nz.vec.normalize(entity.transform.position)
-        else
-            entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
         if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
-        const screen = worldToScreen(info.world.camera, tag_position, ui.screen_width, ui.screen_heigth) orelse continue;
+        const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;
         const text_size = ui.textSize(name, label_size);
         const tag_width = text_size.width + padding_x * 2;
         const tag_heigth = text_size.heigth + padding_y * 2;
@@ -353,21 +349,6 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
             }},
         });
     }
-}
-
-fn worldToScreen(camera: system.Camera, world_position: nz.Vec3(f32), width: f32, heigth: f32) ?[2]f32 {
-    if (width <= 0 or heigth <= 0) return null;
-
-    const aspect = width / heigth;
-    const clip = camera.viewProj(aspect).mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
-    if (clip[3] <= 0.001) return null;
-
-    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
-    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
-    return .{
-        (ndc[0] * 0.5 + 0.5) * width,
-        (ndc[1] * 0.5 + 0.5) * heigth,
-    };
 }
 
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {

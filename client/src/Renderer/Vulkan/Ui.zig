@@ -215,6 +215,20 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
     return metrics;
 }
 
+pub fn worldToScreen(self: *const Ui, view_proj: nz.Mat4x4(f32), world_position: nz.Vec3(f32)) ?[2]f32 {
+    if (self.screen_width <= 0 or self.screen_heigth <= 0) return null;
+
+    const clip = view_proj.mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
+    if (clip[3] <= 0.001) return null;
+
+    const ndc = clip / @as(nz.Vec4(f32), @splat(clip[3]));
+    if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
+    return .{
+        (ndc[0] * 0.5 + 0.5) * self.screen_width,
+        (ndc[1] * 0.5 + 0.5) * self.screen_heigth,
+    };
+}
+
 pub fn textSize(self: *const Ui, text: []const u8, size: f32) Size2D {
     const scale = size / self.default_font.size;
     const metrics = measureText(&self.default_font.glyphs, text, scale);
