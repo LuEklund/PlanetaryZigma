@@ -155,15 +155,16 @@ fn compileShaders(b: *std.Build) void {
     var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
     defer dir.close(io);
     const usf = b.addUpdateSourceFiles();
-    var it = dir.iterate();
-    while (it.next(io) catch @panic("iterate assets/shaders")) |entry| {
+    var walker = dir.walk(b.allocator) catch @panic("walk assets/shaders");
+    defer walker.deinit();
+    while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
-        if (std.mem.endsWith(u8, entry.name, ".spv")) continue;
+        if (std.mem.endsWith(u8, entry.basename, ".spv")) continue;
         const cmd = b.addSystemCommand(&.{"glslc"});
-        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.name})));
+        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
         cmd.addArg("-o");
-        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.name}));
-        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.name}));
+        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename}));
+        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path}));
     }
     b.getInstallStep().dependOn(&usf.step);
 }
