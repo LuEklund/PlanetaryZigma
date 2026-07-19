@@ -67,7 +67,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
             .name = "inventory",
             // .child_anchor = .{ .y = .end, .x = .end },
             .size = .{ .fixed = .{ .width = inventory_width, .heigth = inventory_heigth } },
-            .color = .new(0.5, 0.5, 0.5, 0.4),
+            .color = .new(0.5, 0.5, 0.5, 0.2),
             .axis_align = .horizontal,
             .gap = 10,
         });
