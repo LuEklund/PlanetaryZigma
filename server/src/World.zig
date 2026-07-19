@@ -153,7 +153,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
         if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
             health *= @as(f32, @floatFromInt(self.next_stage));
         }
-        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range);
+        entity.stats.init(health, stats_spec.speed, stats_spec.damage, stats_spec.attack_speed, stats_spec.range, stats_spec.regen);
     }
     entity.currency = kind_spec.currency;
     self.new_spawns.appendAssumeCapacity(id);
@@ -205,10 +205,12 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     return self.addHealth(entity, -amount, source);
 }
 
+//TODO: bool the right kind of return?
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) bool {
     if (!entity.kind.hasHealth()) return false;
     const current = entity.stats.addCurrent(.health, amount);
     if (current <= 0) self.queueDespawn(entity.id);
+    if (current <= 0 or entity.stats.get(.health).max <= current) return true;
     self.client_updates.appendAssumeCapacity(.{ .stat = .{
         .id = entity.id,
         .stat_kind = .health,

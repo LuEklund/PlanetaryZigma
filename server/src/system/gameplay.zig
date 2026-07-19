@@ -259,3 +259,11 @@ pub fn updateLifetimes(info: *const Info) void {
         }
     }
 }
+
+pub fn playerRegen(info: *const Info) void {
+    for (info.world.players.items) |player_id| {
+        const player = info.world.getPtr(player_id) orelse continue;
+        const regen = player.stats.get(.regen).current;
+        _ = info.world.addHealth(player, info.delta_time * regen, null);
+    }
+}

@@ -15,10 +15,12 @@ pub const Item = enum(u16) {
         icon: []const u8,
     };
 
+    //TODO: combine with stats?
     pub const Attribute = struct {
         health: f32 = 0,
         speed: f32 = 0,
         damage: f32 = 0,
+        regen: f32 = 0,
         attack_speed: f32 = 0,
         range: f32 = 0,
         rocket_chance: f32 = 0,
@@ -31,6 +33,7 @@ pub const Item = enum(u16) {
                 .damage => self.damage,
                 .attack_speed => self.attack_speed,
                 .range => self.range,
+                .regen => self.regen,
             };
         }
     };

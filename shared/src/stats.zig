@@ -14,6 +14,7 @@ pub const Stat = struct {
         damage = 2,
         attack_speed = 3,
         range = 4,
+        regen = 5,
     };
 };
 
@@ -43,15 +44,17 @@ pub const Stats = struct {
     pub fn addCurrent(self: *Stats, kind: Stat.Kind, delta: f32) f32 {
         const stat = self.getPtr(kind);
         stat.current += delta;
+        stat.current = @min(stat.max, stat.current);
         return stat.current;
     }
 
-    pub fn init(self: *Stats, health: f32, speed: f32, damage: f32, attack_speed: f32, range: f32) void {
+    pub fn init(self: *Stats, health: f32, speed: f32, damage: f32, attack_speed: f32, range: f32, regen: f32) void {
         self.map.put(.health, .{ .current = health, .base_max = health, .max = health });
         self.map.put(.speed, .{ .current = speed, .base_max = speed, .max = speed });
         self.map.put(.damage, .{ .current = damage, .base_max = damage, .max = damage });
         self.map.put(.attack_speed, .{ .current = attack_speed, .base_max = attack_speed, .max = attack_speed });
         self.map.put(.range, .{ .current = range, .base_max = range, .max = range });
+        self.map.put(.regen, .{ .current = regen, .base_max = regen, .max = regen });
     }
 
     pub fn gain(self: *Stats, item_kind: Item, amount: f32) void {

@@ -76,7 +76,8 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             info.world.queueDespawn(entity.id);
 
                             const random = info.world.prng.random();
-                            const item_kind = random.enumValue(shared.Item);
+                            var item_kind = random.enumValue(shared.Item);
+                            if (item_kind == .lightning) item_kind = .oxygen_tank;
                             try info.world.spawnItem(item_kind, entity.transform.position);
                             player.currency -= entity.currency;
                             info.world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
