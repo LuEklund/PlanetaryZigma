@@ -923,7 +923,7 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
             const entity = world.getPtr(spawned.id) orelse continue;
@@ -931,13 +931,13 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World)
             try self.ensureSkeleton(gpa, spawned.id, spawned.kind, entity.model);
         },
         .entity_despawned => |id| self.removeSkeleton(gpa, id),
-        .planet_spawned => |radius| try self.buildPlanet(gpa, radius),
+        .planet_spawned => |radius| try self.buildPlanet(gpa, radius, timer_io),
     };
     world.render_outbox.clearRetainingCapacity();
 }
 
-fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32) !void {
-    var planet: shared.Planet(.renderable) = try .init(gpa, radius);
+fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32, timer_io: std.Io) !void {
+    var planet: shared.Planet(.renderable) = try .init(gpa, radius, timer_io);
     defer planet.deinit(gpa);
     _ = try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices);
 }

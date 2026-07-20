@@ -76,7 +76,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     else
         random.intRangeAtMost(u32, 60, 80));
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
-    const planet: shared.Planet(.logical) = try .init(world.gpa, @intFromFloat(world.planet_radius));
+    const planet: shared.Planet(.logical) = try .init(world.gpa, @intFromFloat(world.planet_radius), physics.io);
     _ = try world.spawn(.{
         .kind = .planet,
         .transform = .{},
