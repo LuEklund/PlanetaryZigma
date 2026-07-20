@@ -38,6 +38,29 @@ const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
 pub const Model = @import("Vulkan/Model.zig");
 
+const PlanetCpuChunk = struct {
+    coord: nz.Vec3(i32),
+    vertices: []Mesh.StaticVertex,
+    indices: []u32,
+};
+
+const PlanetChunkJobState = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    id: shared.entity.Id,
+    radius: u32,
+    center: nz.Vec3(i32),
+    chunks: std.ArrayList(PlanetCpuChunk) = .empty,
+    mutex: std.Io.Mutex = .init,
+    done: bool = false,
+    err: ?anyerror = null,
+};
+
+const PlanetChunkJob = struct {
+    thread: std.Thread,
+    state: *PlanetChunkJobState,
+};
+
 gpa: std.mem.Allocator,
 
 instance: Instance,
@@ -52,6 +75,7 @@ skeletons: std.AutoHashMap(shared.entity.Id, SkeletonInstance),
 planet_chunks: std.AutoHashMap(shared.entity.Id, std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), Mesh)),
 planet_chunk_radii: std.AutoHashMap(shared.entity.Id, u32),
 planet_chunk_centers: std.AutoHashMap(shared.entity.Id, nz.Vec3(i32)),
+planet_chunk_job: ?PlanetChunkJob = null,
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 ui: Ui,
@@ -136,6 +160,11 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     self.planet_chunks.deinit();
     self.planet_chunk_radii.deinit();
     self.planet_chunk_centers.deinit();
+    if (self.planet_chunk_job) |job| {
+        job.thread.join();
+        deinitPlanetChunkJob(job.state);
+        gpa.destroy(job.state);
+    }
 
     self.ui.deinit(gpa, self.vma);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
@@ -952,6 +981,7 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
 }
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
+    try self.collectPlanetChunkJob(gpa, world);
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
             if (spawned.kind == .planet) continue;
@@ -978,7 +1008,7 @@ fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, world: *World, id: shared.
     const entity = world.getPtr(id) orelse return;
     const center = planetChunkCenter(world, entity);
     try self.planet_chunk_centers.put(id, center);
-    try self.generatePlanetChunks(gpa, id, radius, center, timer_io);
+    try self.startPlanetChunkJob(gpa, timer_io, id, radius, center);
 }
 
 fn updatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
@@ -989,50 +1019,89 @@ fn updatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, world: *World, time
         const center = planetChunkCenter(world, entity);
         if (std.meta.eql(center, self.planet_chunk_centers.get(entity.id) orelse continue)) continue;
 
-        const chunks = self.planet_chunks.getPtr(entity.id) orelse continue;
-        if (chunks.count() > 0) {
-            check(c.vkDeviceWaitIdle(self.device.handle)) catch unreachable;
-            deinitPlanetChunkMap(chunks, gpa, self.vma);
-            chunks.* = .empty;
-        }
         try self.planet_chunk_centers.put(entity.id, center);
-        try self.generatePlanetChunks(gpa, entity.id, radius, center, timer_io);
+        try self.startPlanetChunkJob(gpa, timer_io, entity.id, radius, center);
     }
 }
 
-fn generatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32, center: nz.Vec3(i32), timer_io: std.Io) !void {
-    const start = std.Io.Clock.Timestamp.now(timer_io, .awake);
-    const chunks = self.planet_chunks.getPtr(id) orelse return;
-    const bounds = shared.planet.chunkRange(radius);
-    const small_planet = radius <= @as(u32, @intCast(shared.planet.chunk_dim));
-    var generated: usize = 0;
-    const active_min = if (small_planet) bounds.min else @max(bounds.min, center[0] - 1);
-    const active_max = if (small_planet) bounds.max else @min(bounds.max, center[0] + 1);
-    var x = active_min;
-    while (x <= active_max) : (x += 1) {
-        const y_min = if (small_planet) bounds.min else @max(bounds.min, center[1] - 1);
-        const y_max = if (small_planet) bounds.max else @min(bounds.max, center[1] + 1);
-        var y = y_min;
-        while (y <= y_max) : (y += 1) {
-            const z_min = if (small_planet) bounds.min else @max(bounds.min, center[2] - 1);
-            const z_max = if (small_planet) bounds.max else @min(bounds.max, center[2] + 1);
-            var z = z_min;
-            while (z <= z_max) : (z += 1) {
-                const chunk: nz.Vec3(i32) = .{ x, y, z };
-                if (chunks.contains(chunk)) continue;
-                var planet = try shared.planet.Planet(.renderable).initChunk(gpa, radius, chunk);
-                defer planet.deinit(gpa);
-                if (planet.indices.len == 0) continue;
-                var name_buffer: [64]u8 = undefined;
-                const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(id), chunk[0], chunk[1], chunk[2] });
-                const mesh = try Mesh.init(gpa, self.vma, name, self.device, Mesh.StaticVertex, planet.vertices, planet.indices, &.{.{ .index_start = 0, .index_count = @intCast(planet.indices.len), .texture = .blank }});
-                try chunks.put(gpa, chunk, mesh);
-                generated += 1;
+fn startPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, io: std.Io, id: shared.entity.Id, radius: u32, center: nz.Vec3(i32)) !void {
+    if (self.planet_chunk_job != null) return;
+    const state = try gpa.create(PlanetChunkJobState);
+    errdefer gpa.destroy(state);
+    state.* = .{ .gpa = gpa, .io = io, .id = id, .radius = radius, .center = center };
+    self.planet_chunk_job = .{ .thread = try std.Thread.spawn(.{}, generatePlanetChunkJob, .{state}), .state = state };
+}
+
+fn collectPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !void {
+    const job = self.planet_chunk_job orelse return;
+    try job.state.mutex.lock(job.state.io);
+    const done = job.state.done;
+    job.state.mutex.unlock(job.state.io);
+    if (!done) return;
+    job.thread.join();
+    self.planet_chunk_job = null;
+    defer {
+        deinitPlanetChunkJob(job.state);
+        gpa.destroy(job.state);
+    }
+    if (job.state.err) |err| return err;
+    const entity = world.getPtr(job.state.id) orelse return;
+    if (!std.meta.eql(planetChunkCenter(world, entity), job.state.center)) {
+        _ = self.planet_chunk_centers.remove(job.state.id);
+        return;
+    }
+    const chunks = self.planet_chunks.getPtr(job.state.id) orelse return;
+    if (chunks.count() > 0) {
+        check(c.vkDeviceWaitIdle(self.device.handle)) catch unreachable;
+        deinitPlanetChunkMap(chunks, gpa, self.vma);
+        chunks.* = .empty;
+    }
+    for (job.state.chunks.items) |*cpu_chunk| {
+        var name_buffer: [64]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(job.state.id), cpu_chunk.coord[0], cpu_chunk.coord[1], cpu_chunk.coord[2] });
+        const mesh = try Mesh.init(gpa, self.vma, name, self.device, Mesh.StaticVertex, cpu_chunk.vertices, cpu_chunk.indices, &.{.{ .index_start = 0, .index_count = @intCast(cpu_chunk.indices.len), .texture = .blank }});
+        try chunks.put(gpa, cpu_chunk.coord, mesh);
+    }
+    std.log.debug("planet chunks: center={any}, generated={d}", .{ job.state.center, chunks.count() });
+}
+
+fn generatePlanetChunkJob(state: *PlanetChunkJobState) void {
+    generatePlanetCpuChunks(state) catch |err| {
+        state.err = err;
+    };
+    state.mutex.lock(state.io) catch unreachable;
+    state.done = true;
+    state.mutex.unlock(state.io);
+}
+
+fn generatePlanetCpuChunks(state: *PlanetChunkJobState) !void {
+    const bounds = shared.planet.chunkRange(state.radius);
+    const small = state.radius <= @as(u32, @intCast(shared.planet.chunk_dim));
+    const min = if (small) nz.Vec3(i32){ bounds.min, bounds.min, bounds.min } else state.center - @as(nz.Vec3(i32), @splat(1));
+    const max = if (small) nz.Vec3(i32){ bounds.max, bounds.max, bounds.max } else state.center + @as(nz.Vec3(i32), @splat(1));
+    var x = @max(bounds.min, min[0]);
+    while (x <= @min(bounds.max, max[0])) : (x += 1) {
+        var y = @max(bounds.min, min[1]);
+        while (y <= @min(bounds.max, max[1])) : (y += 1) {
+            var z = @max(bounds.min, min[2]);
+            while (z <= @min(bounds.max, max[2])) : (z += 1) {
+                const planet = try shared.planet.Planet(.renderable).initChunk(state.gpa, state.radius, .{ x, y, z });
+                if (planet.indices.len == 0) {
+                    planet.deinit(state.gpa);
+                    continue;
+                }
+                try state.chunks.append(state.gpa, .{ .coord = .{ x, y, z }, .vertices = planet.vertices, .indices = planet.indices });
             }
         }
     }
-    const elapsed_ns = start.durationTo(std.Io.Clock.Timestamp.now(timer_io, .awake)).raw.nanoseconds;
-    std.log.debug("planet chunks: center={any}, generated={d}, total={d}, {d:.2} ms", .{ center, generated, chunks.count(), @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_ms });
+}
+
+fn deinitPlanetChunkJob(state: *PlanetChunkJobState) void {
+    for (state.chunks.items) |chunk| {
+        state.gpa.free(chunk.vertices);
+        state.gpa.free(chunk.indices);
+    }
+    state.chunks.deinit(state.gpa);
 }
 
 fn removePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.Id) void {
