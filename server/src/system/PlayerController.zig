@@ -58,6 +58,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             .f5 => {
                 info.world.next_stage_requested = true;
             },
+            .f6 => {
+                info.world.queueDespawn(player_id);
+            },
             else => {},
         }
         input.dev_command = .none;

@@ -14,6 +14,7 @@ const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
+//NOTE: store meta data about clip duration?
 pub const Handle = enum(u32) {
     default = 0,
     _,
@@ -102,10 +103,12 @@ pub fn loadGlb(
             const walk_index = try self.clipIndex(clip_names.walk, spec);
             const idle_index = if (clip_names.idle) |idle_name| try self.clipIndex(idle_name, spec) else walk_index;
             const attack_index = try self.clipIndex(clip_names.attack, spec);
+            const death_index = if (clip_names.death) |death_name| try self.clipIndex(death_name, spec) else walk_index;
             self.state_clips = .init(.{
                 .idle = idle_index,
                 .walk = walk_index,
                 .attack = attack_index,
+                .death = death_index,
             });
         }
     } else {

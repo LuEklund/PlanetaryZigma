@@ -303,6 +303,7 @@ fn handleCommand(
     info: *const Info,
     command: shared.net.ServerPacket,
 ) !void {
+    // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
@@ -341,6 +342,8 @@ fn handleCommand(
             info.world.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
+            std.log.debug("packet event: {t}", .{event});
+
             switch (event) {
                 .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                     entity.teleporter.state = .active;

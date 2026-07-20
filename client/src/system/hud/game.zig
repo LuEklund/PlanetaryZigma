@@ -336,7 +336,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
 
     for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .player) continue;
+        if (entity.kind != .player or entity.id == info.world.player_id) continue;
 
         const name = if (entity.player_name.len != 0)
             entity.player_name

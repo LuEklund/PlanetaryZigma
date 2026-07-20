@@ -48,7 +48,7 @@ pub const Entity = struct {
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
-    animation_state: ?shared.entity.State = null,
+    override_animation_state: ?shared.entity.State = null,
     spawn_anim: f32 = 0,
     death_anim: f32 = 0,
     model: Model.Handle = .default,
@@ -207,6 +207,9 @@ pub fn flush(self: *World, delta_time: f32) !void {
     while (despawn_index < self.pending_despawn.items.len) {
         const id = self.pending_despawn.items[despawn_index];
         if (self.getPtr(id)) |entity| {
+            entity.update_motion = null;
+            //TODO: retrieve death animation time from clip.
+            entity.override_animation_state = .death;
             const death_duration = shared.entity.spec(entity.kind).death_duration;
             if (death_duration > 0) {
                 entity.death_anim = @min(entity.death_anim + delta_time / death_duration, 1.0);
