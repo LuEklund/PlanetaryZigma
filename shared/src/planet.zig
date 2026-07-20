@@ -25,7 +25,8 @@ pub fn Planet(kind: PlanetKind) type {
             .renderable => @import("vertex.zig").StaticVertex,
         };
 
-        pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
+        pub fn init(gpa: std.mem.Allocator, radius: u32, timer_io: ?std.Io) !@This() {
+            const generation_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
 
             var vertices: std.ArrayList(Vertex) = .empty;
@@ -83,9 +84,24 @@ pub fn Planet(kind: PlanetKind) type {
                 }
             }
 
+            const owned_vertices = try vertices.toOwnedSlice(gpa);
+            errdefer gpa.free(owned_vertices);
+            const owned_indices = try indices.toOwnedSlice(gpa);
+            if (generation_start) |start| {
+                const elapsed_ns = start.durationTo(std.Io.Clock.Timestamp.now(timer_io.?, .awake)).raw.nanoseconds;
+                const elapsed_ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_ms;
+                std.debug.print("Planet {s}: radius={d}, vertices={d}, indices={d}, generated in {d:.2} ms\n", .{
+                    @tagName(kind),
+                    radius,
+                    owned_vertices.len,
+                    owned_indices.len,
+                    elapsed_ms,
+                });
+            }
+
             return .{
-                .vertices = try vertices.toOwnedSlice(gpa),
-                .indices = try indices.toOwnedSlice(gpa),
+                .vertices = owned_vertices,
+                .indices = owned_indices,
             };
         }
 
