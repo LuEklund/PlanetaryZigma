@@ -207,6 +207,7 @@ pub fn flush(self: *World, delta_time: f32) !void {
     while (despawn_index < self.pending_despawn.items.len) {
         const id = self.pending_despawn.items[despawn_index];
         if (self.getPtr(id)) |entity| {
+            entity.update_motion = null;
             //TODO: retrieve death animation time from clip.
             entity.override_animation_state = .death;
             const death_duration = shared.entity.spec(entity.kind).death_duration;

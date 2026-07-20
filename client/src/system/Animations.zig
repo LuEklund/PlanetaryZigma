@@ -85,8 +85,14 @@ fn playAnimation(info: *const Info, entity: *system.Entity, clip_index: usize, i
     }
 
     if (instance.overlay) |*overlay| {
-        overlay.current_time += info.delta_time;
-        if (overlay.current_time > model.clips[overlay.active].end) {
+        //NOTE: override?
+        if (entity.override_animation_state != .death) {
+            overlay.current_time += info.delta_time;
+            if (overlay.current_time > model.clips[overlay.active].end) {
+                instance.overlay = null;
+                instance.startFade();
+            }
+        } else {
             instance.overlay = null;
             instance.startFade();
         }

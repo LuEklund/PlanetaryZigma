@@ -163,7 +163,7 @@ pub const Context = struct {
             self.fullscreen_applied = self.options.fullscreen;
         }
         const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
-        const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .locked else .normal;
+        const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .captured else .normal;
         if (self.cursor_mode_applied != cursor_mode) {
             try self.window.setCursorMode(self.desktop, cursor_mode);
             self.cursor_mode_applied = cursor_mode;
