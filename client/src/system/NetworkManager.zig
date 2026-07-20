@@ -303,7 +303,7 @@ fn handleCommand(
     info: *const Info,
     command: shared.net.ServerPacket,
 ) !void {
-    std.log.debug("packet: {t}", .{command});
+    // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();

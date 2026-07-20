@@ -56,10 +56,12 @@ pub fn collider(kind: Kind) ?Collider {
     return spec(kind).collider;
 }
 
+//TODO: merge with entiy.State
 pub const ModelClipNames = struct {
     idle: ?[]const u8,
     walk: []const u8,
     attack: []const u8,
+    death: ?[]const u8,
 };
 
 pub const ModelLookNodeNames = struct {
@@ -115,6 +117,7 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "Idle",
                     .walk = "Run",
                     .attack = "shoot",
+                    .death = "Death",
                 },
                 .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
@@ -123,6 +126,7 @@ pub fn spec(kind: Kind) Spec {
             .expects_model = true,
             .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
             .currency = 100,
+            .death_duration = 5,
         },
         .planet => .{
             .collider = null,
@@ -159,7 +163,12 @@ pub fn spec(kind: Kind) Spec {
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack" } },
+                .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                    .idle = "idle",
+                    .walk = "walk",
+                    .attack = "attack",
+                    .death = "idle",
+                } },
                 .has_health = true,
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 }),
@@ -167,7 +176,12 @@ pub fn spec(kind: Kind) Spec {
             },
             .tubloida => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{ .idle = "idle", .walk = "walk", .attack = "attack_range" } },
+                .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                    .idle = "idle",
+                    .walk = "walk",
+                    .attack = "attack_range",
+                    .death = "idle",
+                } },
                 .has_health = true,
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
@@ -179,11 +193,13 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "Idle",
                     .walk = "Walking",
                     .attack = "Spawn_Enemy",
+                    .death = "Death",
                 } },
                 .has_health = true,
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
                 .currency = 100,
+                .death_duration = 5,
             },
         },
         .item => |item_kind| .{
@@ -239,8 +255,10 @@ pub const Kind = union(enum) {
     }
 };
 
+//TODO: merge with model clipstate
 pub const State = enum(u16) {
     idle = 0,
     walk = 1,
     attack = 2,
+    death = 3,
 };

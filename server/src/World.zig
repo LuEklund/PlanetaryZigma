@@ -248,9 +248,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
     var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
-        if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
-            _ = self.players.swapRemove(player_index);
-        }
+
         if (entity.collider.body_id) |body_id| {
             physics.destroyBody(body_id);
             entity.collider.body_id = null;
@@ -259,6 +257,9 @@ pub fn flush(self: *World, physics: *Physics) !void {
             entity.flags.is_dead = true;
             entity.replicated_velocity = .{ 0, 0, 0 };
         } else {
+            if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
+                _ = self.players.swapRemove(player_index);
+            }
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
