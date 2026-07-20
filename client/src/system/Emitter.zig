@@ -18,7 +18,7 @@ fn append(list: *std.ArrayList(Emitter), emitter: Emitter) void {
 }
 
 pub fn spawnRocketExplosion(list: *std.ArrayList(Emitter), position: nz.Vec3(f32), elapsed_time: f32) void {
-    const surface_up = shared.planetUp(position) orelse .{ 0, 1, 0 };
+    const surface_up = shared.planet.up(position) orelse .{ 0, 1, 0 };
     append(list, .{
         .effect = .explosion,
         .origin = position + nz.vec.scale(surface_up, 1.15),

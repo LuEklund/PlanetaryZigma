@@ -40,14 +40,14 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 }
             },
             .f4 => if (info.world.getPtr(info.world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.planetUp(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 _ = info.world.spawn(.{
                     .kind = .{ .item = .lightning },
                     .transform = .{
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
                         .rotation = teleporter.transform.rotation,
                     },
-                    .spawn_impulse = shared.planetSurfaceLaunch(
+                    .spawn_impulse = shared.planet.surfaceLaunch(
                         teleporter.transform.position,
                         nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random()),
                         system.World.item_launch_angle,
@@ -103,7 +103,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             const random = info.world.prng.random();
                             var item_kind = random.enumValue(shared.Item);
                             if (item_kind == .lightning) item_kind = .oxygen_tank;
-                            const chest_up = shared.planetUp(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                            const chest_up = shared.planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                             _ = try info.world.spawn(.{
                                 .kind = .{ .item = item_kind },
                                 .transform = .{
@@ -122,7 +122,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planetSurfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
+                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorpLord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },

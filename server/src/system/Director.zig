@@ -48,7 +48,7 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
                 const radius_float = info.world.planet_radius;
                 const max_distance = radius_float * (std.math.pi / 2.0);
                 const min_distance = @min(15.0, max_distance * 0.5);
-                const surface = shared.planetSurfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
+                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
                     .kind = .{ .enemy = .tubloida },
@@ -67,33 +67,42 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);
     }
+    try world.flush(physics);
+    world.clearPlanetChunks(physics);
     const random = world.prng.random();
     world.teleporter_id = .none;
     self.spawning = true;
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.next_stage } });
     world.planet_radius = @floatFromInt(if (world.dev_mode)
-        random.intRangeAtMost(u32, shared.planet_dev_radius_min, shared.planet_dev_radius_max)
+        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
     else
         random.intRangeAtMost(u32, 60, 80));
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
-    const planet: shared.Planet(.logical) = try .init(world.gpa, @intFromFloat(world.planet_radius), physics.io);
+    const planet_radius: u32 = @intFromFloat(world.planet_radius);
+    const chunk_range = shared.planet.chunkRange(planet_radius);
+    var x = chunk_range.min;
+    while (x <= chunk_range.max) : (x += 1) {
+        var y = chunk_range.min;
+        while (y <= chunk_range.max) : (y += 1) {
+            var z = chunk_range.min;
+            while (z <= chunk_range.max) : (z += 1) {
+                const coord: nz.Vec3(i32) = .{ x, y, z };
+                const planet = try shared.planet.Planet(.logical).initChunk(world.gpa, planet_radius, coord);
+                if (planet.indices.len == 0) {
+                    planet.deinit(world.gpa);
+                    continue;
+                }
+                try world.addPlanetChunk(physics, coord, .{ .indices = planet.indices, .vertices = planet.vertices });
+            }
+        }
+    }
     _ = try world.spawn(.{
         .kind = .planet,
         .transform = .{},
-        .collider = .{
-            .shape = .{
-                .mesh = .{
-                    .indices = planet.indices,
-                    .vertices = planet.vertices,
-                },
-            },
-            .motion_type = .static,
-            .object_layer = .non_moving,
-        },
     });
     try world.flush(physics);
 
-    const player_spawn_surface = shared.planetSurfacePoint(.{ 0, 1, 0 }, world.planet_radius);
+    const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, world.planet_radius);
     const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
     for (world.entities.values()) |*player| {
         if (player.kind != .player) continue;
@@ -115,13 +124,13 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         nz.Vec3(f32){ 0, 1, 0 }
     else
         nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    const teleporter_position = shared.planetSurfacePoint(teleporter_direction, world.planet_radius);
+    const teleporter_position = shared.planet.surfacePoint(teleporter_direction, world.planet_radius);
     for (0..25) |_| {
         const vector_direction = if (world.dev_mode)
-            nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, world.planet_radius, dev_lootbox_min_distance, dev_lootbox_max_distance, random))
+            nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, world.planet_radius, dev_lootbox_min_distance, dev_lootbox_max_distance, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        const transform = shared.planetSurfaceTransform(vector_direction, world.planet_radius, system.World.spawn_hover);
+        const transform = shared.planet.surfaceTransform(vector_direction, world.planet_radius, system.World.spawn_hover);
         _ = try world.spawn(.{
             .kind = .lootbox,
             .transform = transform,

@@ -9,6 +9,27 @@ pub const min_radius: u32 = 8;
 pub const radius_max: u32 = 80;
 pub const dev_radius_min: u32 = 20;
 pub const dev_radius_max: u32 = 30;
+pub const chunk_dim: i32 = 32;
+
+pub const ChunkRange = struct { min: i32, max: i32 };
+
+pub fn chunkMin(chunk: nz.Vec3(i32)) nz.Vec3(i32) {
+    return chunk * @as(nz.Vec3(i32), @splat(chunk_dim));
+}
+
+pub fn chunkMax(chunk: nz.Vec3(i32)) nz.Vec3(i32) {
+    return chunkMin(chunk) + @as(nz.Vec3(i32), @splat(chunk_dim));
+}
+
+/// Inclusive chunk-coordinate range containing the complete density field.
+/// The extra cells are the same margin used by monolithic generation.
+pub fn chunkRange(radius: u32) ChunkRange {
+    const bound: i32 = @intCast(@max(radius, min_radius) + noise_amplitude + cell_margin);
+    return .{
+        .min = @divFloor(-bound, chunk_dim),
+        .max = @divFloor(bound, chunk_dim),
+    };
+}
 
 pub const PlanetKind = enum {
     logical,
@@ -20,6 +41,15 @@ pub fn Planet(kind: PlanetKind) type {
         vertices: []Vertex,
         indices: []u32,
 
+        const CellRegion = struct {
+            min: nz.Vec3(i32),
+            max: nz.Vec3(i32),
+
+            fn contains(self: CellRegion, cell: nz.Vec3(i32)) bool {
+                return @reduce(.And, cell >= self.min) and @reduce(.And, cell < self.max);
+            }
+        };
+
         pub const Vertex = switch (kind) {
             .logical => [4]f32,
             .renderable => @import("vertex.zig").StaticVertex,
@@ -30,8 +60,6 @@ pub fn Planet(kind: PlanetKind) type {
             if (timer_io != null) std.debug.print("Planet generation start: radius={d}\n", .{radius});
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
 
-            var vertices: std.ArrayList(Vertex) = .empty;
-            var indices: std.ArrayList(u32) = .empty;
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
             const bound: f32 = @ceil(radius_float + noise_amplitude + cell_margin);
@@ -45,6 +73,41 @@ pub fn Planet(kind: PlanetKind) type {
 
             const mesh_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
 
+            const planet = try buildMesh(gpa, &node_map, &density, radius_float, null);
+            if (timer_io) |io| {
+                printStageInfo(io, "mesh", mesh_start.?);
+                const total_elapsed_ns = generation_start.?.durationTo(std.Io.Clock.Timestamp.now(io, .awake)).raw.nanoseconds;
+                const total_elapsed_ms: f64 = @as(f64, @floatFromInt(total_elapsed_ns)) / std.time.ns_per_ms;
+                std.debug.print("Planet generation end: total={d:.2} ms, indices={d}, vertices={d}\n", .{
+                    total_elapsed_ms, planet.indices.len, planet.vertices.len,
+                });
+            }
+
+            return planet;
+        }
+
+        /// Builds one fixed-size chunk. It intentionally has no neighbour apron yet,
+        /// so chunk-edge seams can be observed before we solve them.
+        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: nz.Vec3(i32)) !@This() {
+            const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
+            const cell_min = chunkMin(chunk);
+            const cell_max = chunkMax(chunk);
+            const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
+
+            var density = try DensityGrid.initRegion(gpa, radius_float, apron_min, cell_max);
+            defer density.deinit(gpa);
+
+            var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
+            defer node_map.deinit(gpa);
+            try sdf_surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, cell_max);
+
+            return buildMesh(gpa, &node_map, &density, radius_float, .{ .min = cell_min, .max = cell_max });
+        }
+
+        fn buildMesh(gpa: std.mem.Allocator, node_map: *const std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, radius: f32, owned_region: ?CellRegion) !@This() {
+            var vertices: std.ArrayList(Vertex) = .empty;
+            var indices: std.ArrayList(u32) = .empty;
+
             if (kind == .logical) {
                 for (node_map.values()) |centroid|
                     try vertices.append(gpa, .{ centroid[0], centroid[1], centroid[2], 1 });
@@ -56,6 +119,7 @@ pub fn Planet(kind: PlanetKind) type {
                 .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
             };
             for (node_map.keys()) |cell| {
+                if (owned_region) |region| if (!region.contains(cell)) continue;
                 for (quad_axes) |quad_axis| {
                     const edge_start_solid = density.isSolidAt(cell);
                     const edge_end_solid = density.isSolidAt(cell + quad_axis.edge_axis);
@@ -70,10 +134,10 @@ pub fn Planet(kind: PlanetKind) type {
                         .renderable => {
                             const centroids = node_map.values();
                             const base_vertex_index: u32 = @intCast(vertices.items.len);
-                            try vertices.append(gpa, makeVertex(centroids[index_at_cell], .{ 0, 0 }, radius_float));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_b], .{ 1, 0 }, radius_float));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius_float));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius_float));
+                            try vertices.append(gpa, makeVertex(centroids[index_at_cell], .{ 0, 0 }, radius));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_b], .{ 1, 0 }, radius));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius));
+                            try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius));
 
                             if (edge_start_solid) {
                                 try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
@@ -94,15 +158,6 @@ pub fn Planet(kind: PlanetKind) type {
             const owned_vertices = try vertices.toOwnedSlice(gpa);
             errdefer gpa.free(owned_vertices);
             const owned_indices = try indices.toOwnedSlice(gpa);
-            if (timer_io) |io| {
-                printStageInfo(io, "mesh", mesh_start.?);
-                const total_elapsed_ns = generation_start.?.durationTo(std.Io.Clock.Timestamp.now(io, .awake)).raw.nanoseconds;
-                const total_elapsed_ms: f64 = @as(f64, @floatFromInt(total_elapsed_ns)) / std.time.ns_per_ms;
-                std.debug.print("Planet generation end: total={d:.2} ms, indices={d}, vertices={d}\n", .{
-                    total_elapsed_ms, owned_indices.len, owned_vertices.len,
-                });
-            }
-
             return .{
                 .vertices = owned_vertices,
                 .indices = owned_indices,
@@ -161,7 +216,16 @@ const DensityGrid = struct {
     fn init(gpa: std.mem.Allocator, radius: f32, bound: f32) !DensityGrid {
         const min_coordinate: i32 = -@as(i32, @intFromFloat(bound));
         const origin: nz.Vec3(i32) = .{ min_coordinate, min_coordinate, min_coordinate };
-        const resolution: usize = @intFromFloat(2 * bound + 1);
+        const max_coordinate: i32 = @as(i32, @intFromFloat(bound));
+        return initRegion(gpa, radius, origin, .{ max_coordinate, max_coordinate, max_coordinate });
+    }
+
+    fn initRegion(gpa: std.mem.Allocator, radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
+        const origin = cell_min;
+        const size = cell_max - cell_min + @as(nz.Vec3(i32), @splat(1));
+        std.debug.assert(size[0] > 0 and size[1] > 0 and size[2] > 0);
+        std.debug.assert(size[0] == size[1] and size[1] == size[2]);
+        const resolution: usize = @intCast(size[0]);
         const plane_len = try std.math.mul(usize, resolution, resolution);
         const value_count = try std.math.mul(usize, plane_len, resolution);
         const values = try gpa.alloc(f32, value_count);
@@ -288,6 +352,19 @@ const sdf_surface_nodes = struct {
         }
     }
 
+    fn buildRegion(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
+        var x = cell_min[0];
+        while (x < cell_max[0]) : (x += 1) {
+            var y = cell_min[1];
+            while (y < cell_max[1]) : (y += 1) {
+                var z = cell_min[2];
+                while (z < cell_max[2]) : (z += 1) {
+                    try scanRegionCell(gpa, node_map, density, .{ x, y, z });
+                }
+            }
+        }
+    }
+
     fn buildSlice(task: *SliceTask) void {
         var x = task.x_start;
         while (x < task.x_end) : (x += 1) {
@@ -337,6 +414,35 @@ const sdf_surface_nodes = struct {
             task.err = err;
             return;
         };
+    }
+
+    fn scanRegionCell(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell: nz.Vec3(i32)) !void {
+        var checksum: u8 = 0;
+        var corners: [8]nz.Vec3(f32) = undefined;
+        var corner_sdf: [8]f32 = undefined;
+        for (0..8) |i| {
+            const corner_cell = cell + cube_corner_offsets[i];
+            corners[i] = @floatFromInt(corner_cell);
+            corner_sdf[i] = density.densityAt(corner_cell);
+            if (corner_sdf[i] < 0) checksum += 1;
+        }
+        if (checksum == 0 or checksum == 8) return;
+
+        var crossing_count: f32 = 0;
+        var crossing_sum: nz.Vec3(f32) = @splat(0);
+        for (cube_edges) |edge| {
+            const start_distance = corner_sdf[edge[0]];
+            const end_distance = corner_sdf[edge[1]];
+            if ((start_distance < 0.0) != (end_distance < 0.0)) {
+                crossing_count += 1;
+                const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
+                const start_corner = corners[edge[0]];
+                const end_corner = corners[edge[1]];
+                crossing_sum += nz.vec.scale(start_corner, 1.0 - crossing_fraction) + nz.vec.scale(end_corner, crossing_fraction);
+            }
+        }
+        const centroid = nz.vec.scale(crossing_sum, 1 / crossing_count);
+        try node_map.put(gpa, cell, centroid);
     }
 };
 
@@ -396,6 +502,46 @@ pub fn surfaceTransform(direction: nz.Vec3(f32), radius: f32, hover: f32) nz.Tra
         .position = surface + nz.vec.scale(surface_up, hover),
         .rotation = rotation,
     };
+}
+
+test "chunk coordinates cover chunk_dim cells" {
+    const chunk: nz.Vec3(i32) = .{ -2, 3, 0 };
+    try std.testing.expectEqual(nz.Vec3(i32){ -64, 96, 0 }, chunkMin(chunk));
+    try std.testing.expectEqual(nz.Vec3(i32){ -32, 128, 32 }, chunkMax(chunk));
+}
+
+test "chunk range contains the complete planet density field" {
+    try std.testing.expectEqual(ChunkRange{ .min = -1, .max = 0 }, chunkRange(18));
+    try std.testing.expectEqual(ChunkRange{ .min = -3, .max = 2 }, chunkRange(67));
+}
+
+test "a surface chunk builds logical nodes" {
+    const chunk: nz.Vec3(i32) = .{ 0, 0, 0 };
+    const planet = try Planet(.logical).initChunk(std.testing.allocator, 18, chunk);
+    defer planet.deinit(std.testing.allocator);
+    try std.testing.expect(planet.vertices.len > 0);
+}
+
+test "tiled chunks emit the monolith's surface index count" {
+    const radius = 18;
+    const monolith = try Planet(.renderable).init(std.testing.allocator, radius, null);
+    defer monolith.deinit(std.testing.allocator);
+
+    var chunk_index_count: usize = 0;
+    const range = chunkRange(radius);
+    var x = range.min;
+    while (x <= range.max) : (x += 1) {
+        var y = range.min;
+        while (y <= range.max) : (y += 1) {
+            var z = range.min;
+            while (z <= range.max) : (z += 1) {
+                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ x, y, z });
+                defer chunk.deinit(std.testing.allocator);
+                chunk_index_count += chunk.indices.len;
+            }
+        }
+    }
+    try std.testing.expectEqual(monolith.indices.len, chunk_index_count);
 }
 
 pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {

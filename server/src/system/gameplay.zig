@@ -38,7 +38,7 @@ pub fn updateEnemies(info: *const Info) !void {
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
-        const planet_up = shared.planetUp(enemy.transform.position) orelse continue;
+        const planet_up = shared.planet.up(enemy.transform.position) orelse continue;
 
         const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
         if (nz.vec.length(fwd_proj) > 0.0001) {
@@ -105,7 +105,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
         entity.transform.position += nz.vec.scale(entity.replicated_velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 

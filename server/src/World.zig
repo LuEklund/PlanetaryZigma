@@ -12,6 +12,7 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
+planet_chunks: std.ArrayList(PlanetChunk),
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
 toggle_spawning_requested: bool,
@@ -30,6 +31,12 @@ pub const item_launch_angle: f32 = std.math.pi / 4.0;
 pub const PendingDespawn = struct {
     id: shared.entity.Id,
     remove: bool,
+};
+
+pub const PlanetChunk = struct {
+    coord: nz.Vec3(i32),
+    mesh: Physics.Collider.Mesh,
+    body_id: ?Physics.c.b3BodyId = null,
 };
 
 pub const ClientUpdate = union(enum) {
@@ -111,6 +118,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .teleport_bosses = try .initCapacity(gpa, shared.max_entities),
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
+        .planet_chunks = .empty,
         .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
         .toggle_spawning_requested = false,
@@ -132,6 +140,11 @@ pub fn deinit(self: *World) void {
     self.teleport_bosses.deinit(self.gpa);
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
+    for (self.planet_chunks.items) |chunk| {
+        self.gpa.free(chunk.mesh.indices);
+        self.gpa.free(chunk.mesh.vertices);
+    }
+    self.planet_chunks.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
 }
 
@@ -185,6 +198,25 @@ pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
 
 pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
+}
+
+pub fn clearPlanetChunks(self: *World, physics: *Physics) void {
+    for (self.planet_chunks.items) |chunk| {
+        if (chunk.body_id) |body_id| physics.destroyBody(body_id);
+        self.gpa.free(chunk.mesh.indices);
+        self.gpa.free(chunk.mesh.vertices);
+    }
+    self.planet_chunks.clearRetainingCapacity();
+}
+
+pub fn addPlanetChunk(self: *World, physics: *Physics, coord: nz.Vec3(i32), mesh: Physics.Collider.Mesh) !void {
+    errdefer {
+        self.gpa.free(mesh.indices);
+        self.gpa.free(mesh.vertices);
+    }
+    const body_id = try physics.createStaticMeshBody(mesh);
+    errdefer physics.destroyBody(body_id);
+    try self.planet_chunks.append(self.gpa, .{ .coord = coord, .mesh = mesh, .body_id = body_id });
 }
 
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {
@@ -263,14 +295,14 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
                 if (self.getPtr(self.teleporter_id)) |teleporter| {
-                    const teleporter_up = shared.planetUp(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = self.spawn(.{
                         .kind = .{ .item = .lightning },
                         .transform = .{
                             .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
                             .rotation = teleporter.transform.rotation,
                         },
-                        .spawn_impulse = shared.planetSurfaceLaunch(
+                        .spawn_impulse = shared.planet.surfaceLaunch(
                             teleporter.transform.position,
                             nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
                             item_launch_angle,

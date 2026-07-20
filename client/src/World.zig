@@ -12,7 +12,7 @@ const Model = @import("Renderer/Vulkan/Model.zig");
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
     entity_despawned: shared.entity.Id,
-    planet_spawned: u32,
+    planet_spawned: struct { id: shared.entity.Id, radius: u32 },
 };
 
 mutex: std.Io.Mutex = .init,
@@ -169,7 +169,7 @@ pub fn flush(self: *World, delta_time: f32) !void {
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
                 self.planet_radius = @floatFromInt(radius);
-                self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = radius });
+                self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = .{ .id = entity.id, .radius = radius } });
                 std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
             .projectile_cube => entity.transform.scale = @splat(0.3),
