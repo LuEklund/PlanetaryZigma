@@ -242,6 +242,7 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
         teleporter.state = .completed;
         return;
     }
+    const old_teleporter_charge = teleporter.charged;
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
         if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
@@ -249,7 +250,9 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
-    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    if (old_teleporter_charge != teleporter.charged) {
+        info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    }
 }
 
 pub fn updateLifetimes(info: *const Info) void {
