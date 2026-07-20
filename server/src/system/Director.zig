@@ -111,7 +111,11 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         }
     }
 
-    const teleporter_position = shared.planetSurfacePoint(.{ 0, 1, 0 }, world.planet_radius);
+    const teleporter_direction = if (world.dev_mode)
+        nz.Vec3(f32){ 0, 1, 0 }
+    else
+        nz.vec.randomUnitVector(nz.Vec3(f32), random);
+    const teleporter_position = shared.planetSurfacePoint(teleporter_direction, world.planet_radius);
     for (0..25) |_| {
         const vector_direction = if (world.dev_mode)
             nz.vec.normalize(shared.planetSurfacePointNear(teleporter_position, world.planet_radius, dev_lootbox_min_distance, dev_lootbox_max_distance, random))

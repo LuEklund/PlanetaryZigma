@@ -55,6 +55,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                     ),
                 }) catch {};
             },
+            .f5 => {
+                info.world.next_stage_requested = true;
+            },
             else => {},
         }
         input.dev_command = .none;

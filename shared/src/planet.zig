@@ -33,7 +33,9 @@ pub fn Planet(kind: PlanetKind) type {
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
             const bound: f32 = @ceil(radius_float + noise_amplitude + cell_margin);
-            try buildNodeMap(gpa, &node_map, radius_float, bound);
+            var density = try DensityGrid.init(gpa, radius_float, bound);
+            defer density.deinit(gpa);
+            try sdf_surface_nodes.build(gpa, &node_map, &density, radius_float, bound);
 
             if (kind == .logical) {
                 for (node_map.values()) |centroid|
@@ -46,11 +48,9 @@ pub fn Planet(kind: PlanetKind) type {
                 .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
             };
             for (node_map.keys()) |cell| {
-                const edge_start: nz.Vec3(f32) = @floatFromInt(cell);
                 for (quad_axes) |quad_axis| {
-                    const edge_end: nz.Vec3(f32) = edge_start + @as(nz.Vec3(f32), @floatFromInt(quad_axis.edge_axis));
-                    const edge_start_solid = sdf(edge_start, radius_float) < 0;
-                    const edge_end_solid = sdf(edge_end, radius_float) < 0;
+                    const edge_start_solid = density.isSolidAt(cell);
+                    const edge_end_solid = density.isSolidAt(cell + quad_axis.edge_axis);
                     if (edge_start_solid == edge_end_solid) continue;
 
                     const index_at_cell: u32 = @intCast(node_map.getIndex(cell) orelse continue);
@@ -117,110 +117,217 @@ pub fn Planet(kind: PlanetKind) type {
     };
 }
 
-const CellNode = struct {
-    cell: nz.Vec3(i32),
-    centroid: nz.Vec3(f32),
-};
+const DensityGrid = struct {
+    // Grid-space coordinate stored at values[0, 0, 0].
+    origin_offset: nz.Vec3(i32),
+    resolution: usize,
+    values: []f32,
 
-const SliceTask = struct {
-    gpa: std.mem.Allocator,
-    radius: f32,
-    bound: f32,
-    x_start: f32,
-    x_end: f32,
-    nodes: std.ArrayList(CellNode),
-    err: ?std.mem.Allocator.Error,
-};
+    const SliceTask = struct {
+        values: []f32,
+        origin: nz.Vec3(i32),
+        resolution: usize,
+        radius: f32,
+        x_start: usize,
+        x_end: usize,
+    };
 
-fn buildNodeMap(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), radius: f32, bound: f32) !void {
-    const total_steps: usize = @intFromFloat(@ceil(2 * bound));
-    const cpu_count = std.Thread.getCpuCount() catch 1;
-    const worker_count = @max(1, @min(total_steps, cpu_count));
+    fn init(gpa: std.mem.Allocator, radius: f32, bound: f32) !DensityGrid {
+        const min_coordinate: i32 = -@as(i32, @intFromFloat(bound));
+        const origin: nz.Vec3(i32) = .{ min_coordinate, min_coordinate, min_coordinate };
+        const resolution: usize = @intFromFloat(2 * bound + 1);
+        const plane_len = try std.math.mul(usize, resolution, resolution);
+        const value_count = try std.math.mul(usize, plane_len, resolution);
+        const values = try gpa.alloc(f32, value_count);
+        errdefer gpa.free(values);
 
-    const tasks = try gpa.alloc(SliceTask, worker_count);
-    defer gpa.free(tasks);
+        const cpu_count = std.Thread.getCpuCount() catch 1;
+        const worker_count = @max(1, @min(resolution, cpu_count));
+        const tasks = try gpa.alloc(SliceTask, worker_count);
+        defer gpa.free(tasks);
 
-    const base = total_steps / worker_count;
-    const remainder = total_steps % worker_count;
-    var step_offset: usize = 0;
-    for (tasks, 0..) |*task, index| {
-        const steps = base + @as(usize, @intFromBool(index < remainder));
-        task.* = .{
-            .gpa = gpa,
-            .radius = radius,
-            .bound = bound,
-            .x_start = -bound + @as(f32, @floatFromInt(step_offset)),
-            .x_end = -bound + @as(f32, @floatFromInt(step_offset + steps)),
-            .nodes = .empty,
-            .err = null,
-        };
-        step_offset += steps;
-    }
-    defer for (tasks) |*task| task.nodes.deinit(gpa);
+        const base = resolution / worker_count;
+        const remainder = resolution % worker_count;
+        var x_start: usize = 0;
+        for (tasks, 0..) |*task, worker_index| {
+            const width = base + @as(usize, @intFromBool(worker_index < remainder));
+            task.* = .{
+                .values = values,
+                .origin = origin,
+                .resolution = resolution,
+                .radius = radius,
+                .x_start = x_start,
+                .x_end = x_start + width,
+            };
+            x_start += width;
+        }
 
-    if (worker_count == 1) {
-        buildCellSlice(&tasks[0]);
-    } else {
-        const threads = try gpa.alloc(std.Thread, worker_count);
-        defer gpa.free(threads);
-        var spawned: usize = 0;
-        errdefer for (threads[0..spawned]) |thread| thread.join();
-        while (spawned < worker_count) : (spawned += 1)
-            threads[spawned] = try std.Thread.spawn(.{}, buildCellSlice, .{&tasks[spawned]});
-        for (threads) |thread| thread.join();
+        try runParallelTasks(gpa, tasks, buildSlice);
+
+        return .{ .origin_offset = origin, .resolution = resolution, .values = values };
     }
 
-    for (tasks) |*task| {
-        if (task.err) |err| return err;
-        for (task.nodes.items) |node| try node_map.put(gpa, node.cell, node.centroid);
+    fn deinit(self: DensityGrid, gpa: std.mem.Allocator) void {
+        gpa.free(self.values);
     }
-}
 
-fn buildCellSlice(task: *SliceTask) void {
-    var x = task.x_start;
-    while (x < task.x_end) : (x += 1) {
-        var y = -task.bound;
-        while (y < task.bound) : (y += 1) {
-            var z = -task.bound;
-            while (z < task.bound) : (z += 1) {
-                const cell_position: nz.Vec3(f32) = .{ x, y, z };
-                const cell_center: nz.Vec3(f32) = cell_position + @as(nz.Vec3(f32), @splat(0.5));
-                const shell_half_width = noise_amplitude + cell_margin;
-                if (@abs(nz.vec.length(cell_center) - task.radius) > shell_half_width) continue;
-                var checksum: u8 = 0;
-                var corners: [8]nz.Vec3(f32) = undefined;
-                var corner_sdf: [8]f32 = undefined;
-                for (0..8) |i| {
-                    corners[i] = cube_corners[i] + cell_position;
-                    corner_sdf[i] = sdf(corners[i], task.radius);
-                    if (corner_sdf[i] < 0) checksum += 1;
+    fn densityAt(self: *const DensityGrid, grid_point: nz.Vec3(i32)) f32 {
+        const local_point = grid_point - self.origin_offset;
+        const x: usize = @intCast(local_point[0]);
+        const y: usize = @intCast(local_point[1]);
+        const z: usize = @intCast(local_point[2]);
+        return self.values[(x * self.resolution + y) * self.resolution + z];
+    }
+
+    fn isSolidAt(self: *const DensityGrid, grid_point: nz.Vec3(i32)) bool {
+        return self.densityAt(grid_point) < 0;
+    }
+
+    fn buildSlice(task: *const SliceTask) void {
+        for (task.x_start..task.x_end) |x| {
+            const x_coord: i32 = task.origin[0] + @as(i32, @intCast(x));
+            for (0..task.resolution) |y| {
+                const y_coord: i32 = task.origin[1] + @as(i32, @intCast(y));
+                for (0..task.resolution) |z| {
+                    const z_coord: i32 = task.origin[2] + @as(i32, @intCast(z));
+                    const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
+                    task.values[(x * task.resolution + y) * task.resolution + z] = sdf(position, task.radius);
                 }
-                if (checksum == 0 or checksum == 8) continue;
-
-                var crossing_count: f32 = 0;
-                var crossing_sum: nz.Vec3(f32) = @splat(0);
-                for (cube_edges) |edge| {
-                    const start_distance = corner_sdf[edge[0]];
-                    const end_distance = corner_sdf[edge[1]];
-                    if ((start_distance < 0.0) != (end_distance < 0.0)) {
-                        crossing_count += 1;
-                        const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
-                        const start_weight: f32 = 1.0 - crossing_fraction;
-                        const end_weight: f32 = crossing_fraction;
-                        const start_corner = corners[edge[0]];
-                        const end_corner = corners[edge[1]];
-                        crossing_sum += nz.vec.scale(start_corner, start_weight) + nz.vec.scale(end_corner, end_weight);
-                    }
-                }
-                const centroid = nz.vec.scale(crossing_sum, 1 / crossing_count);
-                const cell: nz.Vec3(i32) = .{ @intFromFloat(x), @intFromFloat(y), @intFromFloat(z) };
-                task.nodes.append(task.gpa, .{ .cell = cell, .centroid = centroid }) catch |err| {
-                    task.err = err;
-                    return;
-                };
             }
         }
     }
+};
+
+// Extracts all density-zero surfaces: exterior terrain, caves, and tunnels.
+const sdf_surface_nodes = struct {
+    const Node = struct {
+        cell: nz.Vec3(i32),
+        centroid: nz.Vec3(f32),
+    };
+
+    const SliceTask = struct {
+        gpa: std.mem.Allocator,
+        density: *const DensityGrid,
+        radius: f32,
+        bound: f32,
+        x_start: f32,
+        x_end: f32,
+        nodes: std.ArrayList(Node),
+        err: ?std.mem.Allocator.Error,
+    };
+
+    const cube_corner_offsets = [_]nz.Vec3(i32){
+        .{ 0, 0, 0 }, .{ 1, 0, 0 }, .{ 0, 1, 0 }, .{ 1, 1, 0 },
+        .{ 0, 0, 1 }, .{ 1, 0, 1 }, .{ 0, 1, 1 }, .{ 1, 1, 1 },
+    };
+
+    const cube_edges = [_][2]u3{
+        .{ 0, 1 }, .{ 0, 2 }, .{ 0, 4 }, .{ 1, 3 },
+        .{ 1, 5 }, .{ 2, 3 }, .{ 2, 6 }, .{ 3, 7 },
+        .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
+    };
+
+    fn build(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, radius: f32, bound: f32) !void {
+        const total_steps: usize = @intFromFloat(@ceil(2 * bound));
+        const cpu_count = std.Thread.getCpuCount() catch 1;
+        const worker_count = @max(1, @min(total_steps, cpu_count));
+
+        const tasks = try gpa.alloc(SliceTask, worker_count);
+        defer gpa.free(tasks);
+
+        const base = total_steps / worker_count;
+        const remainder = total_steps % worker_count;
+        var step_offset: usize = 0;
+        for (tasks, 0..) |*task, index| {
+            const steps = base + @as(usize, @intFromBool(index < remainder));
+            task.* = .{
+                .gpa = gpa,
+                .density = density,
+                .radius = radius,
+                .bound = bound,
+                .x_start = -bound + @as(f32, @floatFromInt(step_offset)),
+                .x_end = -bound + @as(f32, @floatFromInt(step_offset + steps)),
+                .nodes = .empty,
+                .err = null,
+            };
+            step_offset += steps;
+        }
+        defer for (tasks) |*task| task.nodes.deinit(gpa);
+
+        try runParallelTasks(gpa, tasks, buildSlice);
+
+        for (tasks) |*task| {
+            if (task.err) |err| return err;
+            for (task.nodes.items) |node| try node_map.put(gpa, node.cell, node.centroid);
+        }
+    }
+
+    fn buildSlice(task: *SliceTask) void {
+        var x = task.x_start;
+        while (x < task.x_end) : (x += 1) {
+            var y = -task.bound;
+            while (y < task.bound) : (y += 1) {
+                var z = -task.bound;
+                while (z < task.bound) : (z += 1) {
+                    scanCell(task, x, y, z);
+                }
+            }
+        }
+    }
+
+    fn scanCell(task: *SliceTask, x: f32, y: f32, z: f32) void {
+        const cell_position: nz.Vec3(f32) = .{ x, y, z };
+        const cell_center = cell_position + @as(nz.Vec3(f32), @splat(0.5));
+        if (nz.vec.length(cell_center) > task.bound) return;
+        const cell: nz.Vec3(i32) = @intFromFloat(cell_position);
+        var checksum: u8 = 0;
+        var corners: [8]nz.Vec3(f32) = undefined;
+        var corner_sdf: [8]f32 = undefined;
+        for (0..8) |i| {
+            const corner_cell = cell + cube_corner_offsets[i];
+            corners[i] = @floatFromInt(corner_cell);
+            corner_sdf[i] = task.density.densityAt(corner_cell);
+            if (corner_sdf[i] < 0) checksum += 1;
+        }
+        if (checksum == 0 or checksum == 8) return;
+
+        var crossing_count: f32 = 0;
+        var crossing_sum: nz.Vec3(f32) = @splat(0);
+        for (cube_edges) |edge| {
+            const start_distance = corner_sdf[edge[0]];
+            const end_distance = corner_sdf[edge[1]];
+            if ((start_distance < 0.0) != (end_distance < 0.0)) {
+                crossing_count += 1;
+                const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
+                const start_weight: f32 = 1.0 - crossing_fraction;
+                const end_weight: f32 = crossing_fraction;
+                const start_corner = corners[edge[0]];
+                const end_corner = corners[edge[1]];
+                crossing_sum += nz.vec.scale(start_corner, start_weight) + nz.vec.scale(end_corner, end_weight);
+            }
+        }
+        const centroid = nz.vec.scale(crossing_sum, 1 / crossing_count);
+        task.nodes.append(task.gpa, .{ .cell = cell, .centroid = centroid }) catch |err| {
+            task.err = err;
+            return;
+        };
+    }
+};
+
+fn runParallelTasks(gpa: std.mem.Allocator, tasks: anytype, comptime worker: anytype) !void {
+    std.debug.assert(tasks.len > 0);
+    if (tasks.len == 1) {
+        worker(&tasks[0]);
+        return;
+    }
+
+    const threads = try gpa.alloc(std.Thread, tasks.len);
+    defer gpa.free(threads);
+    var spawned: usize = 0;
+    errdefer for (threads[0..spawned]) |thread| thread.join();
+    while (spawned < tasks.len) : (spawned += 1)
+        threads[spawned] = try std.Thread.spawn(.{}, worker, .{&tasks[spawned]});
+    for (threads) |thread| thread.join();
 }
 
 pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
@@ -302,32 +409,6 @@ pub fn surfacePointNear(direction: nz.Vec3(f32), radius: f32, min_distance: f32,
     const tilted = nz.vec.scale(unit_direction, @cos(angle)) + nz.vec.scale(tangent, @sin(angle));
     return surfacePoint(tilted, radius);
 }
-
-const cube_corners = [_]nz.Vec3(f32){
-    .{ 0, 0, 0 },
-    .{ 1, 0, 0 },
-    .{ 0, 1, 0 },
-    .{ 1, 1, 0 },
-    .{ 0, 0, 1 },
-    .{ 1, 0, 1 },
-    .{ 0, 1, 1 },
-    .{ 1, 1, 1 },
-};
-
-const cube_edges = [_][2]u3{
-    .{ 0, 1 },
-    .{ 0, 2 },
-    .{ 0, 4 },
-    .{ 1, 3 },
-    .{ 1, 5 },
-    .{ 2, 3 },
-    .{ 2, 6 },
-    .{ 3, 7 },
-    .{ 4, 5 },
-    .{ 4, 6 },
-    .{ 5, 7 },
-    .{ 6, 7 },
-};
 
 const grad3 = [12][3]f32{
     .{ 1, 1, 0 }, .{ -1, 1, 0 }, .{ 1, -1, 0 }, .{ -1, -1, 0 },
