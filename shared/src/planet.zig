@@ -27,6 +27,7 @@ pub fn Planet(kind: PlanetKind) type {
 
         pub fn init(gpa: std.mem.Allocator, radius: u32, timer_io: ?std.Io) !@This() {
             const generation_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
+            if (timer_io != null) std.debug.print("Planet generation start: radius={d}\n", .{radius});
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
 
             var vertices: std.ArrayList(Vertex) = .empty;
@@ -36,7 +37,13 @@ pub fn Planet(kind: PlanetKind) type {
             const bound: f32 = @ceil(radius_float + noise_amplitude + cell_margin);
             var density = try DensityGrid.init(gpa, radius_float, bound);
             defer density.deinit(gpa);
+            if (timer_io) |io| printStageInfo(io, "density grid", generation_start.?);
+
+            const surface_nodes_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
             try sdf_surface_nodes.build(gpa, &node_map, &density, radius_float, bound);
+            if (timer_io) |io| printStageInfo(io, "surface nodes", surface_nodes_start.?);
+
+            const mesh_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
 
             if (kind == .logical) {
                 for (node_map.values()) |centroid|
@@ -87,15 +94,12 @@ pub fn Planet(kind: PlanetKind) type {
             const owned_vertices = try vertices.toOwnedSlice(gpa);
             errdefer gpa.free(owned_vertices);
             const owned_indices = try indices.toOwnedSlice(gpa);
-            if (generation_start) |start| {
-                const elapsed_ns = start.durationTo(std.Io.Clock.Timestamp.now(timer_io.?, .awake)).raw.nanoseconds;
-                const elapsed_ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_ms;
-                std.debug.print("Planet {s}: radius={d}, vertices={d}, indices={d}, generated in {d:.2} ms\n", .{
-                    @tagName(kind),
-                    radius,
-                    owned_vertices.len,
-                    owned_indices.len,
-                    elapsed_ms,
+            if (timer_io) |io| {
+                printStageInfo(io, "mesh", mesh_start.?);
+                const total_elapsed_ns = generation_start.?.durationTo(std.Io.Clock.Timestamp.now(io, .awake)).raw.nanoseconds;
+                const total_elapsed_ms: f64 = @as(f64, @floatFromInt(total_elapsed_ns)) / std.time.ns_per_ms;
+                std.debug.print("Planet generation end: total={d:.2} ms, indices={d}, vertices={d}\n", .{
+                    total_elapsed_ms, owned_indices.len, owned_vertices.len,
                 });
             }
 
@@ -131,6 +135,12 @@ pub fn Planet(kind: PlanetKind) type {
             };
         }
     };
+}
+
+fn printStageInfo(io: std.Io, name: []const u8, start: std.Io.Clock.Timestamp) void {
+    const elapsed_ns = start.durationTo(std.Io.Clock.Timestamp.now(io, .awake)).raw.nanoseconds;
+    const elapsed_ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_ms;
+    std.debug.print("  {s}: {d:.2} ms\n", .{ name, elapsed_ms });
 }
 
 const DensityGrid = struct {
