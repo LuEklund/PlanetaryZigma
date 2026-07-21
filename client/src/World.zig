@@ -54,11 +54,17 @@ pub const Entity = struct {
     update_motion: ?shared.net.UpdateMotion = null,
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
+    state: shared.entity.State = .idle,
     override_animation_state: ?shared.entity.State = null,
     model: Model.Handle = .default,
     animation_meta: AnimationMeta = .{},
+    flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
+
+    pub const Flags = packed struct {
+        is_dying: bool = false,
+    };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
         if (self.player_name.len != 0) {
@@ -213,8 +219,7 @@ pub fn flush(self: *World, delta_time: f32) !void {
         const id = self.pending_despawn.items[despawn_index];
         if (self.getPtr(id)) |entity| {
             entity.update_motion = null;
-            //TODO: retrieve death animation time from clip.
-            entity.override_animation_state = .death;
+            entity.flags.is_dying = true;
             if (entity.animation_meta.death_max > 0) {
                 entity.animation_meta.death_current += delta_time;
                 if (entity.animation_meta.death_current < entity.animation_meta.death_max) {
