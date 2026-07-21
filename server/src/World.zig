@@ -157,7 +157,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const kind_spec = shared.entity.spec(entity.kind);
     if (kind_spec.stats) |stats_spec| {
         var values = stats_spec;
-        if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
+        if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
             values.set(.health, values.get(.health) * @as(f32, @floatFromInt(self.next_stage)));
         }
         entity.stats = .init(values);
