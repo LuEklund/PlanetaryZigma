@@ -61,6 +61,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             .f6 => {
                 info.world.queueDespawn(player_id);
             },
+            .f7 => {
+                player.flags.invinsible = !player.flags.invinsible;
+            },
             else => {},
         }
         input.dev_command = .none;
