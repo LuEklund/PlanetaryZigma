@@ -100,10 +100,10 @@ pub fn loadGlb(
 
     if (spec.skinned) {
         if (spec.clip_names) |clip_names| {
-            const walk_index = try self.clipIndex(clip_names.walk, spec);
-            const idle_index = if (clip_names.idle) |idle_name| try self.clipIndex(idle_name, spec) else walk_index;
-            const attack_index = try self.clipIndex(clip_names.attack, spec);
-            const death_index = if (clip_names.death) |death_name| try self.clipIndex(death_name, spec) else walk_index;
+            const walk_index = try self.createClipIndex(clip_names.walk, spec);
+            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, spec) else walk_index;
+            const attack_index = try self.createClipIndex(clip_names.attack, spec);
+            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, spec) else walk_index;
             self.state_clips = .init(.{
                 .idle = idle_index,
                 .walk = walk_index,
@@ -122,7 +122,7 @@ pub fn loadGlb(
     self.offset = spec.offset;
 }
 
-fn clipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
+fn createClipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }

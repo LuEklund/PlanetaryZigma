@@ -59,13 +59,12 @@ pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(
     for (info.world.entities.values()) |*entity| {
         switch (entity.kind) {
             .lootbox => {
-                if (entity.death_anim > 0) entity.transform.scale = @splat(1.0 - entity.death_anim);
+                entity.transform.scale = @splat(1.0 - (entity.animation_meta.death_current / entity.animation_meta.death_max));
             },
             .item => {
-                const spawn_duration = shared.entity.spec(entity.kind).spawn_duration;
-                if (entity.spawn_anim < 1.0 and spawn_duration > 0) {
-                    entity.spawn_anim = @min(entity.spawn_anim + info.delta_time / spawn_duration, 1.0);
-                    entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(entity.spawn_anim));
+                if (entity.animation_meta.spawn_current < entity.animation_meta.spawn_max) {
+                    entity.animation_meta.spawn_current += info.delta_time;
+                    entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(entity.animation_meta.spawn_current / entity.animation_meta.spawn_max));
                 }
                 if (entity.update_motion) |*motion| {
                     const spun = nz.Quat(f32).fromVec(motion.rotation)

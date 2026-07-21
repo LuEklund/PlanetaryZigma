@@ -126,7 +126,6 @@ pub fn spec(kind: Kind) Spec {
             .expects_model = true,
             .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
             .currency = 100,
-            .death_duration = 5,
         },
         .planet => .{
             .collider = null,
@@ -173,7 +172,6 @@ pub fn spec(kind: Kind) Spec {
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 }),
                 .currency = 5,
-                .death_duration = 3,
             },
             .tubloida => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
@@ -187,7 +185,6 @@ pub fn spec(kind: Kind) Spec {
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
-                .death_duration = 3,
             },
             .bloorpLord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
@@ -201,7 +198,6 @@ pub fn spec(kind: Kind) Spec {
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
                 .currency = 100,
-                .death_duration = 3,
             },
         },
         .item => |item_kind| .{
