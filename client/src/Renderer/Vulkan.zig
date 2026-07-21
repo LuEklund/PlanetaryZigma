@@ -358,7 +358,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
-        .inverse_view_proj = proj_view.inverse().d,
+        .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
         .global_light_direction = light_dir,
         .time = elapsed_time,
         .camera_position = camera_transform.position,
