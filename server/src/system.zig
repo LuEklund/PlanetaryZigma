@@ -53,6 +53,8 @@ pub const Context = struct {
     }
 
     pub fn deinit(self: *Context) !void {
+        self.director.joinChunkJob(self.gpa);
+        self.director.clearReadyChunks(self.gpa);
         self.physics.deinit();
         try self.network_manager.deinit();
     }
@@ -84,9 +86,8 @@ pub const Context = struct {
     }
 
     fn reload(self: *Context, pre_reload: bool) !void {
-        std.log.debug("before-1", .{});
+        if (pre_reload) self.director.joinChunkJob(self.gpa);
         try self.physics.reload(pre_reload, self.world);
-        std.log.debug("before-0", .{});
     }
 };
 

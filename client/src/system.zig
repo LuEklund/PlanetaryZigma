@@ -157,6 +157,7 @@ pub const Context = struct {
 
     fn applyOptions(self: *Context, info: *const Info) !void {
         if (self.scene == .game) info.world.camera.fov_rad = self.options.fov_rad;
+        info.world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
         if (self.fullscreen_applied != self.options.fullscreen) {
             const mode: yes.Window.Mode = if (self.options.fullscreen) .fullscreen else .windowed;
             try self.window.setMode(self.desktop, mode);

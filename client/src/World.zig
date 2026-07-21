@@ -34,6 +34,7 @@ teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 stage: u32 = 0,
+chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
