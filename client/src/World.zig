@@ -37,6 +37,12 @@ stage: u32 = 0,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
+    const AnimationMeta = struct {
+        spawn_current: f32 = 0,
+        spawn_max: f32 = 0,
+        death_current: f32 = 0,
+        death_max: f32 = 0,
+    };
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
     player_name: []const u8 = "",
@@ -49,9 +55,8 @@ pub const Entity = struct {
     smoothed_moiton_tick: u32 = 0,
     position_error: nz.Vec3(f32) = @splat(0),
     override_animation_state: ?shared.entity.State = null,
-    spawn_anim: f32 = 0,
-    death_anim: f32 = 0,
     model: Model.Handle = .default,
+    animation_meta: AnimationMeta = .{},
 
     transform: nz.Transform3D(f32) = .{},
 
@@ -210,10 +215,9 @@ pub fn flush(self: *World, delta_time: f32) !void {
             entity.update_motion = null;
             //TODO: retrieve death animation time from clip.
             entity.override_animation_state = .death;
-            const death_duration = shared.entity.spec(entity.kind).death_duration;
-            if (death_duration > 0) {
-                entity.death_anim = @min(entity.death_anim + delta_time / death_duration, 1.0);
-                if (entity.death_anim < 1.0) {
+            if (entity.animation_meta.death_max > 0) {
+                entity.animation_meta.death_current += delta_time;
+                if (entity.animation_meta.death_current < entity.animation_meta.death_max) {
                     despawn_index += 1;
                     continue;
                 }

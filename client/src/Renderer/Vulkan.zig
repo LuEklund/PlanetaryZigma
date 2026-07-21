@@ -928,7 +928,9 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World,
         .entity_spawned => |spawned| {
             const entity = world.getPtr(spawned.id) orelse continue;
             entity.model = self.resources.modelHandle(shared.entity.modelSpec(spawned.kind).key);
-            try self.ensureSkeleton(gpa, spawned.id, spawned.kind, entity.model);
+            entity.animation_meta.death_max = shared.entity.spec(spawned.kind).death_duration;
+            entity.animation_meta.spawn_max = shared.entity.spec(spawned.kind).spawn_duration;
+            try self.ensureSkeleton(gpa, entity, entity.model);
         },
         .entity_despawned => |id| self.removeSkeleton(gpa, id),
         .planet_spawned => |radius| try self.buildPlanet(gpa, radius, timer_io),
@@ -942,14 +944,18 @@ fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32, timer_io: std
     _ = try self.resources.createStaticMesh(gpa, "planet", planet.vertices, planet.indices);
 }
 
-fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id, entity_kind: shared.entity.Kind, model_handle: Model.Handle) !void {
-    if (self.skeletons.contains(entity_id)) return;
+fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity: *system.Entity, model_handle: Model.Handle) !void {
+    if (self.skeletons.contains(entity.id)) return;
     const model = self.resources.getModelPtr(model_handle);
-    if (model.isEmpty() and entity_kind.expectsModel()) {
-        std.debug.panic("no model registered for {s}", .{@tagName(entity_kind)});
+    if (model.isEmpty() and entity.kind.expectsModel()) {
+        std.debug.panic("no model registered for {s}", .{@tagName(entity.kind)});
     }
     if (!model.isSkinned()) return; // static/modelless: no skeleton
-    try self.skeletons.put(entity_id, try .init(gpa, self.vma, self.device, model));
+    const get_or_put = try self.skeletons.getOrPutValue(entity.id, try .init(gpa, self.vma, self.device, model));
+    const clip_index = get_or_put.value_ptr.model.state_clips.get(.death);
+    const clip = get_or_put.value_ptr.model.clips[clip_index];
+    entity.animation_meta.death_max = clip.end - clip.start;
+    std.log.debug("{t} death time: {d}", .{ entity.kind, entity.animation_meta.death_max });
 }
 
 fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
