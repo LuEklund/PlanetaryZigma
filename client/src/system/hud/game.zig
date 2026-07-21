@@ -374,6 +374,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     }
 }
 
+//TODO: account for hills.
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
     const segment = tag_position - camera_position;
     const segment_len_sq = nz.vec.dot(segment, segment);

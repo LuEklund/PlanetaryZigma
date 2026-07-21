@@ -363,7 +363,6 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         self.shaders[Shader.index(kind)] = .init(device, kind, layout_handles);
     }
 
-
     const default_model = try self.createStaticMesh(gpa, default_mesh_name, Mesh.box.verticies, Mesh.box.indicies);
     std.debug.assert(default_model == Model.Handle.default);
     _ = try self.createStaticMesh(gpa, "cube_projectile", Mesh.box.verticies, Mesh.box.indicies);
@@ -609,7 +608,6 @@ fn createStaticMeshWithTexture(
     const model = &self.models.items[handle.index()];
     model.clear(gpa);
     try model.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = .identity });
-    model.offset = .{};
     return handle;
 }
 

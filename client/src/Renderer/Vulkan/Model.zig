@@ -31,7 +31,6 @@ skins: []Skin,
 look_nodes: []usize,
 overlay_mask: ?[]bool,
 state_clips: std.EnumArray(shared.entity.State, usize),
-offset: nz.Transform3D(f32),
 
 pub const empty: Model = .{
     .surfaces = .empty,
@@ -41,7 +40,6 @@ pub const empty: Model = .{
     .look_nodes = &.{},
     .overlay_mask = null,
     .state_clips = .initFill(0),
-    .offset = .{},
 };
 
 const Surface = struct {
@@ -119,7 +117,6 @@ pub fn loadGlb(
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
     }
-    self.offset = spec.offset;
 }
 
 fn createClipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {

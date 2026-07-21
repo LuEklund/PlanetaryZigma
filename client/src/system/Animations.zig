@@ -31,28 +31,38 @@ pub fn init(gpa: std.mem.Allocator) Animations {
     return .{ .gpa = gpa };
 }
 
-pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
+pub fn updateStates(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
     _ = self;
-
     for (info.world.attack_events.items) |id| {
         const instance = skeletons.getPtr(id) orelse continue;
         instance.playOverlay(instance.model.state_clips.get(.attack));
     }
     info.world.attack_events.clearRetainingCapacity();
-
-    // std.log.debug("render ptr {*}, model ptr{*}", .{ self.renderer, models });
     for (info.world.entities.values()) |*entity| {
         const instance = skeletons.getPtr(entity.id) orelse continue;
         const model = instance.model;
         if (model.clips.len == 0) continue;
 
-        const state: shared.entity.State = entity.override_animation_state orelse state: {
+        var state: shared.entity.State = state: {
             const speed = if (entity.update_motion) |update_motion| nz.vec.length(update_motion.velocity) else 0;
             break :state if (speed > 0.5) .walk else .idle;
         };
-        const clip_index = model.state_clips.get(state);
+        state = if (entity.flags.is_dying) .death else state;
+        if (entity.override_animation_state) |override| state = override;
+        entity.state = state;
+    }
+}
+
+pub fn update(self: *Animations, info: *const Info, skeletons: *std.AutoHashMap(shared.entity.Id, SkeletonInstance)) !void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+    _ = self;
+
+    for (info.world.entities.values()) |*entity| {
+        const instance = skeletons.getPtr(entity.id) orelse continue;
+        const model = instance.model;
+        if (model.clips.len == 0) continue;
+        const clip_index = model.state_clips.get(entity.state);
         playAnimation(info, entity, clip_index, instance, model);
     }
 
@@ -84,14 +94,8 @@ fn playAnimation(info: *const Info, entity: *system.Entity, clip_index: usize, i
     }
 
     if (instance.overlay) |*overlay| {
-        //NOTE: override?
-        if (entity.override_animation_state != .death) {
-            overlay.current_time += info.delta_time;
-            if (overlay.current_time > model.clips[overlay.active].end) {
-                instance.overlay = null;
-                instance.startFade();
-            }
-        } else {
+        overlay.current_time += info.delta_time;
+        if (overlay.current_time > model.clips[overlay.active].end) {
             instance.overlay = null;
             instance.startFade();
         }

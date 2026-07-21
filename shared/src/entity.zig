@@ -11,7 +11,7 @@ pub const Id = enum(u32) {
 pub const EnemyKind = enum(u16) {
     tubloid = 0,
     tubloida = 1,
-    bloorpLord = 2,
+    bloorp_lord = 2,
 };
 
 pub const ProjectileKind = enum(u16) {
@@ -81,7 +81,7 @@ pub const ModelSpec = struct {
 
 const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
 const player_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
-const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
+const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 
 pub fn modelSpec(kind: Kind) ModelSpec {
     return spec(kind).model;
@@ -186,7 +186,7 @@ pub fn spec(kind: Kind) Spec {
                 .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
             },
-            .bloorpLord => .{
+            .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .key = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
                     .idle = "Idle",

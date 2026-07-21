@@ -115,6 +115,7 @@ pub const Context = struct {
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
         try info.world.flush(info.delta_time);
         try self.renderer.inner.drainRenderCommands(self.gpa, info.world, self.io);
+        try self.animation.updateStates(info, &self.renderer.inner.skeletons);
         try self.animation.update(info, &self.renderer.inner.skeletons);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

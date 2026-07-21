@@ -497,7 +497,8 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, ca
             const model = self.resources.getModelPtr(entity.model);
             if (model.isEmpty() or model.isSkinned()) continue;
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            const offset = shared.entity.spec(entity.kind).model.offset;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             try drawStatic(self, cmd, model, base_matrix);
         }
         bindVertexShader(cmd, self.resources.shaderPtr(.{ .vert = .shadow_skinned }));
@@ -506,7 +507,8 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, ca
             if (model.isEmpty() or !model.isSkinned()) continue;
             const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(model.offset.toMat4x4()));
+            const offset = shared.entity.spec(entity.kind).model.offset;
+            const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             try drawSkeletal(self, cmd, skeleton, base_matrix);
         }
     }
@@ -540,7 +542,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     for (info.world.entities.values()) |*entity| {
         const model = self.resources.getModelPtr(entity.model);
         if (model.isEmpty() or model.isSkinned()) continue;
-        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        const offset = shared.entity.spec(entity.kind).model.offset;
+        const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         try drawStatic(self, cmd, model, base_matrix);
     }
 
@@ -549,7 +552,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         const model = self.resources.getModelPtr(entity.model);
         if (model.isEmpty() or !model.isSkinned()) continue;
         const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
-        const base_matrix = entity.transform.toMat4x4().mul(model.offset.toMat4x4());
+        const offset = shared.entity.spec(entity.kind).model.offset;
+        const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         try drawSkeletal(self, cmd, skeleton, base_matrix);
     }
 }
