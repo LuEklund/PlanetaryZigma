@@ -209,6 +209,13 @@ pub fn clearPlanetChunks(self: *World, physics: *Physics) void {
     self.planet_chunks.clearRetainingCapacity();
 }
 
+pub fn removePlanetChunk(self: *World, physics: *Physics, index: usize) void {
+    const chunk = self.planet_chunks.swapRemove(index);
+    if (chunk.body_id) |body_id| physics.destroyBody(body_id);
+    self.gpa.free(chunk.mesh.indices);
+    self.gpa.free(chunk.mesh.vertices);
+}
+
 pub fn addPlanetChunk(self: *World, physics: *Physics, coord: nz.Vec3(i32), mesh: Physics.Collider.Mesh) !void {
     errdefer {
         self.gpa.free(mesh.indices);

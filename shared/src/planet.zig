@@ -7,11 +7,91 @@ const cell_margin = 1;
 
 pub const min_radius: u32 = 8;
 pub const radius_max: u32 = 80;
-pub const dev_radius_min: u32 = 20;
-pub const dev_radius_max: u32 = 30;
+pub const dev_radius_min: u32 = 1000;
+pub const dev_radius_max: u32 = 1100;
 pub const chunk_dim: i32 = 32;
 
 pub const ChunkRange = struct { min: i32, max: i32 };
+
+pub const ChunkBox = struct { min: nz.Vec3(i32), max: nz.Vec3(i32) };
+
+pub const ChunkClass = enum { empty, solid, surface };
+
+pub const StageTimings = struct {
+    io: std.Io,
+    density_ns: u64,
+    surface_nodes_ns: u64,
+    mesh_ns: u64,
+
+    pub fn init(io: std.Io) StageTimings {
+        return .{ .io = io, .density_ns = 0, .surface_nodes_ns = 0, .mesh_ns = 0 };
+    }
+
+    pub fn lap(self: *StageTimings, stage_start: *std.Io.Clock.Timestamp, accumulator: *u64) void {
+        const now = std.Io.Clock.Timestamp.now(self.io, .awake);
+        accumulator.* += @intCast(stage_start.durationTo(now).raw.nanoseconds);
+        stage_start.* = now;
+    }
+
+    pub fn elapsedNs(self: StageTimings, start: std.Io.Clock.Timestamp) u64 {
+        return @intCast(start.durationTo(std.Io.Clock.Timestamp.now(self.io, .awake)).raw.nanoseconds);
+    }
+
+    pub fn log(self: StageTimings, chunk_count: usize, total_ns: u64) void {
+        std.log.debug("planet chunks: count={d}, total={d:.2} ms, density={d:.2} ms, surface nodes={d:.2} ms, mesh={d:.2} ms", .{
+            chunk_count,
+            msFromNs(total_ns),
+            msFromNs(self.density_ns),
+            msFromNs(self.surface_nodes_ns),
+            msFromNs(self.mesh_ns),
+        });
+    }
+};
+
+fn msFromNs(nanoseconds: u64) f64 {
+    return @as(f64, @floatFromInt(nanoseconds)) / std.time.ns_per_ms;
+}
+
+const classify_margin: f32 = noise_amplitude + cell_margin + 1;
+
+pub fn chunkClassify(radius: u32, chunk: nz.Vec3(i32)) ChunkClass {
+    const box_min: nz.Vec3(f32) = @floatFromInt(chunkMin(chunk));
+    const box_max: nz.Vec3(f32) = @floatFromInt(chunkMax(chunk));
+    const nearest = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
+    const farthest = @max(@abs(box_min), @abs(box_max));
+    const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
+    if (nz.vec.length(nearest) > radius_float + classify_margin) return .empty;
+    if (nz.vec.length(farthest) < radius_float - classify_margin) return .solid;
+    return .surface;
+}
+
+pub fn surfaceChunks(gpa: std.mem.Allocator, radius: u32, clamp: ?ChunkBox) ![]nz.Vec3(i32) {
+    var chunks: std.ArrayList(nz.Vec3(i32)) = .empty;
+    errdefer chunks.deinit(gpa);
+    const range = chunkRange(radius);
+    var min: nz.Vec3(i32) = @splat(range.min);
+    var max: nz.Vec3(i32) = @splat(range.max);
+    if (clamp) |box| {
+        min = @max(min, box.min);
+        max = @min(max, box.max);
+    }
+    var x = min[0];
+    while (x <= max[0]) : (x += 1) {
+        var y = min[1];
+        while (y <= max[1]) : (y += 1) {
+            var z = min[2];
+            while (z <= max[2]) : (z += 1) {
+                const chunk: nz.Vec3(i32) = .{ x, y, z };
+                if (chunkClassify(radius, chunk) == .surface) try chunks.append(gpa, chunk);
+            }
+        }
+    }
+    return chunks.toOwnedSlice(gpa);
+}
+
+pub fn chunkCoord(position: nz.Vec3(f32)) nz.Vec3(i32) {
+    return @intFromFloat(@floor(position / @as(nz.Vec3(f32), @splat(@floatFromInt(chunk_dim)))));
+}
 
 pub fn chunkMin(chunk: nz.Vec3(i32)) nz.Vec3(i32) {
     return chunk * @as(nz.Vec3(i32), @splat(chunk_dim));
@@ -86,22 +166,26 @@ pub fn Planet(kind: PlanetKind) type {
             return planet;
         }
 
-        /// Builds one fixed-size chunk. It intentionally has no neighbour apron yet,
-        /// so chunk-edge seams can be observed before we solve them.
-        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: nz.Vec3(i32)) !@This() {
+        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: nz.Vec3(i32), timings: ?*StageTimings) !@This() {
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
             const cell_min = chunkMin(chunk);
             const cell_max = chunkMax(chunk);
             const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
 
+            var stage_start: std.Io.Clock.Timestamp = if (timings) |timing| .now(timing.io, .awake) else undefined;
+
             var density = try DensityGrid.initRegion(gpa, radius_float, apron_min, cell_max);
             defer density.deinit(gpa);
+            if (timings) |timing| timing.lap(&stage_start, &timing.density_ns);
 
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
             try sdf_surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, cell_max);
+            if (timings) |timing| timing.lap(&stage_start, &timing.surface_nodes_ns);
 
-            return buildMesh(gpa, &node_map, &density, radius_float, .{ .min = cell_min, .max = cell_max });
+            const planet = try buildMesh(gpa, &node_map, &density, radius_float, .{ .min = cell_min, .max = cell_max });
+            if (timings) |timing| timing.lap(&stage_start, &timing.mesh_ns);
+            return planet;
         }
 
         fn buildMesh(gpa: std.mem.Allocator, node_map: *const std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, radius: f32, owned_region: ?CellRegion) !@This() {
@@ -231,8 +315,7 @@ const DensityGrid = struct {
         const values = try gpa.alloc(f32, value_count);
         errdefer gpa.free(values);
 
-        const cpu_count = std.Thread.getCpuCount() catch 1;
-        const worker_count = @max(1, @min(resolution, cpu_count));
+        const worker_count = if (resolution < 64) 1 else @max(1, @min(resolution, std.Thread.getCpuCount() catch 1));
         const tasks = try gpa.alloc(SliceTask, worker_count);
         defer gpa.free(tasks);
 
@@ -517,7 +600,7 @@ test "chunk range contains the complete planet density field" {
 
 test "a surface chunk builds logical nodes" {
     const chunk: nz.Vec3(i32) = .{ 0, 0, 0 };
-    const planet = try Planet(.logical).initChunk(std.testing.allocator, 18, chunk);
+    const planet = try Planet(.logical).initChunk(std.testing.allocator, 18, chunk, null);
     defer planet.deinit(std.testing.allocator);
     try std.testing.expect(planet.vertices.len > 0);
 }
@@ -535,13 +618,44 @@ test "tiled chunks emit the monolith's surface index count" {
         while (y <= range.max) : (y += 1) {
             var z = range.min;
             while (z <= range.max) : (z += 1) {
-                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ x, y, z });
+                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ x, y, z }, null);
                 defer chunk.deinit(std.testing.allocator);
                 chunk_index_count += chunk.indices.len;
             }
         }
     }
     try std.testing.expectEqual(monolith.indices.len, chunk_index_count);
+}
+
+test "every chunk with geometry is classified surface" {
+    for ([_]u32{ 18, 40 }) |radius| {
+        const range = chunkRange(radius);
+        var x = range.min;
+        while (x <= range.max) : (x += 1) {
+            var y = range.min;
+            while (y <= range.max) : (y += 1) {
+                var z = range.min;
+                while (z <= range.max) : (z += 1) {
+                    const chunk: nz.Vec3(i32) = .{ x, y, z };
+                    const planet = try Planet(.logical).initChunk(std.testing.allocator, radius, chunk, null);
+                    defer planet.deinit(std.testing.allocator);
+                    if (planet.indices.len > 0)
+                        try std.testing.expectEqual(ChunkClass.surface, chunkClassify(radius, chunk));
+                }
+            }
+        }
+    }
+}
+
+test "surface chunks respect the clamp box" {
+    const box: ChunkBox = .{ .min = .{ 0, 0, 0 }, .max = .{ 1, 1, 1 } };
+    const chunks = try surfaceChunks(std.testing.allocator, 67, box);
+    defer std.testing.allocator.free(chunks);
+    try std.testing.expect(chunks.len > 0);
+    for (chunks) |chunk| {
+        try std.testing.expect(@reduce(.And, chunk >= box.min));
+        try std.testing.expect(@reduce(.And, chunk <= box.max));
+    }
 }
 
 pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {

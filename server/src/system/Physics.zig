@@ -94,7 +94,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
             try self.createBody(entity);
         }
         for (world.planet_chunks.items) |*chunk| {
-            chunk.body_id = try self.createStaticMeshBody(chunk.mesh);
+            chunk.body_id = if (chunk.mesh.indices.len == 0) null else try self.createStaticMeshBody(chunk.mesh);
         }
     }
 }

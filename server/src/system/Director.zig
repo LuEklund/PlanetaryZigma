@@ -21,14 +21,81 @@ const StageItemSpawn = struct {
 const dev_lootbox_min_distance: f32 = 5;
 const dev_lootbox_max_distance: f32 = 10;
 
-pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !void {
+const chunk_stream_reach: i32 = 1;
+const chunk_evict_reach: i32 = 2;
+const chunk_stream_budget: u32 = 4;
+
+fn ensurePlanetChunk(world: *system.World, physics: *Physics, planet_radius: u32, coord: nz.Vec3(i32), timings: *shared.planet.StageTimings) !bool {
+    if (shared.planet.chunkClassify(planet_radius, coord) != .surface) return false;
+    for (world.planet_chunks.items) |chunk| {
+        if (std.meta.eql(chunk.coord, coord)) return false;
+    }
+    const planet = try shared.planet.Planet(.logical).initChunk(world.gpa, planet_radius, coord, timings);
+    if (planet.indices.len == 0) {
+        errdefer planet.deinit(world.gpa);
+        try world.planet_chunks.append(world.gpa, .{ .coord = coord, .mesh = .{ .indices = planet.indices, .vertices = planet.vertices }, .body_id = null });
+        return true;
+    }
+    try world.addPlanetChunk(physics, coord, .{ .indices = planet.indices, .vertices = planet.vertices });
+    return true;
+}
+
+fn streamPlanetChunks(world: *system.World, physics: *Physics, io: std.Io) !void {
+    if (world.players.items.len == 0) return;
+    const planet_radius: u32 = @intFromFloat(world.planet_radius);
+    var timings: shared.planet.StageTimings = .init(io);
+    const stream_start = std.Io.Clock.Timestamp.now(io, .awake);
+    var budget: u32 = chunk_stream_budget;
+    var generated: usize = 0;
+    for (world.entities.values()) |*entity| {
+        if (!shared.entity.hasCollider(entity.kind)) continue;
+        if (entity.collider.motion_type != .dynamic) continue;
+        const center = shared.planet.chunkCoord(entity.transform.position);
+        if (try ensurePlanetChunk(world, physics, planet_radius, center, &timings)) generated += 1;
+        var x: i32 = -chunk_stream_reach;
+        reach: while (x <= chunk_stream_reach) : (x += 1) {
+            var y: i32 = -chunk_stream_reach;
+            while (y <= chunk_stream_reach) : (y += 1) {
+                var z: i32 = -chunk_stream_reach;
+                while (z <= chunk_stream_reach) : (z += 1) {
+                    if (budget == 0) break :reach;
+                    const coord = center + nz.Vec3(i32){ x, y, z };
+                    if (std.meta.eql(coord, center)) continue;
+                    if (try ensurePlanetChunk(world, physics, planet_radius, coord, &timings)) {
+                        generated += 1;
+                        budget -= 1;
+                    }
+                }
+            }
+        }
+    }
+    var index: usize = world.planet_chunks.items.len;
+    evict: while (index > 0) {
+        index -= 1;
+        const coord = world.planet_chunks.items[index].coord;
+        for (world.entities.values()) |*entity| {
+            if (!shared.entity.hasCollider(entity.kind)) continue;
+            if (entity.collider.motion_type != .dynamic) continue;
+            const delta = coord - shared.planet.chunkCoord(entity.transform.position);
+            const within_low = @reduce(.And, delta >= @as(nz.Vec3(i32), @splat(-chunk_evict_reach)));
+            const within_high = @reduce(.And, delta <= @as(nz.Vec3(i32), @splat(chunk_evict_reach)));
+            if (within_low and within_high) continue :evict;
+        }
+        world.removePlanetChunk(physics, index);
+    }
+    if (generated > 0) timings.log(generated, timings.elapsedNs(stream_start));
+}
+
+pub fn update(self: *Director, info: *const system.Info, physics: *Physics, io: std.Io) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
     if (info.world.next_stage_requested) {
         info.world.next_stage_requested = false;
-        try self.startStage(info.world, physics);
+        try self.startStage(info.world, physics, io);
     }
+
+    try streamPlanetChunks(info.world, physics, io);
 
     if (info.world.toggle_spawning_requested) {
         info.world.toggle_spawning_requested = false;
@@ -62,7 +129,7 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics) !voi
     }
 }
 
-pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !void {
+pub fn startStage(self: *Director, world: *system.World, physics: *Physics, io: std.Io) !void {
     world.next_stage += 1;
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);
@@ -79,30 +146,28 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
         random.intRangeAtMost(u32, 60, 80));
     std.log.debug("startStage planet_radius={d}", .{world.planet_radius});
     const planet_radius: u32 = @intFromFloat(world.planet_radius);
-    const chunk_range = shared.planet.chunkRange(planet_radius);
-    var x = chunk_range.min;
-    while (x <= chunk_range.max) : (x += 1) {
-        var y = chunk_range.min;
-        while (y <= chunk_range.max) : (y += 1) {
-            var z = chunk_range.min;
-            while (z <= chunk_range.max) : (z += 1) {
-                const coord: nz.Vec3(i32) = .{ x, y, z };
-                const planet = try shared.planet.Planet(.logical).initChunk(world.gpa, planet_radius, coord);
-                if (planet.indices.len == 0) {
-                    planet.deinit(world.gpa);
-                    continue;
-                }
-                try world.addPlanetChunk(physics, coord, .{ .indices = planet.indices, .vertices = planet.vertices });
+    const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, world.planet_radius);
+    var timings: shared.planet.StageTimings = .init(io);
+    const build_start = std.Io.Clock.Timestamp.now(io, .awake);
+    const spawn_center = shared.planet.chunkCoord(player_spawn_surface);
+    var generated: usize = 0;
+    var x: i32 = -chunk_stream_reach;
+    while (x <= chunk_stream_reach) : (x += 1) {
+        var y: i32 = -chunk_stream_reach;
+        while (y <= chunk_stream_reach) : (y += 1) {
+            var z: i32 = -chunk_stream_reach;
+            while (z <= chunk_stream_reach) : (z += 1) {
+                if (try ensurePlanetChunk(world, physics, planet_radius, spawn_center + nz.Vec3(i32){ x, y, z }, &timings)) generated += 1;
             }
         }
     }
+    timings.log(generated, timings.elapsedNs(build_start));
     _ = try world.spawn(.{
         .kind = .planet,
         .transform = .{},
     });
     try world.flush(physics);
 
-    const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, world.planet_radius);
     const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
     for (world.entities.values()) |*player| {
         if (player.kind != .player) continue;

@@ -28,7 +28,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         switch (input.dev_command) {
-            .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
+            .f1 => {
+                _ = info.world.giveItem(player, .pickaxe, 1);
+                _ = info.world.giveItem(player, .energy_drink, 1);
+            },
             .f2 => {
                 _ = info.world.giveItem(player, .rocket, 1);
                 _ = info.world.giveItem(player, .lightning, 1);
