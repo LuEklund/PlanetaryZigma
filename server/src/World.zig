@@ -209,7 +209,8 @@ pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
     if (entity.flags.invinsible) return .ignored;
-    return self.addHealth(entity, -amount, source);
+    const new_amount = (self.prng.random().float(f32) - 0.5) * 0.5 * amount + amount;
+    return self.addHealth(entity, -new_amount, source);
 }
 
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
