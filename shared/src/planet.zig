@@ -1,8 +1,8 @@
 const std = @import("std");
 const nz = @import("numz");
 
-const noise_frequency = 0.04;
-const noise_amplitude = 2;
+const noise_frequency = 0.03;
+const noise_amplitude = 5;
 const cell_margin = 1;
 
 pub const min_radius: u32 = 8;
