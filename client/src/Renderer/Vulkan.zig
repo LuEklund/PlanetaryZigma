@@ -16,7 +16,8 @@ const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
 const Node = @import("../asset/Node.zig");
-const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
+const Buffer = @import("Vulkan/Buffer.zig");
+const AnimationInstance = @import("../asset/AnimationInstance.zig");
 const AnimationClip = @import("../asset/AnimationClip.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -53,7 +54,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
-skeletons: std.AutoHashMap(shared.entity.Id, SkeletonInstance),
+skeletons: std.AutoHashMap(shared.entity.Id, []Buffer),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 generated: std.EnumArray(Model.Generated, ?Mesh),
@@ -210,7 +211,7 @@ pub fn rebindProcs(self: *Vulkan) void {
     procs.device.load(self.device.handle, null);
 }
 
-pub fn update(self: *Vulkan, info: *const Info) !void {
+pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // const time = data.delta_time;
@@ -247,7 +248,7 @@ pub fn update(self: *Vulkan, info: *const Info) !void {
     };
     try check(c.vkBeginCommandBuffer(cmd_buffer, &cmd_begin_info));
 
-    try render(self, cmd_buffer, current_frame, info);
+    try render(self, cmd_buffer, current_frame, info, instances);
 
     var swapchain_image_barrier: Image.Barrier = .init(cmd_buffer, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
     swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -302,7 +303,7 @@ pub fn update(self: *Vulkan, info: *const Info) !void {
     self.current_frame_inflight += 1;
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info) !void {
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     const elapsed_time = info.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -407,17 +408,19 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const frame_index = self.current_frame_inflight % self.frames.len;
     self.resources.writeCascades(frame_index, &cascades);
 
-    var joint_upload_iterator = self.skeletons.valueIterator();
-    while (joint_upload_iterator.next()) |skeleton| {
-        for (skeleton.joint_matrices) |*matrices| {
-            matrices.gpu.copy(nz.Mat4x4(f32), matrices.cpu);
+    var joint_upload_iterator = self.skeletons.iterator();
+    while (joint_upload_iterator.next()) |entry| {
+        const instance = instances.getPtr(entry.key_ptr.*) orelse continue;
+        const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
+        for (skeletal.joint_matrices, entry.value_ptr.*) |cpu_matrices, *joint_buffer| {
+            joint_buffer.copy(nz.Mat4x4(f32), cpu_matrices);
         }
     }
 
-    try renderShadowPass(self, cmd, info, cascade_vps);
+    try renderShadowPass(self, cmd, info, instances, cascade_vps);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
-    try renderWorldPass(self, cmd, current_frame, info);
+    try renderWorldPass(self, cmd, current_frame, info, instances);
     renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, info);
     try renderDebugPass(self, cmd, current_frame, info);
@@ -507,7 +510,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
@@ -568,13 +571,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, ca
         }
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .shadow_skinned }));
         for (info.world.entities.values()) |*entity| {
+            const instance = instances.getPtr(entity.id) orelse continue;
+            const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
             const item = fileItem(self, entity.model) orelse continue;
-            if (item.model.isEmpty() or !item.model.isSkinned()) continue;
-            const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+            const joint_buffers = self.skeletons.getPtr(entity.id) orelse continue;
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
-            try drawSkeletal(self, cmd, skeleton, base_matrix);
+            try drawSkeletal(self, cmd, skeletal, item.meshes, joint_buffers.*, base_matrix);
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -599,7 +603,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, ca
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
-fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
+fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     self.bindWorldDescriptors(cmd, current_frame);
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .static }));
@@ -612,12 +616,13 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .skinned }));
     for (info.world.entities.values()) |*entity| {
+        const instance = instances.getPtr(entity.id) orelse continue;
+        const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
         const item = fileItem(self, entity.model) orelse continue;
-        if (item.model.isEmpty() or !item.model.isSkinned()) continue;
-        const skeleton = self.skeletons.getPtr(entity.id) orelse continue;
+        const joint_buffers = self.skeletons.getPtr(entity.id) orelse continue;
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
-        try drawSkeletal(self, cmd, skeleton, base_matrix);
+        try drawSkeletal(self, cmd, skeletal, item.meshes, joint_buffers.*, base_matrix);
     }
 }
 
@@ -845,17 +850,19 @@ fn drawStaticEntity(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.H
 fn drawSkeletal(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
-    skeleton: *const SkeletonInstance,
+    skeletal: *const AnimationInstance.Skeletal,
+    meshes: []Mesh,
+    joint_buffers: []Buffer,
     top_matrix: nz.Mat4x4(f32),
 ) !void {
-    for (skeleton.nodes) |node| {
+    for (skeletal.nodes) |node| {
         const mesh_id = node.mesh_id orelse continue;
-        const mesh = &skeleton.meshes[mesh_id];
+        const mesh = &meshes[mesh_id];
         var push: Shader.WorldPushConstant = .{
             .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
             .model_matrix = if (node.skin_id != null) top_matrix.d else top_matrix.mul(node.model_matrix).d,
             .joint_matrices_address = if (node.skin_id) |skin_index|
-                skeleton.joint_matrices[skin_index].gpu.getGPUAddress()
+                joint_buffers[skin_index].getGPUAddress()
             else
                 self.resources.identity_joint_buffer.getGPUAddress(),
             .texture_index = 0,
@@ -1010,16 +1017,21 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
     self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World, timer_io: std.Io) !void {
     if (self.resources.model_loader.reloaded.items.len != 0) {
         for (self.resources.model_loader.reloaded.items) |file_index| {
             const item = &self.resources.model_loader.items[file_index];
-            if (!item.model.isSkinned()) continue;
-            var skeleton_iterator = self.skeletons.valueIterator();
-            while (skeleton_iterator.next()) |skeleton| {
-                if (skeleton.model != &item.model) continue;
-                skeleton.deinit(gpa, self.vma);
-                skeleton.* = try .init(gpa, self.vma, self.device, &item.model, item.meshes);
+            var instance_iterator = instances.iterator();
+            while (instance_iterator.next()) |entry| {
+                const instance = entry.value_ptr;
+                if (instance.model != &item.model) continue;
+                if (instance.skeletal) |*skeletal| skeletal.deinit(gpa);
+                instance.skeletal = if (item.model.isSkinned()) try .init(gpa, &item.model) else null;
+                if (self.skeletons.getPtr(entry.key_ptr.*)) |joint_buffers| {
+                    for (joint_buffers.*) |*joint_buffer| joint_buffer.deinit(self.vma);
+                    gpa.free(joint_buffers.*);
+                    joint_buffers.* = try self.createJointBuffers(gpa, &item.model);
+                }
             }
         }
         self.resources.model_loader.reloaded.clearRetainingCapacity();
@@ -1032,11 +1044,15 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World,
                 .{ .file = self.resources.model_loader.findByKey(key) orelse std.debug.panic("no glb on disk for {s}", .{key}) }
             else
                 .{ .generated = std.meta.stringToEnum(Model.Generated, key).? };
-            entity.animation_meta.death_max = shared.entity.spec(spawned.kind).death_duration;
-            entity.animation_meta.spawn_max = shared.entity.spec(spawned.kind).spawn_duration;
-            try self.ensureSkeleton(gpa, entity, entity.model);
+            try self.ensureInstance(gpa, instances, entity, entity.model);
         },
-        .entity_despawned => |id| self.removeSkeleton(gpa, id),
+        .entity_despawned => |id| {
+            if (instances.fetchRemove(id)) |removed| {
+                var instance = removed.value;
+                instance.deinit(gpa);
+            }
+            self.removeSkeleton(gpa, id);
+        },
         .planet_spawned => |radius| try self.buildPlanet(gpa, radius, timer_io),
     };
     world.render_outbox.clearRetainingCapacity();
@@ -1057,30 +1073,55 @@ fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32, timer_io: std
     }});
 }
 
-fn ensureSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity: *system.Entity, model_handle: Model.Handle) !void {
-    if (self.skeletons.contains(entity.id)) return;
-    const item = fileItem(self, model_handle) orelse return;
+fn createJointBuffers(self: *Vulkan, gpa: std.mem.Allocator, model: *const Model) ![]Buffer {
+    const joint_buffers = try gpa.alloc(Buffer, model.skins.len);
+    for (model.skins, joint_buffers) |skin, *joint_buffer| {
+        joint_buffer.* = try .init(
+            self.device,
+            self.vma,
+            nz.Mat4x4(f32),
+            skin.inverse_bind_matrices.?.len,
+            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            .{
+                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            },
+        );
+    }
+    return joint_buffers;
+}
+
+fn ensureInstance(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), entity: *system.Entity, model_handle: Model.Handle) !void {
+    if (instances.contains(entity.id)) return;
+    const item = fileItem(self, model_handle) orelse {
+        try instances.put(entity.id, try .init(gpa, null));
+        return;
+    };
     if (item.model.isEmpty() and entity.kind.expectsModel()) {
         std.debug.panic("no model registered for {s}", .{@tagName(entity.kind)});
     }
-    if (!item.model.isSkinned()) return; // static/modelless: no skeleton
-    const get_or_put = try self.skeletons.getOrPutValue(entity.id, try .init(gpa, self.vma, self.device, &item.model, item.meshes));
-    const clip_index = get_or_put.value_ptr.model.state_clips.get(.death);
-    const clip = get_or_put.value_ptr.model.clips[clip_index];
-    entity.animation_meta.death_max = clip.end - clip.start;
-    std.log.debug("{t} death time: {d}", .{ entity.kind, entity.animation_meta.death_max });
+    try instances.put(entity.id, try .init(gpa, &item.model));
+    if (item.model.isSkinned() and !self.skeletons.contains(entity.id)) {
+        try self.skeletons.put(entity.id, try self.createJointBuffers(gpa, &item.model));
+    }
 }
 
 fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
     if (self.skeletons.fetchRemove(entity_id)) |kv| {
-        var skeleton = kv.value;
-        skeleton.deinit(gpa, self.vma);
+        for (kv.value) |*joint_buffer| {
+            var joint_buffer_copy = joint_buffer.*;
+            joint_buffer_copy.deinit(self.vma);
+        }
+        gpa.free(kv.value);
     }
 }
 
 fn clearSkeletons(self: *Vulkan, gpa: std.mem.Allocator) void {
     var it = self.skeletons.valueIterator();
-    while (it.next()) |skeleton| skeleton.deinit(gpa, self.vma);
+    while (it.next()) |joint_buffers| {
+        for (joint_buffers.*) |*joint_buffer| joint_buffer.deinit(self.vma);
+        gpa.free(joint_buffers.*);
+    }
     self.skeletons.clearRetainingCapacity();
 }
 

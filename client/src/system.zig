@@ -6,6 +6,7 @@ const yes = @import("yes");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("AssetServer.zig");
 const Animation = @import("system/Animations.zig");
+const AnimationInstance = @import("asset/AnimationInstance.zig");
 const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
 const DamagePopup = @import("system/DamagePopup.zig");
@@ -41,6 +42,7 @@ pub const Context = struct {
     renderer: Renderer,
     network_manager: NetworkManager,
     animation: Animation,
+    animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
     scene: Scene,
     hud: Hud,
     options: Options,
@@ -68,6 +70,7 @@ pub const Context = struct {
         self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
+        self.animation_instances = .init(data.gpa);
         self.options = .{};
         try self.enterScene(data.world, .menu);
         self.request_exit = false;
@@ -77,6 +80,9 @@ pub const Context = struct {
 
     pub fn deinit(self: *Context) void {
         self.window.setCursorMode(self.desktop, .normal) catch {};
+        var instance_iterator = self.animation_instances.valueIterator();
+        while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
+        self.animation_instances.deinit();
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
     }
@@ -108,15 +114,15 @@ pub const Context = struct {
             info.world.controller.clearInput();
         }
         try self.applyOptions(info);
-        try self.renderer.update(info);
+        try self.renderer.update(info, &self.animation_instances);
         try self.asset_server.reloadChangedAssets();
         try self.network_manager.update(info);
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
-        try info.world.flush(info.delta_time);
-        try self.renderer.inner.drainRenderCommands(self.gpa, info.world, self.io);
-        try self.animation.updateStates(info, &self.renderer.inner.skeletons);
-        try self.animation.update(info, &self.renderer.inner.skeletons);
+        try info.world.flush(info.delta_time, &self.animation_instances);
+        try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world, self.io);
+        try self.animation.updateStates(info, &self.animation_instances);
+        try self.animation.update(info, &self.animation_instances);
 
         const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
         motion.evaluate(info, server_time);

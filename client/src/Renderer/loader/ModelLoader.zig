@@ -19,6 +19,8 @@ files: [][]const u8,
 keys: [][]const u8,
 files_storage: [][]const u8,
 keys_storage: [][]const u8,
+specs: []entity.Spec,
+specs_storage: []entity.Spec,
 reloaded: std.ArrayList(u32),
 interface: AssetServer.Loader,
 
@@ -37,9 +39,11 @@ pub const Item = struct {
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoader {
     const files_storage = try gpa.alloc([]const u8, entity.all_kinds.len);
     const keys_storage = try gpa.alloc([]const u8, entity.all_kinds.len);
+    const specs_storage = try gpa.alloc(entity.Spec, entity.all_kinds.len);
     var count: usize = 0;
     for (entity.all_kinds) |kind| {
-        const key = entity.modelSpec(kind).key;
+        const kind_spec = entity.spec(kind);
+        const key = kind_spec.model.key;
         if (!std.mem.endsWith(u8, key, ".glb")) continue;
         const already_known = for (keys_storage[0..count]) |existing| {
             if (std.mem.eql(u8, existing, key)) break true;
@@ -47,10 +51,12 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
         if (already_known) continue;
         keys_storage[count] = key;
         files_storage[count] = key["objects/".len..];
+        specs_storage[count] = kind_spec;
         count += 1;
     }
     const files = files_storage[0..count];
     const keys = keys_storage[0..count];
+    const specs = specs_storage[0..count];
 
     const items = try gpa.alloc(Item, count);
     @memset(items, .empty);
@@ -62,6 +68,8 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
         .keys = keys,
         .files_storage = files_storage,
         .keys_storage = keys_storage,
+        .specs = specs,
+        .specs_storage = specs_storage,
         .reloaded = .empty,
         .interface = .{
             .gpa = gpa,
@@ -79,6 +87,7 @@ pub fn deinit(self: *ModelLoader) void {
     gpa.free(self.items);
     gpa.free(self.files_storage);
     gpa.free(self.keys_storage);
+    gpa.free(self.specs_storage);
     self.reloaded.deinit(gpa);
 }
 
@@ -89,14 +98,6 @@ pub fn findByKey(self: *const ModelLoader, key: []const u8) ?u32 {
     return null;
 }
 
-fn specForKey(key: []const u8) entity.ModelSpec {
-    for (entity.all_kinds) |kind| {
-        const model_spec = entity.modelSpec(kind);
-        if (std.mem.eql(u8, model_spec.key, key)) return model_spec;
-    }
-    return .{ .key = key, .skinned = false, .clip_names = null };
-}
-
 fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
@@ -104,18 +105,18 @@ fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File
     const file = try err_file;
     self.unloadItem(index);
 
-    const spec = specForKey(self.keys[index]);
+    const kind_spec = self.specs[index];
     const item = &self.items[index];
-    if (spec.skinned) {
-        var upload_data = try item.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, spec);
+    if (kind_spec.model.skinned) {
+        var upload_data = try item.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec.model);
         defer upload_data.deinit(gpa);
         try self.uploadItem(Mesh.SkinnedVertex, gpa, item, upload_data);
     } else {
-        var upload_data = try item.model.parseGlb(Mesh.StaticVertex, gpa, io, file, spec);
+        var upload_data = try item.model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec.model);
         defer upload_data.deinit(gpa);
         try self.uploadItem(Mesh.StaticVertex, gpa, item, upload_data);
     }
-    try item.model.finalize(gpa, spec);
+    try item.model.finalize(gpa, kind_spec);
     try self.reloaded.append(gpa, @intCast(index));
 }
 

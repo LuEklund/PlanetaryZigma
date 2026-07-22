@@ -8,6 +8,7 @@ const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
 const DamagePopup = @import("system/DamagePopup.zig");
 const Model = @import("asset/Model.zig");
+const AnimationInstance = @import("asset/AnimationInstance.zig");
 
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
@@ -37,12 +38,6 @@ stage: u32 = 0,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
-    const AnimationMeta = struct {
-        spawn_current: f32 = 0,
-        spawn_max: f32 = 0,
-        death_current: f32 = 0,
-        death_max: f32 = 0,
-    };
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
     player_name: []const u8 = "",
@@ -51,16 +46,18 @@ pub const Entity = struct {
     stats: shared.Stats = .init(.initFill(0)),
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
-    update_motion: ?shared.net.UpdateMotion = null,
-    smoothed_moiton_tick: u32 = 0,
-    position_error: nz.Vec3(f32) = @splat(0),
-    state: shared.entity.State = .idle,
+    motion: Motion = .{},
     override_animation_state: ?shared.entity.State = null,
     model: Model.Handle = .{ .generated = .default },
-    animation_meta: AnimationMeta = .{},
     flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
+
+    pub const Motion = struct {
+        update: ?shared.net.UpdateMotion = null,
+        smoothed_tick: u32 = 0,
+        position_error: nz.Vec3(f32) = @splat(0),
+    };
 
     pub const Flags = packed struct {
         is_dying: bool = false,
@@ -144,7 +141,7 @@ pub fn clearPendingSpawns(self: *World) void {
     self.pending_spawn.clearRetainingCapacity();
 }
 
-pub fn flush(self: *World, delta_time: f32) !void {
+pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     defer self.clearPendingSpawns();
 
     for (self.pending_spawn.items) |entity_info| {
@@ -161,13 +158,13 @@ pub fn flush(self: *World, delta_time: f32) !void {
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),
             },
-            .update_motion = .{
+            .motion = .{ .update = .{
                 .id = entity_info.id,
                 .position = entity_info.position,
                 .velocity = entity_info.velocity,
                 .rotation = entity_info.rotation,
                 .tick = entity_info.tick,
-            },
+            } },
         };
         try self.applySpawnData(entity, entity_info);
         switch (entity_info.kind) {
@@ -218,13 +215,15 @@ pub fn flush(self: *World, delta_time: f32) !void {
     while (despawn_index < self.pending_despawn.items.len) {
         const id = self.pending_despawn.items[despawn_index];
         if (self.getPtr(id)) |entity| {
-            entity.update_motion = null;
+            entity.motion.update = null;
             entity.flags.is_dying = true;
-            if (entity.animation_meta.death_max > 0) {
-                entity.animation_meta.death_current += delta_time;
-                if (entity.animation_meta.death_current < entity.animation_meta.death_max) {
-                    despawn_index += 1;
-                    continue;
+            if (instances.getPtr(id)) |instance| {
+                if (instance.deathDuration() > 0) {
+                    instance.death_time += delta_time;
+                    if (!instance.deathDone()) {
+                        despawn_index += 1;
+                        continue;
+                    }
                 }
             }
         }

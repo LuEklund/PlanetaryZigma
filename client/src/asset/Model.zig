@@ -10,7 +10,6 @@ const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
-//NOTE: store meta data about clip duration?
 pub const Generated = enum { default, cube_projectile, planet };
 
 pub const Handle = union(enum) {
@@ -19,6 +18,8 @@ pub const Handle = union(enum) {
 };
 
 surfaces: std.ArrayList(Surface),
+spawn_duration: f32,
+death_duration: f32,
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
@@ -28,6 +29,8 @@ state_clips: std.EnumArray(shared.entity.State, usize),
 
 pub const empty: Model = .{
     .surfaces = .empty,
+    .spawn_duration = 0,
+    .death_duration = 0,
     .nodes = .empty,
     .clips = &.{},
     .skins = &.{},
@@ -88,21 +91,26 @@ pub fn parseGlb(
     return try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
 }
 
-pub fn finalize(self: *Model, gpa: std.mem.Allocator, spec: Spec) !void {
+pub fn finalize(self: *Model, gpa: std.mem.Allocator, kind_spec: shared.entity.Spec) !void {
     computeMatrices(self.nodes.items);
 
-    if (spec.skinned) {
-        if (spec.clip_names) |clip_names| {
-            const walk_index = try self.createClipIndex(clip_names.walk, spec);
-            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, spec) else walk_index;
-            const attack_index = try self.createClipIndex(clip_names.attack, spec);
-            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, spec) else walk_index;
+    self.spawn_duration = kind_spec.spawn_duration;
+    self.death_duration = kind_spec.death_duration;
+
+    if (kind_spec.model.skinned) {
+        if (kind_spec.model.clip_names) |clip_names| {
+            const walk_index = try self.createClipIndex(clip_names.walk, kind_spec.model);
+            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, kind_spec.model) else walk_index;
+            const attack_index = try self.createClipIndex(clip_names.attack, kind_spec.model);
+            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, kind_spec.model) else walk_index;
             self.state_clips = .init(.{
                 .idle = idle_index,
                 .walk = walk_index,
                 .attack = attack_index,
                 .death = death_index,
             });
+            const death_clip = self.clips[death_index];
+            self.death_duration = death_clip.end - death_clip.start;
         }
     } else {
         for (self.nodes.items) |node| {
