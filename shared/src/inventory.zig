@@ -8,8 +8,8 @@ pub const Item = enum(u16) {
     pickaxe,
     rocket,
     lightning,
-    // crit,
-    // tougherer_times,
+    crit,
+    tougherer_times,
 
     pub const Spec = struct {
         attributes: Stats.Values,
@@ -49,16 +49,16 @@ pub const Item = enum(u16) {
                 .model = "objects/lightning.glb",
                 .icon = "textures/lightning.png",
             },
-            // .crit => .{
-            //     .attributes = .initDefault(0, .{ .critical_chance = 0.05 }),
-            //     .model = "objects/item.glb",
-            //     .icon = "textures/item.png",
-            // },
-            // .tougherer_times => .{
-            //     .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
-            //     .model = "objects/item.glb",
-            //     .icon = "textures/item.png",
-            // },
+            .crit => .{
+                .attributes = .initDefault(0, .{ .critical_chance = 0.05 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
+            .tougherer_times => .{
+                .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
         };
     }
 

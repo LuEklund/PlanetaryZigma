@@ -209,7 +209,15 @@ pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
     if (entity.flags.invinsible) return .ignored;
-    const new_amount = (self.prng.random().float(f32) - 0.5) * 0.5 * amount + amount;
+    const random = self.prng.random();
+    var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
+    new_amount = @min(new_amount, amount);
+    if (source) |source_entity| {
+        if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
+        const tougherer_times = entity.inventory.get(.tougherer_times);
+        const block_chance = shared.Item.attributes(.tougherer_times).get(.block_chance);
+        if (random.float(f32) < tougherer_times * block_chance) new_amount = 0;
+    }
     return self.addHealth(entity, -new_amount, source);
 }
 
