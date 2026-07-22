@@ -14,7 +14,6 @@ const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
 const Node = @import("../asset/Node.zig");
-const gltf = @import("Vulkan/gltf.zig");
 const SkeletonInstance = @import("Vulkan/SkeletonInstance.zig");
 const AnimationClip = @import("../asset/AnimationClip.zig");
 const Vma = @import("Vulkan/Vma.zig");

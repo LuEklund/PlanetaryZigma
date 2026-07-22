@@ -18,6 +18,7 @@ const Font = @import("Font.zig");
 const FrameData = @import("FrameData.zig");
 const AssetServer = @import("shared").AssetServer;
 const entity = @import("shared").entity;
+const gltf = @import("../../asset/gltf.zig");
 
 const check = @import("utils.zig").check;
 
@@ -388,7 +389,7 @@ fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.
         if (std.mem.eql(u8, model_spec.key, key)) break model_spec;
     } else return error.UnknownModelPath;
     const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
-    try self.models.items[handle.index()].loadGlb(gpa, io, file, self.vma, self.device, self, spec);
+    try self.models.items[handle.index()].loadGlb(gpa, io, file, self, spec);
 }
 
 fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -432,6 +433,93 @@ fn textureLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: st
     errdefer image.deinit(self.vma, self.device);
     try image.uploadDataToImage(self.vma, self.device, decoded.pixels, 4, 0);
     _ = try self.registerImage(gpa, key, image, self.samplers.items[0]);
+}
+
+pub fn uploadModel(self: *Resources, gpa: std.mem.Allocator, comptime VertexType: type, upload: gltf.UploadData(VertexType), key_prefix: []const u8) !usize {
+    const base_sampler_index = self.samplers.items.len;
+    for (upload.samplers) |desc| {
+        const sampler_info: c.VkSamplerCreateInfo = .{
+            .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .maxLod = c.VK_LOD_CLAMP_NONE,
+            .minLod = 0,
+            .magFilter = if (desc.mag_linear) c.VK_FILTER_LINEAR else c.VK_FILTER_NEAREST,
+            .minFilter = if (desc.min_linear) c.VK_FILTER_LINEAR else c.VK_FILTER_NEAREST,
+            .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            .anisotropyEnable = c.VK_FALSE,
+            .borderColor = c.VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            .unnormalizedCoordinates = c.VK_FALSE,
+            .compareEnable = c.VK_FALSE,
+            .compareOp = c.VK_COMPARE_OP_ALWAYS,
+        };
+        var new_sampler: c.VkSampler = undefined;
+        try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &new_sampler));
+        try self.samplers.append(gpa, new_sampler);
+    }
+
+    const image_handles = try gpa.alloc(Image.Handle, upload.images.len);
+    defer gpa.free(image_handles);
+    if (upload.images.len > 0) {
+        var upload_buffers: std.ArrayList(Buffer) = .empty;
+        defer {
+            for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(self.vma);
+            upload_buffers.deinit(gpa);
+        }
+        const upload_cmd = try self.device.beginImmediateCommand();
+        for (upload.images, upload.image_sampler, 0..) |decoded_image, sampler_index, image_index| {
+            var new_image: Image = try .init(
+                self.vma,
+                self.device,
+                c.VK_FORMAT_R8G8B8A8_UNORM,
+                .{ .width = @intCast(decoded_image.width), .height = @intCast(decoded_image.height), .depth = 1 },
+                .@"2d",
+                c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                c.VK_IMAGE_ASPECT_COLOR_BIT,
+                true,
+            );
+            try new_image.recordUploadDataToImage(
+                gpa,
+                self.vma,
+                self.device,
+                upload_cmd,
+                decoded_image.pixels,
+                0,
+                4,
+                &upload_buffers,
+            );
+            var key_buffer: [512]u8 = undefined;
+            const key = try std.fmt.bufPrint(&key_buffer, "{s}#{d}", .{ key_prefix, image_index });
+            image_handles[image_index] = try self.registerImage(gpa, key, new_image, self.samplers.items[0]);
+            if (sampler_index) |gltf_sampler_index|
+                self.setTextureSampler(image_handles[image_index], self.samplers.items[base_sampler_index + gltf_sampler_index]);
+        }
+        try self.device.endImmediateCommand(upload_cmd);
+    }
+
+    const base_mesh_index = self.meshes.items.len;
+    for (upload.meshes) |mesh_data| {
+        const surfaces = try gpa.alloc(Mesh.GeoSurface, mesh_data.surfaces.len);
+        defer gpa.free(surfaces);
+        for (mesh_data.surfaces, surfaces) |surface_data, *surface| surface.* = .{
+            .index_start = surface_data.index_start,
+            .index_count = surface_data.index_count,
+            .texture = if (surface_data.image_index) |image_index| image_handles[image_index] else .blank,
+        };
+        const new_mesh: Mesh = try .init(
+            gpa,
+            self.vma,
+            mesh_data.name,
+            self.device,
+            VertexType,
+            mesh_data.vertices,
+            mesh_data.indices,
+            surfaces,
+        );
+        try self.meshes.append(gpa, new_mesh);
+    }
+    return base_mesh_index;
 }
 
 pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) !Model.Handle {

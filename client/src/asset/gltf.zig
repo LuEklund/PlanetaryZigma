@@ -1,17 +1,10 @@
 const std = @import("std");
-const c = @import("vulkan");
 const nz = @import("shared").numz;
 const zgltf = @import("zgltf");
-const Vma = @import("Vma.zig");
-const Device = @import("device.zig").Logical;
-const Image = @import("Image.zig");
-const Mesh = @import("Mesh.zig");
-const Node = @import("../../asset/Node.zig");
-const Skin = @import("../../asset/Skin.zig");
-const AnimationClip = @import("../../asset/AnimationClip.zig");
-const Buffer = @import("Buffer.zig");
-const Resources = @import("Resources.zig");
-const check = @import("utils.zig").check;
+const Bitmap = @import("Bitmap.zig");
+const Node = @import("Node.zig");
+const Skin = @import("Skin.zig");
+const AnimationClip = @import("AnimationClip.zig");
 
 pub const Glb = struct {
     content: []u8,
@@ -38,13 +31,52 @@ pub const Glb = struct {
     }
 };
 
+pub const SamplerDesc = struct {
+    mag_linear: bool,
+    min_linear: bool,
+};
+
+pub fn UploadData(comptime VertexType: type) type {
+    return struct {
+        const Self = @This();
+
+        pub const SurfaceData = struct {
+            index_start: u32,
+            index_count: u32,
+            image_index: ?usize,
+        };
+
+        pub const MeshData = struct {
+            name: []const u8,
+            vertices: []VertexType,
+            indices: []u32,
+            surfaces: []SurfaceData,
+        };
+
+        samplers: []SamplerDesc = &.{},
+        images: []Bitmap = &.{},
+        image_sampler: []?usize = &.{},
+        meshes: []MeshData = &.{},
+
+        pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
+            gpa.free(self.samplers);
+            for (self.images) |*image| image.deinit();
+            gpa.free(self.images);
+            gpa.free(self.image_sampler);
+            for (self.meshes) |mesh| {
+                gpa.free(mesh.vertices);
+                gpa.free(mesh.indices);
+                gpa.free(mesh.surfaces);
+            }
+            gpa.free(self.meshes);
+            self.* = .{};
+        }
+    };
+}
+
 pub fn parseScene(
     comptime VertexType: type,
     gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    resources: *Resources,
-    texture_key_prefix: []const u8,
     gltf: zgltf.Gltf,
     bin: []const u8,
     out_nodes: *std.ArrayList(Node),
@@ -54,157 +86,98 @@ pub fn parseScene(
     out_look_nodes: ?*[]usize,
     overlay_root_name: ?[]const u8,
     out_overlay_root: ?*usize,
-) !void {
-    const original_sample_count = resources.samplers.items.len;
-    {
-        if (gltf.samplers) |samplers| {
-            std.log.info("Sampler count was {d}", .{samplers.len});
-            for (samplers) |sampler| {
-                const sampler_info: c.VkSamplerCreateInfo = .{
-                    .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                    .maxLod = c.VK_LOD_CLAMP_NONE,
-                    .minLod = 0,
-                    .magFilter = if (sampler.magFilter) |filter| switch (filter) {
-                        .nearest => c.VK_FILTER_NEAREST,
-                        .linear => c.VK_FILTER_LINEAR,
-                    } else c.VK_FILTER_LINEAR,
-                    .minFilter = if (sampler.minFilter) |filter| switch (filter) {
-                        .nearest => c.VK_FILTER_NEAREST,
-                        .linear => c.VK_FILTER_LINEAR,
-                        else => c.VK_FILTER_LINEAR,
-                    } else c.VK_FILTER_LINEAR,
-                    .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_NEAREST,
-                    .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                    .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                    .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                    .anisotropyEnable = c.VK_FALSE,
-                    .borderColor = c.VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-                    .unnormalizedCoordinates = c.VK_FALSE,
-                    .compareEnable = c.VK_FALSE,
-                    .compareOp = c.VK_COMPARE_OP_ALWAYS,
-                };
-                var new_sampler: c.VkSampler = undefined;
-                try check(c.vkCreateSampler(device.handle, &sampler_info, null, &new_sampler));
-                try resources.samplers.append(gpa, new_sampler);
+) !UploadData(VertexType) {
+    var upload: UploadData(VertexType) = .{};
+    errdefer upload.deinit(gpa);
+
+    if (gltf.samplers) |samplers| {
+        const descs = try gpa.alloc(SamplerDesc, samplers.len);
+        for (samplers, descs) |sampler, *desc| {
+            desc.* = .{
+                .mag_linear = if (sampler.magFilter) |filter| filter == .linear else true,
+                .min_linear = if (sampler.minFilter) |filter| switch (filter) {
+                    .nearest => false,
+                    else => true,
+                } else true,
+            };
+        }
+        upload.samplers = descs;
+    }
+
+    if (gltf.images) |images| {
+        const decoded_images = try gpa.alloc(Bitmap, images.len);
+        @memset(decoded_images, .{});
+        upload.images = decoded_images;
+        const image_sampler = try gpa.alloc(?usize, images.len);
+        @memset(image_sampler, null);
+        upload.image_sampler = image_sampler;
+
+        var decode_tasks = try gpa.alloc(Bitmap.Task, images.len);
+        defer {
+            for (decode_tasks) |*task| {
+                if (task.uri) |uri| gpa.free(uri);
             }
-        } else {
-            std.log.info("Sampler count was 0", .{});
+            gpa.free(decode_tasks);
+        }
+        for (images, 0..) |image, image_index| {
+            if (image.uri == null and image.bufferView == null) return error.FailedToLoadGLTFImage;
+
+            decode_tasks[image_index] = .{ .result = &decoded_images[image_index] };
+            if (image.uri) |uri| {
+                if (std.mem.startsWith(u8, uri, "data:")) return error.DataNotSupported;
+                decode_tasks[image_index].uri = try gpa.dupeSentinel(u8, uri, 0);
+            } else if (image.bufferView) |buffer_view_index| {
+                const buffer_views = gltf.bufferViews orelse return error.MissingBufferViews;
+                const buffer_view = buffer_views[buffer_view_index];
+                const bytes_offset = buffer_view.byteOffset;
+                const byte_len = buffer_view.byteLength;
+                decode_tasks[image_index].bytes = bin[bytes_offset .. bytes_offset + byte_len];
+            }
+        }
+
+        try Bitmap.decodeAll(gpa, decode_tasks);
+        for (decoded_images) |*decoded_image| {
+            if (decoded_image.err) |err| return err;
+            try if (decoded_image.pixels == null) error.LoadingStbi;
         }
     }
 
-    var image_handles: []Image.Handle = &.{};
-    defer gpa.free(image_handles);
-    {
-        if (gltf.images) |images| {
-            image_handles = try gpa.alloc(Image.Handle, images.len);
-            std.log.info("image count was {d}", .{images.len});
-            var decoded_images = try gpa.alloc(Image.Decoded, images.len);
-            defer {
-                for (decoded_images) |*decoded_image| decoded_image.deinit();
-                gpa.free(decoded_images);
-            }
-            @memset(decoded_images, .{});
-
-            var decode_tasks = try gpa.alloc(Image.DecodeTask, images.len);
-
-            defer {
-                for (decode_tasks) |*task| {
-                    if (task.uri) |uri| gpa.free(uri);
-                }
-                gpa.free(decode_tasks);
-            }
-            for (images, 0..) |image, image_index| {
-                if (image.uri == null and image.bufferView == null) return error.FailedToLoadGLTFImage;
-
-                decode_tasks[image_index] = .{ .result = &decoded_images[image_index] };
-                if (image.uri) |uri| {
-                    if (std.mem.startsWith(u8, uri, "data:")) return error.DataNotSupported;
-                    decode_tasks[image_index].uri = try gpa.dupeSentinel(u8, uri, 0);
-                } else if (image.bufferView) |buffer_view_index| {
-                    const buffer_views = gltf.bufferViews orelse return error.MissingBufferViews;
-                    const buffer_view = buffer_views[buffer_view_index];
-                    const bytes_offset = buffer_view.byteOffset;
-                    const byte_len = buffer_view.byteLength;
-                    decode_tasks[image_index].bytes = bin[bytes_offset .. bytes_offset + byte_len];
-                }
-            }
-
-            {
-                try Image.decodeImages(gpa, decode_tasks);
-            }
-
-            var upload_buffers: std.ArrayList(Buffer) = .empty;
-            defer {
-                for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
-                upload_buffers.deinit(gpa);
-            }
-            const upload_cmd = try device.beginImmediateCommand();
-            for (decoded_images, 0..) |*decoded_image, image_index| {
-                if (decoded_image.err) |err| return err;
-                try if (decoded_image.pixels == null) error.LoadingStbi;
-                var new_image: Image = try .init(
-                    vma,
-                    device,
-                    c.VK_FORMAT_R8G8B8A8_UNORM,
-                    .{ .width = @intCast(decoded_image.width), .height = @intCast(decoded_image.height), .depth = 1 },
-                    .@"2d",
-                    c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                    c.VK_IMAGE_ASPECT_COLOR_BIT,
-                    true,
-                );
-                {
-                    try new_image.recordUploadDataToImage(
-                        gpa,
-                        vma,
-                        device,
-                        upload_cmd,
-                        decoded_image.pixels,
-                        0,
-                        4,
-                        &upload_buffers,
-                    );
-                }
-                decoded_image.deinit();
-                var key_buffer: [512]u8 = undefined;
-                const key = try std.fmt.bufPrint(&key_buffer, "{s}#{d}", .{ texture_key_prefix, image_index });
-                image_handles[image_index] = try resources.registerImage(gpa, key, new_image, resources.samplers.items[0]);
-            }
-            try device.endImmediateCommand(upload_cmd);
-        } else {
-            std.log.info("image count was 0", .{});
-        }
-    }
-
-    var material_textures: []Image.Handle = &.{};
-    defer gpa.free(material_textures);
-    {
-        if (gltf.materials) |materials| {
-            material_textures = try gpa.alloc(Image.Handle, materials.len);
-            for (materials, material_textures) |material, *material_texture| {
-                material_texture.* = .blank;
-                if (material.pbrMetallicRoughness) |metallic_roughness| {
-                    if (metallic_roughness.baseColorTexture) |base_texture| {
-                        const texture_info = gltf.textures.?[base_texture.index];
-                        if (texture_info.source) |image_index| {
-                            material_texture.* = image_handles[image_index];
-                            if (texture_info.sampler) |sampler_index|
-                                resources.setTextureSampler(image_handles[image_index], resources.samplers.items[original_sample_count + sampler_index]);
-                        }
+    var material_images: []?usize = &.{};
+    defer gpa.free(material_images);
+    if (gltf.materials) |materials| {
+        material_images = try gpa.alloc(?usize, materials.len);
+        for (materials, material_images) |material, *material_image| {
+            material_image.* = null;
+            if (material.pbrMetallicRoughness) |metallic_roughness| {
+                if (metallic_roughness.baseColorTexture) |base_texture| {
+                    const texture_info = gltf.textures.?[base_texture.index];
+                    if (texture_info.source) |image_index| {
+                        material_image.* = image_index;
+                        if (texture_info.sampler) |sampler_index|
+                            upload.image_sampler[image_index] = sampler_index;
                     }
                 }
             }
         }
     }
 
-    const original_mesh_count = resources.meshes.items.len;
     {
+        var mesh_list: std.ArrayList(UploadData(VertexType).MeshData) = .empty;
+        errdefer {
+            for (mesh_list.items) |mesh| {
+                gpa.free(mesh.vertices);
+                gpa.free(mesh.indices);
+                gpa.free(mesh.surfaces);
+            }
+            mesh_list.deinit(gpa);
+        }
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
-            var surfaces: std.ArrayList(Mesh.GeoSurface) = try .initCapacity(gpa, mesh.primitives.len);
-            defer surfaces.deinit(gpa);
+            var surfaces: std.ArrayList(UploadData(VertexType).SurfaceData) = try .initCapacity(gpa, mesh.primitives.len);
+            errdefer surfaces.deinit(gpa);
             var vertices: std.ArrayList(VertexType) = .empty;
-            defer vertices.deinit(gpa);
+            errdefer vertices.deinit(gpa);
             var indices: std.ArrayList(u32) = .empty;
-            defer indices.deinit(gpa);
+            errdefer indices.deinit(gpa);
 
             std.log.debug("MESH primitives: {d}\n", .{mesh.primitives.len});
             for (mesh.primitives) |primitive| {
@@ -258,7 +231,7 @@ pub fn parseScene(
                 surfaces.appendAssumeCapacity(.{
                     .index_count = indices_count,
                     .index_start = indices_start,
-                    .texture = if (primitive.material) |material_index| material_textures[material_index] else .blank,
+                    .image_index = if (primitive.material) |material_index| material_images[material_index] else null,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
@@ -342,21 +315,17 @@ pub fn parseScene(
                 }
             }
 
-            const new_mesh: Mesh = try .init(
-                gpa,
-                vma,
-                mesh.name orelse "mesh",
-                device,
-                VertexType,
-                vertices.items,
-                indices.items,
-                surfaces.items,
-            );
-            try resources.meshes.append(gpa, new_mesh);
+            try mesh_list.append(gpa, .{
+                .name = mesh.name orelse "mesh",
+                .vertices = try vertices.toOwnedSlice(gpa),
+                .indices = try indices.toOwnedSlice(gpa),
+                .surfaces = try surfaces.toOwnedSlice(gpa),
+            });
         };
+        upload.meshes = try mesh_list.toOwnedSlice(gpa);
     }
 
-    const gltf_nodes = gltf.nodes orelse return;
+    const gltf_nodes = gltf.nodes orelse return upload;
     const node_map = try gpa.alloc(usize, gltf_nodes.len);
     defer gpa.free(node_map);
     {
@@ -391,7 +360,7 @@ pub fn parseScene(
         const scene_node = &out_nodes.items[sorted_index];
         scene_node.* = .{ .skin_id = if (gltf_node.skin) |skin_id| skin_id else null };
         if (gltf_node.mesh) |mesh_id| {
-            scene_node.mesh_id = original_mesh_count + mesh_id;
+            scene_node.mesh_id = mesh_id;
         }
 
         if (gltf_node.matrix) |matrix| {
@@ -429,7 +398,7 @@ pub fn parseScene(
             } else {
                 std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
                 for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-                std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
+                std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
                 return error.LookBoneNotFound;
             };
         }
@@ -441,7 +410,7 @@ pub fn parseScene(
         } else {
             std.log.err("overlay root \"{s}\" not found; nodes in this file:", .{root_name});
             for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-            std.log.err("in the model spec (EntityModels.zig) assign one of these", .{});
+            std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
             return error.OverlayRootNotFound;
         };
     }
@@ -528,4 +497,6 @@ pub fn parseScene(
             clips.* = model_animations;
         }
     }
+
+    return upload;
 }
