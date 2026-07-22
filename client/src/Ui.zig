@@ -1,13 +1,9 @@
 const Ui = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
 const nz = @import("shared").numz;
-const Buffer = @import("Buffer.zig");
-const Vma = @import("Vma.zig");
-const Device = @import("device.zig").Logical;
-const Font = @import("Font.zig");
-const Image = @import("Image.zig");
+const Font = @import("asset/Font.zig");
+const Image = @import("Renderer/Vulkan/Image.zig");
 
 pub const max_ui_quads: usize = 1024;
 
@@ -26,7 +22,6 @@ pub const Quad = struct {
 
 writer_buffer_out: [8192]u8 = undefined,
 writer_len: usize = 0,
-index_buffer: Buffer,
 text_buffer: [8192]u8 = undefined,
 text_len: usize = 0,
 quads: std.ArrayList(Quad) = .empty,
@@ -103,43 +98,22 @@ pub const Layout = struct {
 
 pub fn init(
     gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
     screen_width: u32,
     screen_heigth: u32,
-    default_font: *Font,
 ) !Ui {
-    const ui_index_buffer: Buffer = try .init(
-        device,
-        vma,
-        u32,
-        max_ui_quads * 6,
-        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .{
-            .usage = c.VMA_MEMORY_USAGE_AUTO,
-            .flags = c.VMA_ALLOCATION_CREATE_MAPPED_BIT | c.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-        },
-    );
-    var data: [*]u32 = @ptrCast(@alignCast(ui_index_buffer.info.pMappedData));
-    for (0..max_ui_quads) |i| {
-        const base: u32 = @as(u32, @intCast(i)) * 4;
-        data[i * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
-    }
     var names: std.StringArrayHashMapUnmanaged(u32) = .empty;
     try names.ensureTotalCapacity(gpa, max_ui_quads);
     return .{
-        .index_buffer = ui_index_buffer,
         .quads = try .initCapacity(gpa, max_ui_quads),
         .nodes = try .initCapacity(gpa, max_ui_quads),
         .names = names,
         .screen_width = @floatFromInt(screen_width),
         .screen_heigth = @floatFromInt(screen_heigth),
-        .default_font = default_font,
+        .default_font = undefined,
     };
 }
 
-pub fn deinit(self: *Ui, gpa: std.mem.Allocator, vma: Vma) void {
-    self.index_buffer.deinit(vma);
+pub fn deinit(self: *Ui, gpa: std.mem.Allocator) void {
     self.quads.deinit(gpa);
     self.nodes.deinit(gpa);
     self.names.deinit(gpa);
@@ -206,7 +180,7 @@ const TextMetrics = struct { width: f32, top: f32, bottom: f32 };
 fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) TextMetrics {
     var metrics: TextMetrics = .{ .width = 0, .top = 0, .bottom = 0 };
     for (text) |char| {
-        const index: usize = @intCast(std.math.clamp(@as(c_int, char) - 32, 0, 95));
+        const index: usize = @intCast(std.math.clamp(@as(i32, char) - 32, 0, 95));
         const glyph = glyphs[index];
         metrics.width += glyph.xadvance * scale;
         metrics.top = @min(metrics.top, glyph.yoff * scale); // yoff is negative (above baseline)
@@ -336,17 +310,17 @@ fn pushQuads(self: *Ui) void {
                 .y = node.rect.top + startOffset(anchor.y, node.rect.heigth, metrics.bottom - metrics.top) - metrics.top,
             };
             for (text.data) |char| {
-                const index: usize = @intCast(std.math.clamp(@as(c_int, char) - 32, 0, 95));
+                const index: usize = @intCast(std.math.clamp(@as(i32, char) - 32, 0, 95));
                 const glyph = font.glyphs[index];
                 const x0 = pen.x + glyph.xoff * scale;
                 const y0 = pen.y + glyph.yoff * scale;
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.heigth * scale;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
-                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
-                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
-                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
-                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 }, .is_sdf = 1, .texture_index = @intFromEnum(font.atlas_texture) },
+                    .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
+                    .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
+                    .{ .position = .{ x1, y1 }, .color = color, .uv = .{ glyph.u1, glyph.v1 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
+                    .{ .position = .{ x0, y1 }, .color = color, .uv = .{ glyph.u0, glyph.v1 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
                 } });
                 pen.x += glyph.xadvance * scale;
             }

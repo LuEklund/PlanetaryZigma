@@ -3,28 +3,22 @@ const Model = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Vma = @import("Vma.zig");
-const Device = @import("device.zig").Logical;
-const Mesh = @import("Mesh.zig");
 const Node = @import("Node.zig");
-const Skin = @import("Skin.zig");
 const AnimationClip = @import("AnimationClip.zig");
-const Resources = @import("Resources.zig");
 const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
-//NOTE: store meta data about clip duration?
-pub const Handle = enum(u32) {
-    default = 0,
-    _,
+pub const Generated = enum { default, cube_projectile, planet };
 
-    pub fn index(self: Handle) usize {
-        return @intFromEnum(self);
-    }
+pub const Handle = union(enum) {
+    file: u32,
+    generated: Generated,
 };
 
 surfaces: std.ArrayList(Surface),
+spawn_duration: f32,
+death_duration: f32,
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
@@ -34,6 +28,8 @@ state_clips: std.EnumArray(shared.entity.State, usize),
 
 pub const empty: Model = .{
     .surfaces = .empty,
+    .spawn_duration = 0,
+    .death_duration = 0,
     .nodes = .empty,
     .clips = &.{},
     .skins = &.{},
@@ -47,6 +43,26 @@ const Surface = struct {
     model_matrix: nz.Mat4x4(f32),
 };
 
+pub const Skin = struct {
+    name: []const u8,
+    inverse_bind_matrices: ?[]nz.Mat4x4(f32),
+    joints: []usize,
+
+    pub fn init(gpa: std.mem.Allocator, skin_name: []const u8, inverse_bind_matrices: ?[]nz.Mat4x4(f32), joints: []usize) !Skin {
+        return .{
+            .name = try gpa.dupe(u8, skin_name),
+            .inverse_bind_matrices = inverse_bind_matrices,
+            .joints = joints,
+        };
+    }
+
+    pub fn deinit(self: *Skin, gpa: std.mem.Allocator) void {
+        gpa.free(self.name);
+        if (self.inverse_bind_matrices) |matrices| gpa.free(matrices);
+        gpa.free(self.joints);
+    }
+};
+
 pub fn isEmpty(self: *const Model) bool {
     return self.surfaces.items.len == 0 and self.nodes.items.len == 0;
 }
@@ -55,22 +71,21 @@ pub fn isSkinned(self: *const Model) bool {
     return self.skins.len > 0;
 }
 
-pub fn loadGlb(
+pub fn parseGlb(
     self: *Model,
+    comptime VertexType: type,
     gpa: std.mem.Allocator,
     io: std.Io,
     file: std.Io.File,
-    vma: Vma,
-    device: Device,
-    resources: *Resources,
-    spec: Spec,
-) !void {
+    kind_spec: shared.entity.Spec,
+) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
     var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
 
-    if (spec.skinned) {
+    const spec = kind_spec.model;
+    const upload_data = if (spec.skinned) skinned: {
         var look_node_name_buffer: [3][]const u8 = undefined;
         var look_node_count: usize = 0;
         if (spec.look_node_names) |look_node_names| {
@@ -83,7 +98,7 @@ pub fn loadGlb(
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
         var overlay_root: usize = undefined;
-        try gltf.parseScene(Mesh.SkinnedVertex, gpa, vma, device, resources, spec.key, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
+        const skinned_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
         if (spec.overlay_root_name != null) {
             const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
             for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -91,10 +106,13 @@ pub fn loadGlb(
             }
             self.overlay_mask = overlay_mask;
         }
-    } else {
-        try gltf.parseScene(Mesh.StaticVertex, gpa, vma, device, resources, spec.key, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
-    }
+        break :skinned skinned_data;
+    } else try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
+
     computeMatrices(self.nodes.items);
+
+    self.spawn_duration = kind_spec.spawn_duration;
+    self.death_duration = kind_spec.death_duration;
 
     if (spec.skinned) {
         if (spec.clip_names) |clip_names| {
@@ -108,6 +126,8 @@ pub fn loadGlb(
                 .attack = attack_index,
                 .death = death_index,
             });
+            const death_clip = self.clips[death_index];
+            self.death_duration = death_clip.end - death_clip.start;
         }
     } else {
         for (self.nodes.items) |node| {
@@ -117,13 +137,15 @@ pub fn loadGlb(
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
     }
+
+    return upload_data;
 }
 
 fn createClipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
-    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.key });
+    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path });
     for (self.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
     std.log.err("in the model spec assign null or one of these", .{});
     return error.ClipNotFound;
