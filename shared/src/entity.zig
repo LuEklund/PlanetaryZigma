@@ -116,7 +116,7 @@ pub fn spec(kind: Kind) Spec {
                 .clip_names = .{
                     .idle = "Idle",
                     .walk = "Run",
-                    .attack = "shoot",
+                    .attack = "Run",
                     .death = "Death",
                 },
                 .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },

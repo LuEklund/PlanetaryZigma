@@ -132,15 +132,15 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *Animation
             saved_look_rotations[saved_index] = skeleton.nodes[node_index].rotation;
         }
         const camera = &info.world.camera;
-        const node_count: f32 = @floatFromInt(model.look_nodes.len);
         const look_pitch = std.math.clamp(camera.pitch * look_pitch_sign, -1.0, 1.0);
         var yaw_offset = entity.transform.rotation.conjugate().mul(camera.yaw_rotation);
         if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
         var look_yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w) * look_yaw_sign, -1.2, 1.2);
         if (@abs(look_yaw) < look_yaw_deadzone) look_yaw = 0;
-        const pitch_per_node = look_pitch / node_count;
-        const yaw_per_node = look_yaw / node_count;
-        for (model.look_nodes) |node_index| {
+        const aim_nodes: []const usize = if (skeleton.overlay != null) model.look_nodes[0..1] else model.look_nodes;
+        const pitch_per_node = look_pitch / @as(f32, @floatFromInt(aim_nodes.len));
+        const yaw_per_node = look_yaw / @as(f32, @floatFromInt(aim_nodes.len));
+        for (aim_nodes) |node_index| {
             const node = &skeleton.nodes[node_index];
             node.rotation = node.rotation
                 .mul(nz.Quat(f32).angleAxis(pitch_per_node, .{ 1, 0, 0 }))
