@@ -211,10 +211,21 @@ pub fn spec(kind: Kind) Spec {
     };
 }
 
-pub const all_kinds: []const Kind = blk: {
-    var kinds: []const Kind = &.{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
-    for (std.enums.values(EnemyKind)) |enemy_kind| kinds = kinds ++ .{Kind{ .enemy = enemy_kind }};
-    for (std.enums.values(Item)) |item_kind| kinds = kinds ++ .{Kind{ .item = item_kind }};
+pub const all_kinds: []const Kind = &all_kinds_array;
+
+const all_kind_count = 7 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
+const all_kinds_array: [all_kind_count]Kind = blk: {
+    var kinds: [all_kind_count]Kind = undefined;
+    kinds[0..7].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
+    var kind_index: usize = 7;
+    for (std.enums.values(EnemyKind)) |enemy_kind| {
+        kinds[kind_index] = .{ .enemy = enemy_kind };
+        kind_index += 1;
+    }
+    for (std.enums.values(Item)) |item_kind| {
+        kinds[kind_index] = .{ .item = item_kind };
+        kind_index += 1;
+    }
     break :blk kinds;
 };
 
@@ -253,7 +264,6 @@ pub const Kind = union(enum) {
     }
 };
 
-//TODO: merge with model clipstate
 pub const State = enum(u16) {
     idle = 0,
     walk = 1,

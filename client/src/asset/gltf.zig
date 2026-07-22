@@ -3,7 +3,7 @@ const nz = @import("shared").numz;
 const zgltf = @import("zgltf");
 const Bitmap = @import("Bitmap.zig");
 const Node = @import("Node.zig");
-const Skin = @import("Skin.zig");
+const Skin = @import("Model.zig").Skin;
 const AnimationClip = @import("AnimationClip.zig");
 
 pub const Glb = struct {

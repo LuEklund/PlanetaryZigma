@@ -4,7 +4,6 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const Node = @import("Node.zig");
-const Skin = @import("Skin.zig");
 const AnimationClip = @import("AnimationClip.zig");
 const gltf = @import("gltf.zig");
 
@@ -42,6 +41,26 @@ pub const empty: Model = .{
 const Surface = struct {
     mesh_id: usize,
     model_matrix: nz.Mat4x4(f32),
+};
+
+pub const Skin = struct {
+    name: []const u8,
+    inverse_bind_matrices: ?[]nz.Mat4x4(f32),
+    joints: []usize,
+
+    pub fn init(gpa: std.mem.Allocator, skin_name: []const u8, inverse_bind_matrices: ?[]nz.Mat4x4(f32), joints: []usize) !Skin {
+        return .{
+            .name = try gpa.dupe(u8, skin_name),
+            .inverse_bind_matrices = inverse_bind_matrices,
+            .joints = joints,
+        };
+    }
+
+    pub fn deinit(self: *Skin, gpa: std.mem.Allocator) void {
+        gpa.free(self.name);
+        if (self.inverse_bind_matrices) |matrices| gpa.free(matrices);
+        gpa.free(self.joints);
+    }
 };
 
 pub fn isEmpty(self: *const Model) bool {

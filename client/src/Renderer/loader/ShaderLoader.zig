@@ -21,12 +21,12 @@ pub const LayoutHandles = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: LayoutHandles) !ShaderLoader {
-    const files = try gpa.alloc([]const u8, Shader.all_kinds.len);
-    for (Shader.all_kinds, files) |kind, *file| {
-        file.* = Shader.spec(kind).path["shaders/".len..];
+    const files = try gpa.alloc([]const u8, std.enums.values(Shader.Kind).len);
+    for (std.enums.values(Shader.Kind), files) |kind, *file| {
+        file.* = Shader.get(kind).path["shaders/".len..];
     }
 
-    const items = try gpa.alloc(Shader, Shader.all_kinds.len);
+    const items = try gpa.alloc(Shader, std.enums.values(Shader.Kind).len);
     for (items) |*shader| shader.handle = null;
 
     return .{
@@ -53,25 +53,25 @@ pub fn deinit(self: *ShaderLoader) void {
 }
 
 pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind) *Shader {
-    return &self.items[Shader.index(kind)];
+    return &self.items[@intFromEnum(kind)];
 }
 
 pub fn verifyAllKindsLoaded(self: *const ShaderLoader) void {
-    for (Shader.all_kinds) |kind| {
-        if (self.items[Shader.index(kind)].handle == null)
-            std.debug.panic("shader missing or failed to load: {s} -- run the build so glslc emits it", .{Shader.spec(kind).path});
+    for (std.enums.values(Shader.Kind)) |kind| {
+        if (self.items[@intFromEnum(kind)].handle == null)
+            std.debug.panic("shader missing or failed to load: {s} -- run the build so glslc emits it", .{Shader.get(kind).path});
     }
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
-    const kind = Shader.all_kinds[index];
+    const kind: Shader.Kind = @enumFromInt(index);
     const file = err_file catch |err| std.debug.panic(
         "shader missing: assets/shaders/{s} ({t})",
         .{ loader.files[index], err },
     );
     if (self.items[index].handle == null) {
-        const layout_handles: []const c.VkDescriptorSetLayout = switch (Shader.spec(kind).layout) {
+        const layout_handles: []const c.VkDescriptorSetLayout = switch (Shader.get(kind).layout) {
             .scene_textures => &.{ self.layouts.scene, self.layouts.textures, self.layouts.shadow },
             .sky => &.{ self.layouts.scene, self.layouts.material },
             .ui => &.{self.layouts.textures},

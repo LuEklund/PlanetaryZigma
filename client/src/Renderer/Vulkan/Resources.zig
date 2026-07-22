@@ -20,9 +20,14 @@ const ModelLoader = @import("../loader/ModelLoader.zig");
 const TextureLoader = @import("../loader/TextureLoader.zig");
 const ShaderLoader = @import("../loader/ShaderLoader.zig");
 const FontLoader = @import("../loader/FontLoader.zig");
+const Model = @import("../../asset/Model.zig");
+const Mesh = @import("../Vulkan/Mesh.zig");
 
 const check = @import("utils.zig").check;
 
+pub const explosion_particle_name: []const u8 = "explosion_particle";
+pub const lightning_particle_name: []const u8 = "lightning_particle";
+const particle_texture_size: u32 = 64;
 pub const max_textures = 256;
 
 pub const PipelineLayoutKind = enum { world, sky, ui };
@@ -35,22 +40,27 @@ pub const GPUCascades = extern struct {
     splits: [4]f32,
 };
 
+vma: Vma,
+device: Device,
 combined_image_sampler_descriptor_size: usize,
+
 texture_table: TextureTable,
 model_loader: *ModelLoader,
 texture_loader: *TextureLoader,
 shader_loader: *ShaderLoader,
 font_loader: *FontLoader,
+generated: std.EnumArray(Model.Generated, ?Mesh),
+
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
+
 identity_joint_buffer: Buffer,
 ui_index_buffer: Buffer,
+
 shadow_image: Image,
 shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
-vma: Vma,
-device: Device,
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     var db_props: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
@@ -231,6 +241,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         .shadow_cascade_offset = shadow_cascade_offset,
         .vma = vma,
         .device = device,
+        .generated = .initFill(null),
     };
     self.texture_table = try .init(
         gpa,
@@ -253,10 +264,17 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     });
     self.font_loader = try gpa.create(FontLoader);
     self.font_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
+
     try asset_server.addLoader(&self.font_loader.interface);
     try asset_server.addLoader(&self.shader_loader.interface);
     try asset_server.addLoader(&self.model_loader.interface);
     try asset_server.addLoader(&self.texture_loader.interface);
+
+    self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
+    self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
+
+    try createParticleTexture(vma, device, gpa, &self.texture_table, explosion_particle_name, .{ 255, 70, 12 }, .{ 255, 235, 48 });
+    try createParticleTexture(vma, device, gpa, &self.texture_table, lightning_particle_name, .{ 110, 160, 255 }, .{ 255, 255, 255 });
     return self;
 }
 
@@ -270,6 +288,9 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.shader_loader.deinit();
     gpa.destroy(self.shader_loader);
     self.texture_table.deinit(gpa);
+    for (&self.generated.values) |*generated_mesh| {
+        if (generated_mesh.*) |*mesh| mesh.deinit(gpa, self.vma);
+    }
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);
     }
@@ -290,4 +311,50 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
         bytes[self.shadow_cascade_offset..][0..@sizeOf(GPUCascades)],
         @as([*]const u8, @ptrCast(cascades))[0..@sizeOf(GPUCascades)],
     );
+}
+
+fn makeBoxMesh(gpa: std.mem.Allocator, vma: Vma, device: Device, name: []const u8) !Mesh {
+    return try .init(gpa, vma, name, device, Mesh.StaticVertex, Mesh.box.verticies, Mesh.box.indicies, &.{.{
+        .index_start = 0,
+        .index_count = @intCast(Mesh.box.indicies.len),
+        .texture = .blank,
+    }});
+}
+
+fn createParticleTexture(vma: Vma, device: Device, gpa: std.mem.Allocator, table_table: *TextureTable, name: []const u8, edge_color: [3]f32, center_color: [3]f32) !void {
+    var texture = try Image.init(
+        vma,
+        device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = particle_texture_size, .height = particle_texture_size, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer texture.deinit(vma, device);
+
+    var pixels: [particle_texture_size * particle_texture_size * 4]u8 = undefined;
+    const size_float: f32 = @floatFromInt(particle_texture_size);
+    const center = (size_float - 1.0) * 0.5;
+    const radius = center;
+    for (0..particle_texture_size) |y| {
+        for (0..particle_texture_size) |x| {
+            const x_float: f32 = @floatFromInt(x);
+            const y_float: f32 = @floatFromInt(y);
+            const dx = (x_float - center) / radius;
+            const dy = (y_float - center) / radius;
+            const distance = @sqrt(dx * dx + dy * dy);
+            const core = std.math.clamp(1.0 - distance, 0.0, 1.0);
+            const alpha = core * core;
+            const heat = @sqrt(core);
+            const pixel_index = (y * particle_texture_size + x) * 4;
+            for (0..3) |channel| {
+                pixels[pixel_index + channel] = @intFromFloat(edge_color[channel] + (center_color[channel] - edge_color[channel]) * heat);
+            }
+            pixels[pixel_index + 3] = @intFromFloat(alpha * 255.0);
+        }
+    }
+    try texture.uploadDataToImage(vma, device, &pixels, 4, 0);
+    _ = try table_table.allocSlot(gpa, texture, table_table.samplers.items[0], name);
 }

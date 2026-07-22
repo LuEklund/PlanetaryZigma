@@ -18,6 +18,7 @@ const Mesh = @import("Vulkan/Mesh.zig");
 const Node = @import("../asset/Node.zig");
 const Buffer = @import("Vulkan/Buffer.zig");
 const AnimationInstance = @import("../asset/AnimationInstance.zig");
+const Emitter = @import("../system/Emitter.zig");
 const AnimationClip = @import("../asset/AnimationClip.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -33,16 +34,10 @@ const tracy = @import("ztracy");
 
 const check = @import("Vulkan/utils.zig").check;
 
+pub const Model = @import("../asset/Model.zig");
 pub const Info = system.Info;
 pub const c = @import("vulkan");
-const max_frames_inflight: usize = FrameData.max_frames_inflight;
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
-
-pub const Model = @import("../asset/Model.zig");
-
-pub const explosion_particle_name: []const u8 = "explosion_particle";
-pub const lightning_particle_name: []const u8 = "lightning_particle";
-const particle_texture_size: u32 = 64;
 
 gpa: std.mem.Allocator,
 
@@ -56,8 +51,7 @@ swapchain: Swapchain,
 resources: *Resources,
 skeletons: std.AutoHashMap(shared.entity.Id, []Buffer),
 current_frame_inflight: u32 = 0,
-frames: [max_frames_inflight]FrameData,
-generated: std.EnumArray(Model.Generated, ?Mesh),
+frames: [FrameData.max_frames_inflight]FrameData,
 
 pub const InitOptions = struct {
     instance: struct {
@@ -111,11 +105,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
 
     self.resources = try .init(gpa, asset_server, self.vma, self.physical_device, self.device);
 
-    self.generated = .initFill(null);
-    self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
-    self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
-    try self.createParticleTextures(gpa);
-
     try asset_server.load();
     self.resources.shader_loader.verifyAllKindsLoaded();
 
@@ -130,9 +119,6 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     self.clearSkeletons(gpa);
     self.skeletons.deinit();
 
-    for (&self.generated.values) |*generated_mesh| {
-        if (generated_mesh.*) |*mesh| mesh.deinit(gpa, self.vma);
-    }
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
     self.vma.deinit();
@@ -140,59 +126,6 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     self.surface.deinit(self.instance);
     if (self.debug_messenger) |debug_messenger| debug_messenger.deinit(self.instance);
     self.instance.deinit();
-}
-
-fn makeBoxMesh(gpa: std.mem.Allocator, vma: Vma, device: Device, name: []const u8) !Mesh {
-    return try .init(gpa, vma, name, device, Mesh.StaticVertex, Mesh.box.verticies, Mesh.box.indicies, &.{.{
-        .index_start = 0,
-        .index_count = @intCast(Mesh.box.indicies.len),
-        .texture = .blank,
-    }});
-}
-
-fn createParticleTextures(self: *Vulkan, gpa: std.mem.Allocator) !void {
-    const table = &self.resources.texture_table;
-    try self.createParticleTexture(gpa, table, explosion_particle_name, .{ 255, 70, 12 }, .{ 255, 235, 48 });
-    try self.createParticleTexture(gpa, table, lightning_particle_name, .{ 110, 160, 255 }, .{ 255, 255, 255 });
-
-}
-
-fn createParticleTexture(self: *Vulkan, gpa: std.mem.Allocator, table: *TextureTable, name: []const u8, edge_color: [3]f32, center_color: [3]f32) !void {
-    var texture = try Image.init(
-        self.vma,
-        self.device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = particle_texture_size, .height = particle_texture_size, .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    errdefer texture.deinit(self.vma, self.device);
-
-    var pixels: [particle_texture_size * particle_texture_size * 4]u8 = undefined;
-    const size_float: f32 = @floatFromInt(particle_texture_size);
-    const center = (size_float - 1.0) * 0.5;
-    const radius = center;
-    for (0..particle_texture_size) |y| {
-        for (0..particle_texture_size) |x| {
-            const x_float: f32 = @floatFromInt(x);
-            const y_float: f32 = @floatFromInt(y);
-            const dx = (x_float - center) / radius;
-            const dy = (y_float - center) / radius;
-            const distance = @sqrt(dx * dx + dy * dy);
-            const core = std.math.clamp(1.0 - distance, 0.0, 1.0);
-            const alpha = core * core;
-            const heat = @sqrt(core);
-            const pixel_index = (y * particle_texture_size + x) * 4;
-            for (0..3) |channel| {
-                pixels[pixel_index + channel] = @intFromFloat(edge_color[channel] + (center_color[channel] - edge_color[channel]) * heat);
-            }
-            pixels[pixel_index + 3] = @intFromFloat(alpha * 255.0);
-        }
-    }
-    try texture.uploadDataToImage(self.vma, self.device, &pixels, 4, 0);
-    _ = try table.allocSlot(gpa, texture, table.samplers.items[0], name);
 }
 
 pub fn rebindProcs(self: *Vulkan) void {
@@ -438,7 +371,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
             c.VK_SHADER_STAGE_GEOMETRY_BIT,
         };
 
-        const bound = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.{ .vert = .skinned }).handle, self.resources.shader_loader.shaderPtr(.{ .frag_normal = .mesh }).handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.skinned_vert).handle, self.resources.shader_loader.shaderPtr(.mesh_frag).handle, null, null, null };
         ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
     }
 
@@ -532,7 +465,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
     ext.vkCmdBeginRendering(cmd, &shadow_render_info);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.{ .vert = .shadow_static }).handle, null };
+        const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.shadow_static_vert).handle, null };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     }
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
@@ -551,14 +484,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
         ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
         ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
 
-        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .shadow_static }));
+        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_static_vert));
         for (info.world.entities.values()) |*entity| {
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             try drawStaticEntity(self, cmd, entity.model, base_matrix);
         }
-        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .shadow_skinned }));
+        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_skinned_vert));
         for (info.world.entities.values()) |*entity| {
             const instance = instances.getPtr(entity.id) orelse continue;
             const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
@@ -595,15 +528,15 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     self.bindWorldDescriptors(cmd, current_frame);
 
-    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .static }));
-    bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.{ .frag_normal = .mesh }));
+    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static_vert));
+    bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.mesh_frag));
     for (info.world.entities.values()) |*entity| {
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         try drawStaticEntity(self, cmd, entity.model, base_matrix);
     }
 
-    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert = .skinned }));
+    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned_vert));
     for (info.world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
@@ -622,7 +555,7 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handle = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.{ .vert = .sky }).handle, self.resources.shader_loader.shaderPtr(.{ .frag_normal = .sky }).handle };
+        const handle = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.sky_vert).handle, self.resources.shader_loader.shaderPtr(.sky_frag).handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
     }
     const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -657,8 +590,8 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     const emitter_count: u32 = @intCast(@min(info.world.emitters.items.len, FrameData.max_emitters));
     if (emitter_count == 0) return;
     const emitters = info.world.emitters.items[0..emitter_count];
-    const explosion_texture_index = self.resources.texture_table.handle(explosion_particle_name).index();
-    const lightning_texture_index = self.resources.texture_table.handle(lightning_particle_name).index();
+    const explosion_texture_index = self.resources.texture_table.handle(Resources.explosion_particle_name).index();
+    const lightning_texture_index = self.resources.texture_table.handle(Resources.lightning_particle_name).index();
 
     var color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
@@ -668,7 +601,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
 
     var first_instance: u32 = 0;
-    for (std.enums.values(Shader.ParticleEffect)) |effect| {
+    for (std.enums.values(Emitter.ParticleEffect)) |effect| {
         var effect_emitter_count: u32 = 0;
         for (emitters) |emitter| {
             if (emitter.effect != effect) continue;
@@ -681,9 +614,9 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
         }
         if (effect_emitter_count == 0) continue;
 
-        const effect_spec = Shader.effectSpec(effect);
-        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.{ .vert_particle = effect }));
-        bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.{ .frag_particle = effect }));
+        const effect_spec = Emitter.effectSpec(effect);
+        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(Emitter.particle_shaders.get(effect).vert));
+        bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(Emitter.particle_shaders.get(effect).frag));
 
         const push: Shader.WorldPushConstant = .{
             .model_matrix = nz.Mat4x4(f32).identity.d,
@@ -709,7 +642,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     if (!info.world.controller.debug_draw_colliders) return;
 
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-    const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.{ .vert = .debug }).handle, self.resources.shader_loader.shaderPtr(.{ .frag_normal = .debug }).handle };
+    const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.debug_vert).handle, self.resources.shader_loader.shaderPtr(.debug_frag).handle };
     ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     c.vkCmdSetLineWidth(cmd, 1);
@@ -763,8 +696,8 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
     };
 
     const bounds_ui = [_]c.VkShaderEXT{
-        self.resources.shader_loader.shaderPtr(.{ .vert = .ui }).handle,
-        self.resources.shader_loader.shaderPtr(.{ .frag_normal = .ui }).handle,
+        self.resources.shader_loader.shaderPtr(.ui_vert).handle,
+        self.resources.shader_loader.shaderPtr(.ui_frag).handle,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
@@ -807,7 +740,7 @@ fn fileItem(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Item {
 fn drawStaticEntity(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle, top_matrix: nz.Mat4x4(f32)) !void {
     switch (model_handle) {
         .generated => |generated_kind| {
-            const generated_slot = self.generated.getPtr(generated_kind);
+            const generated_slot = self.resources.generated.getPtr(generated_kind);
             if (generated_slot.*) |*mesh| {
                 var push: Shader.WorldPushConstant = .{
                     .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
@@ -1048,7 +981,7 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
 fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32, timer_io: std.Io) !void {
     var planet: shared.Planet(.renderable) = try .init(gpa, radius, timer_io);
     defer planet.deinit(gpa);
-    const planet_slot = self.generated.getPtr(.planet);
+    const planet_slot = self.resources.generated.getPtr(.planet);
     if (planet_slot.*) |*old_mesh| {
         try check(c.vkDeviceWaitIdle(self.device.handle));
         old_mesh.deinit(gpa, self.vma);

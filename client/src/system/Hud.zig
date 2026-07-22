@@ -12,6 +12,7 @@ const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
 
+const DamagePopup = @import("hud/DamagePopup.zig");
 const main_menu = @import("hud/main_menu.zig");
 const options_menu = @import("hud/options.zig");
 const pause_menu = @import("hud/pause.zig");
@@ -44,6 +45,8 @@ pub const Request = union(enum) {
 screen: Screen = .main,
 overlay: Overlay = .none,
 options_tab: OptionsTab = .gameplay,
+damage_popups: DamagePopup.List = .{},
+popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
 
 pub const crosshair_texture = "textures/crosshair.png";
 pub const texture_paths = [_][]const u8{crosshair_texture};
@@ -67,12 +70,25 @@ pub fn update(
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
     });
+    hud.damage_popups.update(info.delta_time);
+    for (info.world.damage_events.items) |damage_event| {
+        if (damage_event.source != info.world.player_id and damage_event.target != info.world.player_id) continue;
+        const color: [3]f32 = if (damage_event.delta < 0)
+            .{ 0.3, 0.95, 0.35 }
+        else if (damage_event.target == info.world.player_id)
+            .{ 0.95, 0.25, 0.2 }
+        else
+            .{ 1, 1, 1 };
+        hud.damage_popups.spawn(hud.popup_prng.random(), damage_event.position, damage_event.delta, color);
+    }
+    info.world.damage_events.clearRetainingCapacity();
+
     var request: Request = .none;
     if (scene == .menu) {
         request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(info, network_manager, ui, texture_table, options);
+        try game_hud.update(info, network_manager, ui, texture_table, options, &hud.damage_popups);
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pause_menu.update(ui, hud),

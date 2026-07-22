@@ -9,11 +9,11 @@ const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
-const DamagePopup = @import("../DamagePopup.zig");
+const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options) !void {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -34,7 +34,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
         addEnemyHealthBars(info, ui);
-        addDamagePopups(info, ui);
+        addDamagePopups(info, ui, damage_popups);
 
         const health_current = player.stats.current.get(.health);
         const health_max = player.stats.max.get(.health);
@@ -308,9 +308,9 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
     }
 }
 
-fn addDamagePopups(info: *const Info, ui: *Ui) void {
+fn addDamagePopups(info: *const Info, ui: *Ui, damage_popups: *const DamagePopup.List) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
-    for (info.world.damage_popups.items) |popup| {
+    for (damage_popups.items()) |popup| {
         const up = shared.planetUp(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
         const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
