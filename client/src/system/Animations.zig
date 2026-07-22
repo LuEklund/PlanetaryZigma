@@ -9,8 +9,8 @@ const nz = shared.numz;
 const Renderer = @import("../Renderer/Vulkan.zig");
 const Model = @import("../Renderer/Vulkan/Model.zig");
 const SkeletonInstance = @import("../Renderer/Vulkan/SkeletonInstance.zig");
-const Node = @import("../Renderer/Vulkan/Node.zig");
-const AnimationClip = @import("../Renderer/Vulkan/AnimationClip.zig");
+const Node = @import("../asset/Node.zig");
+const AnimationClip = @import("../asset/AnimationClip.zig");
 
 const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;

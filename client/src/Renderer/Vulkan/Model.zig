@@ -6,9 +6,9 @@ const nz = shared.numz;
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Mesh = @import("Mesh.zig");
-const Node = @import("Node.zig");
-const Skin = @import("Skin.zig");
-const AnimationClip = @import("AnimationClip.zig");
+const Node = @import("../../asset/Node.zig");
+const Skin = @import("../../asset/Skin.zig");
+const AnimationClip = @import("../../asset/AnimationClip.zig");
 const Resources = @import("Resources.zig");
 const gltf = @import("gltf.zig");
 

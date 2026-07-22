@@ -6,7 +6,7 @@ const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Model = @import("Model.zig");
-const Node = @import("Node.zig");
+const Node = @import("../../asset/Node.zig");
 const Buffer = @import("Buffer.zig");
 
 nodes: []Node,
