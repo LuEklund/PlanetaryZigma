@@ -71,15 +71,19 @@ pub fn update(
         .right_click = controller.mouse_button_right,
     });
     hud.damage_popups.update(info.delta_time);
-    for (info.world.damage_events.items) |damage_event| {
-        if (damage_event.source != info.world.player_id and damage_event.target != info.world.player_id) continue;
-        const color: [3]f32 = if (damage_event.delta < 0)
-            .{ 0.3, 0.95, 0.35 }
-        else if (damage_event.target == info.world.player_id)
-            .{ 0.95, 0.25, 0.2 }
-        else
-            .{ 1, 1, 1 };
-        hud.damage_popups.spawn(hud.popup_prng.random(), damage_event.position, damage_event.delta, color);
+    if (info.world.getPtr(info.world.player_id)) |player| {
+        for (info.world.damage_events.items) |damage_event| {
+            if (damage_event.source != info.world.player_id and damage_event.target != info.world.player_id) continue;
+            const color: [3]f32 = if (damage_event.delta < 0)
+                .{ 0.3, 0.95, 0.35 }
+            else if (damage_event.target == info.world.player_id)
+                .{ 0.95, 0.25, 0.2 }
+            else if (damage_event.delta > player.stats.max.get(.damage))
+                .{ 1, 0, 0 }
+            else
+                .{ 1, 1, 1 };
+            hud.damage_popups.spawn(hud.popup_prng.random(), damage_event.position, damage_event.delta, color);
+        }
     }
     info.world.damage_events.clearRetainingCapacity();
 
@@ -99,4 +103,3 @@ pub fn update(
     ui.end();
     return request;
 }
-

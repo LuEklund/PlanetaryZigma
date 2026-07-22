@@ -20,7 +20,7 @@ pub const Kind = enum(u16) {
     regen,
     rocket_chance,
     lightning_chance,
-    // critical_chance,
+    critical_chance,
     // block_chance,
 };
 
