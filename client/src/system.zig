@@ -123,7 +123,7 @@ pub const Context = struct {
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
         try info.world.flush(info.delta_time, &self.animation_instances);
-        try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world, self.io);
+        try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world);
         try self.animation.updateStates(info, &self.animation_instances);
         try self.animation.update(info, &self.animation_instances);
 

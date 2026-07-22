@@ -49,7 +49,7 @@ pub const Context = struct {
             .request_exit = false,
         };
 
-        try self.director.startStage(self.world, &self.physics, self.io);
+        try self.director.startStage(self.world, &self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
@@ -75,7 +75,7 @@ pub const Context = struct {
         }
         try PlayerController.update(info, &self.physics);
         try gameplay.updateEnemies(info);
-        try self.director.update(info, &self.physics, self.io);
+        try self.director.update(info, &self.physics);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);

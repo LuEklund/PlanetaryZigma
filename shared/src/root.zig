@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 pub const numz = @import("numz");
 pub const net = @import("net.zig");
-pub const planet = @import("planet.zig");
+pub const planet = @import("planet/root.zig");
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 

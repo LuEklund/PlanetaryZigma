@@ -46,7 +46,7 @@ const PlanetChunkSet = struct {
 };
 
 const PlanetChunkJob = struct {
-    job: shared.planet.ChunkJob(.renderable),
+    job: shared.planet.Chunk.Job(.renderable),
     id: shared.entity.Id,
     center: nz.Vec3(i32),
     reach: i32,
@@ -985,7 +985,7 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
     );
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World, timer_io: std.Io) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World) !void {
     var retired_index: usize = self.retired_planet_chunks.items.len;
     while (retired_index > 0) {
         retired_index -= 1;
@@ -1036,7 +1036,7 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
         .planet_spawned => |planet| try self.buildPlanet(gpa, planet.id, planet.radius),
     };
     world.render_outbox.clearRetainingCapacity();
-    try self.updatePlanetChunks(gpa, world, timer_io);
+    try self.updatePlanetChunks(gpa, world);
 }
 
 fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32) !void {
@@ -1044,7 +1044,7 @@ fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.Id, radi
     try self.planet_chunks.put(id, .{ .radius = radius, .center = null, .reach = 0, .meshes = .empty });
 }
 
-fn updatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
+fn updatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !void {
     if (self.planet_chunk_job != null) return;
     for (world.entities.values()) |*entity| {
         if (entity.kind != .planet) continue;
@@ -1052,23 +1052,23 @@ fn updatePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, world: *World, time
         const center = planetChunkCenter(world, entity);
         const reach = planetChunkReach(world, set.radius);
         if (set.center) |known| {
-            if (set.radius <= @as(u32, @intCast(shared.planet.chunk_dim))) continue;
+            if (set.radius <= @as(u32, @intCast(shared.planet.Chunk.dim))) continue;
             if (std.meta.eql(known, center) and set.reach == reach) continue;
         }
         set.center = center;
         set.reach = reach;
-        try self.startPlanetChunkJob(gpa, timer_io, entity.id, set.radius, center, reach, set.meshes.keys());
+        try self.startPlanetChunkJob(gpa, entity.id, set.radius, center, reach, set.meshes.keys());
         return;
     }
 }
 
-fn startPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, io: std.Io, id: shared.entity.Id, radius: u32, center: nz.Vec3(i32), reach: i32, existing_coords: []const nz.Vec3(i32)) !void {
-    const small = radius <= @as(u32, @intCast(shared.planet.chunk_dim));
-    const clamp: ?shared.planet.ChunkBox = if (small) null else .{
+fn startPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32, center: nz.Vec3(i32), reach: i32, existing_coords: []const nz.Vec3(i32)) !void {
+    const small = radius <= @as(u32, @intCast(shared.planet.Chunk.dim));
+    const clamp: ?shared.planet.Chunk.Box = if (small) null else .{
         .min = center - @as(nz.Vec3(i32), @splat(reach)),
         .max = center + @as(nz.Vec3(i32), @splat(reach)),
     };
-    const surface_coords = try shared.planet.surfaceChunks(gpa, radius, clamp);
+    const surface_coords = try shared.planet.Chunk.surfaceCoords(gpa, radius, clamp);
     defer gpa.free(surface_coords);
     var coords: std.ArrayList(nz.Vec3(i32)) = .empty;
     errdefer coords.deinit(gpa);
@@ -1084,7 +1084,7 @@ fn startPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, io: std.Io, id: sh
         try coords.append(gpa, coord);
     }
     self.planet_chunk_job = .{
-        .job = try .start(gpa, io, radius, try coords.toOwnedSlice(gpa)),
+        .job = try .start(gpa, radius, try coords.toOwnedSlice(gpa)),
         .id = id,
         .center = center,
         .reach = reach,
@@ -1106,7 +1106,7 @@ fn collectPlanetChunkJob(self: *Vulkan, gpa: std.mem.Allocator, world: *World) !
     const entity = world.getPtr(chunk_job.id) orelse return;
 
     var evicted: usize = 0;
-    if (set.radius > @as(u32, @intCast(shared.planet.chunk_dim))) {
+    if (set.radius > @as(u32, @intCast(shared.planet.Chunk.dim))) {
         const live_center = planetChunkCenter(world, entity);
         const live_reach = planetChunkReach(world, set.radius);
         const window_min = live_center - @as(nz.Vec3(i32), @splat(live_reach));
@@ -1144,14 +1144,14 @@ fn removePlanetChunks(self: *Vulkan, gpa: std.mem.Allocator, id: shared.entity.I
 }
 
 fn planetChunkReach(world: *World, radius: u32) i32 {
-    const range = shared.planet.chunkRange(radius);
+    const range = shared.planet.Chunk.range(radius);
     return std.math.clamp(world.chunk_view_distance, 1, range.max - range.min + 1);
 }
 
 fn planetChunkCenter(world: *World, planet: *const World.Entity) nz.Vec3(i32) {
     const position = if (world.controller.free_camera) world.camera.transform.position else if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position;
     const local = position - planet.transform.position;
-    const chunk_size: f32 = @floatFromInt(shared.planet.chunk_dim);
+    const chunk_size: f32 = @floatFromInt(shared.planet.Chunk.dim);
     return .{
         @intFromFloat(@floor(local[0] / (planet.transform.scale[0] * chunk_size))),
         @intFromFloat(@floor(local[1] / (planet.transform.scale[1] * chunk_size))),
