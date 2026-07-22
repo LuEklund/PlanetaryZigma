@@ -697,6 +697,67 @@ pub fn surfacePointNear(direction: nz.Vec3(f32), radius: f32, min_distance: f32,
     return surfacePoint(tilted, radius);
 }
 
+pub fn ChunkJob(comptime kind: PlanetKind) type {
+    return struct {
+        thread: std.Thread,
+        state: *State,
+
+        pub const Result = struct {
+            coord: nz.Vec3(i32),
+            vertices: []Planet(kind).Vertex,
+            indices: []u32,
+        };
+
+        pub const State = struct {
+            gpa: std.mem.Allocator,
+            io: std.Io,
+            radius: u32,
+            coords: []nz.Vec3(i32),
+            results: std.ArrayList(Result),
+            done: std.atomic.Value(bool),
+        };
+
+        pub fn start(gpa: std.mem.Allocator, io: std.Io, radius: u32, coords: []nz.Vec3(i32)) !@This() {
+            errdefer gpa.free(coords);
+            const state = try gpa.create(State);
+            errdefer gpa.destroy(state);
+            state.* = .{ .gpa = gpa, .io = io, .radius = radius, .coords = coords, .results = .empty, .done = .init(false) };
+            return .{ .thread = try std.Thread.spawn(.{}, generate, .{state}), .state = state };
+        }
+
+        pub fn collect(self: @This()) ?std.ArrayList(Result) {
+            if (!self.state.done.load(.acquire)) return null;
+            self.thread.join();
+            const results = self.state.results;
+            self.state.gpa.free(self.state.coords);
+            self.state.gpa.destroy(self.state);
+            return results;
+        }
+
+        pub fn join(self: @This()) void {
+            self.thread.join();
+            for (self.state.results.items) |result| {
+                self.state.gpa.free(result.vertices);
+                self.state.gpa.free(result.indices);
+            }
+            self.state.results.deinit(self.state.gpa);
+            self.state.gpa.free(self.state.coords);
+            self.state.gpa.destroy(self.state);
+        }
+
+        fn generate(state: *State) void {
+            var timings: StageTimings = .init(state.io);
+            const build_start = std.Io.Clock.Timestamp.now(state.io, .awake);
+            for (state.coords) |coord| {
+                const planet = Planet(kind).initChunk(state.gpa, state.radius, coord, &timings) catch continue;
+                state.results.append(state.gpa, .{ .coord = coord, .vertices = planet.vertices, .indices = planet.indices }) catch planet.deinit(state.gpa);
+            }
+            timings.log(state.results.items.len, timings.elapsedNs(build_start));
+            state.done.store(true, .release);
+        }
+    };
+}
+
 const grad3 = [12][3]f32{
     .{ 1, 1, 0 }, .{ -1, 1, 0 }, .{ 1, -1, 0 }, .{ -1, -1, 0 },
     .{ 1, 0, 1 }, .{ -1, 0, 1 }, .{ 1, 0, -1 }, .{ -1, 0, -1 },

@@ -12,8 +12,8 @@ salary_per_second: f32 = 2,
 last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 spawning: bool = false,
-chunk_job: ?PlanetChunkJob = null,
-ready_chunks: std.ArrayList(PlanetChunkResult) = .empty,
+chunk_job: ?shared.planet.ChunkJob(.logical) = null,
+ready_chunks: std.ArrayList(shared.planet.ChunkJob(.logical).Result) = .empty,
 
 const StageItemSpawn = struct {
     kind: shared.Item,
@@ -31,63 +31,19 @@ const chunk_evict_reach: i32 = 2;
 const chunk_job_batch_max: usize = 16;
 const chunk_body_budget: u32 = 2;
 
-const PlanetChunkResult = struct {
-    coord: nz.Vec3(i32),
-    vertices: [][4]f32,
-    indices: []u32,
-};
-
-const PlanetChunkJobState = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    radius: u32,
-    coords: []nz.Vec3(i32),
-    results: std.ArrayList(PlanetChunkResult),
-    done: std.atomic.Value(bool),
-};
-
-const PlanetChunkJob = struct {
-    thread: std.Thread,
-    state: *PlanetChunkJobState,
-};
-
-fn generatePlanetChunkBatch(state: *PlanetChunkJobState) void {
-    var timings: shared.planet.StageTimings = .init(state.io);
-    const build_start = std.Io.Clock.Timestamp.now(state.io, .awake);
-    for (state.coords) |coord| {
-        const planet = shared.planet.Planet(.logical).initChunk(state.gpa, state.radius, coord, &timings) catch continue;
-        state.results.append(state.gpa, .{ .coord = coord, .vertices = planet.vertices, .indices = planet.indices }) catch planet.deinit(state.gpa);
-    }
-    timings.log(state.results.items.len, timings.elapsedNs(build_start));
-    state.done.store(true, .release);
-}
-
-fn startChunkJob(self: *Director, gpa: std.mem.Allocator, io: std.Io, radius: u32, coords: []nz.Vec3(i32)) !void {
-    errdefer gpa.free(coords);
-    const state = try gpa.create(PlanetChunkJobState);
-    errdefer gpa.destroy(state);
-    state.* = .{ .gpa = gpa, .io = io, .radius = radius, .coords = coords, .results = .empty, .done = .init(false) };
-    self.chunk_job = .{ .thread = try std.Thread.spawn(.{}, generatePlanetChunkBatch, .{state}), .state = state };
-}
-
 fn collectChunkJob(self: *Director, world: *system.World) !void {
     const job = self.chunk_job orelse return;
-    if (!job.state.done.load(.acquire)) return;
-    job.thread.join();
+    const job_radius = job.state.radius;
+    var results = job.collect() orelse return;
     self.chunk_job = null;
-    const state = job.state;
-    defer {
-        state.results.deinit(state.gpa);
-        state.gpa.free(state.coords);
-        state.gpa.destroy(state);
-    }
+    defer results.deinit(world.gpa);
     const planet_radius: u32 = @intFromFloat(world.planet_radius);
-    if (state.radius == planet_radius) {
-        try self.ready_chunks.appendSlice(world.gpa, state.results.items);
+    if (job_radius == planet_radius) {
+        try self.ready_chunks.appendSlice(world.gpa, results.items);
     } else {
-        for (state.results.items) |result| {
-            state.gpa.free(result.vertices);
-            state.gpa.free(result.indices);
+        for (results.items) |result| {
+            world.gpa.free(result.vertices);
+            world.gpa.free(result.indices);
         }
     }
 }
@@ -132,17 +88,10 @@ fn chunkKnown(self: *Director, world: *system.World, coord: nz.Vec3(i32)) bool {
     return false;
 }
 
-pub fn joinChunkJob(self: *Director, gpa: std.mem.Allocator) void {
+pub fn joinChunkJob(self: *Director) void {
     const job = self.chunk_job orelse return;
-    job.thread.join();
+    job.join();
     self.chunk_job = null;
-    for (job.state.results.items) |result| {
-        gpa.free(result.vertices);
-        gpa.free(result.indices);
-    }
-    job.state.results.deinit(gpa);
-    gpa.free(job.state.coords);
-    gpa.destroy(job.state);
 }
 
 pub fn clearReadyChunks(self: *Director, gpa: std.mem.Allocator) void {
@@ -210,7 +159,7 @@ fn streamPlanetChunks(self: *Director, world: *system.World, physics: *Physics, 
         }
     }
     if (self.chunk_job == null and missing.items.len > 0) {
-        try self.startChunkJob(world.gpa, io, planet_radius, try missing.toOwnedSlice(world.gpa));
+        self.chunk_job = try .start(world.gpa, io, planet_radius, try missing.toOwnedSlice(world.gpa));
     }
     var index: usize = world.planet_chunks.items.len;
     evict: while (index > 0) {
