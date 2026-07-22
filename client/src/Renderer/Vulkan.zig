@@ -35,7 +35,7 @@ pub const c = @import("vulkan");
 const max_frames_inflight: usize = FrameData.max_frames_inflight;
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
-pub const Model = @import("Vulkan/Model.zig");
+pub const Model = @import("../asset/Model.zig");
 
 gpa: std.mem.Allocator,
 

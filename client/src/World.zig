@@ -7,7 +7,7 @@ const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
 const DamagePopup = @import("system/DamagePopup.zig");
-const Model = @import("Renderer/Vulkan/Model.zig");
+const Model = @import("asset/Model.zig");
 
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },

@@ -10,7 +10,7 @@ const Device = @import("device.zig").Logical;
 const DescriptorLayout = @import("DesrciptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Mesh = @import("Mesh.zig");
-const Model = @import("Model.zig");
+const Model = @import("../../asset/Model.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
@@ -389,7 +389,18 @@ fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.
         if (std.mem.eql(u8, model_spec.key, key)) break model_spec;
     } else return error.UnknownModelPath;
     const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
-    try self.models.items[handle.index()].loadGlb(gpa, io, file, self, spec);
+    const model = &self.models.items[handle.index()];
+    if (spec.skinned) {
+        var upload_data = try model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, spec);
+        defer upload_data.deinit(gpa);
+        const base_mesh_index = try self.uploadModel(gpa, Mesh.SkinnedVertex, upload_data, spec.key);
+        try model.finalize(gpa, base_mesh_index, spec);
+    } else {
+        var upload_data = try model.parseGlb(Mesh.StaticVertex, gpa, io, file, spec);
+        defer upload_data.deinit(gpa);
+        const base_mesh_index = try self.uploadModel(gpa, Mesh.StaticVertex, upload_data, spec.key);
+        try model.finalize(gpa, base_mesh_index, spec);
+    }
 }
 
 fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {

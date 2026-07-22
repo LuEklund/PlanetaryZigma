@@ -3,12 +3,10 @@ const Model = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Mesh = @import("Mesh.zig");
-const Node = @import("../../asset/Node.zig");
-const Skin = @import("../../asset/Skin.zig");
-const AnimationClip = @import("../../asset/AnimationClip.zig");
-const Resources = @import("Resources.zig");
-const gltf = @import("../../asset/gltf.zig");
+const Node = @import("Node.zig");
+const Skin = @import("Skin.zig");
+const AnimationClip = @import("AnimationClip.zig");
+const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
@@ -53,20 +51,19 @@ pub fn isSkinned(self: *const Model) bool {
     return self.skins.len > 0;
 }
 
-pub fn loadGlb(
+pub fn parseGlb(
     self: *Model,
+    comptime VertexType: type,
     gpa: std.mem.Allocator,
     io: std.Io,
     file: std.Io.File,
-    resources: *Resources,
     spec: Spec,
-) !void {
+) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
     var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
 
-    var base_mesh_index: usize = 0;
     if (spec.skinned) {
         var look_node_name_buffer: [3][]const u8 = undefined;
         var look_node_count: usize = 0;
@@ -80,9 +77,7 @@ pub fn loadGlb(
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
         var overlay_root: usize = undefined;
-        var upload_data = try gltf.parseScene(Mesh.SkinnedVertex, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
-        defer upload_data.deinit(gpa);
-        base_mesh_index = try resources.uploadModel(gpa, Mesh.SkinnedVertex, upload_data, spec.key);
+        const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
         if (spec.overlay_root_name != null) {
             const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
             for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -90,11 +85,12 @@ pub fn loadGlb(
             }
             self.overlay_mask = overlay_mask;
         }
-    } else {
-        var upload_data = try gltf.parseScene(Mesh.StaticVertex, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
-        defer upload_data.deinit(gpa);
-        base_mesh_index = try resources.uploadModel(gpa, Mesh.StaticVertex, upload_data, spec.key);
+        return upload_data;
     }
+    return try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
+}
+
+pub fn finalize(self: *Model, gpa: std.mem.Allocator, base_mesh_index: usize, spec: Spec) !void {
     for (self.nodes.items) |*node| {
         if (node.mesh_id) |mesh_id| node.mesh_id = base_mesh_index + mesh_id;
     }

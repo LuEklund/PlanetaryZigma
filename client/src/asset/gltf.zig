@@ -64,6 +64,7 @@ pub fn UploadData(comptime VertexType: type) type {
             gpa.free(self.images);
             gpa.free(self.image_sampler);
             for (self.meshes) |mesh| {
+                gpa.free(mesh.name);
                 gpa.free(mesh.vertices);
                 gpa.free(mesh.indices);
                 gpa.free(mesh.surfaces);
@@ -165,6 +166,7 @@ pub fn parseScene(
         var mesh_list: std.ArrayList(UploadData(VertexType).MeshData) = .empty;
         errdefer {
             for (mesh_list.items) |mesh| {
+                gpa.free(mesh.name);
                 gpa.free(mesh.vertices);
                 gpa.free(mesh.indices);
                 gpa.free(mesh.surfaces);
@@ -316,7 +318,7 @@ pub fn parseScene(
             }
 
             try mesh_list.append(gpa, .{
-                .name = mesh.name orelse "mesh",
+                .name = try gpa.dupe(u8, mesh.name orelse "mesh"),
                 .vertices = try vertices.toOwnedSlice(gpa),
                 .indices = try indices.toOwnedSlice(gpa),
                 .surfaces = try surfaces.toOwnedSlice(gpa),
