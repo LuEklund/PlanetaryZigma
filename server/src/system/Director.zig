@@ -13,14 +13,6 @@ last_salary: f32 = 0,
 enemy_cost: f32 = 10,
 spawning: bool = false,
 
-const StageItemSpawn = struct {
-    kind: shared.Item,
-    count: u32,
-};
-
-const dev_lootbox_min_distance: f32 = 5;
-const dev_lootbox_max_distance: f32 = 10;
-
 const spawn_chunk_reach: i32 = 1;
 
 pub const enemy_max_spawn_distance: f32 = 50;
@@ -82,7 +74,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     world.planet.radius = @floatFromInt(if (world.dev_mode)
         random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
     else
-        random.intRangeAtMost(u32, 60, 80));
+        random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
     std.log.debug("startStage planet_radius={d}", .{world.planet.radius});
     const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, world.planet.radius);
     const spawn_center = shared.planet.Chunk.fromPosition(player_spawn_surface);
@@ -126,7 +118,7 @@ pub fn startStage(self: *Director, world: *system.World, physics: *Physics) !voi
     const teleporter_position = shared.planet.surfacePoint(teleporter_direction, world.planet.radius);
     for (0..25) |_| {
         const vector_direction = if (world.dev_mode)
-            nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, world.planet.radius, dev_lootbox_min_distance, dev_lootbox_max_distance, random))
+            nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, world.planet.radius, 5, 10, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
         const transform = shared.planet.surfaceTransform(vector_direction, world.planet.radius, system.World.spawn_hover);

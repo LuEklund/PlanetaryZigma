@@ -23,21 +23,16 @@ pub const PlanetChunk = struct {
 };
 
 pub fn deinit(self: *Planet, gpa: std.mem.Allocator) void {
-    for (self.chunks.items) |chunk| {
-        gpa.free(chunk.mesh.indices);
-        gpa.free(chunk.mesh.vertices);
-    }
+    self.clear(gpa, null);
     self.chunks.deinit(gpa);
-    for (self.ready.items) |result| {
-        gpa.free(result.vertices);
-        gpa.free(result.indices);
-    }
     self.ready.deinit(gpa);
 }
 
-pub fn clear(self: *Planet, gpa: std.mem.Allocator, physics: *Physics) void {
+pub fn clear(self: *Planet, gpa: std.mem.Allocator, physics: ?*Physics) void {
     for (self.chunks.items) |chunk| {
-        if (chunk.body_id) |body_id| physics.destroyBody(body_id);
+        if (physics) |live_physics| {
+            if (chunk.body_id) |body_id| live_physics.destroyBody(body_id);
+        }
         gpa.free(chunk.mesh.indices);
         gpa.free(chunk.mesh.vertices);
     }
