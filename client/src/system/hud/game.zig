@@ -169,7 +169,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_key),
+                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_path),
                     },
                 },
             });

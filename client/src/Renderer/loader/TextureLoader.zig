@@ -13,26 +13,24 @@ const skybox_file = "skybox_cubemap.png";
 
 table: *TextureTable,
 items: []?Image.Handle,
-files_storage: [][]const u8,
 interface: Loader,
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLoader {
     const spec_capacity = entity.all_kinds.len + 2;
-    const files_storage = try gpa.alloc([]const u8, spec_capacity);
-    files_storage[0] = skybox_file;
-    files_storage[1] = TextureTable.crosshair_texture_key["textures/".len..];
+    const files = try gpa.alloc([]const u8, spec_capacity);
+    files[0] = skybox_file;
+    files[1] = TextureTable.crosshair_texture_path["textures/".len..];
     var count: usize = 2;
     for (entity.all_kinds) |kind| {
         const icon = entity.spec(kind).icon orelse continue;
         const file = icon["textures/".len..];
-        const already_known = for (files_storage[0..count]) |existing| {
+        const already_known = for (files[0..count]) |existing| {
             if (std.mem.eql(u8, existing, file)) break true;
         } else false;
         if (already_known) continue;
-        files_storage[count] = file;
+        files[count] = file;
         count += 1;
     }
-    const files = files_storage[0..count];
 
     const items = try gpa.alloc(?Image.Handle, count);
     @memset(items, null);
@@ -40,12 +38,11 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLo
     return .{
         .table = table,
         .items = items,
-        .files_storage = files_storage,
         .interface = .{
             .gpa = gpa,
             .io = io,
             .root_path = "textures",
-            .files = files,
+            .files = try gpa.realloc(files, count),
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
@@ -53,9 +50,9 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLo
 
 pub fn deinit(self: *TextureLoader) void {
     const gpa = self.interface.gpa;
-    for (0..self.items.len) |index| self.unloadItem(index);
+    for (0..self.items.len) |index| unload(&self.interface, index);
     gpa.free(self.items);
-    gpa.free(self.files_storage);
+    gpa.free(self.interface.files);
 }
 
 fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Bitmap {
@@ -79,7 +76,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const gpa = loader.gpa;
     const table = self.table;
     const file = try err_file;
-    self.unloadItem(index);
+    unload(&self.interface, index);
 
     var decoded = try decodeFile(gpa, loader.io, file);
     defer decoded.deinit();
@@ -99,9 +96,9 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     errdefer image.deinit(table.vma, table.device);
     try image.uploadDataToImage(table.vma, table.device, decoded.pixels, 4, 0);
 
-    var key_buffer: [512]u8 = undefined;
-    const key = try std.fmt.bufPrint(&key_buffer, "textures/{s}", .{loader.files[index]});
-    self.items[index] = try table.allocSlot(gpa, image, table.samplers.items[0], key);
+    var path_buffer: [512]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buffer, "textures/{s}", .{loader.files[index]});
+    self.items[index] = try table.allocSlot(gpa, image, table.samplers.items[0], path);
 }
 
 fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !void {
@@ -152,12 +149,8 @@ fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !vo
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
-    self.unloadItem(index);
-}
-
-fn unloadItem(self: *TextureLoader, index: usize) void {
     if (self.items[index]) |image_handle| {
-        self.table.freeSlot(self.interface.gpa, image_handle);
+        self.table.freeSlot(loader.gpa, image_handle);
         self.items[index] = null;
     }
 }

@@ -14,66 +14,47 @@ const TextureTable = @import("TextureTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 table: *TextureTable,
-items: []Item,
-keys: [][]const u8,
-files_storage: [][]const u8,
-keys_storage: [][]const u8,
-specs: []entity.Spec,
-specs_storage: []entity.Spec,
+items: []Entry,
 reloaded: std.ArrayList(u32),
 interface: Loader,
 
-pub const Item = struct {
+pub const Entry = struct {
+    path: []const u8,
+    kind_spec: entity.Spec,
     model: Model,
     meshes: []Mesh,
     image_slots: []Image.Handle,
-
-    pub const empty: Item = .{
-        .model = .empty,
-        .meshes = &.{},
-        .image_slots = &.{},
-    };
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoader {
-    const files_storage = try gpa.alloc([]const u8, entity.all_kinds.len);
-    const keys_storage = try gpa.alloc([]const u8, entity.all_kinds.len);
-    const specs_storage = try gpa.alloc(entity.Spec, entity.all_kinds.len);
+    const files = try gpa.alloc([]const u8, entity.all_kinds.len);
+    const entries_storage = try gpa.alloc(Entry, entity.all_kinds.len);
     var count: usize = 0;
     for (entity.all_kinds) |kind| {
         const kind_spec = entity.spec(kind);
-        const key = kind_spec.model.key;
-        if (!std.mem.endsWith(u8, key, ".glb")) continue;
-        const already_known = for (keys_storage[0..count]) |existing| {
-            if (std.mem.eql(u8, existing, key)) break true;
-        } else false;
-        if (already_known) continue;
-        keys_storage[count] = key;
-        files_storage[count] = key["objects/".len..];
-        specs_storage[count] = kind_spec;
+        const path = kind_spec.model.path;
+        if (!std.mem.endsWith(u8, path, ".glb")) continue;
+        entries_storage[count] = .{
+            .path = path,
+            .kind_spec = kind_spec,
+            .model = .empty,
+            .meshes = &.{},
+            .image_slots = &.{},
+        };
+        files[count] = path["objects/".len..];
         count += 1;
     }
-    const files = files_storage[0..count];
-    const keys = keys_storage[0..count];
-    const specs = specs_storage[0..count];
-
-    const items = try gpa.alloc(Item, count);
-    @memset(items, .empty);
+    const entries = try gpa.realloc(entries_storage, count);
 
     return .{
         .table = table,
-        .items = items,
-        .keys = keys,
-        .files_storage = files_storage,
-        .keys_storage = keys_storage,
-        .specs = specs,
-        .specs_storage = specs_storage,
+        .items = entries,
         .reloaded = .empty,
         .interface = .{
             .gpa = gpa,
             .io = io,
             .root_path = "objects",
-            .files = files,
+            .files = try gpa.realloc(files, count),
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
@@ -81,17 +62,15 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
 
 pub fn deinit(self: *ModelLoader) void {
     const gpa = self.interface.gpa;
-    for (0..self.items.len) |index| self.unloadItem(index);
+    for (0..self.items.len) |index| unload(&self.interface, index);
     gpa.free(self.items);
-    gpa.free(self.files_storage);
-    gpa.free(self.keys_storage);
-    gpa.free(self.specs_storage);
+    gpa.free(self.interface.files);
     self.reloaded.deinit(gpa);
 }
 
-pub fn findByKey(self: *const ModelLoader, key: []const u8) ?u32 {
-    for (self.keys, 0..) |existing, index| {
-        if (std.mem.eql(u8, existing, key)) return @intCast(index);
+pub fn findByPath(self: *const ModelLoader, path: []const u8) ?u32 {
+    for (self.items, 0..) |entry, index| {
+        if (std.mem.eql(u8, entry.path, path)) return @intCast(index);
     }
     return null;
 }
@@ -101,24 +80,22 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const gpa = loader.gpa;
     const io = loader.io;
     const file = try err_file;
-    self.unloadItem(index);
+    unload(loader, index);
 
-    const kind_spec = self.specs[index];
-    const item = &self.items[index];
-    if (kind_spec.model.skinned) {
-        var upload_data = try item.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec.model);
+    const entry = &self.items[index];
+    if (entry.kind_spec.model.skinned) {
+        var upload_data = try entry.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, entry.kind_spec);
         defer upload_data.deinit(gpa);
-        try self.uploadItem(Mesh.SkinnedVertex, gpa, item, upload_data);
+        try self.uploadToGpu(Mesh.SkinnedVertex, gpa, entry, upload_data);
     } else {
-        var upload_data = try item.model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec.model);
+        var upload_data = try entry.model.parseGlb(Mesh.StaticVertex, gpa, io, file, entry.kind_spec);
         defer upload_data.deinit(gpa);
-        try self.uploadItem(Mesh.StaticVertex, gpa, item, upload_data);
+        try self.uploadToGpu(Mesh.StaticVertex, gpa, entry, upload_data);
     }
-    try item.model.finalize(gpa, kind_spec);
     try self.reloaded.append(gpa, @intCast(index));
 }
 
-fn uploadItem(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Allocator, item: *Item, upload: gltf.UploadData(VertexType)) !void {
+fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Allocator, entry: *Entry, upload: gltf.UploadData(VertexType)) !void {
     const device = self.table.device;
     const vma = self.table.vma;
 
@@ -168,24 +145,22 @@ fn uploadItem(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloca
         mesh.* = try .init(gpa, vma, mesh_data.name, device, VertexType, mesh_data.vertices, mesh_data.indices, surfaces);
     }
 
-    item.meshes = meshes;
-    item.image_slots = image_slots;
+    entry.meshes = meshes;
+    entry.image_slots = image_slots;
 }
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
-    self.unloadItem(index);
-}
-
-fn unloadItem(self: *ModelLoader, index: usize) void {
-    const gpa = self.interface.gpa;
-    const item = &self.items[index];
-    if (item.meshes.len == 0 and item.model.isEmpty()) return;
+    const gpa = loader.gpa;
+    const entry = &self.items[index];
+    if (entry.meshes.len == 0 and entry.model.isEmpty()) return;
     check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
-    for (item.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
-    gpa.free(item.meshes);
-    for (item.image_slots) |slot| self.table.freeSlot(gpa, slot);
-    gpa.free(item.image_slots);
-    item.model.deinit(gpa);
-    item.* = .empty;
+    for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
+    gpa.free(entry.meshes);
+    entry.meshes = &.{};
+    for (entry.image_slots) |slot| self.table.freeSlot(gpa, slot);
+    gpa.free(entry.image_slots);
+    entry.image_slots = &.{};
+    entry.model.deinit(gpa);
+    entry.model = .empty;
 }

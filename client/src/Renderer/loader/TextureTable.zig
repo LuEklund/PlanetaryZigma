@@ -10,7 +10,7 @@ const Buffer = @import("../Vulkan/Buffer.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 pub const max_textures = 256;
-pub const crosshair_texture_key = "textures/crosshair.png";
+pub const crosshair_texture_path = "textures/crosshair.png";
 
 vma: Vma,
 device: Device,
@@ -20,7 +20,7 @@ descriptor_size: usize,
 images: std.ArrayList(Image),
 free_slots: std.ArrayList(usize),
 samplers: std.ArrayList(c.VkSampler),
-keys: std.StringHashMapUnmanaged(Image.Handle),
+paths: std.StringHashMapUnmanaged(Image.Handle),
 skybox: ?Image,
 skybox_descriptor: Buffer,
 
@@ -56,7 +56,7 @@ pub fn init(
         .images = .empty,
         .free_slots = .empty,
         .samplers = .empty,
-        .keys = .empty,
+        .paths = .empty,
         .skybox = null,
         .skybox_descriptor = try .init(
             device,
@@ -114,15 +114,15 @@ pub fn deinit(self: *TextureTable, gpa: std.mem.Allocator) void {
     self.free_slots.deinit(gpa);
     for (self.samplers.items) |sampler| c.vkDestroySampler(self.device.handle, sampler, null);
     self.samplers.deinit(gpa);
-    var key_iterator = self.keys.keyIterator();
-    while (key_iterator.next()) |key| gpa.free(key.*);
-    self.keys.deinit(gpa);
+    var path_iterator = self.paths.keyIterator();
+    while (path_iterator.next()) |path| gpa.free(path.*);
+    self.paths.deinit(gpa);
     if (self.skybox) |*skybox| skybox.deinit(self.vma, self.device);
     self.skybox_descriptor.deinit(self.vma);
     self.descriptor_buffer.deinit(self.vma);
 }
 
-pub fn allocSlot(self: *TextureTable, gpa: std.mem.Allocator, image: Image, sampler: c.VkSampler, key: ?[]const u8) !Image.Handle {
+pub fn allocSlot(self: *TextureTable, gpa: std.mem.Allocator, image: Image, sampler: c.VkSampler, path: ?[]const u8) !Image.Handle {
     const slot: usize = if (self.free_slots.pop()) |free_slot| reuse: {
         self.images.items[free_slot] = image;
         break :reuse free_slot;
@@ -132,8 +132,8 @@ pub fn allocSlot(self: *TextureTable, gpa: std.mem.Allocator, image: Image, samp
         break :grow self.images.items.len - 1;
     };
     self.writeDescriptor(slot, image.vk_imageview, sampler);
-    if (key) |new_key| try self.keys.put(gpa, try gpa.dupe(u8, new_key), @enumFromInt(slot));
-    std.log.debug("texture slot {d}/{d}: {s}", .{ slot + 1, max_textures, key orelse "unnamed" });
+    if (path) |new_path| try self.paths.put(gpa, try gpa.dupe(u8, new_path), @enumFromInt(slot));
+    std.log.debug("texture slot {d}/{d}: {s}", .{ slot + 1, max_textures, path orelse "unnamed" });
     return @enumFromInt(slot);
 }
 
@@ -143,20 +143,20 @@ pub fn freeSlot(self: *TextureTable, gpa: std.mem.Allocator, image_handle: Image
     self.images.items[slot].deinit(self.vma, self.device);
     self.images.items[slot] = self.images.items[0];
     self.writeDescriptor(slot, self.images.items[0].vk_imageview, self.samplers.items[0]);
-    var key_iterator = self.keys.iterator();
-    while (key_iterator.next()) |entry| {
+    var path_iterator = self.paths.iterator();
+    while (path_iterator.next()) |entry| {
         if (entry.value_ptr.* == image_handle) {
-            const key = entry.key_ptr.*;
-            _ = self.keys.remove(key);
-            gpa.free(key);
+            const path = entry.key_ptr.*;
+            _ = self.paths.remove(path);
+            gpa.free(path);
             break;
         }
     }
     self.free_slots.append(gpa, slot) catch {};
 }
 
-pub fn handle(self: *const TextureTable, key: []const u8) Image.Handle {
-    return self.keys.get(key).?;
+pub fn handle(self: *const TextureTable, path: []const u8) Image.Handle {
+    return self.paths.get(path).?;
 }
 
 pub fn addSampler(self: *TextureTable, gpa: std.mem.Allocator, mag_linear: bool, min_linear: bool) !c.VkSampler {

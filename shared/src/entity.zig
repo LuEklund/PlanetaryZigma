@@ -71,7 +71,7 @@ pub const ModelLookNodeNames = struct {
 };
 
 pub const ModelSpec = struct {
-    key: []const u8,
+    path: []const u8,
     offset: nz.Transform3D(f32) = .{},
     skinned: bool,
     clip_names: ?ModelClipNames,
@@ -103,14 +103,14 @@ pub fn spec(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,
-            .model = .{ .key = "default", .skinned = false, .clip_names = null },
+            .model = .{ .path = "default", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = false,
         },
         .player => .{
             .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
-                .key = "objects/BenBozo.glb",
+                .path = "objects/BenBozo.glb",
                 .offset = player_model_offset,
                 .skinned = true,
                 .clip_names = .{
@@ -129,19 +129,19 @@ pub fn spec(kind: Kind) Spec {
         },
         .planet => .{
             .collider = null,
-            .model = .{ .key = "planet", .skinned = false, .clip_names = null },
+            .model = .{ .path = "planet", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
         },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .key = "objects/pillar.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = false,
         },
         .lootbox => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .static, .layer = .moving },
-            .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/lootbox.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
             .death_duration = 0.35,
@@ -149,20 +149,20 @@ pub fn spec(kind: Kind) Spec {
         },
         .projectile_cube => .{
             .collider = null,
-            .model = .{ .key = "cube_projectile", .skinned = false, .clip_names = null },
+            .model = .{ .path = "cube_projectile", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
         },
         .projectile_rocket => .{
             .collider = null,
-            .model = .{ .key = "objects/rocket.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/rocket.glb", .skinned = false, .clip_names = null },
             .has_health = false,
             .expects_model = true,
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
                     .idle = "idle",
                     .walk = "walk",
                     .attack = "attack",
@@ -170,12 +170,12 @@ pub fn spec(kind: Kind) Spec {
                 } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 }),
+                .stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .attack_speed = 1, .range = 2 }),
                 .currency = 5,
             },
             .tubloida => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
                     .idle = "idle",
                     .walk = "walk",
                     .attack = "attack_range",
@@ -183,12 +183,12 @@ pub fn spec(kind: Kind) Spec {
                 } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
+                .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
             },
             .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
                     .idle = "Idle",
                     .walk = "Walking",
                     .attack = "Spawn_Enemy",
@@ -202,7 +202,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
-            .model = .{ .key = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
+            .model = .{ .path = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
             .icon = Item.spec(item_kind).icon,
             .has_health = false,
             .expects_model = true,

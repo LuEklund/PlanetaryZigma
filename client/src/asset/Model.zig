@@ -77,14 +77,15 @@ pub fn parseGlb(
     gpa: std.mem.Allocator,
     io: std.Io,
     file: std.Io.File,
-    spec: Spec,
+    kind_spec: shared.entity.Spec,
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
     var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
 
-    if (spec.skinned) {
+    const spec = kind_spec.model;
+    const upload_data = if (spec.skinned) skinned: {
         var look_node_name_buffer: [3][]const u8 = undefined;
         var look_node_count: usize = 0;
         if (spec.look_node_names) |look_node_names| {
@@ -97,7 +98,7 @@ pub fn parseGlb(
         }
         const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
         var overlay_root: usize = undefined;
-        const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
+        const skinned_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
         if (spec.overlay_root_name != null) {
             const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
             for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -105,23 +106,20 @@ pub fn parseGlb(
             }
             self.overlay_mask = overlay_mask;
         }
-        return upload_data;
-    }
-    return try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
-}
+        break :skinned skinned_data;
+    } else try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
 
-pub fn finalize(self: *Model, gpa: std.mem.Allocator, kind_spec: shared.entity.Spec) !void {
     computeMatrices(self.nodes.items);
 
     self.spawn_duration = kind_spec.spawn_duration;
     self.death_duration = kind_spec.death_duration;
 
-    if (kind_spec.model.skinned) {
-        if (kind_spec.model.clip_names) |clip_names| {
-            const walk_index = try self.createClipIndex(clip_names.walk, kind_spec.model);
-            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, kind_spec.model) else walk_index;
-            const attack_index = try self.createClipIndex(clip_names.attack, kind_spec.model);
-            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, kind_spec.model) else walk_index;
+    if (spec.skinned) {
+        if (spec.clip_names) |clip_names| {
+            const walk_index = try self.createClipIndex(clip_names.walk, spec);
+            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, spec) else walk_index;
+            const attack_index = try self.createClipIndex(clip_names.attack, spec);
+            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, spec) else walk_index;
             self.state_clips = .init(.{
                 .idle = idle_index,
                 .walk = walk_index,
@@ -139,13 +137,15 @@ pub fn finalize(self: *Model, gpa: std.mem.Allocator, kind_spec: shared.entity.S
         for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
     }
+
+    return upload_data;
 }
 
 fn createClipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
-    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.key });
+    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path });
     for (self.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
     std.log.err("in the model spec assign null or one of these", .{});
     return error.ClipNotFound;

@@ -37,7 +37,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !FontLoade
 
 pub fn deinit(self: *FontLoader) void {
     const gpa = self.interface.gpa;
-    for (0..self.items.len) |index| self.unloadItem(index);
+    for (0..self.items.len) |index| unload(&self.interface, index);
     gpa.free(self.items);
     gpa.free(self.samplers);
 }
@@ -47,7 +47,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const gpa = loader.gpa;
     const table = self.table;
     const file = try err_file;
-    self.unloadItem(index);
+    unload(&self.interface, index);
 
     const font = &self.items[index];
     const coverage = try font.bake(gpa, loader.io, file);
@@ -82,12 +82,8 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *FontLoader = @fieldParentPtr("interface", loader);
-    self.unloadItem(index);
-}
-
-fn unloadItem(self: *FontLoader, index: usize) void {
     if (self.samplers[index] == null) return;
-    self.table.freeSlot(self.interface.gpa, @enumFromInt(self.items[index].atlas_texture_index));
+    self.table.freeSlot(loader.gpa, @enumFromInt(self.items[index].atlas_texture_index));
     check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
     c.vkDestroySampler(self.table.device.handle, self.samplers[index], null);
     self.samplers[index] = null;

@@ -730,7 +730,7 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
     c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(ui.quads.items.len * 6)), 1, 0, 0, 0);
 }
 
-fn fileItem(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Item {
+fn fileItem(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     return switch (model_handle) {
         .file => |file_index| &self.resources.model_loader.items[file_index],
         .generated => null,
@@ -959,11 +959,11 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
             const entity = world.getPtr(spawned.id) orelse continue;
-            const key = shared.entity.modelSpec(spawned.kind).key;
-            entity.model = if (std.mem.endsWith(u8, key, ".glb"))
-                .{ .file = self.resources.model_loader.findByKey(key) orelse std.debug.panic("no glb on disk for {s}", .{key}) }
+            const path = shared.entity.modelSpec(spawned.kind).path;
+            entity.model = if (std.mem.endsWith(u8, path, ".glb"))
+                .{ .file = self.resources.model_loader.findByPath(path) orelse std.debug.panic("no glb on disk for {s}", .{path}) }
             else
-                .{ .generated = std.meta.stringToEnum(Model.Generated, key).? };
+                .{ .generated = std.meta.stringToEnum(Model.Generated, path).? };
             try self.ensureInstance(gpa, instances, entity, entity.model);
         },
         .entity_despawned => |id| {
