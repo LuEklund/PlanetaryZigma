@@ -21,6 +21,7 @@ pub const Handle = enum(u32) {
 };
 
 surfaces: std.ArrayList(Surface),
+mesh_ids: []usize,
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
@@ -30,6 +31,7 @@ state_clips: std.EnumArray(shared.entity.State, usize),
 
 pub const empty: Model = .{
     .surfaces = .empty,
+    .mesh_ids = &.{},
     .nodes = .empty,
     .clips = &.{},
     .skins = &.{},
@@ -90,9 +92,10 @@ pub fn parseGlb(
     return try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
 }
 
-pub fn finalize(self: *Model, gpa: std.mem.Allocator, base_mesh_index: usize, spec: Spec) !void {
+pub fn finalize(self: *Model, gpa: std.mem.Allocator, mesh_ids: []usize, spec: Spec) !void {
+    self.mesh_ids = mesh_ids;
     for (self.nodes.items) |*node| {
-        if (node.mesh_id) |mesh_id| node.mesh_id = base_mesh_index + mesh_id;
+        if (node.mesh_id) |local_mesh_index| node.mesh_id = mesh_ids[local_mesh_index];
     }
     computeMatrices(self.nodes.items);
 
@@ -157,4 +160,6 @@ pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
 
 pub fn deinit(self: *Model, gpa: std.mem.Allocator) void {
     self.clear(gpa);
+    gpa.free(self.mesh_ids);
+    self.mesh_ids = &.{};
 }

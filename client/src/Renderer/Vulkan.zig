@@ -927,6 +927,26 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
 }
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, world: *World, timer_io: std.Io) !void {
+    if (self.resources.reloaded_models.items.len != 0) {
+        try check(c.vkDeviceWaitIdle(self.device.handle));
+        for (self.resources.reloaded_models.items) |reloaded| {
+            for (reloaded.old_mesh_ids) |mesh_id| {
+                self.resources.getMeshPtr(mesh_id).deinit(gpa, self.vma);
+                try self.resources.free_mesh_slots.append(gpa, mesh_id);
+            }
+            gpa.free(reloaded.old_mesh_ids);
+            const model = self.resources.getModelPtr(reloaded.handle);
+            if (model.isSkinned()) {
+                var skeleton_iterator = self.skeletons.valueIterator();
+                while (skeleton_iterator.next()) |skeleton| {
+                    if (skeleton.model != model) continue;
+                    skeleton.deinit(gpa, self.vma);
+                    skeleton.* = try .init(gpa, self.vma, self.device, model);
+                }
+            }
+        }
+        self.resources.reloaded_models.clearRetainingCapacity();
+    }
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
             const entity = world.getPtr(spawned.id) orelse continue;

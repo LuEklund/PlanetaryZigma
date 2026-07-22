@@ -79,6 +79,11 @@ const texture_files = blk: {
 pub const shadow_cascade_count = 3;
 pub const shadow_map_size: u32 = 2048;
 
+pub const ReloadedModel = struct {
+    handle: Model.Handle,
+    old_mesh_ids: []usize,
+};
+
 pub const GPUCascades = extern struct {
     light_view_proj: [shadow_cascade_count][16]f32,
     splits: [4]f32,
@@ -87,6 +92,8 @@ pub const GPUCascades = extern struct {
 set_size: c.VkDeviceSize,
 combined_image_sampler_descriptor_size: usize,
 meshes: std.ArrayList(Mesh),
+free_mesh_slots: std.ArrayList(usize),
+reloaded_models: std.ArrayList(ReloadedModel),
 models: std.ArrayList(Model),
 model_keys: std.StringHashMapUnmanaged(Model.Handle),
 shaders: [Shader.all_kinds.len]Shader,
@@ -315,6 +322,8 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .set_size = set_size,
         .meshes = meshes,
+        .free_mesh_slots = .empty,
+        .reloaded_models = .empty,
         .models = .empty,
         .model_keys = .empty,
         .shaders = undefined,
@@ -390,17 +399,23 @@ fn modelLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.
     } else return error.UnknownModelPath;
     const handle = self.model_keys.get(key) orelse return error.UnknownModelPath;
     const model = &self.models.items[handle.index()];
+    const old_mesh_ids = model.mesh_ids;
+    model.mesh_ids = &.{};
+    errdefer if (model.mesh_ids.len == 0) {
+        model.mesh_ids = old_mesh_ids;
+    };
     if (spec.skinned) {
         var upload_data = try model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, spec);
         defer upload_data.deinit(gpa);
-        const base_mesh_index = try self.uploadModel(gpa, Mesh.SkinnedVertex, upload_data, spec.key);
-        try model.finalize(gpa, base_mesh_index, spec);
+        const mesh_ids = try self.uploadModel(gpa, Mesh.SkinnedVertex, upload_data, spec.key);
+        try model.finalize(gpa, mesh_ids, spec);
     } else {
         var upload_data = try model.parseGlb(Mesh.StaticVertex, gpa, io, file, spec);
         defer upload_data.deinit(gpa);
-        const base_mesh_index = try self.uploadModel(gpa, Mesh.StaticVertex, upload_data, spec.key);
-        try model.finalize(gpa, base_mesh_index, spec);
+        const mesh_ids = try self.uploadModel(gpa, Mesh.StaticVertex, upload_data, spec.key);
+        try model.finalize(gpa, mesh_ids, spec);
     }
+    if (old_mesh_ids.len != 0) try self.reloaded_models.append(gpa, .{ .handle = handle, .old_mesh_ids = old_mesh_ids });
 }
 
 fn shaderLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: std.Io, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -446,7 +461,7 @@ fn textureLoaderLoad(loader: *AssetServer.Loader, gpa: std.mem.Allocator, io: st
     _ = try self.registerImage(gpa, key, image, self.samplers.items[0]);
 }
 
-pub fn uploadModel(self: *Resources, gpa: std.mem.Allocator, comptime VertexType: type, upload: gltf.UploadData(VertexType), key_prefix: []const u8) !usize {
+pub fn uploadModel(self: *Resources, gpa: std.mem.Allocator, comptime VertexType: type, upload: gltf.UploadData(VertexType), key_prefix: []const u8) ![]usize {
     const base_sampler_index = self.samplers.items.len;
     for (upload.samplers) |desc| {
         const sampler_info: c.VkSamplerCreateInfo = .{
@@ -509,8 +524,9 @@ pub fn uploadModel(self: *Resources, gpa: std.mem.Allocator, comptime VertexType
         try self.device.endImmediateCommand(upload_cmd);
     }
 
-    const base_mesh_index = self.meshes.items.len;
-    for (upload.meshes) |mesh_data| {
+    const mesh_ids = try gpa.alloc(usize, upload.meshes.len);
+    errdefer gpa.free(mesh_ids);
+    for (upload.meshes, mesh_ids) |mesh_data, *mesh_id| {
         const surfaces = try gpa.alloc(Mesh.GeoSurface, mesh_data.surfaces.len);
         defer gpa.free(surfaces);
         for (mesh_data.surfaces, surfaces) |surface_data, *surface| surface.* = .{
@@ -528,9 +544,15 @@ pub fn uploadModel(self: *Resources, gpa: std.mem.Allocator, comptime VertexType
             mesh_data.indices,
             surfaces,
         );
-        try self.meshes.append(gpa, new_mesh);
+        if (self.free_mesh_slots.pop()) |slot| {
+            self.meshes.items[slot] = new_mesh;
+            mesh_id.* = slot;
+        } else {
+            try self.meshes.append(gpa, new_mesh);
+            mesh_id.* = self.meshes.items.len - 1;
+        }
     }
-    return base_mesh_index;
+    return mesh_ids;
 }
 
 pub fn registerModel(self: *Resources, gpa: std.mem.Allocator, key: []const u8) !Model.Handle {
@@ -806,10 +828,14 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     }
     self.samplers.deinit(gpa);
 
-    for (self.meshes.items) |*mesh| {
+    for (self.meshes.items, 0..) |*mesh, mesh_index| {
+        if (std.mem.indexOfScalar(usize, self.free_mesh_slots.items, mesh_index) != null) continue;
         mesh.deinit(gpa, vma);
     }
     self.meshes.deinit(gpa);
+    self.free_mesh_slots.deinit(gpa);
+    for (self.reloaded_models.items) |reloaded| gpa.free(reloaded.old_mesh_ids);
+    self.reloaded_models.deinit(gpa);
     for (self.models.items) |*model| model.deinit(gpa);
     self.models.deinit(gpa);
     self.model_keys.deinit(gpa);
