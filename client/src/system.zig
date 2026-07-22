@@ -17,6 +17,7 @@ pub const Renderer = @import("Renderer.zig");
 pub const Camera = @import("system/Camera.zig");
 pub const Controller = @import("system/Controller.zig");
 pub const Hud = @import("system/Hud.zig");
+pub const Ui = @import("Ui.zig");
 
 pub const Info = struct {
     delta_time: f32,
@@ -43,6 +44,7 @@ pub const Context = struct {
     network_manager: NetworkManager,
     animation: Animation,
     animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
+    ui: Ui,
     scene: Scene,
     hud: Hud,
     options: Options,
@@ -71,6 +73,8 @@ pub const Context = struct {
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.animation_instances = .init(data.gpa);
+        self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
+        self.ui.default_font = &self.renderer.inner.resources.font_loader.items[0];
         self.options = .{};
         try self.enterScene(data.world, .menu);
         self.request_exit = false;
@@ -83,6 +87,7 @@ pub const Context = struct {
         var instance_iterator = self.animation_instances.valueIterator();
         while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
         self.animation_instances.deinit();
+        self.ui.deinit(self.gpa);
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
     }
@@ -105,7 +110,7 @@ pub const Context = struct {
         Emitter.update(&info.world.emitters, info.elapsed_time);
         DamagePopup.update(&info.world.damage_popups, info.delta_time);
         if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
-        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, &self.renderer.inner.resources.texture_table, &info.world.controller, &self.options)) {
+        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &info.world.controller, &self.options)) {
             .none => {},
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,
@@ -114,7 +119,7 @@ pub const Context = struct {
             info.world.controller.clearInput();
         }
         try self.applyOptions(info);
-        try self.renderer.update(info, &self.animation_instances);
+        try self.renderer.update(info, &self.animation_instances, &self.ui);
         try self.asset_server.reloadChangedAssets();
         try self.network_manager.update(info);
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;

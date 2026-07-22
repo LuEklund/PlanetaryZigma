@@ -26,7 +26,7 @@ const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Shader = @import("Vulkan/Shader.zig");
-const Ui = @import("Vulkan/Ui.zig");
+const Ui = @import("../Ui.zig");
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
@@ -58,7 +58,6 @@ skeletons: std.AutoHashMap(shared.entity.Id, []Buffer),
 current_frame_inflight: u32 = 0,
 frames: [max_frames_inflight]FrameData,
 generated: std.EnumArray(Model.Generated, ?Mesh),
-ui: Ui,
 
 pub const InitOptions = struct {
     instance: struct {
@@ -117,17 +116,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
     try self.createParticleTextures(gpa);
 
-    self.ui = try .init(
-        gpa,
-        self.vma,
-        self.device,
-        self.swapchain.extent.width,
-        self.swapchain.extent.height,
-    );
-
     try asset_server.load();
     self.resources.shader_loader.verifyAllKindsLoaded();
-    self.ui.default_font = &self.resources.font_loader.items[0];
 
     return self;
 }
@@ -143,7 +133,6 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     for (&self.generated.values) |*generated_mesh| {
         if (generated_mesh.*) |*mesh| mesh.deinit(gpa, self.vma);
     }
-    self.ui.deinit(gpa, self.vma);
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
     self.vma.deinit();
@@ -211,7 +200,7 @@ pub fn rebindProcs(self: *Vulkan) void {
     procs.device.load(self.device.handle, null);
 }
 
-pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // const time = data.delta_time;
@@ -248,7 +237,7 @@ pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shar
     };
     try check(c.vkBeginCommandBuffer(cmd_buffer, &cmd_begin_info));
 
-    try render(self, cmd_buffer, current_frame, info, instances);
+    try render(self, cmd_buffer, current_frame, info, instances, ui);
 
     var swapchain_image_barrier: Image.Barrier = .init(cmd_buffer, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
     swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -303,7 +292,7 @@ pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shar
     self.current_frame_inflight += 1;
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
     const elapsed_time = info.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -424,7 +413,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, info);
     try renderDebugPass(self, cmd, current_frame, info);
-    renderUiPass(self, cmd, current_frame, width, height);
+    renderUiPass(self, cmd, current_frame, ui, width, height);
     ext.vkCmdEndRendering(cmd);
 
     draw_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT);
@@ -766,8 +755,8 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 }
 
-fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, width: f32, height: f32) void {
-    current_frame.ui_vertex_buffer.copy(Ui.Quad, self.ui.quads.items);
+fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, ui: *const Ui, width: f32, height: f32) void {
+    current_frame.ui_vertex_buffer.copy(Ui.Quad, ui.quads.items);
     const stages_ui = [_]c.VkShaderStageFlagBits{
         c.VK_SHADER_STAGE_VERTEX_BIT,
         c.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -804,8 +793,8 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
         .screnn_size = .{ width, height },
     };
     c.vkCmdPushConstants(cmd, ui_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
-    c.vkCmdBindIndexBuffer(cmd, self.ui.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-    c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(self.ui.quads.items.len * 6)), 1, 0, 0, 0);
+    c.vkCmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
+    c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(ui.quads.items.len * 6)), 1, 0, 0, 0);
 }
 
 fn fileItem(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Item {
@@ -1013,8 +1002,6 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
         width,
         height,
     );
-    self.ui.screen_heigth = @floatFromInt(self.swapchain.extent.height);
-    self.ui.screen_width = @floatFromInt(self.swapchain.extent.width);
 }
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World, timer_io: std.Io) !void {

@@ -6,8 +6,8 @@ const shared = @import("shared");
 const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
-const Ui = @import("../Renderer/Vulkan/Ui.zig");
-const TextureTable = @import("../Renderer/loader/TextureTable.zig");
+const Ui = @import("../Ui.zig");
+const Renderer = @import("../Renderer.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -54,7 +54,7 @@ pub fn update(
     scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
-    texture_table: *TextureTable,
+    texture_table: *Renderer.TextureTable,
     controller: *Controller,
     options: *Options,
 ) !Request {

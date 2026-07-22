@@ -4,7 +4,7 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const entity = shared.entity;
-const AssetServer = @import("../../AssetServer.zig");
+const Loader = @import("../../AssetServer.zig").Loader;
 const Model = @import("../../asset/Model.zig");
 const gltf = @import("../../asset/gltf.zig");
 const Mesh = @import("../Vulkan/Mesh.zig");
@@ -15,14 +15,13 @@ const check = @import("../Vulkan/utils.zig").check;
 
 table: *TextureTable,
 items: []Item,
-files: [][]const u8,
 keys: [][]const u8,
 files_storage: [][]const u8,
 keys_storage: [][]const u8,
 specs: []entity.Spec,
 specs_storage: []entity.Spec,
 reloaded: std.ArrayList(u32),
-interface: AssetServer.Loader,
+interface: Loader,
 
 pub const Item = struct {
     model: Model,
@@ -64,7 +63,6 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
     return .{
         .table = table,
         .items = items,
-        .files = files,
         .keys = keys,
         .files_storage = files_storage,
         .keys_storage = keys_storage,
@@ -98,7 +96,7 @@ pub fn findByKey(self: *const ModelLoader, key: []const u8) ?u32 {
     return null;
 }
 
-fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
     const io = loader.io;
@@ -174,7 +172,7 @@ fn uploadItem(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloca
     item.image_slots = image_slots;
 }
 
-fn unload(loader: *AssetServer.Loader, index: usize) void {
+fn unload(loader: *Loader, index: usize) void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
     self.unloadItem(index);
 }

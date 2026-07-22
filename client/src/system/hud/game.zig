@@ -3,8 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../../system.zig");
 const Info = system.Info;
-const Ui = @import("../../Renderer/Vulkan/Ui.zig");
-const TextureTable = @import("../../Renderer/loader/TextureTable.zig");
+const Ui = @import("../../Ui.zig");
+const Renderer = @import("../../Renderer.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -13,7 +13,7 @@ const DamagePopup = @import("../DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *TextureTable, options: *Options) !void {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -169,7 +169,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(TextureTable.crosshair_texture_key),
+                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_key),
                     },
                 },
             });

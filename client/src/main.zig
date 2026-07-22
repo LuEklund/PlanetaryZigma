@@ -94,6 +94,8 @@ pub fn main(init: std.process.Init) !void {
                 .close => break :main_loop,
                 .resize => {
                     try system_context.renderer.resize(gpa, window);
+                    system_context.ui.screen_width = @floatFromInt(window.size.width);
+                    system_context.ui.screen_heigth = @floatFromInt(window.size.height);
                 },
                 .key => |key| {
                     if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;

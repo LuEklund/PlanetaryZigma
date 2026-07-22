@@ -13,6 +13,7 @@ const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
 const FrameData = @import("FrameData.zig");
+const Ui = @import("../../Ui.zig");
 const AssetServer = @import("../../AssetServer.zig");
 const TextureTable = @import("../loader/TextureTable.zig");
 const ModelLoader = @import("../loader/ModelLoader.zig");
@@ -43,6 +44,7 @@ font_loader: *FontLoader,
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 identity_joint_buffer: Buffer,
+ui_index_buffer: Buffer,
 shadow_image: Image,
 shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
@@ -132,6 +134,23 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     );
     identity_joint_buffer.copy(nz.Mat4x4(f32), &.{.identity});
 
+    const ui_index_buffer: Buffer = try .init(
+        device,
+        vma,
+        u32,
+        Ui.max_ui_quads * 6,
+        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        .{
+            .usage = Vma.c.VMA_MEMORY_USAGE_AUTO,
+            .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT | Vma.c.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+        },
+    );
+    var index_data: [*]u32 = @ptrCast(@alignCast(ui_index_buffer.info.pMappedData));
+    for (0..Ui.max_ui_quads) |quad_index| {
+        const base: u32 = @as(u32, @intCast(quad_index)) * 4;
+        index_data[quad_index * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
+    }
+
     const shadow_image: Image = try .init(
         vma,
         device,
@@ -205,6 +224,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
+        .ui_index_buffer = ui_index_buffer,
         .shadow_image = shadow_image,
         .shadow_sampler = shadow_sampler,
         .shadow_descriptor_buffers = shadow_descriptor_buffers,
@@ -257,6 +277,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
         layout.deinit(device);
     }
     self.identity_joint_buffer.deinit(vma);
+    self.ui_index_buffer.deinit(vma);
     self.shadow_image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.shadow_sampler, null);
     for (&self.shadow_descriptor_buffers) |*shadow_descriptor_buffer| shadow_descriptor_buffer.deinit(vma);

@@ -1,20 +1,14 @@
 const Font = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
-const Image = @import("Image.zig");
-const Vma = @import("Vma.zig");
-const Device = @import("device.zig").Logical;
 const stbTruetype = @import("stb_truetype");
-const check = @import("utils.zig").check;
 
-sampler: c.VkSampler,
-atlas_texture: Image.Handle,
+pub const atlas_width: usize = 512;
+pub const atlas_height: usize = 512;
 
-device: Device,
-vma: Vma,
 glyphs: [96]Glyph,
 size: f32,
+atlas_texture_index: u32,
 
 pub const Glyph = struct {
     u0: f32,
@@ -28,29 +22,21 @@ pub const Glyph = struct {
     xadvance: f32,
 };
 
-pub fn init(vma: Vma, device: Device) Font {
-    return .{
-        .device = device,
-        .vma = vma,
-        .sampler = null,
-        .atlas_texture = undefined,
-        .glyphs = undefined,
-        .size = 32,
-    };
-}
+pub const empty: Font = .{
+    .glyphs = undefined,
+    .size = 32,
+    .atlas_texture_index = 0,
+};
 
-pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Image {
+pub fn bake(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) ![]u8 {
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     const content = try reader.interface.allocRemaining(gpa, .unlimited);
     defer gpa.free(content);
     std.log.debug("font file size: {d}", .{content.len});
 
-    const atlas_w: usize = 512;
-    const atlas_h: usize = 512;
-
-    const coverage = try gpa.alloc(u8, atlas_w * atlas_h);
-    defer gpa.free(coverage);
+    const coverage = try gpa.alloc(u8, atlas_width * atlas_height);
+    errdefer gpa.free(coverage);
     @memset(coverage, 0);
 
     const padding: c_int = 5;
@@ -91,23 +77,23 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         const glyph_w: usize = @intCast(width);
         const glyph_h: usize = @intCast(heigth);
         if (sdf != null and glyph_w > 0) {
-            if (pen_x + glyph_w + 1 > atlas_w) {
+            if (pen_x + glyph_w + 1 > atlas_width) {
                 pen_x = 1;
                 pen_y += row_heigth + 1;
                 row_heigth = 0;
             }
             for (0..glyph_h) |row| {
                 const src = sdf[row * glyph_w ..][0..glyph_w];
-                const dst = coverage[(pen_y + row) * atlas_w + pen_x ..][0..glyph_w];
+                const dst = coverage[(pen_y + row) * atlas_width + pen_x ..][0..glyph_w];
                 @memcpy(dst, src);
             }
         }
 
         glyph.* = .{
-            .u0 = @as(f32, @floatFromInt(pen_x)) / atlas_w,
-            .v0 = @as(f32, @floatFromInt(pen_y)) / atlas_h,
-            .u1 = @as(f32, @floatFromInt(pen_x + glyph_w)) / atlas_w,
-            .v1 = @as(f32, @floatFromInt(pen_y + glyph_h)) / atlas_h,
+            .u0 = @as(f32, @floatFromInt(pen_x)) / atlas_width,
+            .v0 = @as(f32, @floatFromInt(pen_y)) / atlas_height,
+            .u1 = @as(f32, @floatFromInt(pen_x + glyph_w)) / atlas_width,
+            .v1 = @as(f32, @floatFromInt(pen_y + glyph_h)) / atlas_height,
             .xoff = @floatFromInt(xoff),
             .yoff = @floatFromInt(yoff),
             .width = @floatFromInt(glyph_w),
@@ -121,30 +107,5 @@ pub fn load(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         }
     }
 
-    var atlas_image: Image = try .init(
-        self.vma,
-        self.device,
-        c.VK_FORMAT_R8_UNORM,
-        .{ .width = @intCast(atlas_w), .height = @intCast(atlas_h), .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    try atlas_image.uploadDataToImage(self.vma, self.device, coverage.ptr, 1, 0);
-
-    const sampler_info: c.VkSamplerCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = c.VK_FILTER_LINEAR,
-        .minFilter = c.VK_FILTER_LINEAR,
-        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    };
-    try check(c.vkCreateSampler(self.device.handle, &sampler_info, null, &self.sampler));
-    return atlas_image;
-}
-
-pub fn deinit(self: *Font, device: Device) void {
-    c.vkDestroySampler(device.handle, self.sampler, null);
+    return coverage;
 }

@@ -2,29 +2,34 @@ const FontLoader = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const AssetServer = @import("../../AssetServer.zig");
-const Font = @import("../Vulkan/Font.zig");
+const Loader = @import("../../AssetServer.zig").Loader;
+const Font = @import("../../asset/Font.zig");
+const Image = @import("../Vulkan/Image.zig");
 const TextureTable = @import("TextureTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
+const font_files: []const []const u8 = &.{"Roboto-Regular.ttf"};
+
 table: *TextureTable,
 items: []Font,
-interface: AssetServer.Loader,
-
-const font_files = [_][]const u8{"Roboto-Regular.ttf"};
+samplers: []c.VkSampler,
+interface: Loader,
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !FontLoader {
     const items = try gpa.alloc(Font, font_files.len);
-    for (items) |*font| font.* = .init(table.vma, table.device);
+    @memset(items, .empty);
+    const samplers = try gpa.alloc(c.VkSampler, font_files.len);
+    @memset(samplers, null);
 
     return .{
         .table = table,
         .items = items,
+        .samplers = samplers,
         .interface = .{
             .gpa = gpa,
             .io = io,
             .root_path = "fonts",
-            .files = &font_files,
+            .files = font_files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
@@ -34,27 +39,57 @@ pub fn deinit(self: *FontLoader) void {
     const gpa = self.interface.gpa;
     for (0..self.items.len) |index| self.unloadItem(index);
     gpa.free(self.items);
+    gpa.free(self.samplers);
 }
 
-fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *FontLoader = @fieldParentPtr("interface", loader);
+    const gpa = loader.gpa;
+    const table = self.table;
     const file = try err_file;
     self.unloadItem(index);
+
     const font = &self.items[index];
-    const atlas_image = try font.load(loader.gpa, loader.io, file);
-    font.atlas_texture = try self.table.allocSlot(loader.gpa, atlas_image, font.sampler, null);
+    const coverage = try font.bake(gpa, loader.io, file);
+    defer gpa.free(coverage);
+
+    var atlas_image: Image = try .init(
+        table.vma,
+        table.device,
+        c.VK_FORMAT_R8_UNORM,
+        .{ .width = @intCast(Font.atlas_width), .height = @intCast(Font.atlas_height), .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    errdefer atlas_image.deinit(table.vma, table.device);
+    try atlas_image.uploadDataToImage(table.vma, table.device, coverage.ptr, 1, 0);
+
+    const sampler_info: c.VkSamplerCreateInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = c.VK_FILTER_LINEAR,
+        .minFilter = c.VK_FILTER_LINEAR,
+        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    try check(c.vkCreateSampler(table.device.handle, &sampler_info, null, &self.samplers[index]));
+
+    const atlas_handle = try table.allocSlot(gpa, atlas_image, self.samplers[index], null);
+    font.atlas_texture_index = @intCast(atlas_handle.index());
 }
 
-fn unload(loader: *AssetServer.Loader, index: usize) void {
+fn unload(loader: *Loader, index: usize) void {
     const self: *FontLoader = @fieldParentPtr("interface", loader);
     self.unloadItem(index);
 }
 
 fn unloadItem(self: *FontLoader, index: usize) void {
-    const font = &self.items[index];
-    if (font.sampler == null) return;
-    self.table.freeSlot(self.interface.gpa, font.atlas_texture);
+    if (self.samplers[index] == null) return;
+    self.table.freeSlot(self.interface.gpa, @enumFromInt(self.items[index].atlas_texture_index));
     check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
-    c.vkDestroySampler(self.table.device.handle, font.sampler, null);
-    font.sampler = null;
+    c.vkDestroySampler(self.table.device.handle, self.samplers[index], null);
+    self.samplers[index] = null;
+    self.items[index] = .empty;
 }

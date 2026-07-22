@@ -4,7 +4,7 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const entity = shared.entity;
-const AssetServer = @import("../../AssetServer.zig");
+const Loader = @import("../../AssetServer.zig").Loader;
 const Image = @import("../Vulkan/Image.zig");
 const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
@@ -13,9 +13,8 @@ const skybox_file = "skybox_cubemap.png";
 
 table: *TextureTable,
 items: []?Image.Handle,
-files: [][]const u8,
 files_storage: [][]const u8,
-interface: AssetServer.Loader,
+interface: Loader,
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLoader {
     const spec_capacity = entity.all_kinds.len + 2;
@@ -41,7 +40,6 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLo
     return .{
         .table = table,
         .items = items,
-        .files = files,
         .files_storage = files_storage,
         .interface = .{
             .gpa = gpa,
@@ -69,14 +67,14 @@ fn decodeFile(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Bitmap {
     try reader.interface.readSliceAll(bytes);
 
     var decoded: Bitmap = .{};
-    var decode_tasks = [_]Bitmap.Task{.{ .result = &decoded, .bytes = bytes }};
+    var decode_tasks: [1]Bitmap.Task = .{.{ .result = &decoded, .bytes = bytes }};
     try Bitmap.decodeAll(gpa, &decode_tasks);
     if (decoded.err) |err| return err;
     try if (decoded.pixels == null) error.LoadingStbi;
     return decoded;
 }
 
-fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
     const table = self.table;
@@ -86,7 +84,7 @@ fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File
     var decoded = try decodeFile(gpa, loader.io, file);
     defer decoded.deinit();
 
-    if (std.mem.eql(u8, self.files[index], skybox_file)) return self.loadSkybox(gpa, decoded);
+    if (std.mem.eql(u8, loader.files[index], skybox_file)) return self.loadSkybox(gpa, decoded);
 
     var image: Image = try .init(
         table.vma,
@@ -102,7 +100,7 @@ fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File
     try image.uploadDataToImage(table.vma, table.device, decoded.pixels, 4, 0);
 
     var key_buffer: [512]u8 = undefined;
-    const key = try std.fmt.bufPrint(&key_buffer, "textures/{s}", .{self.files[index]});
+    const key = try std.fmt.bufPrint(&key_buffer, "textures/{s}", .{loader.files[index]});
     self.items[index] = try table.allocSlot(gpa, image, table.samplers.items[0], key);
 }
 
@@ -152,7 +150,7 @@ fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !vo
     table.setSkybox(cubemap);
 }
 
-fn unload(loader: *AssetServer.Loader, index: usize) void {
+fn unload(loader: *Loader, index: usize) void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
     self.unloadItem(index);
 }

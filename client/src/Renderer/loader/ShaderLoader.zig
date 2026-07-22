@@ -2,7 +2,7 @@ const ShaderLoader = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const AssetServer = @import("../../AssetServer.zig");
+const Loader = @import("../../AssetServer.zig").Loader;
 const Device = @import("../Vulkan/device.zig").Logical;
 const Shader = @import("../Vulkan/Shader.zig");
 const DescriptorLayout = @import("../Vulkan/DesrciptorLayout.zig");
@@ -11,8 +11,7 @@ const check = @import("../Vulkan/utils.zig").check;
 device: Device,
 layouts: LayoutHandles,
 items: []Shader,
-files: [][]const u8,
-interface: AssetServer.Loader,
+interface: Loader,
 
 pub const LayoutHandles = struct {
     scene: c.VkDescriptorSetLayout,
@@ -34,7 +33,6 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: LayoutH
         .device = device,
         .layouts = layouts,
         .items = items,
-        .files = files,
         .interface = .{
             .gpa = gpa,
             .io = io,
@@ -51,7 +49,7 @@ pub fn deinit(self: *ShaderLoader) void {
         if (shader.handle != null) shader.deinit();
     }
     gpa.free(self.items);
-    gpa.free(self.files);
+    gpa.free(self.interface.files);
 }
 
 pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind) *Shader {
@@ -65,12 +63,12 @@ pub fn verifyAllKindsLoaded(self: *const ShaderLoader) void {
     }
 }
 
-fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
+fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
     const kind = Shader.all_kinds[index];
     const file = err_file catch |err| std.debug.panic(
         "shader missing: assets/shaders/{s} ({t})",
-        .{ self.files[index], err },
+        .{ loader.files[index], err },
     );
     if (self.items[index].handle == null) {
         const layout_handles: []const c.VkDescriptorSetLayout = switch (Shader.spec(kind).layout) {
@@ -83,7 +81,7 @@ fn load(loader: *AssetServer.Loader, err_file: std.Io.File.OpenError!std.Io.File
     try self.items[index].load(loader.gpa, loader.io, file);
 }
 
-fn unload(loader: *AssetServer.Loader, index: usize) void {
+fn unload(loader: *Loader, index: usize) void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
     if (self.items[index].handle == null) return;
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
