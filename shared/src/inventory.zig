@@ -9,7 +9,7 @@ pub const Item = enum(u16) {
     rocket,
     lightning,
     crit,
-    // tougherer_times,
+    tougherer_times,
 
     pub const Spec = struct {
         attributes: Stats.Values,
@@ -54,11 +54,11 @@ pub const Item = enum(u16) {
                 .model = "objects/item.glb",
                 .icon = "textures/item.png",
             },
-            // .tougherer_times => .{
-            //     .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
-            //     .model = "objects/item.glb",
-            //     .icon = "textures/item.png",
-            // },
+            .tougherer_times => .{
+                .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
         };
     }
 

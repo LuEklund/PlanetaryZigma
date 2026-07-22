@@ -9,7 +9,6 @@ const Info = system.Info;
 
 const rocket_damage_multiplier: f32 = 1.5;
 const lightning = .{
-    .chain_range = @as(f32, 12),
     .max_targets = shared.net.Event.Effect.Lightning.max_targets,
     .max_victims = 256,
 };
@@ -24,16 +23,15 @@ pub fn updateEnemies(info: *const Info) !void {
         if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
-        var closet: f32 = std.math.floatMax(f32);
-        var player: *system.Entity = undefined;
-        for (info.world.players.items) |player_id| {
+        var closest: f32 = std.math.floatMax(f32);
+        const player = for (info.world.players.items) |player_id| {
             const current_player = info.world.getPtr(player_id) orelse continue;
+            if (current_player.flags.is_dead) continue;
             const distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
-            if (distance < closet) {
-                closet = distance;
-                player = current_player;
-            }
-        }
+            if (distance >= closest) continue;
+            closest = distance;
+            break current_player;
+        } else return;
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
@@ -172,7 +170,7 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
             if (candidate.kind.eql(owner_entity.kind) or !candidate.kind.hasHealth()) continue;
             if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count], candidate.id) != null) continue;
             const candidate_distance = nz.vec.distance(candidate.transform.position, source.position);
-            if (candidate_distance > lightning.chain_range) continue;
+            if (candidate_distance > lightning_count + 5) continue;
             if (chained_count < max_targets) {
                 chained_count += 1;
             } else if (candidate_distance >= chained[chained_count - 1].distance) {

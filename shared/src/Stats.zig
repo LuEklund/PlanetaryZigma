@@ -21,7 +21,7 @@ pub const Kind = enum(u16) {
     rocket_chance,
     lightning_chance,
     critical_chance,
-    // block_chance,
+    block_chance,
 };
 
 pub fn init(base: Values) Stats {

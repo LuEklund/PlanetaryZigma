@@ -11,7 +11,6 @@ dir: std.Io.Dir,
 assets_path: []const u8,
 
 loaders: std.ArrayList(*Loader) = .empty,
-watchers: std.ArrayList(Watcher) = .empty,
 file_mtimes: std.ArrayList([]std.Io.Timestamp) = .empty,
 retries: std.ArrayList(Retry) = .empty,
 
@@ -63,8 +62,6 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !AssetServer {
 pub fn deinit(self: *AssetServer) void {
     self.dir.close(self.io);
     self.loaders.deinit(self.gpa);
-    for (self.watchers.items) |*watcher| watcher.deinit();
-    self.watchers.deinit(self.gpa);
     for (self.file_mtimes.items) |mtimes| self.gpa.free(mtimes);
     self.file_mtimes.deinit(self.gpa);
     self.retries.deinit(self.gpa);
@@ -133,130 +130,3 @@ fn pollChangedAssets(self: *AssetServer) !void {
         }
     }
 }
-
-pub const Watcher = struct {
-    inner: InnerType,
-
-    pub const Event = struct {
-        path: []const u8,
-        action: Action,
-
-        pub const Action = enum {
-            modified,
-            created,
-            deleted,
-        };
-    };
-
-    const InnerType = switch (builtin.os.tag) {
-        .linux => Inotify,
-        else => struct {},
-    };
-
-    pub fn init(path: [:0]const u8) !Watcher {
-        if (builtin.os.tag != .linux) @compileError("watcher is linux-only; other platforms poll");
-        return .{ .inner = try .init(path) };
-    }
-
-    pub fn deinit(self: *Watcher) void {
-        if (builtin.os.tag != .linux) return;
-        self.inner.deinit();
-    }
-
-    pub fn next(self: *Watcher) !?Event {
-        if (builtin.os.tag != .linux) return null;
-        return self.inner.next();
-    }
-
-    const Inotify = struct {
-        fd: i32,
-        wd: i32,
-
-        buffer: [4096]u8 = undefined,
-        offset: usize = 0,
-        length: usize = 0,
-
-        const linux = std.os.linux;
-
-        const IN = struct {
-            const NONBLOCK = 0x00000800;
-            const CLOSE_WRITE = 0x00000008; // Normal file write/close
-            const CREATE = 0x00000100; // New file
-            const DELETE = 0x00000200; // File deletion
-            const MOVED_TO = 0x00000080; // Swapping files / Renaming into place
-        };
-
-        pub fn init(path: [:0]const u8) !Inotify {
-            const fd_result = linux.inotify_init1(IN.NONBLOCK);
-            if (linux.errno(fd_result) != .SUCCESS) return error.InotifyInitFailed;
-            const fd: i32 = @intCast(fd_result);
-
-            const wd_result = linux.inotify_add_watch(
-                fd,
-                path.ptr,
-                IN.CLOSE_WRITE | IN.CREATE | IN.DELETE | IN.MOVED_TO,
-            );
-            if (linux.errno(wd_result) != .SUCCESS) {
-                _ = linux.close(fd);
-                return error.InotifyWatchFailed;
-            }
-
-            return .{ .fd = fd, .wd = @intCast(wd_result) };
-        }
-        pub fn deinit(self: *Inotify) void {
-            _ = linux.inotify_rm_watch(self.fd, self.wd);
-            _ = linux.close(self.fd);
-        }
-
-        pub fn next(self: *Inotify) !?Watcher.Event {
-            while (true) {
-                if (self.offset >= self.length) {
-                    const read_result = linux.read(self.fd, &self.buffer, self.buffer.len);
-                    switch (linux.errno(read_result)) {
-                        .SUCCESS => {},
-                        .AGAIN => return null,
-                        else => return error.InotifyReadFailed,
-                    }
-                    self.length = read_result;
-
-                    self.offset = 0;
-                    if (self.length == 0) return null;
-                }
-
-                if (self.offset + @sizeOf(linux.inotify_event) > self.length) {
-                    self.offset = self.length;
-                    continue;
-                }
-
-                const event: *const linux.inotify_event = @ptrCast(@alignCast(&self.buffer[self.offset]));
-
-                const name_start = self.offset + @sizeOf(linux.inotify_event);
-                const name_end = name_start + event.len;
-
-                self.offset = name_end;
-
-                var name: []const u8 = &.{};
-                if (event.len > 0 and name_start < self.length) {
-                    const full_name_slice = self.buffer[name_start..@min(name_end, self.length)];
-                    const null_index = std.mem.indexOfScalar(u8, full_name_slice, 0) orelse full_name_slice.len;
-                    name = full_name_slice[0..null_index];
-                }
-
-                // If a file is swapped in (MOVED_TO) or saved (CLOSE_WRITE), notify as modified
-                const action: Watcher.Event.Action = if (event.mask & (IN.CLOSE_WRITE | IN.MOVED_TO) != 0)
-                    .modified
-                else if (event.mask & IN.CREATE != 0)
-                    .created
-                else if (event.mask & IN.DELETE != 0)
-                    .deleted
-                else
-                    continue;
-
-                return Watcher.Event{
-                    .path = name,
-                    .action = action,
-                };
-            }
-        }
-    };
-};

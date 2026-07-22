@@ -214,6 +214,9 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     new_amount = @min(new_amount, amount);
     if (source) |source_entity| {
         if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
+        const tougherer_times = entity.inventory.get(.tougherer_times);
+        const block_chance = shared.Item.attributes(.tougherer_times).get(.block_chance);
+        if (random.float(f32) < tougherer_times * block_chance) new_amount = 0;
     }
     return self.addHealth(entity, -new_amount, source);
 }

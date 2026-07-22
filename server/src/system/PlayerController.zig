@@ -31,8 +31,8 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
             .f2 => {
                 // _ = info.world.giveItem(player, .rocket, 1);
-                // _ = info.world.giveItem(player, .lightning, 1);
-                _ = info.world.giveItem(player, .crit, 1);
+                _ = info.world.giveItem(player, .lightning, 1);
+                // _ = info.world.giveItem(player, .tougherer_times, 1);
             },
             .f3 => {
                 info.world.toggle_spawning_requested = true;
