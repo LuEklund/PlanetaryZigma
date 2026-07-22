@@ -6,7 +6,7 @@ const Vma = @import("Vma.zig");
 const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const Ui = @import("Ui.zig");
+const Ui = @import("../../Ui.zig");
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,

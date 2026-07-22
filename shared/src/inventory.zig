@@ -2,12 +2,14 @@ const std = @import("std");
 const Stats = @import("Stats.zig");
 
 pub const Item = enum(u16) {
-    oxygen_tank = 0,
-    energy_drink = 1,
-    gun = 2,
-    pickaxe = 3,
-    rocket = 4,
-    lightning = 5,
+    oxygen_tank,
+    energy_drink,
+    gun,
+    pickaxe,
+    rocket,
+    lightning,
+    crit,
+    tougherer_times,
 
     pub const Spec = struct {
         attributes: Stats.Values,
@@ -46,6 +48,16 @@ pub const Item = enum(u16) {
                 .attributes = .initDefault(0, .{ .lightning_chance = 0.05 }),
                 .model = "objects/lightning.glb",
                 .icon = "textures/lightning.png",
+            },
+            .crit => .{
+                .attributes = .initDefault(0, .{ .critical_chance = 0.05 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
+            .tougherer_times => .{
+                .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
             },
         };
     }

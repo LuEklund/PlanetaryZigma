@@ -7,12 +7,10 @@ const Physics = @import("Physics.zig");
 const Director = @import("Director.zig");
 const Info = system.Info;
 
-const rocket_explosion_radius: f32 = 8;
 const rocket_damage_multiplier: f32 = 1.5;
 const lightning = .{
-    .chain_range = @as(f32, 12),
     .max_targets = shared.net.Event.Effect.Lightning.max_targets,
-    .max_victims = 64,
+    .max_victims = 256,
 };
 
 pub fn updateEnemies(info: *const Info) !void {
@@ -25,18 +23,25 @@ pub fn updateEnemies(info: *const Info) !void {
         if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
-        var closet: f32 = std.math.floatMax(f32);
-        var player: *system.Entity = undefined;
-        for (info.world.players.items) |player_id| {
+        var closest: f32 = std.math.floatMax(f32);
+        const player = for (info.world.players.items) |player_id| {
             const current_player = info.world.getPtr(player_id) orelse continue;
+            if (current_player.flags.is_dead) continue;
             const distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
-            if (distance < closet) {
-                closet = distance;
-                player = current_player;
-            }
-        }
+            if (distance >= closest) continue;
+            closest = distance;
+            break current_player;
+        } else return;
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
+
+        if (distance > Director.enemy_max_spawn_distance * 1.7) {
+            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet_radius, Director.enemy_max_spawn_distance, Director.enemy_max_spawn_distance, info.world.prng.random());
+            const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+            enemy.transform.position = leash_position;
+            Physics.setPosition(body_id, leash_position);
+            continue;
+        }
 
         const planet_up = shared.planet.up(enemy.transform.position) orelse continue;
 
@@ -84,7 +89,7 @@ pub fn updateEnemies(info: *const Info) !void {
                     info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
-            .bloorpLord => {
+            .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
                 if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
@@ -129,11 +134,11 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
         switch (projectile_kind) {
             .cube => {
                 if (info.world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity) != .ignored) {
-                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity, entity.stats.current.get(.damage));
+                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity);
                 }
             },
             .rocket => {
-                damageRocketImpact(info, owner_entity, impact_position, entity.stats.current.get(.damage));
+                damageRocketImpact(info, owner_entity, impact_position);
                 info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
             },
         }
@@ -141,9 +146,10 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     }
 }
 
-fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity, damage: f32) void {
-    const lightning_jumps = owner_entity.inventory.get(.lightning);
-    // ponytail: flat chance on purpose; stacks buy jumps, not proc rate.
+fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
+    const lightning_count = owner_entity.inventory.get(.lightning);
+    var lightning_jumps = lightning_count;
+    const damage = owner_entity.stats.current.get(.damage) * lightning_count * 0.1;
     const lightning_chance = shared.Item.lightning.attributes().get(.lightning_chance);
     if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
 
@@ -153,16 +159,16 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
         visited[0] = hit.id;
         visited_count = 1;
     }
-    const Source = struct { position: nz.Vec3(f32), jumps_left: u32 };
+    const Source = struct { position: nz.Vec3(f32) };
     var queue: [1 + lightning.max_victims]Source = undefined;
-    queue[0] = .{ .position = origin, .jumps_left = lightning_jumps };
+    queue[0] = .{ .position = origin };
     var queue_head: usize = 0;
     var queue_tail: usize = 1;
 
     while (queue_head < queue_tail) {
         const source = queue[queue_head];
         queue_head += 1;
-        if (source.jumps_left == 0 or visited_count >= visited.len) continue;
+        if (lightning_jumps == 0 or visited_count >= visited.len) continue;
 
         const Chained = struct { entity: *system.Entity, distance: f32 };
         var chained: [lightning.max_targets]Chained = undefined;
@@ -172,7 +178,7 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
             if (candidate.kind.eql(owner_entity.kind) or !candidate.kind.hasHealth()) continue;
             if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count], candidate.id) != null) continue;
             const candidate_distance = nz.vec.distance(candidate.transform.position, source.position);
-            if (candidate_distance > lightning.chain_range) continue;
+            if (candidate_distance > lightning_count + 5) continue;
             if (chained_count < max_targets) {
                 chained_count += 1;
             } else if (candidate_distance >= chained[chained_count - 1].distance) {
@@ -188,11 +194,13 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
 
         var targets: [lightning.max_targets]shared.entity.Id = @splat(.none);
         for (chained[0..chained_count], targets[0..chained_count]) |kept, *slot| {
+            if (lightning_jumps == 0) break;
+            lightning_jumps -= 1;
             slot.* = kept.entity.id;
             visited[visited_count] = kept.entity.id;
             visited_count += 1;
             _ = info.world.removeHealth(kept.entity, damage, owner_entity);
-            queue[queue_tail] = .{ .position = kept.entity.transform.position, .jumps_left = source.jumps_left - 1 };
+            queue[queue_tail] = .{ .position = kept.entity.transform.position };
             queue_tail += 1;
         }
         info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .lightning = .{
@@ -202,20 +210,22 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
     }
 }
 
-fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32), base_damage: f32) void {
+fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32)) void {
+    const base_damage = owner_entity.stats.current.get(.damage);
+    const blast_radius: f32 = @as(f32, owner_entity.inventory.get(.rocket)) * 0.5 + 2;
     for (info.world.entities.values()) |*candidate| {
         if (!candidate.kind.hasHealth()) continue;
         if (candidate.id == owner_entity.id) continue;
         if (owner_entity.kind.eql(candidate.kind)) continue;
 
         const distance = nz.vec.distance(candidate.transform.position, impact_position);
-        if (distance > rocket_explosion_radius) continue;
+        if (distance > blast_radius) continue;
 
-        const falloff = 1.0 - distance / rocket_explosion_radius;
+        const falloff = 1.0 - distance / blast_radius;
         const damage = base_damage * rocket_damage_multiplier * (0.5 + falloff * 0.5);
         _ = info.world.removeHealth(candidate, damage, owner_entity);
     }
-    tryProcLightning(info, owner_entity, impact_position, null, base_damage);
+    tryProcLightning(info, owner_entity, impact_position, null);
 }
 
 pub fn updateItems(info: *const Info) !void {
@@ -242,6 +252,7 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
         teleporter.state = .completed;
         return;
     }
+    const old_teleporter_charge = teleporter.charged;
     for (info.world.players.items) |player_id| {
         const player = info.world.getPtr(player_id) orelse continue;
         if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
@@ -249,7 +260,9 @@ pub fn updateTeleporter(info: *const Info, director: *Director) void {
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
-    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    if (old_teleporter_charge != teleporter.charged) {
+        info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    }
 }
 
 pub fn updateLifetimes(info: *const Info) void {

@@ -7,6 +7,7 @@ pub const Physical = struct {
     handle: c.VkPhysicalDevice,
     max_anisotropy: f32,
     graphics_queue_family_index: u32,
+    combined_image_sampler_descriptor_size: usize,
 
     pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !Physical {
         var device_count: u32 = 0;
@@ -35,10 +36,20 @@ pub const Physical = struct {
                 if (supports_graphics and present_supported != 0) {
                     std.log.info("found physical device: {s}, queue family: {d}", .{ properties.deviceName, i });
 
+                    var device_desc_buffer_properties: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,
+                    };
+                    var device_properties: c.VkPhysicalDeviceProperties2 = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                        .pNext = &device_desc_buffer_properties,
+                    };
+                    c.vkGetPhysicalDeviceProperties2(device, &device_properties);
+
                     return .{
                         .handle = device,
                         .max_anisotropy = properties.limits.maxSamplerAnisotropy,
                         .graphics_queue_family_index = @intCast(i),
+                        .combined_image_sampler_descriptor_size = device_desc_buffer_properties.combinedImageSamplerDescriptorSize,
                     };
                 }
             }

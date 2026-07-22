@@ -39,7 +39,7 @@ pub fn populate(world: *World) !void {
             .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
             .scale = @splat(bozo_scale),
         },
-        .animation_state = .walk,
+        .override_animation_state = .walk,
     };
     world.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = bozo_id, .kind = .player } });
 }

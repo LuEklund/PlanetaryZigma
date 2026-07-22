@@ -170,7 +170,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const kind_spec = shared.entity.spec(entity.kind);
     if (kind_spec.stats) |stats_spec| {
         var values = stats_spec;
-        if (entity.kind == .enemy and entity.kind.enemy == .bloorpLord) {
+        if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
             values.set(.health, values.get(.health) * @as(f32, @floatFromInt(self.next_stage)));
         }
         entity.stats = .init(values);
@@ -248,7 +248,16 @@ pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
     if (entity.flags.invinsible) return .ignored;
-    return self.addHealth(entity, -amount, source);
+    const random = self.prng.random();
+    var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
+    new_amount = @min(new_amount, amount);
+    if (source) |source_entity| {
+        if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
+        const tougherer_times = entity.inventory.get(.tougherer_times);
+        const block_chance = shared.Item.attributes(.tougherer_times).get(.block_chance);
+        if (random.float(f32) < tougherer_times * block_chance) new_amount = 0;
+    }
+    return self.addHealth(entity, -new_amount, source);
 }
 
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
@@ -287,9 +296,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
     var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
-        if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
-            _ = self.players.swapRemove(player_index);
-        }
+
         if (entity.collider.body_id) |body_id| {
             physics.destroyBody(body_id);
             entity.collider.body_id = null;
@@ -298,6 +305,9 @@ pub fn flush(self: *World, physics: *Physics) !void {
             entity.flags.is_dead = true;
             entity.replicated_velocity = .{ 0, 0, 0 };
         } else {
+            if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
+                _ = self.players.swapRemove(player_index);
+            }
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);

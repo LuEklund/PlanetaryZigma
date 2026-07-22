@@ -33,8 +33,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 _ = info.world.giveItem(player, .energy_drink, 1);
             },
             .f2 => {
-                _ = info.world.giveItem(player, .rocket, 1);
+                // _ = info.world.giveItem(player, .rocket, 1);
                 _ = info.world.giveItem(player, .lightning, 1);
+                // _ = info.world.giveItem(player, .tougherer_times, 1);
             },
             .f3 => {
                 info.world.toggle_spawning_requested = true;
@@ -61,6 +62,17 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             .f5 => {
                 info.world.next_stage_requested = true;
             },
+            .f6 => {
+                info.world.queueDespawn(player_id);
+            },
+            .f7 => {
+                player.flags.invinsible = !player.flags.invinsible;
+            },
+            .f8 => if (info.world.getPtr(info.world.teleporter_id)) |teleporter| {
+                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
+                Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
+            },
+
             else => {},
         }
         input.dev_command = .none;
@@ -127,7 +139,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
                             const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
-                                .kind = .{ .enemy = .bloorpLord },
+                                .kind = .{ .enemy = .bloorp_lord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
                                 .flags = .{ .is_teleporter_boss = true },
                                 .last_attack = info.elapsed_time,

@@ -3,17 +3,17 @@ const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../../system.zig");
 const Info = system.Info;
-const Ui = @import("../../Renderer/Vulkan/Ui.zig");
-const Resources = @import("../../Renderer/Vulkan/Resources.zig");
+const Ui = @import("../../Ui.zig");
+const Renderer = @import("../../Renderer.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
-const DamagePopup = @import("../DamagePopup.zig");
+const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, resources: *Resources, options: *Options) !void {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -34,7 +34,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
         addEnemyHealthBars(info, ui);
-        addDamagePopups(info, ui);
+        addDamagePopups(info, ui, damage_popups);
 
         const health_current = player.stats.current.get(.health);
         const health_max = player.stats.max.get(.health);
@@ -84,7 +84,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
 
                 .color = .new(1, 1, 1, 1),
                 .name = ui.print("{t}", .{item_kind}),
-                .texture = resources.textureHandle(shared.Item.spec(item_kind).icon),
+                .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
                     .size = .{ .fixed = ui.textSize(amount_text, 32) },
@@ -169,7 +169,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = resources.textureHandle(Resources.crosshair_texture_key),
+                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_path),
                     },
                 },
             });
@@ -308,9 +308,9 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
     }
 }
 
-fn addDamagePopups(info: *const Info, ui: *Ui) void {
+fn addDamagePopups(info: *const Info, ui: *Ui, damage_popups: *const DamagePopup.List) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
-    for (info.world.damage_popups.items) |popup| {
+    for (damage_popups.items()) |popup| {
         const up = shared.planet.up(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
         const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
@@ -336,7 +336,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
 
     for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .player) continue;
+        if (entity.kind != .player or entity.id == info.world.player_id) continue;
 
         const name = if (entity.player_name.len != 0)
             entity.player_name
@@ -374,6 +374,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     }
 }
 
+//TODO: account for hills.
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
     const segment = tag_position - camera_position;
     const segment_len_sq = nz.vec.dot(segment, segment);

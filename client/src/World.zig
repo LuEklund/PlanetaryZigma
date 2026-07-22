@@ -6,8 +6,15 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
-const DamagePopup = @import("system/DamagePopup.zig");
-const Model = @import("Renderer/Vulkan/Model.zig");
+const Model = @import("asset/Model.zig");
+const AnimationInstance = @import("asset/AnimationInstance.zig");
+
+pub const DamageEvent = struct {
+    target: shared.entity.Id,
+    source: shared.entity.Id,
+    position: nz.Vec3(f32),
+    delta: f32,
+};
 
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
@@ -27,7 +34,7 @@ pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
 emitters: std.ArrayList(Emitter) = .empty,
-damage_popups: std.ArrayList(DamagePopup) = .empty,
+damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
 teleporter_id: shared.entity.Id = .none,
@@ -46,15 +53,22 @@ pub const Entity = struct {
     stats: shared.Stats = .init(.initFill(0)),
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
-    update_motion: ?shared.net.UpdateMotion = null,
-    smoothed_moiton_tick: u32 = 0,
-    position_error: nz.Vec3(f32) = @splat(0),
-    animation_state: ?shared.entity.State = null,
-    spawn_anim: f32 = 0,
-    death_anim: f32 = 0,
-    model: Model.Handle = .default,
+    motion: Motion = .{},
+    override_animation_state: ?shared.entity.State = null,
+    model_handle: Model.Handle = .{ .generated = .default },
+    flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
+
+    pub const Motion = struct {
+        update: ?shared.net.UpdateMotion = null,
+        smoothed_tick: u32 = 0,
+        position_error: nz.Vec3(f32) = @splat(0),
+    };
+
+    pub const Flags = packed struct {
+        is_dying: bool = false,
+    };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
         if (self.player_name.len != 0) {
@@ -76,7 +90,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .emitters = try .initCapacity(gpa, 256),
-        .damage_popups = try .initCapacity(gpa, 128),
+        .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
 }
@@ -96,7 +110,7 @@ pub fn deinit(self: *World) void {
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.emitters.deinit(self.gpa);
-    self.damage_popups.deinit(self.gpa);
+    self.damage_events.deinit(self.gpa);
 }
 
 pub fn clearSession(self: *World) void {
@@ -112,7 +126,7 @@ pub fn clearSession(self: *World) void {
     self.pending_inventory.clearRetainingCapacity();
     clearPendingPlayerNames(self);
     self.attack_events.clearRetainingCapacity();
-    self.damage_popups.clearRetainingCapacity();
+    self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
     self.controller.clearInput();
@@ -134,7 +148,7 @@ pub fn clearPendingSpawns(self: *World) void {
     self.pending_spawn.clearRetainingCapacity();
 }
 
-pub fn flush(self: *World, delta_time: f32) !void {
+pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     defer self.clearPendingSpawns();
 
     for (self.pending_spawn.items) |entity_info| {
@@ -151,13 +165,13 @@ pub fn flush(self: *World, delta_time: f32) !void {
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),
             },
-            .update_motion = .{
+            .motion = .{ .update = .{
                 .id = entity_info.id,
                 .position = entity_info.position,
                 .velocity = entity_info.velocity,
                 .rotation = entity_info.rotation,
                 .tick = entity_info.tick,
-            },
+            } },
         };
         try self.applySpawnData(entity, entity_info);
         switch (entity_info.kind) {
@@ -208,12 +222,15 @@ pub fn flush(self: *World, delta_time: f32) !void {
     while (despawn_index < self.pending_despawn.items.len) {
         const id = self.pending_despawn.items[despawn_index];
         if (self.getPtr(id)) |entity| {
-            const death_duration = shared.entity.spec(entity.kind).death_duration;
-            if (death_duration > 0) {
-                entity.death_anim = @min(entity.death_anim + delta_time / death_duration, 1.0);
-                if (entity.death_anim < 1.0) {
-                    despawn_index += 1;
-                    continue;
+            entity.motion.update = null;
+            entity.flags.is_dying = true;
+            if (instances.getPtr(id)) |instance| {
+                if (instance.deathDuration() > 0) {
+                    instance.death_time += delta_time;
+                    if (!instance.deathDone()) {
+                        despawn_index += 1;
+                        continue;
+                    }
                 }
             }
         }
@@ -240,24 +257,19 @@ pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.Spa
 pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) void {
     if (command.stat_kind == .health and command.source != .none and command.amount == .set_current) {
         const delta = entity.stats.current.get(.health) - command.amount.set_current;
-        self.addDamagePopup(entity, command.source, delta);
+        if (delta != 0 and self.damage_events.items.len < self.damage_events.capacity) {
+            self.damage_events.appendAssumeCapacity(.{
+                .target = entity.id,
+                .source = command.source,
+                .position = entity.transform.position,
+                .delta = delta,
+            });
+        }
     }
     switch (command.amount) {
         .set_current => |value| entity.stats.current.set(command.stat_kind, value),
         .set_max => |value| entity.stats.max.set(command.stat_kind, value),
     }
-}
-
-fn addDamagePopup(self: *World, target: *const Entity, source: shared.entity.Id, delta: f32) void {
-    if (delta == 0) return;
-    if (source != self.player_id and target.id != self.player_id) return;
-    const color: [3]f32 = if (delta < 0)
-        .{ 0.3, 0.95, 0.35 }
-    else if (target.id == self.player_id)
-        .{ 0.95, 0.25, 0.2 }
-    else
-        .{ 1, 1, 1 };
-    DamagePopup.spawn(&self.damage_popups, self.prng.random(), target.transform.position, delta, color);
 }
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {

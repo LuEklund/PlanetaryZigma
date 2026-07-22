@@ -1,8 +1,8 @@
 const std = @import("std");
 const nz = @import("numz");
 
-const noise_frequency = 0.04;
-const noise_amplitude = 2;
+const noise_frequency = 0.03;
+const noise_amplitude = 5;
 const cell_margin = 1;
 
 pub const min_radius: u32 = 8;
@@ -136,6 +136,7 @@ pub fn Planet(kind: PlanetKind) type {
         };
 
         pub fn init(gpa: std.mem.Allocator, radius: u32, timer_io: ?std.Io) !@This() {
+            timer_io = null;
             const generation_start = if (timer_io) |io| std.Io.Clock.Timestamp.now(io, .awake) else null;
             if (timer_io != null) std.debug.print("Planet generation start: radius={d}\n", .{radius});
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));

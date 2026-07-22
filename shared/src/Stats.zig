@@ -12,14 +12,16 @@ base_max: Values,
 max: Values,
 
 pub const Kind = enum(u16) {
-    health = 0,
-    speed = 1,
-    damage = 2,
-    attack_speed = 3,
-    range = 4,
-    regen = 5,
-    rocket_chance = 6,
-    lightning_chance = 7,
+    health,
+    speed,
+    damage,
+    attack_speed,
+    range,
+    regen,
+    rocket_chance,
+    lightning_chance,
+    critical_chance,
+    block_chance,
 };
 
 pub fn init(base: Values) Stats {

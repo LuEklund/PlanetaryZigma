@@ -334,9 +334,37 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
 
 fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (!entity.kind.hasHealth()) return;
-    for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(entity.stats.max.get(stat_kind)) } } }, .reliable);
-        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(entity.stats.current.get(stat_kind)) } } }, .reliable);
+    if (entity.kind == .player) {
+        for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
+            try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(entity.stats.max.get(stat_kind)) } } }, .reliable);
+            try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(entity.stats.current.get(stat_kind)) } } }, .reliable);
+        }
+    } else {
+        try client.sendCommand(
+            writer,
+            .{ .update_stat = .{
+                .id = entity.id,
+                .stat_kind = .health,
+                .source = .none,
+                .amount = .{
+                    .set_max = @floatCast(entity.stats.max.get(.health)),
+                },
+            } },
+            .reliable,
+        );
+
+        try client.sendCommand(
+            writer,
+            .{ .update_stat = .{
+                .id = entity.id,
+                .stat_kind = .health,
+                .source = .none,
+                .amount = .{
+                    .set_current = @floatCast(entity.stats.current.get(.health)),
+                },
+            } },
+            .reliable,
+        );
     }
 }
 

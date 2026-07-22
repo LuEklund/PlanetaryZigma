@@ -23,6 +23,9 @@ const StageItemSpawn = struct {
 const dev_lootbox_min_distance: f32 = 5;
 const dev_lootbox_max_distance: f32 = 10;
 
+pub const enemy_max_spawn_distance: f32 = 50;
+const enemy_min_spawn_distance: f32 = enemy_max_spawn_distance * 0.8;
+
 const chunk_stream_reach: i32 = 1;
 const chunk_evict_reach: i32 = 2;
 const chunk_job_batch_max: usize = 16;
@@ -253,9 +256,7 @@ pub fn update(self: *Director, info: *const system.Info, physics: *Physics, io: 
             const player_index = rand.uintLessThan(usize, info.world.players.items.len);
             if (info.world.getPtr(info.world.players.items[player_index])) |player| {
                 const radius_float = info.world.planet_radius;
-                const max_distance = radius_float * (std.math.pi / 2.0);
-                const min_distance = @min(15.0, max_distance * 0.5);
-                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, min_distance, max_distance, rand);
+                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, rand);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
                     .kind = .{ .enemy = .tubloida },

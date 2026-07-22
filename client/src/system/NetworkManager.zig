@@ -303,6 +303,7 @@ fn handleCommand(
     info: *const Info,
     command: shared.net.ServerPacket,
 ) !void {
+    // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
@@ -328,7 +329,7 @@ fn handleCommand(
         },
         .update_motion => |update_motion_command| {
             const entity = info.world.getPtr(update_motion_command.id) orelse return;
-            entity.update_motion = update_motion_command;
+            entity.motion.update = update_motion_command;
         },
         .server_tick => |tick| {
             self.server_tick_latest = @max(self.server_tick_latest, tick);
