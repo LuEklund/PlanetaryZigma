@@ -42,7 +42,6 @@ pub const GPUCascades = extern struct {
 
 vma: Vma,
 device: Device,
-combined_image_sampler_descriptor_size: usize,
 
 texture_table: TextureTable,
 model_loader: *ModelLoader,
@@ -63,15 +62,6 @@ shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
-    var db_props: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
-        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,
-    };
-    var prop2: c.VkPhysicalDeviceProperties2 = .{
-        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &db_props,
-    };
-    c.vkGetPhysicalDeviceProperties2(physical_device.handle, &prop2);
-
     const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -218,14 +208,13 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         ext.vkGetDescriptorEXT(
             device.handle,
             &shadow_descriptor_get_info,
-            db_props.combinedImageSamplerDescriptorSize,
+            physical_device.combined_image_sampler_descriptor_size,
             shadow_descriptor_bytes + shadow_sampler_offset,
         );
     }
 
     const self = try gpa.create(Resources);
     self.* = .{
-        .combined_image_sampler_descriptor_size = db_props.combinedImageSamplerDescriptorSize,
         .texture_table = undefined,
         .model_loader = undefined,
         .texture_loader = undefined,
@@ -249,7 +238,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         device,
         descriptor_layouts.get(.textures).handle,
         descriptor_layouts.get(.material).handle,
-        db_props.combinedImageSamplerDescriptorSize,
+        physical_device.combined_image_sampler_descriptor_size,
     );
     self.model_loader = try gpa.create(ModelLoader);
     self.model_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
