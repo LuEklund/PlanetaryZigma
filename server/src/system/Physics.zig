@@ -93,7 +93,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
             entity.collider.body_id = null;
             try self.createBody(entity);
         }
-        for (world.planet_chunks.items) |*chunk| {
+        for (world.planet.chunks.items) |*chunk| {
             chunk.body_id = if (chunk.mesh.indices.len == 0) null else try self.createStaticMeshBody(chunk.mesh);
         }
     }
@@ -111,7 +111,7 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
-            var point = shared.planet.surfacePoint(direction, info.world.planet_radius);
+            var point = shared.planet.surfacePoint(direction, info.world.planet.radius);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });

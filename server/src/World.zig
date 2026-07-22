@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Physics = @import("system/Physics.zig");
+const Planet = @import("Planet.zig");
 const nz = shared.numz;
 
 gpa: std.mem.Allocator,
@@ -12,13 +13,12 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
-planet_chunks: std.ArrayList(PlanetChunk),
+planet: Planet,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
 toggle_spawning_requested: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
-planet_radius: f32,
 next_entity_id: u32,
 next_stage: u32,
 prng: std.Random.DefaultPrng,
@@ -31,12 +31,6 @@ pub const item_launch_angle: f32 = std.math.pi / 4.0;
 pub const PendingDespawn = struct {
     id: shared.entity.Id,
     remove: bool,
-};
-
-pub const PlanetChunk = struct {
-    coord: nz.Vec3(i32),
-    mesh: Physics.Collider.Mesh,
-    body_id: ?Physics.c.b3BodyId = null,
 };
 
 pub const ClientUpdate = union(enum) {
@@ -118,13 +112,12 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .teleport_bosses = try .initCapacity(gpa, shared.max_entities),
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
-        .planet_chunks = .empty,
         .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
-        .planet_radius = 100,
+        .planet = .{ .radius = 100, .chunks = .empty, .job = null, .ready = .empty },
         .next_entity_id = 1,
         .next_stage = 0,
         .prng = .init(0xACE1),
@@ -140,11 +133,7 @@ pub fn deinit(self: *World) void {
     self.teleport_bosses.deinit(self.gpa);
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
-    for (self.planet_chunks.items) |chunk| {
-        self.gpa.free(chunk.mesh.indices);
-        self.gpa.free(chunk.mesh.vertices);
-    }
-    self.planet_chunks.deinit(self.gpa);
+    self.planet.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
 }
 
@@ -198,32 +187,6 @@ pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
 
 pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
-}
-
-pub fn clearPlanetChunks(self: *World, physics: *Physics) void {
-    for (self.planet_chunks.items) |chunk| {
-        if (chunk.body_id) |body_id| physics.destroyBody(body_id);
-        self.gpa.free(chunk.mesh.indices);
-        self.gpa.free(chunk.mesh.vertices);
-    }
-    self.planet_chunks.clearRetainingCapacity();
-}
-
-pub fn removePlanetChunk(self: *World, physics: *Physics, index: usize) void {
-    const chunk = self.planet_chunks.swapRemove(index);
-    if (chunk.body_id) |body_id| physics.destroyBody(body_id);
-    self.gpa.free(chunk.mesh.indices);
-    self.gpa.free(chunk.mesh.vertices);
-}
-
-pub fn addPlanetChunk(self: *World, physics: *Physics, coord: nz.Vec3(i32), mesh: Physics.Collider.Mesh) !void {
-    errdefer {
-        self.gpa.free(mesh.indices);
-        self.gpa.free(mesh.vertices);
-    }
-    const body_id = try physics.createStaticMeshBody(mesh);
-    errdefer physics.destroyBody(body_id);
-    try self.planet_chunks.append(self.gpa, .{ .coord = coord, .mesh = mesh, .body_id = body_id });
 }
 
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {

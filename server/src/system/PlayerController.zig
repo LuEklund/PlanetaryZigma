@@ -137,7 +137,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
+                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet.radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorp_lord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },

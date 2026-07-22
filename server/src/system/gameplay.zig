@@ -36,7 +36,7 @@ pub fn updateEnemies(info: *const Info) !void {
         const distance = nz.vec.length(to_player);
 
         if (distance > Director.enemy_max_spawn_distance * 1.7) {
-            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet_radius, Director.enemy_max_spawn_distance, Director.enemy_max_spawn_distance, info.world.prng.random());
+            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet.radius, Director.enemy_max_spawn_distance, Director.enemy_max_spawn_distance, info.world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
             Physics.setPosition(body_id, leash_position);
