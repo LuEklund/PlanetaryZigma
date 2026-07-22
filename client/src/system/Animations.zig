@@ -34,14 +34,14 @@ pub fn updateStates(self: *Animations, info: *const Info, instances: *std.AutoHa
     _ = self;
     for (info.world.attack_events.items) |id| {
         const instance = instances.getPtr(id) orelse continue;
-        const skeletal = if (instance.skeletal) |*skeletal| skeletal else continue;
+        const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
         const model = instance.model.?;
-        skeletal.playOverlay(model, model.state_clips.get(.attack));
+        skeleton.playOverlay(model, model.state_clips.get(.attack));
     }
     info.world.attack_events.clearRetainingCapacity();
     for (info.world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
-        if (instance.skeletal == null) continue;
+        if (instance.skeleton == null) continue;
 
         var state: shared.entity.State = state: {
             const speed = if (entity.motion.update) |update_motion| nz.vec.length(update_motion.velocity) else 0;
@@ -60,11 +60,11 @@ pub fn update(self: *Animations, info: *const Info, instances: *std.AutoHashMap(
 
     for (info.world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
-        if (instance.skeletal) |*skeletal| {
+        if (instance.skeleton) |*skeleton| {
             const model = instance.model.?;
             if (model.clips.len == 0) continue;
             const clip_index = model.state_clips.get(instance.state);
-            playAnimation(info, entity, skeletal, model, clip_index);
+            playAnimation(info, entity, skeleton, model, clip_index);
         }
     }
 
@@ -93,33 +93,33 @@ pub fn update(self: *Animations, info: *const Info, instances: *std.AutoHashMap(
     }
 }
 
-fn playAnimation(info: *const Info, entity: *system.Entity, skeletal: *AnimationInstance.Skeletal, model: *Model, clip_index: usize) void {
-    if (clip_index != skeletal.player.active) {
-        skeletal.playClip(model, clip_index);
+fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *AnimationInstance.Skeleton, model: *Model, clip_index: usize) void {
+    if (clip_index != skeleton.player.active) {
+        skeleton.playClip(model, clip_index);
     }
 
-    if (skeletal.overlay) |*overlay| {
+    if (skeleton.overlay) |*overlay| {
         overlay.current_time += info.delta_time;
         if (overlay.current_time > model.clips[overlay.active].end) {
-            skeletal.overlay = null;
-            skeletal.startFade();
+            skeleton.overlay = null;
+            skeleton.startFade();
         }
     }
 
-    const animation = model.clips[skeletal.player.active];
-    skeletal.player.current_time += info.delta_time;
+    const animation = model.clips[skeleton.player.active];
+    skeleton.player.current_time += info.delta_time;
 
-    if (skeletal.player.current_time > animation.end) {
-        skeletal.player.current_time -= animation.end - animation.start;
+    if (skeleton.player.current_time > animation.end) {
+        skeleton.player.current_time -= animation.end - animation.start;
     }
-    sampleClip(skeletal.nodes, animation, skeletal.player.current_time, null);
-    if (skeletal.overlay) |overlay| {
-        sampleClip(skeletal.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
+    sampleClip(skeleton.nodes, animation, skeleton.player.current_time, null);
+    if (skeleton.overlay) |overlay| {
+        sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
     }
-    if (skeletal.fade_time > 0) {
-        skeletal.fade_time -= info.delta_time;
-        const alpha = @max(skeletal.fade_time, 0) / AnimationInstance.fade_duration;
-        for (skeletal.nodes, skeletal.fade_joints) |*node, fade_joint| {
+    if (skeleton.fade_time > 0) {
+        skeleton.fade_time -= info.delta_time;
+        const alpha = @max(skeleton.fade_time, 0) / AnimationInstance.fade_duration;
+        for (skeleton.nodes, skeleton.fade_joints) |*node, fade_joint| {
             node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
             node.rotation = nz.Quat(f32).slerp(node.rotation, fade_joint.rotation, alpha);
             node.scale = std.math.lerp(node.scale, fade_joint.scale, @as(nz.Vec3(f32), @splat(alpha)));
@@ -129,7 +129,7 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeletal: *Animation
     const looking = entity.id == info.world.player_id and model.look_nodes.len > 0;
     if (looking) {
         for (model.look_nodes, 0..) |node_index, saved_index| {
-            saved_look_rotations[saved_index] = skeletal.nodes[node_index].rotation;
+            saved_look_rotations[saved_index] = skeleton.nodes[node_index].rotation;
         }
         const camera = &info.world.camera;
         const node_count: f32 = @floatFromInt(model.look_nodes.len);
@@ -141,22 +141,22 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeletal: *Animation
         const pitch_per_node = look_pitch / node_count;
         const yaw_per_node = look_yaw / node_count;
         for (model.look_nodes) |node_index| {
-            const node = &skeletal.nodes[node_index];
+            const node = &skeleton.nodes[node_index];
             node.rotation = node.rotation
                 .mul(nz.Quat(f32).angleAxis(pitch_per_node, .{ 1, 0, 0 }))
                 .mul(nz.Quat(f32).angleAxis(yaw_per_node, .{ 0, 1, 0 }))
                 .normalize();
         }
     }
-    Model.computeMatrices(skeletal.nodes);
+    Model.computeMatrices(skeleton.nodes);
     if (looking) {
         for (model.look_nodes, 0..) |node_index, saved_index| {
-            skeletal.nodes[node_index].rotation = saved_look_rotations[saved_index];
+            skeleton.nodes[node_index].rotation = saved_look_rotations[saved_index];
         }
     }
-    for (model.skins, skeletal.joint_matrices) |skin, joint_matrices| {
+    for (model.skins, skeleton.joint_matrices) |skin, joint_matrices| {
         for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices) |node_index, inverse_bind_matrix, *joint_matrix| {
-            joint_matrix.* = skeletal.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
+            joint_matrix.* = skeleton.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
         }
     }
 }

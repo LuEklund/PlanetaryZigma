@@ -14,12 +14,12 @@ const TextureTable = @import("TextureTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 table: *TextureTable,
-items: []Entry,
+entries: []Entry,
+indices_by_path: std.StringHashMapUnmanaged(u32),
 reloaded: std.ArrayList(u32),
 interface: Loader,
 
 pub const Entry = struct {
-    path: []const u8,
     kind_spec: entity.Spec,
     model: Model,
     meshes: []Mesh,
@@ -29,13 +29,15 @@ pub const Entry = struct {
 pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoader {
     const files = try gpa.alloc([]const u8, entity.all_kinds.len);
     const entries_storage = try gpa.alloc(Entry, entity.all_kinds.len);
-    var count: usize = 0;
+    var indices_by_path: std.StringHashMapUnmanaged(u32) = .empty;
+    var count: u32 = 0;
     for (entity.all_kinds) |kind| {
         const kind_spec = entity.spec(kind);
         const path = kind_spec.model.path;
         if (!std.mem.endsWith(u8, path, ".glb")) continue;
+        if (indices_by_path.contains(path)) continue;
+        try indices_by_path.put(gpa, path, count);
         entries_storage[count] = .{
-            .path = path,
             .kind_spec = kind_spec,
             .model = .empty,
             .meshes = &.{},
@@ -48,7 +50,8 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
 
     return .{
         .table = table,
-        .items = entries,
+        .entries = entries,
+        .indices_by_path = indices_by_path,
         .reloaded = .empty,
         .interface = .{
             .gpa = gpa,
@@ -62,17 +65,11 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
 
 pub fn deinit(self: *ModelLoader) void {
     const gpa = self.interface.gpa;
-    for (0..self.items.len) |index| unload(&self.interface, index);
-    gpa.free(self.items);
+    for (0..self.entries.len) |index| unload(&self.interface, index);
+    gpa.free(self.entries);
+    self.indices_by_path.deinit(gpa);
     gpa.free(self.interface.files);
     self.reloaded.deinit(gpa);
-}
-
-pub fn findByPath(self: *const ModelLoader, path: []const u8) ?u32 {
-    for (self.items, 0..) |entry, index| {
-        if (std.mem.eql(u8, entry.path, path)) return @intCast(index);
-    }
-    return null;
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -82,7 +79,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const file = try err_file;
     unload(loader, index);
 
-    const entry = &self.items[index];
+    const entry = &self.entries[index];
     if (entry.kind_spec.model.skinned) {
         var upload_data = try entry.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, entry.kind_spec);
         defer upload_data.deinit(gpa);
@@ -152,7 +149,7 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
 fn unload(loader: *Loader, index: usize) void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
-    const entry = &self.items[index];
+    const entry = &self.entries[index];
     if (entry.meshes.len == 0 and entry.model.isEmpty()) return;
     check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
     for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);

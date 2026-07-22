@@ -10,7 +10,7 @@ model: ?*Model,
 state: shared.entity.State,
 spawn_time: f32,
 death_time: f32,
-skeletal: ?Skeletal,
+skeleton: ?Skeleton,
 
 pub const fade_duration: f32 = 0.15;
 
@@ -25,7 +25,7 @@ pub const JointTransform = struct {
     scale: nz.Vec3(f32),
 };
 
-pub const Skeletal = struct {
+pub const Skeleton = struct {
     nodes: []Node,
     fade_joints: []JointTransform,
     fade_time: f32,
@@ -33,7 +33,7 @@ pub const Skeletal = struct {
     player: Player,
     overlay: ?Player,
 
-    pub fn init(gpa: std.mem.Allocator, model: *Model) !Skeletal {
+    pub fn init(gpa: std.mem.Allocator, model: *Model) !Skeleton {
         const nodes = try gpa.alloc(Node, model.nodes.items.len);
         for (model.nodes.items, nodes) |source, *node| {
             node.* = source;
@@ -54,7 +54,7 @@ pub const Skeletal = struct {
         };
     }
 
-    pub fn deinit(self: *Skeletal, gpa: std.mem.Allocator) void {
+    pub fn deinit(self: *Skeleton, gpa: std.mem.Allocator) void {
         for (self.nodes) |*node| node.deinit(gpa);
         gpa.free(self.nodes);
         gpa.free(self.fade_joints);
@@ -62,14 +62,14 @@ pub const Skeletal = struct {
         gpa.free(self.joint_matrices);
     }
 
-    pub fn startFade(self: *Skeletal) void {
+    pub fn startFade(self: *Skeleton) void {
         for (self.nodes, self.fade_joints) |node, *pose| {
             pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
         }
         self.fade_time = fade_duration;
     }
 
-    pub fn playClip(self: *Skeletal, model: *const Model, clip_index: usize) void {
+    pub fn playClip(self: *Skeleton, model: *const Model, clip_index: usize) void {
         self.startFade();
         self.player = .{
             .current_time = model.clips[clip_index].start,
@@ -77,7 +77,7 @@ pub const Skeletal = struct {
         };
     }
 
-    pub fn playOverlay(self: *Skeletal, model: *const Model, clip_index: usize) void {
+    pub fn playOverlay(self: *Skeleton, model: *const Model, clip_index: usize) void {
         self.startFade();
         self.overlay = .{
             .current_time = model.clips[clip_index].start,
@@ -92,15 +92,15 @@ pub fn init(gpa: std.mem.Allocator, model: ?*Model) !AnimationInstance {
         .state = .idle,
         .spawn_time = 0,
         .death_time = 0,
-        .skeletal = if (model) |file_model|
-            (if (file_model.isSkinned()) try Skeletal.init(gpa, file_model) else null)
+        .skeleton = if (model) |file_model|
+            (if (file_model.isSkinned()) try Skeleton.init(gpa, file_model) else null)
         else
             null,
     };
 }
 
 pub fn deinit(self: *AnimationInstance, gpa: std.mem.Allocator) void {
-    if (self.skeletal) |*skeletal| skeletal.deinit(gpa);
+    if (self.skeleton) |*skeleton| skeleton.deinit(gpa);
 }
 
 pub fn spawnDuration(self: *const AnimationInstance) f32 {
