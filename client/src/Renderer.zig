@@ -4,9 +4,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Info = @import("system.zig").Info;
+const AssetServer = @import("AssetServer.zig");
 const yes = @import("yes");
 const tracy = @import("ztracy");
-const AssetServer = shared.AssetServer;
+
 
 inner: Inner,
 

@@ -19,7 +19,6 @@ pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
 pub const Watcher = @import("Watcher.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
-pub const AssetServer = @import("AssetServer.zig");
 pub const SteamNet = @import("SteamNet.zig");
 
 const inventory = @import("inventory.zig");

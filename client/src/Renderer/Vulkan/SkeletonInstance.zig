@@ -6,10 +6,12 @@ const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Model = @import("../../asset/Model.zig");
+const Mesh = @import("Mesh.zig");
 const Node = @import("../../asset/Node.zig");
 const Buffer = @import("Buffer.zig");
 
 nodes: []Node,
+meshes: []Mesh,
 fade_joints: []JointTransform,
 fade_time: f32,
 joint_matrices: []JointMatrices,
@@ -35,7 +37,7 @@ pub const JointTransform = struct {
     scale: nz.Vec3(f32),
 };
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !SkeletonInstance {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model, meshes: []Mesh) !SkeletonInstance {
     const nodes = try gpa.alloc(Node, model.nodes.items.len);
     for (model.nodes.items, nodes) |src, *dst| {
         dst.* = src;
@@ -58,7 +60,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device, model: *Model) !Sk
         );
     }
 
-    return .{ .nodes = nodes, .fade_joints = fade_joints, .fade_time = 0, .model = model, .joint_matrices = joint_matrices, .overlay = null };
+    return .{ .nodes = nodes, .meshes = meshes, .fade_joints = fade_joints, .fade_time = 0, .model = model, .joint_matrices = joint_matrices, .overlay = null };
 }
 
 pub fn deinit(self: *SkeletonInstance, gpa: std.mem.Allocator, vma: Vma) void {

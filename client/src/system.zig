@@ -4,7 +4,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const yes = @import("yes");
 const NetworkManager = @import("system/NetworkManager.zig");
-const AssetServer = @import("shared").AssetServer;
+pub const AssetServer = @import("AssetServer.zig");
 const Animation = @import("system/Animations.zig");
 const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
@@ -99,7 +99,7 @@ pub const Context = struct {
         Emitter.update(&info.world.emitters, info.elapsed_time);
         DamagePopup.update(&info.world.damage_popups, info.delta_time);
         if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
-        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, self.renderer.inner.resources, &info.world.controller, &self.options)) {
+        switch (try self.hud.update(info, self.scene, &self.network_manager, &self.renderer.inner.ui, &self.renderer.inner.resources.texture_table, &info.world.controller, &self.options)) {
             .none => {},
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,

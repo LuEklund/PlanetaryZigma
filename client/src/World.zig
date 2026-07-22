@@ -56,7 +56,7 @@ pub const Entity = struct {
     position_error: nz.Vec3(f32) = @splat(0),
     state: shared.entity.State = .idle,
     override_animation_state: ?shared.entity.State = null,
-    model: Model.Handle = .default,
+    model: Model.Handle = .{ .generated = .default },
     animation_meta: AnimationMeta = .{},
     flags: Flags = .{},
 

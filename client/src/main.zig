@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close(desktop);
 
-    var asset_server = try shared.AssetServer.init(gpa, init.io);
+    var asset_server = try system.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
     var world: World = try .init(gpa);

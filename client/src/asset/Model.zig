@@ -11,17 +11,14 @@ const gltf = @import("gltf.zig");
 pub const Spec = shared.entity.ModelSpec;
 
 //NOTE: store meta data about clip duration?
-pub const Handle = enum(u32) {
-    default = 0,
-    _,
+pub const Generated = enum { default, cube_projectile, planet };
 
-    pub fn index(self: Handle) usize {
-        return @intFromEnum(self);
-    }
+pub const Handle = union(enum) {
+    file: u32,
+    generated: Generated,
 };
 
 surfaces: std.ArrayList(Surface),
-mesh_ids: []usize,
 nodes: std.ArrayList(Node),
 clips: []AnimationClip,
 skins: []Skin,
@@ -31,7 +28,6 @@ state_clips: std.EnumArray(shared.entity.State, usize),
 
 pub const empty: Model = .{
     .surfaces = .empty,
-    .mesh_ids = &.{},
     .nodes = .empty,
     .clips = &.{},
     .skins = &.{},
@@ -92,11 +88,7 @@ pub fn parseGlb(
     return try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
 }
 
-pub fn finalize(self: *Model, gpa: std.mem.Allocator, mesh_ids: []usize, spec: Spec) !void {
-    self.mesh_ids = mesh_ids;
-    for (self.nodes.items) |*node| {
-        if (node.mesh_id) |local_mesh_index| node.mesh_id = mesh_ids[local_mesh_index];
-    }
+pub fn finalize(self: *Model, gpa: std.mem.Allocator, spec: Spec) !void {
     computeMatrices(self.nodes.items);
 
     if (spec.skinned) {
@@ -160,6 +152,4 @@ pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
 
 pub fn deinit(self: *Model, gpa: std.mem.Allocator) void {
     self.clear(gpa);
-    gpa.free(self.mesh_ids);
-    self.mesh_ids = &.{};
 }

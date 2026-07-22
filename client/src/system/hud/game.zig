@@ -4,7 +4,7 @@ const nz = shared.numz;
 const system = @import("../../system.zig");
 const Info = system.Info;
 const Ui = @import("../../Renderer/Vulkan/Ui.zig");
-const Resources = @import("../../Renderer/Vulkan/Resources.zig");
+const TextureTable = @import("../../Renderer/loader/TextureTable.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -13,7 +13,7 @@ const DamagePopup = @import("../DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, resources: *Resources, options: *Options) !void {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *TextureTable, options: *Options) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -84,7 +84,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
 
                 .color = .new(1, 1, 1, 1),
                 .name = ui.print("{t}", .{item_kind}),
-                .texture = resources.textureHandle(shared.Item.spec(item_kind).icon),
+                .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
                     .size = .{ .fixed = ui.textSize(amount_text, 32) },
@@ -169,7 +169,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, reso
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = resources.textureHandle(Resources.crosshair_texture_key),
+                        .texture = texture_table.handle(TextureTable.crosshair_texture_key),
                     },
                 },
             });

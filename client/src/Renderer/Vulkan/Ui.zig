@@ -107,7 +107,6 @@ pub fn init(
     device: Device,
     screen_width: u32,
     screen_heigth: u32,
-    default_font: *Font,
 ) !Ui {
     const ui_index_buffer: Buffer = try .init(
         device,
@@ -134,7 +133,7 @@ pub fn init(
         .names = names,
         .screen_width = @floatFromInt(screen_width),
         .screen_heigth = @floatFromInt(screen_heigth),
-        .default_font = default_font,
+        .default_font = undefined,
     };
 }
 

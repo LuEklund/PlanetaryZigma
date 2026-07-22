@@ -7,7 +7,7 @@ const system = @import("../system.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const Ui = @import("../Renderer/Vulkan/Ui.zig");
-const Resources = @import("../Renderer/Vulkan/Resources.zig");
+const TextureTable = @import("../Renderer/loader/TextureTable.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -54,7 +54,7 @@ pub fn update(
     scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
-    resources: *Resources,
+    texture_table: *TextureTable,
     controller: *Controller,
     options: *Options,
 ) !Request {
@@ -72,7 +72,7 @@ pub fn update(
         request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(info, network_manager, ui, resources, options);
+        try game_hud.update(info, network_manager, ui, texture_table, options);
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pause_menu.update(ui, hud),

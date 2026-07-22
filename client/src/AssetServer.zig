@@ -21,9 +21,18 @@ const Retry = struct {
 };
 
 pub const Loader = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+
     root_path: [:0]const u8,
     files: []const []const u8,
-    load: *const fn (loader: *Loader, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File.OpenError!std.Io.File, index: usize) anyerror!void,
+
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        load: *const fn (loader: *Loader, file: std.Io.File.OpenError!std.Io.File, index: usize) anyerror!void,
+        unload: *const fn (loader: *Loader, index: usize) void,
+    };
 };
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !AssetServer {
@@ -86,7 +95,7 @@ fn loadFile(self: *AssetServer, loader_index: usize, file_index: usize) !void {
     defer loader_root.close(io);
     const file = loader_root.openFile(io, loader.files[file_index], .{});
     defer if (file) |open_file| open_file.close(io) else |_| {};
-    try loader.load(loader, self.gpa, io, file, file_index);
+    try loader.vtable.load(loader, file, file_index);
 }
 
 /// Checks for modified assets and reloads any that have changed.
@@ -115,6 +124,7 @@ fn pollChangedAssets(self: *AssetServer) !void {
             const entry_stat = loader_root.statFile(io, file_path, .{}) catch continue;
             if (entry_stat.mtime.nanoseconds <= mtime.nanoseconds + std.time.ns_per_s) continue;
             std.log.debug("reload asset {s}/{s}", .{ loader.root_path, file_path });
+            loader.vtable.unload(loader, file_index);
             self.loadFile(loader_index, file_index) catch |err| {
                 std.log.warn("reload failed {s}: {t}, retrying", .{ file_path, err });
                 continue;
