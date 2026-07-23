@@ -4,14 +4,50 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
-const Director = @import("Director.zig");
 const Info = system.Info;
 
 const rocket_damage_multiplier: f32 = 1.5;
+const enemy_max_spawn_distance: f32 = 50;
+const enemy_min_spawn_distance: f32 = enemy_max_spawn_distance * 0.8;
 const lightning = .{
     .max_targets = shared.net.Event.Effect.Lightning.max_targets,
     .max_victims = 256,
 };
+
+pub fn updateDirector(info: *const Info) !void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+
+    const director = &info.world.director;
+    if (info.world.toggle_spawning_requested) {
+        info.world.toggle_spawning_requested = false;
+        director.spawning = !director.spawning;
+        std.log.debug("dev: enemy spawning {s}", .{if (director.spawning) "on" else "off"});
+    }
+
+    if (director.spawning and info.world.players.items.len != 0) {
+        if (info.elapsed_time - director.last_salary >= 1.0) {
+            director.last_salary = info.elapsed_time;
+            director.credits += director.salary_per_second * 15;
+        }
+        const rand = info.world.prng.random();
+        if (director.credits >= director.enemy_cost) {
+            const player_index = rand.uintLessThan(usize, info.world.players.items.len);
+            if (info.world.getPtr(info.world.players.items[player_index])) |player| {
+                const radius_float = info.world.planet.radius;
+                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, rand);
+                const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+                if (info.world.spawn(.{
+                    .kind = .{ .enemy = .tubloida },
+                    .transform = .{ .position = spawn_position },
+                    .last_attack = info.elapsed_time,
+                })) |_| {
+                    director.credits -= director.enemy_cost;
+                } else |_| {}
+            }
+        }
+    }
+}
 
 pub fn updateEnemies(info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
@@ -35,8 +71,8 @@ pub fn updateEnemies(info: *const Info) !void {
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
-        if (distance > Director.enemy_max_spawn_distance * 1.7) {
-            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet.radius, Director.enemy_max_spawn_distance, Director.enemy_max_spawn_distance, info.world.prng.random());
+        if (distance > enemy_max_spawn_distance * 1.7) {
+            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet.radius, enemy_max_spawn_distance, enemy_max_spawn_distance, info.world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
             Physics.setPosition(body_id, leash_position);
@@ -244,11 +280,11 @@ pub fn updateItems(info: *const Info) !void {
     }
 }
 
-pub fn updateTeleporter(info: *const Info, director: *Director) void {
+pub fn updateTeleporter(info: *const Info) void {
     const entity = info.world.getPtr(info.world.teleporter_id) orelse return;
     const teleporter = &entity.teleporter;
     if (teleporter.charged == teleporter.max_charge) {
-        director.spawning = false;
+        info.world.director.spawning = false;
         teleporter.state = .completed;
         return;
     }

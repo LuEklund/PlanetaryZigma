@@ -52,7 +52,7 @@ pub fn Planet(kind: PlanetKind) type {
             return try buildMesh(gpa, &node_map, &density, radius_float, null);
         }
 
-        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: nz.Vec3(i32)) !@This() {
+        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: Chunk.Coord) !@This() {
             const tracy_scope = tracy.zone(@src());
             defer tracy_scope.end();
             const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
@@ -195,7 +195,7 @@ pub fn surfaceTransform(direction: nz.Vec3(f32), radius: f32, hover: f32) nz.Tra
 }
 
 test "a surface chunk builds logical nodes" {
-    const chunk: nz.Vec3(i32) = .{ 0, 0, 0 };
+    const chunk: Chunk.Coord = .{ .position = .{ 0, 0, 0 } };
     const planet = try Planet(.logical).initChunk(std.testing.allocator, 18, chunk);
     defer planet.deinit(std.testing.allocator);
     try std.testing.expect(planet.vertices.len > 0);
@@ -214,33 +214,13 @@ test "tiled chunks emit the monolith's surface index count" {
         while (y <= range.max) : (y += 1) {
             var z = range.min;
             while (z <= range.max) : (z += 1) {
-                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ x, y, z });
+                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ .position = .{ x, y, z } });
                 defer chunk.deinit(std.testing.allocator);
                 chunk_index_count += chunk.indices.len;
             }
         }
     }
     try std.testing.expectEqual(monolith.indices.len, chunk_index_count);
-}
-
-test "every chunk with geometry is classified surface" {
-    for ([_]u32{ 18, 40 }) |radius| {
-        const range = Chunk.range(radius);
-        var x = range.min;
-        while (x <= range.max) : (x += 1) {
-            var y = range.min;
-            while (y <= range.max) : (y += 1) {
-                var z = range.min;
-                while (z <= range.max) : (z += 1) {
-                    const chunk: nz.Vec3(i32) = .{ x, y, z };
-                    const planet = try Planet(.logical).initChunk(std.testing.allocator, radius, chunk);
-                    defer planet.deinit(std.testing.allocator);
-                    if (planet.indices.len > 0)
-                        try std.testing.expectEqual(Chunk.Kind.surface, Chunk.classify(radius, chunk));
-                }
-            }
-        }
-    }
 }
 
 pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {

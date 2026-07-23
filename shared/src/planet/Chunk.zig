@@ -8,32 +8,38 @@ pub const dim: i32 = 32;
 
 pub const Range = struct { min: i32, max: i32 };
 
-pub const Box = struct { min: nz.Vec3(i32), max: nz.Vec3(i32) };
+pub const Coord = struct {
+    position: nz.Vec3(i32),
 
-pub const Kind = enum { empty, solid, surface };
+    pub fn fromPosition(position: nz.Vec3(f32)) Coord {
+        return .{ .position = @intFromFloat(@floor(position / @as(nz.Vec3(f32), @splat(@floatFromInt(dim))))) };
+    }
 
-const classify_margin: f32 = sdf.noise_amplitude + planet.cell_margin + 1;
+    pub fn offset(self: Coord, delta: nz.Vec3(i32)) Coord {
+        return .{ .position = self.position + delta };
+    }
 
-pub fn classify(radius: u32, chunk: nz.Vec3(i32)) Kind {
-    const box_min: nz.Vec3(f32) = @floatFromInt(min(chunk));
-    const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk));
-    const nearest = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
-    const farthest = @max(@abs(box_min), @abs(box_max));
-    const radius_float: f32 = @floatFromInt(@max(radius, planet.min_radius));
-    if (nz.vec.length(nearest) > radius_float + classify_margin) return .empty;
-    if (nz.vec.length(farthest) < radius_float - classify_margin) return .solid;
-    return .surface;
-}
+    pub fn eql(self: Coord, other: Coord) bool {
+        return @reduce(.And, self.position == other.position);
+    }
 
-pub fn surfaceCoords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]nz.Vec3(i32) {
-    var chunks: std.ArrayList(nz.Vec3(i32)) = .empty;
+    pub fn within(self: Coord, center: Coord, reach: i32) bool {
+        const difference = self.position - center.position;
+        return @reduce(.And, difference >= @as(nz.Vec3(i32), @splat(-reach))) and @reduce(.And, difference <= @as(nz.Vec3(i32), @splat(reach)));
+    }
+};
+
+pub const Box = struct { min: Coord, max: Coord };
+
+pub fn coords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]Coord {
+    var chunks: std.ArrayList(Coord) = .empty;
     errdefer chunks.deinit(gpa);
     const chunk_span = range(radius);
     var span_min: nz.Vec3(i32) = @splat(chunk_span.min);
     var span_max: nz.Vec3(i32) = @splat(chunk_span.max);
     if (clamp) |box| {
-        span_min = @max(span_min, box.min);
-        span_max = @min(span_max, box.max);
+        span_min = @max(span_min, box.min.position);
+        span_max = @min(span_max, box.max.position);
     }
     var x = span_min[0];
     while (x <= span_max[0]) : (x += 1) {
@@ -41,23 +47,18 @@ pub fn surfaceCoords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]nz.Vec
         while (y <= span_max[1]) : (y += 1) {
             var z = span_min[2];
             while (z <= span_max[2]) : (z += 1) {
-                const chunk: nz.Vec3(i32) = .{ x, y, z };
-                if (classify(radius, chunk) == .surface) try chunks.append(gpa, chunk);
+                try chunks.append(gpa, .{ .position = .{ x, y, z } });
             }
         }
     }
     return chunks.toOwnedSlice(gpa);
 }
 
-pub fn fromPosition(position: nz.Vec3(f32)) nz.Vec3(i32) {
-    return @intFromFloat(@floor(position / @as(nz.Vec3(f32), @splat(@floatFromInt(dim)))));
+pub fn min(chunk: Coord) nz.Vec3(i32) {
+    return chunk.position * @as(nz.Vec3(i32), @splat(dim));
 }
 
-pub fn min(chunk: nz.Vec3(i32)) nz.Vec3(i32) {
-    return chunk * @as(nz.Vec3(i32), @splat(dim));
-}
-
-pub fn max(chunk: nz.Vec3(i32)) nz.Vec3(i32) {
+pub fn max(chunk: Coord) nz.Vec3(i32) {
     return min(chunk) + @as(nz.Vec3(i32), @splat(dim));
 }
 
@@ -70,7 +71,7 @@ pub fn range(radius: u32) Range {
 }
 
 test "chunk coordinates cover dim cells" {
-    const chunk: nz.Vec3(i32) = .{ -2, 3, 0 };
+    const chunk: Coord = .{ .position = .{ -2, 3, 0 } };
     try std.testing.expectEqual(nz.Vec3(i32){ -64, 96, 0 }, min(chunk));
     try std.testing.expectEqual(nz.Vec3(i32){ -32, 128, 32 }, max(chunk));
 }
@@ -80,14 +81,14 @@ test "chunk range contains the complete planet density field" {
     try std.testing.expectEqual(Range{ .min = -3, .max = 2 }, range(67));
 }
 
-test "surface chunks respect the clamp box" {
-    const box: Box = .{ .min = .{ 0, 0, 0 }, .max = .{ 1, 1, 1 } };
-    const chunks = try surfaceCoords(std.testing.allocator, 67, box);
+test "chunk coords respect the clamp box" {
+    const box: Box = .{ .min = .{ .position = .{ 0, 0, 0 } }, .max = .{ .position = .{ 1, 1, 1 } } };
+    const chunks = try coords(std.testing.allocator, 67, box);
     defer std.testing.allocator.free(chunks);
     try std.testing.expect(chunks.len > 0);
     for (chunks) |chunk| {
-        try std.testing.expect(@reduce(.And, chunk >= box.min));
-        try std.testing.expect(@reduce(.And, chunk <= box.max));
+        try std.testing.expect(@reduce(.And, chunk.position >= box.min.position));
+        try std.testing.expect(@reduce(.And, chunk.position <= box.max.position));
     }
 }
 
@@ -97,7 +98,7 @@ pub fn Job(comptime kind: planet.PlanetKind) type {
         state: *State,
 
         pub const Result = struct {
-            coord: nz.Vec3(i32),
+            coord: Coord,
             vertices: []planet.Planet(kind).Vertex,
             indices: []u32,
         };
@@ -105,16 +106,16 @@ pub fn Job(comptime kind: planet.PlanetKind) type {
         pub const State = struct {
             gpa: std.mem.Allocator,
             radius: u32,
-            coords: []nz.Vec3(i32),
+            coords: []Coord,
             results: std.ArrayList(Result),
             done: std.atomic.Value(bool),
         };
 
-        pub fn start(gpa: std.mem.Allocator, radius: u32, coords: []nz.Vec3(i32)) !@This() {
-            errdefer gpa.free(coords);
+        pub fn start(gpa: std.mem.Allocator, radius: u32, job_coords: []Coord) !@This() {
+            errdefer gpa.free(job_coords);
             const state = try gpa.create(State);
             errdefer gpa.destroy(state);
-            state.* = .{ .gpa = gpa, .radius = radius, .coords = coords, .results = .empty, .done = .init(false) };
+            state.* = .{ .gpa = gpa, .radius = radius, .coords = job_coords, .results = .empty, .done = .init(false) };
             return .{ .thread = try std.Thread.spawn(.{}, generate, .{state}), .state = state };
         }
 

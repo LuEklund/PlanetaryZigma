@@ -1,7 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
-const Director = @import("system/Director.zig");
 const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
@@ -26,7 +25,6 @@ pub const Context = struct {
     world: *World,
     steam_server: *shared.SteamNet.Server,
     network_manager: NetworkManager,
-    director: Director,
     physics: Physics,
     request_exit: bool,
 
@@ -45,11 +43,10 @@ pub const Context = struct {
             .steam_server = data.steam_server,
             .network_manager = try .init(data.gpa, data.io, data.steam_server),
             .physics = .init(data.gpa, data.io),
-            .director = .{},
             .request_exit = false,
         };
 
-        try self.director.startStage(self.world, &self.physics);
+        try self.world.startStage(&self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
@@ -74,11 +71,17 @@ pub const Context = struct {
         }
         try PlayerController.update(info, &self.physics);
         try gameplay.updateEnemies(info);
-        try self.director.update(info, &self.physics);
+        if (self.world.next_stage_requested) {
+            self.world.next_stage_requested = false;
+            try self.world.startStage(&self.physics);
+        }
+        if (self.world.players.items.len != 0)
+            try self.world.planet.stream(self.world.gpa, &self.physics, self.world.entities.values());
+        try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);
-        gameplay.updateTeleporter(info, &self.director);
+        gameplay.updateTeleporter(info);
         gameplay.updateLifetimes(info);
         gameplay.playerRegen(info);
         try self.world.flush(&self.physics);

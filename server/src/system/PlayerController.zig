@@ -5,8 +5,6 @@ const Physics = @import("Physics.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-const Director = @import("../system/Director.zig");
-
 pub const aim_range: f32 = 300;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;

@@ -16,15 +16,15 @@ retired: std.ArrayList(RetiredChunk),
 
 pub const Set = struct {
     radius: u32,
-    center: ?nz.Vec3(i32),
+    center: ?shared.planet.Chunk.Coord,
     reach: i32,
-    meshes: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), Mesh),
+    meshes: std.AutoArrayHashMapUnmanaged(shared.planet.Chunk.Coord, Mesh),
 };
 
 const RunningJob = struct {
     job: shared.planet.Chunk.Job(.renderable),
     id: shared.entity.Id,
-    center: nz.Vec3(i32),
+    center: shared.planet.Chunk.Coord,
     reach: i32,
 };
 
@@ -89,7 +89,7 @@ pub fn update(self: *Planet, gpa: std.mem.Allocator, world: *World) !void {
         const reach = reachFor(world, set.radius);
         if (set.center) |known| {
             if (set.radius <= @as(u32, @intCast(shared.planet.Chunk.dim))) continue;
-            if (std.meta.eql(known, center) and set.reach == reach) continue;
+            if (known.eql(center) and set.reach == reach) continue;
         }
         set.center = center;
         set.reach = reach;
@@ -98,20 +98,20 @@ pub fn update(self: *Planet, gpa: std.mem.Allocator, world: *World) !void {
     }
 }
 
-fn startJob(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32, center: nz.Vec3(i32), reach: i32, existing_coords: []const nz.Vec3(i32)) !void {
+fn startJob(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32, center: shared.planet.Chunk.Coord, reach: i32, existing_coords: []const shared.planet.Chunk.Coord) !void {
     const small = radius <= @as(u32, @intCast(shared.planet.Chunk.dim));
     const clamp: ?shared.planet.Chunk.Box = if (small) null else .{
-        .min = center - @as(nz.Vec3(i32), @splat(reach)),
-        .max = center + @as(nz.Vec3(i32), @splat(reach)),
+        .min = center.offset(@splat(-reach)),
+        .max = center.offset(@splat(reach)),
     };
-    const surface_coords = try shared.planet.Chunk.surfaceCoords(gpa, radius, clamp);
-    defer gpa.free(surface_coords);
-    var coords: std.ArrayList(nz.Vec3(i32)) = .empty;
+    const window_coords = try shared.planet.Chunk.coords(gpa, radius, clamp);
+    defer gpa.free(window_coords);
+    var coords: std.ArrayList(shared.planet.Chunk.Coord) = .empty;
     errdefer coords.deinit(gpa);
-    for (surface_coords) |coord| {
+    for (window_coords) |coord| {
         var already_built = false;
         for (existing_coords) |existing_coord| {
-            if (std.meta.eql(existing_coord, coord)) {
+            if (existing_coord.eql(coord)) {
                 already_built = true;
                 break;
             }
@@ -145,24 +145,22 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
     if (set.radius > @as(u32, @intCast(shared.planet.Chunk.dim))) {
         const live_center = centerFor(world, entity);
         const live_reach = reachFor(world, set.radius);
-        const window_min = live_center - @as(nz.Vec3(i32), @splat(live_reach));
-        const window_max = live_center + @as(nz.Vec3(i32), @splat(live_reach));
         var mesh_index: usize = set.meshes.count();
         while (mesh_index > 0) {
             mesh_index -= 1;
             const coord = set.meshes.keys()[mesh_index];
-            if (@reduce(.Or, coord < window_min) or @reduce(.Or, coord > window_max)) {
+            if (!coord.within(live_center, live_reach)) {
                 try self.retired.append(gpa, .{ .mesh = set.meshes.values()[mesh_index], .frame = frame });
                 set.meshes.swapRemoveAt(mesh_index);
                 evicted += 1;
             }
         }
-        if (!std.meta.eql(live_center, running.center) or live_reach != running.reach) set.center = null;
+        if (!live_center.eql(running.center) or live_reach != running.reach) set.center = null;
     }
     for (results.items) |*cpu_chunk| {
         if (cpu_chunk.indices.len == 0) continue;
         var name_buffer: [64]u8 = undefined;
-        const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(running.id), cpu_chunk.coord[0], cpu_chunk.coord[1], cpu_chunk.coord[2] });
+        const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(running.id), cpu_chunk.coord.position[0], cpu_chunk.coord.position[1], cpu_chunk.coord.position[2] });
         const mesh = try Mesh.init(gpa, vma, name, device, Mesh.StaticVertex, cpu_chunk.vertices, cpu_chunk.indices, &.{.{ .index_start = 0, .index_count = @intCast(cpu_chunk.indices.len), .texture = .blank }});
         try set.meshes.put(gpa, cpu_chunk.coord, mesh);
     }
@@ -174,13 +172,13 @@ fn reachFor(world: *World, radius: u32) i32 {
     return std.math.clamp(world.chunk_view_distance, 1, range.max - range.min + 1);
 }
 
-fn centerFor(world: *World, planet_entity: *const World.Entity) nz.Vec3(i32) {
+fn centerFor(world: *World, planet_entity: *const World.Entity) shared.planet.Chunk.Coord {
     const position = if (world.controller.free_camera) world.camera.transform.position else if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position;
     const local = position - planet_entity.transform.position;
     const chunk_size: f32 = @floatFromInt(shared.planet.Chunk.dim);
-    return .{
+    return .{ .position = .{
         @intFromFloat(@floor(local[0] / (planet_entity.transform.scale[0] * chunk_size))),
         @intFromFloat(@floor(local[1] / (planet_entity.transform.scale[1] * chunk_size))),
         @intFromFloat(@floor(local[2] / (planet_entity.transform.scale[2] * chunk_size))),
-    };
+    } };
 }

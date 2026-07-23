@@ -17,7 +17,7 @@ const job_batch_max: usize = 16;
 const body_budget: u32 = 2;
 
 pub const PlanetChunk = struct {
-    coord: nz.Vec3(i32),
+    coord: shared.planet.Chunk.Coord,
     mesh: Physics.Collider.Mesh,
     body_id: ?Physics.c.b3BodyId = null,
 };
@@ -44,7 +44,7 @@ pub fn clear(self: *Planet, gpa: std.mem.Allocator, physics: ?*Physics) void {
     self.ready.clearRetainingCapacity();
 }
 
-pub fn addChunk(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, coord: nz.Vec3(i32), mesh: Physics.Collider.Mesh) !void {
+pub fn addChunk(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, coord: shared.planet.Chunk.Coord, mesh: Physics.Collider.Mesh) !void {
     errdefer {
         gpa.free(mesh.indices);
         gpa.free(mesh.vertices);
@@ -67,11 +67,10 @@ pub fn joinJob(self: *Planet) void {
     self.job = null;
 }
 
-pub fn ensureChunk(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, coord: nz.Vec3(i32)) !void {
+pub fn ensureChunk(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, coord: shared.planet.Chunk.Coord) !void {
     const radius: u32 = @intFromFloat(self.radius);
-    if (shared.planet.Chunk.classify(radius, coord) != .surface) return;
     for (self.chunks.items) |chunk| {
-        if (std.meta.eql(chunk.coord, coord)) return;
+        if (chunk.coord.eql(coord)) return;
     }
     const chunk_mesh = try shared.planet.Planet(.logical).initChunk(gpa, radius, coord);
     if (chunk_mesh.indices.len == 0) {
@@ -88,12 +87,12 @@ pub fn stream(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, entities
     try self.collectJob(gpa);
     try self.integrateReady(gpa, physics);
 
-    var missing: std.ArrayList(nz.Vec3(i32)) = .empty;
+    var missing: std.ArrayList(shared.planet.Chunk.Coord) = .empty;
     defer missing.deinit(gpa);
     for (entities) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         if (entity.collider.motion_type != .dynamic) continue;
-        const center = shared.planet.Chunk.fromPosition(entity.transform.position);
+        const center: shared.planet.Chunk.Coord = .fromPosition(entity.transform.position);
         try self.ensureChunk(gpa, physics, center);
         var x: i32 = -stream_reach;
         while (x <= stream_reach) : (x += 1) {
@@ -102,13 +101,12 @@ pub fn stream(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, entities
                 var z: i32 = -stream_reach;
                 while (z <= stream_reach) : (z += 1) {
                     if (missing.items.len >= job_batch_max) continue;
-                    const coord = center + nz.Vec3(i32){ x, y, z };
-                    if (std.meta.eql(coord, center)) continue;
-                    if (shared.planet.Chunk.classify(radius, coord) != .surface) continue;
+                    const coord = center.offset(.{ x, y, z });
+                    if (coord.eql(center)) continue;
                     if (self.chunkKnown(coord)) continue;
                     var queued = false;
                     for (missing.items) |missing_coord| {
-                        if (std.meta.eql(missing_coord, coord)) {
+                        if (missing_coord.eql(coord)) {
                             queued = true;
                             break;
                         }
@@ -129,10 +127,7 @@ pub fn stream(self: *Planet, gpa: std.mem.Allocator, physics: *Physics, entities
         for (entities) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
             if (entity.collider.motion_type != .dynamic) continue;
-            const delta = coord - shared.planet.Chunk.fromPosition(entity.transform.position);
-            const within_low = @reduce(.And, delta >= @as(nz.Vec3(i32), @splat(-evict_reach)));
-            const within_high = @reduce(.And, delta <= @as(nz.Vec3(i32), @splat(evict_reach)));
-            if (within_low and within_high) continue :evict;
+            if (coord.within(.fromPosition(entity.transform.position), evict_reach)) continue :evict;
         }
         self.removeChunk(gpa, physics, index);
     }
@@ -161,7 +156,7 @@ fn integrateReady(self: *Planet, gpa: std.mem.Allocator, physics: *Physics) !voi
         const result = self.ready.pop() orelse return;
         var duplicate = false;
         for (self.chunks.items) |chunk| {
-            if (std.meta.eql(chunk.coord, result.coord)) {
+            if (chunk.coord.eql(result.coord)) {
                 duplicate = true;
                 break;
             }
@@ -180,16 +175,16 @@ fn integrateReady(self: *Planet, gpa: std.mem.Allocator, physics: *Physics) !voi
     }
 }
 
-fn chunkKnown(self: *Planet, coord: nz.Vec3(i32)) bool {
+fn chunkKnown(self: *Planet, coord: shared.planet.Chunk.Coord) bool {
     for (self.chunks.items) |chunk| {
-        if (std.meta.eql(chunk.coord, coord)) return true;
+        if (chunk.coord.eql(coord)) return true;
     }
     for (self.ready.items) |result| {
-        if (std.meta.eql(result.coord, coord)) return true;
+        if (result.coord.eql(coord)) return true;
     }
     if (self.job) |job| {
         for (job.state.coords) |job_coord| {
-            if (std.meta.eql(job_coord, coord)) return true;
+            if (job_coord.eql(coord)) return true;
         }
     }
     return false;
