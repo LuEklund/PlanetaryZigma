@@ -75,8 +75,9 @@ pub const Context = struct {
             self.world.next_stage_requested = false;
             try self.world.startStage(&self.physics);
         }
-        if (self.world.players.items.len != 0)
-            try self.world.planet.stream(self.world.gpa, &self.physics, self.world.entities.values());
+        // SDF collision spike: terrain bodies disabled, chunks only needed again for navmesh
+        // if (self.world.players.items.len != 0)
+        //     try self.world.planet.stream(self.world.gpa, &self.physics, self.world.entities.values());
         try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);

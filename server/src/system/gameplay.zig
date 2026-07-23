@@ -7,7 +7,7 @@ const Physics = @import("Physics.zig");
 const Info = system.Info;
 
 const rocket_damage_multiplier: f32 = 1.5;
-const enemy_max_spawn_distance: f32 = 50;
+const enemy_max_spawn_distance: f32 = 85;
 const enemy_min_spawn_distance: f32 = enemy_max_spawn_distance * 0.8;
 const lightning = .{
     .max_targets = shared.net.Event.Effect.Lightning.max_targets,
@@ -156,7 +156,21 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
             .{ .x = travel[0], .y = travel[1], .z = travel[2] },
             Physics.c.b3DefaultQueryFilter(),
         );
-        if (!ray_hit.hit) continue;
+        if (!ray_hit.hit) {
+            if (shared.planet.sdf.sampled(entity.transform.position, info.world.planet.radius) < 0) {
+                if (info.world.getPtr(entity.owner_id)) |owner_entity| {
+                    switch (projectile_kind) {
+                        .cube => {},
+                        .rocket => {
+                            damageRocketImpact(info, owner_entity, entity.transform.position);
+                            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = entity.transform.position } } });
+                        },
+                    }
+                }
+                info.world.queueDespawn(entity.id);
+            }
+            continue;
+        }
         const impact_position = Physics.toVec(ray_hit.point);
 
         const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);

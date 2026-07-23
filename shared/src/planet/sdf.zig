@@ -10,6 +10,27 @@ pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
     return nz.vec.length(position) - radius + noise;
 }
 
+pub fn sampled(position: nz.Vec3(f32), radius: f32) f32 {
+    const base = @floor(position);
+    const fraction = position - base;
+    var values: [8]f32 = undefined;
+    for (&values, 0..) |*value, corner| {
+        const offset: nz.Vec3(f32) = .{
+            @floatFromInt(corner & 1),
+            @floatFromInt((corner >> 1) & 1),
+            @floatFromInt((corner >> 2) & 1),
+        };
+        value.* = sdf(base + offset, radius);
+    }
+    const y0z0 = std.math.lerp(values[0], values[1], fraction[0]);
+    const y1z0 = std.math.lerp(values[2], values[3], fraction[0]);
+    const y0z1 = std.math.lerp(values[4], values[5], fraction[0]);
+    const y1z1 = std.math.lerp(values[6], values[7], fraction[0]);
+    const z0 = std.math.lerp(y0z0, y1z0, fraction[1]);
+    const z1 = std.math.lerp(y0z1, y1z1, fraction[1]);
+    return std.math.lerp(z0, z1, fraction[2]);
+}
+
 pub const DensityGrid = struct {
     // Grid-space coordinate stored at values[0, 0, 0].
     origin_offset: nz.Vec3(i32),

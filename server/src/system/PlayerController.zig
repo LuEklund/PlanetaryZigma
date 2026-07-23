@@ -192,7 +192,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             player.last_attack = info.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(physics, info.world.planet.radius, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = @min(player.stats.max.get(.rocket_chance), 1.0);
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;
@@ -217,11 +217,24 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
     }
 }
 
-fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(physics: *Physics, planet_radius: f32, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
     const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
-    if (result.hit) return Physics.toVec(result.point);
-    return ray_start + translation;
+    const entity_distance: f32 = if (result.hit) nz.vec.length(Physics.toVec(result.point) - ray_start) else aim_range;
+
+    var terrain_distance: f32 = aim_range;
+    var traveled: f32 = 0;
+    for (0..128) |_| {
+        const sample = ray_start + nz.vec.scale(camera_forward, traveled);
+        const distance = shared.planet.sdf.sampled(sample, planet_radius);
+        if (distance < 0.05) {
+            terrain_distance = traveled;
+            break;
+        }
+        traveled += @max(distance * 0.5, 0.05);
+        if (traveled >= aim_range) break;
+    }
+    return ray_start + nz.vec.scale(camera_forward, @min(entity_distance, terrain_distance));
 }

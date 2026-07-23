@@ -266,17 +266,18 @@ pub fn startStage(self: *World, physics: *Physics) !void {
         random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
     std.log.debug("startStage planet_radius={d}", .{self.planet.radius});
     const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet.radius);
-    const spawn_center: shared.planet.Chunk.Coord = .fromPosition(player_spawn_surface);
-    var x: i32 = -spawn_chunk_reach;
-    while (x <= spawn_chunk_reach) : (x += 1) {
-        var y: i32 = -spawn_chunk_reach;
-        while (y <= spawn_chunk_reach) : (y += 1) {
-            var z: i32 = -spawn_chunk_reach;
-            while (z <= spawn_chunk_reach) : (z += 1) {
-                try self.planet.ensureChunk(self.gpa, physics, spawn_center.offset(.{ x, y, z }));
-            }
-        }
-    }
+    // SDF collision spike: terrain bodies disabled, chunks only needed again for navmesh
+    // const spawn_center: shared.planet.Chunk.Coord = .fromPosition(player_spawn_surface);
+    // var x: i32 = -spawn_chunk_reach;
+    // while (x <= spawn_chunk_reach) : (x += 1) {
+    //     var y: i32 = -spawn_chunk_reach;
+    //     while (y <= spawn_chunk_reach) : (y += 1) {
+    //         var z: i32 = -spawn_chunk_reach;
+    //         while (z <= spawn_chunk_reach) : (z += 1) {
+    //             try self.planet.ensureChunk(self.gpa, physics, spawn_center.offset(.{ x, y, z }));
+    //         }
+    //     }
+    // }
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},
