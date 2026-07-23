@@ -50,7 +50,6 @@ pub const Context = struct {
     }
 
     pub fn deinit(self: *Context) !void {
-        self.world.planet.joinJob();
         self.physics.deinit();
         try self.network_manager.deinit();
     }
@@ -75,9 +74,6 @@ pub const Context = struct {
             self.world.next_stage_requested = false;
             try self.world.startStage(&self.physics);
         }
-        // SDF collision spike: terrain bodies disabled, chunks only needed again for navmesh
-        // if (self.world.players.items.len != 0)
-        //     try self.world.planet.stream(self.world.gpa, &self.physics, self.world.entities.values());
         try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
@@ -89,7 +85,6 @@ pub const Context = struct {
     }
 
     fn reload(self: *Context, pre_reload: bool) !void {
-        if (pre_reload) self.world.planet.joinJob();
         try self.physics.reload(pre_reload, self.world);
     }
 };

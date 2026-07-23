@@ -174,7 +174,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = .{ 0, info.world.planet.radius + 10, 0 } },
+                            .transform = .{ .position = .{ 0, info.world.planet_radius + 10, 0 } },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 
@@ -393,7 +393,7 @@ fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.
 }
 
 fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
-    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet.radius});
+    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,
@@ -403,7 +403,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
         .tick = info.tick,
         .currency = entity.currency,
         .data = switch (entity.kind) {
-            .planet => .{ .planet_radius = @intFromFloat(info.world.planet.radius) },
+            .planet => .{ .planet_radius = @intFromFloat(info.world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
             .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,

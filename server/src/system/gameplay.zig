@@ -34,7 +34,7 @@ pub fn updateDirector(info: *const Info) !void {
         if (director.credits >= director.enemy_cost) {
             const player_index = rand.uintLessThan(usize, info.world.players.items.len);
             if (info.world.getPtr(info.world.players.items[player_index])) |player| {
-                const radius_float = info.world.planet.radius;
+                const radius_float = info.world.planet_radius;
                 const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, rand);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
@@ -72,7 +72,7 @@ pub fn updateEnemies(info: *const Info) !void {
         const distance = nz.vec.length(to_player);
 
         if (distance > enemy_max_spawn_distance * 1.7) {
-            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet.radius, enemy_max_spawn_distance, enemy_max_spawn_distance, info.world.prng.random());
+            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, info.world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
             Physics.setPosition(body_id, leash_position);
@@ -157,7 +157,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
             Physics.c.b3DefaultQueryFilter(),
         );
         if (!ray_hit.hit) {
-            if (shared.planet.sdf.sampled(entity.transform.position, info.world.planet.radius) < 0) {
+            if (shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius) < 0) {
                 if (info.world.getPtr(entity.owner_id)) |owner_entity| {
                     switch (projectile_kind) {
                         .cube => {},

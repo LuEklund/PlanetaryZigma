@@ -135,7 +135,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet.radius, 15, 25, info.world.prng.random());
+                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorp_lord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
@@ -192,7 +192,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             player.last_attack = info.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = aimPoint(physics, info.world.planet.radius, transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(physics, info.world.planet_radius, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = @min(player.stats.max.get(.rocket_chance), 1.0);
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;

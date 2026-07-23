@@ -9,6 +9,8 @@ const nz = shared.numz;
 pub const c = @import("box3d");
 
 pub const gravity_accel: f32 = 50;
+const ground_friction: f32 = 10;
+const ground_check_skin: f32 = 0.2;
 
 const Category = struct {
     const non_moving: u64 = 1 << 0;
@@ -93,9 +95,6 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
             entity.collider.body_id = null;
             try self.createBody(entity);
         }
-        for (world.planet.chunks.items) |*chunk| {
-            chunk.body_id = if (chunk.mesh.indices.len == 0) null else try self.createStaticMeshBody(chunk.mesh);
-        }
     }
 }
 
@@ -111,14 +110,14 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
-            var point = shared.planet.surfacePoint(direction, info.world.planet.radius);
+            var point = shared.planet.surfacePoint(direction, info.world.planet_radius);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
-        if (!isGrounded(entity, info.world.planet.radius)) {
+        if (!isGrounded(entity, info.world.planet_radius)) {
             const mass = c.b3Body_GetMass(body_id);
             c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(-planet_up, mass * gravity_accel)), true);
         }
@@ -155,16 +154,21 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         if (entity.collider.motion_type != .dynamic) continue;
 
         const clearance = colliderGroundExtent(entity.collider);
-        const value = shared.planet.sdf.sampled(entity.transform.position, info.world.planet.radius);
-        if (value >= clearance * 2) continue;
-        const gradient = sdfGradient(entity.transform.position, info.world.planet.radius);
+        const value = shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius);
+        if (value >= (clearance + ground_check_skin) * 2) continue;
+        const gradient = sdfGradient(entity.transform.position, info.world.planet_radius);
         const gradient_length = nz.vec.length(gradient);
         const normal = if (gradient_length > 0.0001) nz.vec.scale(gradient, 1.0 / gradient_length) else nz.vec.normalize(entity.transform.position);
         const distance = if (gradient_length > 0.0001) value / gradient_length else value;
-        if (distance >= clearance) continue;
-        entity.transform.position += nz.vec.scale(normal, clearance - distance);
-        const inward_speed = nz.vec.dot(entity.replicated_velocity, normal);
-        if (inward_speed < 0) entity.replicated_velocity -= nz.vec.scale(normal, inward_speed);
+        if (distance >= clearance + ground_check_skin) continue;
+        if (distance < clearance) {
+            entity.transform.position += nz.vec.scale(normal, clearance - distance);
+            const inward_speed = nz.vec.dot(entity.replicated_velocity, normal);
+            if (inward_speed < 0) entity.replicated_velocity -= nz.vec.scale(normal, inward_speed);
+        }
+        const radial = nz.vec.scale(normal, nz.vec.dot(entity.replicated_velocity, normal));
+        const tangential = entity.replicated_velocity - radial;
+        entity.replicated_velocity = radial + nz.vec.scale(tangential, @exp(-ground_friction * info.delta_time));
         c.b3Body_SetTransform(body_id, toB3(entity.transform.position), c.b3Body_GetRotation(body_id));
         c.b3Body_SetLinearVelocity(body_id, toB3(entity.replicated_velocity));
     }
@@ -189,23 +193,7 @@ fn colliderGroundExtent(collider: Collider) f32 {
     };
 }
 
-// SDF collision spike: raycast grounded check needs terrain bodies
-// fn planetRayFilter() c.b3QueryFilter {
-//     var filter = c.b3DefaultQueryFilter();
-//     filter.maskBits = Category.non_moving;
-//     return filter;
-// }
-//
-// fn isGrounded(self: *Physics, entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
-//     const ground_check_skin: f32 = 0.2;
-//     const ground_reach = colliderGroundExtent(entity.collider) + ground_check_skin;
-//     const translation = nz.vec.scale(planet_up, -ground_reach);
-//     const result = c.b3World_CastRayClosest(self.world, toB3(entity.transform.position), toB3(translation), planetRayFilter());
-//     return result.hit;
-// }
-
 fn isGrounded(entity: *const system.Entity, planet_radius: f32) bool {
-    const ground_check_skin: f32 = 0.2;
     const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
     const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;
@@ -274,32 +262,6 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
         },
     }
     collider.body_id = body_id;
-}
-
-pub fn createStaticMeshBody(self: *Physics, mesh: Collider.Mesh) !c.b3BodyId {
-    var body_def = c.b3DefaultBodyDef();
-    body_def.type = c.b3_staticBody;
-    const body_id = c.b3CreateBody(self.world, &body_def);
-    errdefer c.b3DestroyBody(body_id);
-
-    var shape_def = c.b3DefaultShapeDef();
-    shape_def.filter = layerFilter(.non_moving);
-
-    const vertices = try self.gpa.alloc(c.b3Vec3, mesh.vertices.len);
-    defer self.gpa.free(vertices);
-    for (vertices, mesh.vertices) |*out, in| out.* = .{ .x = in[0], .y = in[1], .z = in[2] };
-    const indices = try self.gpa.alloc(i32, mesh.indices.len);
-    defer self.gpa.free(indices);
-    for (indices, mesh.indices) |*out, in| out.* = @intCast(in);
-
-    var mesh_def = std.mem.zeroes(c.b3MeshDef);
-    mesh_def.vertices = vertices.ptr;
-    mesh_def.indices = indices.ptr;
-    mesh_def.vertexCount = @intCast(vertices.len);
-    mesh_def.triangleCount = @intCast(@divExact(indices.len, 3));
-    const mesh_data = c.b3CreateMesh(&mesh_def, null, 0);
-    _ = c.b3CreateMeshShape(body_id, &shape_def, mesh_data, .{ .x = 1, .y = 1, .z = 1 });
-    return body_id;
 }
 
 pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {
