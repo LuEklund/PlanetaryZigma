@@ -25,6 +25,7 @@ const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
+const Planet = @import("Planet.zig");
 const Shader = @import("Vulkan/Shader.zig");
 const Ui = @import("../Ui.zig");
 const procs = @import("Vulkan/procs.zig");
@@ -49,6 +50,7 @@ vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
 joint_buffers: std.AutoHashMap(shared.entity.Id, []Buffer),
+planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
@@ -74,6 +76,8 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.joint_buffers = .init(gpa);
+    self.planet = .init();
+    self.current_frame_inflight = 0;
 
     self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
     procs.instance.load(self.instance.handle, null);
@@ -117,6 +121,7 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
 
     self.clearSkeletons(gpa);
     self.joint_buffers.deinit();
+    self.planet.deinit(gpa, self.vma);
 
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
@@ -304,7 +309,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
-        .inverse_view_proj = proj_view.inverse().d,
+        .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
         .global_light_direction = light_dir,
         .time = elapsed_time,
         .camera_position = camera_transform.position,
@@ -533,6 +538,11 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         try drawStatic(self, cmd, entity.model_handle, base_matrix);
+    }
+
+    if (info.world.getPtr(self.planet.planet_id)) |planet| {
+        const transform = planet.transform.toMat4x4();
+        for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned_vert));
@@ -768,6 +778,16 @@ fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle,
     }
 }
 
+fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) !void {
+    var push: Shader.WorldPushConstant = .{
+        .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+        .model_matrix = transform.d,
+        .joint_matrices_address = 0,
+        .texture_index = 0,
+    };
+    try emitNode(self, cmd, mesh, &push);
+}
+
 fn drawSkinned(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
@@ -878,7 +898,7 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
 fn emitNode(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
-    mesh: *Mesh,
+    mesh: *const Mesh,
     push: *Shader.WorldPushConstant,
 ) !void {
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
@@ -936,7 +956,9 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
     );
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World, timer_io: std.Io) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World) !void {
+    self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
+    try self.planet.collect(gpa, self.vma, self.device, world, self.current_frame_inflight);
     if (self.resources.model_loader.reloaded.items.len != 0) {
         for (self.resources.model_loader.reloaded.items) |file_index| {
             const loader_entry = &self.resources.model_loader.entries[file_index];
@@ -957,6 +979,10 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
     }
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
+            if (spawned.kind == .planet) {
+                try self.planet.build(gpa, spawned.id, @intFromFloat(world.planet_radius), self.current_frame_inflight);
+                continue;
+            }
             const entity = world.getPtr(spawned.id) orelse continue;
             const path = shared.entity.modelSpec(spawned.kind).path;
             entity.model_handle = if (std.mem.endsWith(u8, path, ".glb"))
@@ -971,25 +997,11 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
                 instance.deinit(gpa);
             }
             self.removeSkeleton(gpa, id);
+            try self.planet.remove(gpa, id, self.current_frame_inflight);
         },
-        .planet_spawned => |radius| try self.buildPlanet(gpa, radius, timer_io),
     };
     world.render_outbox.clearRetainingCapacity();
-}
-
-fn buildPlanet(self: *Vulkan, gpa: std.mem.Allocator, radius: u32, timer_io: std.Io) !void {
-    var planet: shared.Planet(.renderable) = try .init(gpa, radius, timer_io);
-    defer planet.deinit(gpa);
-    const planet_slot = self.resources.generated.getPtr(.planet);
-    if (planet_slot.*) |*old_mesh| {
-        try check(c.vkDeviceWaitIdle(self.device.handle));
-        old_mesh.deinit(gpa, self.vma);
-    }
-    planet_slot.* = try Mesh.init(gpa, self.vma, "planet", self.device, Mesh.StaticVertex, planet.vertices, planet.indices, &.{.{
-        .index_start = 0,
-        .index_count = @intCast(planet.indices.len),
-        .texture = .blank,
-    }});
+    try self.planet.update(gpa, world);
 }
 
 fn createJointBuffers(self: *Vulkan, gpa: std.mem.Allocator, model: *const Model) ![]Buffer {

@@ -292,7 +292,7 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
         const health_max = entity.stats.max.get(.health);
         if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
 
-        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
         if (isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
@@ -311,7 +311,7 @@ fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
 fn addDamagePopups(info: *const Info, ui: *Ui, damage_popups: *const DamagePopup.List) void {
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (damage_popups.items()) |popup| {
-        const up = shared.planetUp(popup.position) orelse .{ 0, 1, 0 };
+        const up = shared.planet.up(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
         const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
         const alpha = 1 - popup.age / DamagePopup.lifetime;
@@ -343,7 +343,7 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
         else
             ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
 
-        const up = shared.planetUp(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
         if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;

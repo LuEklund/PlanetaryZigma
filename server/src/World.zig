@@ -12,12 +12,13 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
+planet_radius: f32,
+director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
 toggle_spawning_requested: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
-planet_radius: f32,
 next_entity_id: u32,
 next_stage: u32,
 prng: std.Random.DefaultPrng,
@@ -30,6 +31,14 @@ pub const item_launch_angle: f32 = std.math.pi / 4.0;
 pub const PendingDespawn = struct {
     id: shared.entity.Id,
     remove: bool,
+};
+
+pub const Director = struct {
+    credits: f32,
+    salary_per_second: f32,
+    last_salary: f32,
+    enemy_cost: f32,
+    spawning: bool,
 };
 
 pub const ClientUpdate = union(enum) {
@@ -117,6 +126,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
+        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
         .next_entity_id = 1,
         .next_stage = 0,
         .prng = .init(0xACE1),
@@ -237,6 +247,79 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
+pub fn startStage(self: *World, physics: *Physics) !void {
+    self.next_stage += 1;
+    for (self.entities.values()) |entry| {
+        if (entry.kind != .player) self.queueDespawn(entry.id);
+    }
+    try self.flush(physics);
+    const random = self.prng.random();
+    self.teleporter_id = .none;
+    self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.next_stage } });
+    self.planet_radius = @floatFromInt(if (self.dev_mode)
+        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
+    else
+        random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
+    std.log.debug("startStage planet_radius={d}", .{self.planet_radius});
+    const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius);
+    _ = try self.spawn(.{
+        .kind = .planet,
+        .transform = .{},
+    });
+    try self.flush(physics);
+
+    const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
+    for (self.entities.values()) |*player| {
+        if (player.kind != .player) continue;
+        player.transform.position = player_spawn_position;
+        player.replicated_velocity = .{ 0, 0, 0 };
+        if (player.flags.is_dead) {
+            player.flags.is_dead = false;
+            player.stats.current.set(.health, player.stats.max.get(.health));
+            try physics.createBody(player);
+            self.players.appendAssumeCapacity(player.id);
+            self.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
+        } else if (player.collider.body_id) |body_id| {
+            Physics.setPosition(body_id, player_spawn_position);
+            Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
+        }
+    }
+
+    self.director.spawning = true;
+    const teleporter_direction = if (self.dev_mode)
+        nz.Vec3(f32){ 0, 1, 0 }
+    else
+        nz.vec.randomUnitVector(nz.Vec3(f32), random);
+    const teleporter_position = shared.planet.surfacePoint(teleporter_direction, self.planet_radius);
+    for (0..25) |_| {
+        const vector_direction = if (self.dev_mode)
+            nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
+        else
+            nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
+        _ = try self.spawn(.{
+            .kind = .lootbox,
+            .transform = transform,
+        });
+    }
+
+    const teleporter = try self.spawn(.{
+        .kind = .teleporter,
+        .transform = .{ .position = teleporter_position },
+    });
+    const teleport_planet_up = nz.vec.normalize(teleporter_position);
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
+    teleporter.transform.rotation = if (dot < 0.9999) blk: {
+        const axis = if (dot > -0.9999)
+            nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
+        else
+            nz.Vec3(f32){ 1, 0, 0 };
+        break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
+    } else .identity;
+    self.teleporter_id = teleporter.id;
+}
+
 pub fn flush(self: *World, physics: *Physics) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
@@ -273,14 +356,14 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
                 if (self.getPtr(self.teleporter_id)) |teleporter| {
-                    const teleporter_up = shared.planetUp(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = self.spawn(.{
                         .kind = .{ .item = .lightning },
                         .transform = .{
                             .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
                             .rotation = teleporter.transform.rotation,
                         },
-                        .spawn_impulse = shared.planetSurfaceLaunch(
+                        .spawn_impulse = shared.planet.surfaceLaunch(
                             teleporter.transform.position,
                             nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
                             item_launch_angle,

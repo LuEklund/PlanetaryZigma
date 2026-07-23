@@ -123,7 +123,7 @@ pub const Context = struct {
         const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
         if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
         try info.world.flush(info.delta_time, &self.animation_instances);
-        try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world, self.io);
+        try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world);
         try self.animation.updateStates(info, &self.animation_instances);
         try self.animation.update(info, &self.animation_instances);
 
@@ -167,6 +167,7 @@ pub const Context = struct {
 
     fn applyOptions(self: *Context, info: *const Info) !void {
         if (self.scene == .game) info.world.camera.fov_rad = self.options.fov_rad;
+        info.world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
         if (self.fullscreen_applied != self.options.fullscreen) {
             const mode: yes.Window.Mode = if (self.options.fullscreen) .fullscreen else .windowed;
             try self.window.setMode(self.desktop, mode);

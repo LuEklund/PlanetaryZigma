@@ -4,14 +4,50 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../system.zig");
 const Physics = @import("Physics.zig");
-const Director = @import("Director.zig");
 const Info = system.Info;
 
 const rocket_damage_multiplier: f32 = 1.5;
+const enemy_max_spawn_distance: f32 = 85;
+const enemy_min_spawn_distance: f32 = enemy_max_spawn_distance * 0.8;
 const lightning = .{
     .max_targets = shared.net.Event.Effect.Lightning.max_targets,
     .max_victims = 256,
 };
+
+pub fn updateDirector(info: *const Info) !void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+
+    const director = &info.world.director;
+    if (info.world.toggle_spawning_requested) {
+        info.world.toggle_spawning_requested = false;
+        director.spawning = !director.spawning;
+        std.log.debug("dev: enemy spawning {s}", .{if (director.spawning) "on" else "off"});
+    }
+
+    if (director.spawning and info.world.players.items.len != 0) {
+        if (info.elapsed_time - director.last_salary >= 1.0) {
+            director.last_salary = info.elapsed_time;
+            director.credits += director.salary_per_second * 15;
+        }
+        const rand = info.world.prng.random();
+        if (director.credits >= director.enemy_cost) {
+            const player_index = rand.uintLessThan(usize, info.world.players.items.len);
+            if (info.world.getPtr(info.world.players.items[player_index])) |player| {
+                const radius_float = info.world.planet_radius;
+                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, rand);
+                const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+                if (info.world.spawn(.{
+                    .kind = .{ .enemy = .tubloida },
+                    .transform = .{ .position = spawn_position },
+                    .last_attack = info.elapsed_time,
+                })) |_| {
+                    director.credits -= director.enemy_cost;
+                } else |_| {}
+            }
+        }
+    }
+}
 
 pub fn updateEnemies(info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
@@ -23,19 +59,29 @@ pub fn updateEnemies(info: *const Info) !void {
         if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
-        var closest: f32 = std.math.floatMax(f32);
-        const player = for (info.world.players.items) |player_id| {
+        var closest_player: ?*system.Entity = null;
+        var closest_distance: f32 = std.math.floatMax(f32);
+        for (info.world.players.items) |player_id| {
             const current_player = info.world.getPtr(player_id) orelse continue;
             if (current_player.flags.is_dead) continue;
-            const distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
-            if (distance >= closest) continue;
-            closest = distance;
-            break current_player;
-        } else return;
+            const player_distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
+            if (player_distance >= closest_distance) continue;
+            closest_distance = player_distance;
+            closest_player = current_player;
+        }
+        const player = closest_player orelse return;
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 
-        const planet_up = shared.planetUp(enemy.transform.position) orelse continue;
+        if (distance > enemy_max_spawn_distance * 1.7) {
+            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, info.world.prng.random());
+            const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+            enemy.transform.position = leash_position;
+            Physics.setPosition(body_id, leash_position);
+            continue;
+        }
+
+        const planet_up = shared.planet.up(enemy.transform.position) orelse continue;
 
         const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
         if (nz.vec.length(fwd_proj) > 0.0001) {
@@ -51,7 +97,7 @@ pub fn updateEnemies(info: *const Info) !void {
         switch (enemy.kind.enemy) {
             .tubloida => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
@@ -74,7 +120,7 @@ pub fn updateEnemies(info: *const Info) !void {
             },
             .tubloid => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     if (info.world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
@@ -83,7 +129,7 @@ pub fn updateEnemies(info: *const Info) !void {
             },
             .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     _ = info.world.spawn(.{
@@ -102,7 +148,7 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
     for (info.world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planetUp(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
         entity.transform.position += nz.vec.scale(entity.replicated_velocity, info.delta_time);
         const travel = entity.transform.position - previous_position;
 
@@ -112,7 +158,21 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
             .{ .x = travel[0], .y = travel[1], .z = travel[2] },
             Physics.c.b3DefaultQueryFilter(),
         );
-        if (!ray_hit.hit) continue;
+        if (!ray_hit.hit) {
+            if (shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius) < 0) {
+                if (info.world.getPtr(entity.owner_id)) |owner_entity| {
+                    switch (projectile_kind) {
+                        .cube => {},
+                        .rocket => {
+                            damageRocketImpact(info, owner_entity, entity.transform.position);
+                            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = entity.transform.position } } });
+                        },
+                    }
+                }
+                info.world.queueDespawn(entity.id);
+            }
+            continue;
+        }
         const impact_position = Physics.toVec(ray_hit.point);
 
         const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
@@ -236,11 +296,11 @@ pub fn updateItems(info: *const Info) !void {
     }
 }
 
-pub fn updateTeleporter(info: *const Info, director: *Director) void {
+pub fn updateTeleporter(info: *const Info) void {
     const entity = info.world.getPtr(info.world.teleporter_id) orelse return;
     const teleporter = &entity.teleporter;
     if (teleporter.charged == teleporter.max_charge) {
-        director.spawning = false;
+        info.world.director.spawning = false;
         teleporter.state = .completed;
         return;
     }

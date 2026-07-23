@@ -120,7 +120,7 @@ fn traceArm(pivot: Vec3, direction: Vec3, max_length: f32, planet_radius: f32) f
     var distance: f32 = 0;
     for (0..32) |_| {
         if (distance >= max_length) return max_length;
-        const clearance = shared.planetSdf(pivot + nz.vec.scale(direction, distance), planet_radius) - camera_padding;
+        const clearance = shared.planet.sdf.sdf(pivot + nz.vec.scale(direction, distance), planet_radius) - camera_padding;
         if (clearance <= 0.01) return distance;
         distance += clearance;
     }

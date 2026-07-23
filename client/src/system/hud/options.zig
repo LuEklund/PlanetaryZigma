@@ -116,6 +116,9 @@ fn optionsVideo(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) voi
     if (addOptionSlider(ui, "options_fov", "Field of View", fov_degrees, 65, 115, left, top + (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{fov_degrees}))) |value| {
         options.fov_rad = value * std.math.pi / 180.0;
     }
+    if (addOptionSlider(ui, "options_chunk_view_distance", "Chunk View Distance", options.chunk_view_distance, 1, 8, left, top + 2 * (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{options.chunk_view_distance}))) |value| {
+        options.chunk_view_distance = @round(value);
+    }
 }
 
 fn optionsGraphics(ui: *Ui, controller: *Controller, left: f32, top: f32, width: f32) void {

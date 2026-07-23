@@ -29,7 +29,7 @@ pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint
 }
 
 pub fn hasCollider(kind: Kind) bool {
-    return kind == .planet or spec(kind).collider != null;
+    return spec(kind).collider != null;
 }
 
 pub const ColliderShape = union(enum) {
@@ -131,7 +131,7 @@ pub fn spec(kind: Kind) Spec {
             .collider = null,
             .model = .{ .path = "planet", .skinned = false, .clip_names = null },
             .has_health = false,
-            .expects_model = true,
+            .expects_model = false,
         },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },

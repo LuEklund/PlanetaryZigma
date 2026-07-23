@@ -5,8 +5,6 @@ const Physics = @import("Physics.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-const Director = @import("../system/Director.zig");
-
 pub const aim_range: f32 = 300;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
@@ -28,7 +26,10 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         switch (input.dev_command) {
-            .f1 => _ = info.world.giveItem(player, .pickaxe, 1),
+            .f1 => {
+                _ = info.world.giveItem(player, .pickaxe, 1);
+                _ = info.world.giveItem(player, .energy_drink, 1);
+            },
             .f2 => {
                 // _ = info.world.giveItem(player, .rocket, 1);
                 _ = info.world.giveItem(player, .lightning, 1);
@@ -41,14 +42,14 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 }
             },
             .f4 => if (info.world.getPtr(info.world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.planetUp(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 _ = info.world.spawn(.{
                     .kind = .{ .item = .lightning },
                     .transform = .{
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
                         .rotation = teleporter.transform.rotation,
                     },
-                    .spawn_impulse = shared.planetSurfaceLaunch(
+                    .spawn_impulse = shared.planet.surfaceLaunch(
                         teleporter.transform.position,
                         nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random()),
                         system.World.item_launch_angle,
@@ -66,7 +67,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 player.flags.invinsible = !player.flags.invinsible;
             },
             .f8 => if (info.world.getPtr(info.world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.planetUp(teleporter.transform.position) orelse .{ 0, 1, 0 };
+                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
                 Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
             },
 
@@ -115,7 +116,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             const random = info.world.prng.random();
                             var item_kind = random.enumValue(shared.Item);
                             if (item_kind == .lightning) item_kind = .oxygen_tank;
-                            const chest_up = shared.planetUp(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                            const chest_up = shared.planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                             _ = try info.world.spawn(.{
                                 .kind = .{ .item = item_kind },
                                 .transform = .{
@@ -134,7 +135,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                             teleporter.state = .active;
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                             info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planetSurfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
+                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, info.world.planet_radius, 15, 25, info.world.prng.random());
                             _ = try info.world.spawn(.{
                                 .kind = .{ .enemy = .bloorp_lord },
                                 .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
@@ -191,7 +192,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             player.last_attack = info.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = aimPoint(physics, transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(physics, info.world.planet_radius, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = @min(player.stats.max.get(.rocket_chance), 1.0);
             const fires_rocket = rocket_chance > 0 and info.world.prng.random().float(f32) < rocket_chance;
@@ -216,11 +217,24 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
     }
 }
 
-fn aimPoint(physics: *Physics, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(physics: *Physics, planet_radius: f32, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
     const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
-    if (result.hit) return Physics.toVec(result.point);
-    return ray_start + translation;
+    const entity_distance: f32 = if (result.hit) nz.vec.length(Physics.toVec(result.point) - ray_start) else aim_range;
+
+    var terrain_distance: f32 = aim_range;
+    var traveled: f32 = 0;
+    for (0..128) |_| {
+        const sample = ray_start + nz.vec.scale(camera_forward, traveled);
+        const distance = shared.planet.sdf.sampled(sample, planet_radius);
+        if (distance < 0.05) {
+            terrain_distance = traveled;
+            break;
+        }
+        traveled += @max(distance * 0.5, 0.05);
+        if (traveled >= aim_range) break;
+    }
+    return ray_start + nz.vec.scale(camera_forward, @min(entity_distance, terrain_distance));
 }

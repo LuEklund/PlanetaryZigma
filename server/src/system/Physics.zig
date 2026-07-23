@@ -9,6 +9,8 @@ const nz = shared.numz;
 pub const c = @import("box3d");
 
 pub const gravity_accel: f32 = 50;
+const ground_friction: f32 = 10;
+const ground_check_skin: f32 = 0.2;
 
 const Category = struct {
     const non_moving: u64 = 1 << 0;
@@ -32,7 +34,7 @@ fn layerFilter(layer: ObjectLayer) c.b3Filter {
 }
 
 pub const Collider = struct {
-    const Mesh = struct {
+    pub const Mesh = struct {
         indices: []u32,
         vertices: [][4]f32,
     };
@@ -108,14 +110,14 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
-            var point = shared.planetSurfacePoint(direction, info.world.planet_radius);
+            var point = shared.planet.surfacePoint(direction, info.world.planet_radius);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
-        if (!self.isGrounded(entity, planet_up)) {
+        if (!isGrounded(entity, info.world.planet_radius)) {
             const mass = c.b3Body_GetMass(body_id);
             c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(-planet_up, mass * gravity_accel)), true);
         }
@@ -145,6 +147,40 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         entity.transform.rotation = quatFromB3(c.b3Body_GetRotation(body_id));
         entity.replicated_velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
     }
+
+    for (info.world.entities.values()) |*entity| {
+        if (!shared.entity.hasCollider(entity.kind)) continue;
+        const body_id = entity.collider.body_id orelse continue;
+        if (entity.collider.motion_type != .dynamic) continue;
+
+        const clearance = colliderGroundExtent(entity.collider);
+        const value = shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius);
+        if (value >= (clearance + ground_check_skin) * 2) continue;
+        const gradient = sdfGradient(entity.transform.position, info.world.planet_radius);
+        const gradient_length = nz.vec.length(gradient);
+        const normal = if (gradient_length > 0.0001) nz.vec.scale(gradient, 1.0 / gradient_length) else nz.vec.normalize(entity.transform.position);
+        const distance = if (gradient_length > 0.0001) value / gradient_length else value;
+        if (distance >= clearance + ground_check_skin) continue;
+        if (distance < clearance) {
+            entity.transform.position += nz.vec.scale(normal, clearance - distance);
+            const inward_speed = nz.vec.dot(entity.replicated_velocity, normal);
+            if (inward_speed < 0) entity.replicated_velocity -= nz.vec.scale(normal, inward_speed);
+        }
+        const radial = nz.vec.scale(normal, nz.vec.dot(entity.replicated_velocity, normal));
+        const tangential = entity.replicated_velocity - radial;
+        entity.replicated_velocity = radial + nz.vec.scale(tangential, @exp(-ground_friction * info.delta_time));
+        c.b3Body_SetTransform(body_id, toB3(entity.transform.position), c.b3Body_GetRotation(body_id));
+        c.b3Body_SetLinearVelocity(body_id, toB3(entity.replicated_velocity));
+    }
+}
+
+fn sdfGradient(position: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
+    const epsilon: f32 = 0.05;
+    return .{
+        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius)) / (2 * epsilon),
+        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius)) / (2 * epsilon),
+        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ 0, 0, epsilon }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ 0, 0, epsilon }, planet_radius)) / (2 * epsilon),
+    };
 }
 
 fn colliderGroundExtent(collider: Collider) f32 {
@@ -157,18 +193,11 @@ fn colliderGroundExtent(collider: Collider) f32 {
     };
 }
 
-fn planetRayFilter() c.b3QueryFilter {
-    var filter = c.b3DefaultQueryFilter();
-    filter.maskBits = Category.non_moving;
-    return filter;
-}
-
-fn isGrounded(self: *Physics, entity: *const system.Entity, planet_up: nz.Vec3(f32)) bool {
-    const ground_check_skin: f32 = 0.2;
-    const ground_reach = colliderGroundExtent(entity.collider) + ground_check_skin;
-    const translation = nz.vec.scale(planet_up, -ground_reach);
-    const result = c.b3World_CastRayClosest(self.world, toB3(entity.transform.position), toB3(translation), planetRayFilter());
-    return result.hit;
+fn isGrounded(entity: *const system.Entity, planet_radius: f32) bool {
+    const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
+    const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
+    const distance = if (gradient_length > 0.0001) value / gradient_length else value;
+    return distance < colliderGroundExtent(entity.collider) + ground_check_skin;
 }
 
 pub fn createBody(self: *Physics, entity: *system.Entity) !void {
@@ -273,30 +302,3 @@ pub fn moveOnPlanet(
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + walk));
 }
 
-pub fn moveTowardsOnPlanet(
-    body_id: c.b3BodyId,
-    planet_up: nz.Vec3(f32),
-    dir: nz.Vec3(f32),
-    target_speed: f32,
-    accel: f32,
-    delta_time: f32,
-) void {
-    const velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
-    const radial = nz.vec.scale(planet_up, nz.vec.dot(velocity, planet_up));
-    const tangential = velocity - radial;
-
-    const target: nz.Vec3(f32) = if (nz.vec.length(dir) > 0.0001)
-        nz.vec.scale(nz.vec.normalize(dir), target_speed)
-    else
-        .{ 0, 0, 0 };
-
-    const to_target = target - tangential;
-    const distance_to_target = nz.vec.length(to_target);
-    const step = accel * delta_time;
-    const new_tangential = if (distance_to_target <= step)
-        target
-    else
-        tangential + nz.vec.scale(to_target, step / distance_to_target);
-
-    c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
-}

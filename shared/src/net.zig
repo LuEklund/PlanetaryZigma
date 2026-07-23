@@ -67,10 +67,12 @@ pub const Connect = struct {
 };
 
 // Comptime fingerprint of the entire wire format. Changes if and only if the
-// structural layout reachable from ClientPacket/ServerPacket changes;
+// structural layout reachable from ClientPacket/ServerPacket changes, or
+// version is bumped (the manual lever for behavior changes that keep
+// the wire layout identical — terrain math, gameplay rules).
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
-    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);
 };
 
 fn protocolDescription(comptime T: type) []const u8 {

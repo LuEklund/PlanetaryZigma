@@ -19,7 +19,6 @@ pub const DamageEvent = struct {
 pub const RenderCommand = union(enum) {
     entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
     entity_despawned: shared.entity.Id,
-    planet_spawned: u32,
 };
 
 mutex: std.Io.Mutex = .init,
@@ -41,6 +40,7 @@ teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 stage: u32 = 0,
+chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
@@ -150,6 +150,9 @@ pub fn clearPendingSpawns(self: *World) void {
 pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     defer self.clearPendingSpawns();
 
+    if (self.controller.free_camera)
+        std.log.debug("sdf at camera: {d:.3}", .{shared.planet.sdf.sampled(self.camera.transform.position, self.planet_radius)});
+
     for (self.pending_spawn.items) |entity_info| {
         if (self.getPtr(entity_info.id)) |entity| {
             try self.applySpawnData(entity, entity_info);
@@ -183,7 +186,6 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
                 self.planet_radius = @floatFromInt(radius);
-                self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = radius });
                 std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
             .projectile_cube => entity.transform.scale = @splat(0.3),
