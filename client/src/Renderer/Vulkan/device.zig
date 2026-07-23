@@ -34,7 +34,8 @@ pub const Physical = struct {
                 try check(c.vkGetPhysicalDeviceSurfaceSupportKHR(device, @intCast(i), surface, &present_supported));
 
                 if (supports_graphics and present_supported != 0) {
-                    std.log.info("found physical device: {s}, queue family: {d}", .{ properties.deviceName, i });
+                    const device_name = std.mem.sliceTo(&properties.deviceName, 0);
+                    std.log.info("found physical device: {s}, queue family: {d}", .{ device_name, i });
 
                     var device_desc_buffer_properties: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
                         .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,

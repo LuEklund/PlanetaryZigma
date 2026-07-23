@@ -6,6 +6,7 @@ server_id
 scrapDir
 
 steam/
+client.log
 
 implementation_ideas/
 Videos/
