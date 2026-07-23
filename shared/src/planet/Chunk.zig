@@ -43,6 +43,8 @@ pub fn coords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]Coord {
     }
     const surface_reach: f32 = @floatFromInt(radius + sdf.noise_amplitude + planet.cell_margin);
     const surface_reach_squared = surface_reach * surface_reach;
+    const solid_depth: f32 = @floatFromInt(radius - @min(radius, sdf.noise_amplitude + planet.cell_margin));
+    const solid_depth_squared = solid_depth * solid_depth;
     var x = span_min[0];
     while (x <= span_max[0]) : (x += 1) {
         var y = span_min[1];
@@ -54,6 +56,12 @@ pub fn coords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]Coord {
                 const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk));
                 const chunk_nearest_point_to_planet = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
                 if (nz.vec.dot(chunk_nearest_point_to_planet, chunk_nearest_point_to_planet) > surface_reach_squared) continue;
+                // TODO: (CAVES): DELETE THIS SKIP when caves carve the sdf!
+                // It assumes fully-buried chunks are solid rock with no surface.
+                // The day sdf() subtracts caves, buried chunks can contain geometry
+                // and this check will silently produce holes in the world.
+                const chunk_farthest_point_to_planet = @max(@abs(box_min), @abs(box_max));
+                if (nz.vec.dot(chunk_farthest_point_to_planet, chunk_farthest_point_to_planet) < solid_depth_squared) continue;
                 try chunks.append(gpa, chunk);
             }
         }
