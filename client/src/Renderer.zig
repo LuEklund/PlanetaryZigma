@@ -98,9 +98,10 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: y
         },
         .instance = .{
             .extensions = extensions,
-            .layers = if (builtin.mode == .Debug) &.{
-                "VK_LAYER_KHRONOS_validation",
-            } else &.{} ++ "VK_LAYER_KHRONOS_shader_object",
+            .layers = if (builtin.mode == .Debug)
+                &.{ "VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_shader_object" }
+            else
+                &.{"VK_LAYER_KHRONOS_shader_object"},
         },
         .device = .{
             .extensions = &.{
