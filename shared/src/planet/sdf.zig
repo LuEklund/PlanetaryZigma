@@ -1,5 +1,6 @@
 const std = @import("std");
 const nz = @import("numz");
+const tracy = @import("ztracy");
 
 pub const noise_frequency = 0.03;
 pub const noise_amplitude = 5;
@@ -37,15 +38,6 @@ pub const DensityGrid = struct {
     resolution: usize,
     values: []f32,
 
-    const SliceTask = struct {
-        values: []f32,
-        origin: nz.Vec3(i32),
-        resolution: usize,
-        radius: f32,
-        x_start: usize,
-        x_end: usize,
-    };
-
     pub fn init(gpa: std.mem.Allocator, radius: f32, bound: f32) !DensityGrid {
         const min_coordinate: i32 = -@as(i32, @intFromFloat(bound));
         const origin: nz.Vec3(i32) = .{ min_coordinate, min_coordinate, min_coordinate };
@@ -54,37 +46,27 @@ pub const DensityGrid = struct {
     }
 
     pub fn initRegion(gpa: std.mem.Allocator, radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
+        const tracy_scope = tracy.zone(@src());
+        defer tracy_scope.end();
         const origin = cell_min;
         const size = cell_max - cell_min + @as(nz.Vec3(i32), @splat(1));
-        std.debug.assert(size[0] > 0 and size[1] > 0 and size[2] > 0);
         std.debug.assert(size[0] == size[1] and size[1] == size[2]);
         const resolution: usize = @intCast(size[0]);
         const plane_len = try std.math.mul(usize, resolution, resolution);
         const value_count = try std.math.mul(usize, plane_len, resolution);
         const values = try gpa.alloc(f32, value_count);
-        errdefer gpa.free(values);
 
-        const worker_count = if (resolution < 64) 1 else @max(1, @min(resolution, std.Thread.getCpuCount() catch 1));
-        const tasks = try gpa.alloc(SliceTask, worker_count);
-        defer gpa.free(tasks);
-
-        const base = resolution / worker_count;
-        const remainder = resolution % worker_count;
-        var x_start: usize = 0;
-        for (tasks, 0..) |*task, worker_index| {
-            const width = base + @as(usize, @intFromBool(worker_index < remainder));
-            task.* = .{
-                .values = values,
-                .origin = origin,
-                .resolution = resolution,
-                .radius = radius,
-                .x_start = x_start,
-                .x_end = x_start + width,
-            };
-            x_start += width;
+        for (0..resolution) |x| {
+            const x_coord: i32 = origin[0] + @as(i32, @intCast(x));
+            for (0..resolution) |y| {
+                const y_coord: i32 = origin[1] + @as(i32, @intCast(y));
+                for (0..resolution) |z| {
+                    const z_coord: i32 = origin[2] + @as(i32, @intCast(z));
+                    const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
+                    values[(x * resolution + y) * resolution + z] = sdf(position, radius);
+                }
+            }
         }
-
-        try runParallelTasks(gpa, tasks, buildSlice);
 
         return .{ .origin_offset = origin, .resolution = resolution, .values = values };
     }
@@ -105,19 +87,6 @@ pub const DensityGrid = struct {
         return self.densityAt(grid_point) < 0;
     }
 
-    fn buildSlice(task: *const SliceTask) void {
-        for (task.x_start..task.x_end) |x| {
-            const x_coord: i32 = task.origin[0] + @as(i32, @intCast(x));
-            for (0..task.resolution) |y| {
-                const y_coord: i32 = task.origin[1] + @as(i32, @intCast(y));
-                for (0..task.resolution) |z| {
-                    const z_coord: i32 = task.origin[2] + @as(i32, @intCast(z));
-                    const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
-                    task.values[(x * task.resolution + y) * task.resolution + z] = sdf(position, task.radius);
-                }
-            }
-        }
-    }
 };
 
 // Extracts all density-zero surfaces: exterior terrain, caves, and tunnels.
@@ -185,6 +154,8 @@ pub const surface_nodes = struct {
     }
 
     pub fn buildRegion(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
+        const tracy_scope = tracy.zone(@src());
+        defer tracy_scope.end();
         var x = cell_min[0];
         while (x < cell_max[0]) : (x += 1) {
             var y = cell_min[1];

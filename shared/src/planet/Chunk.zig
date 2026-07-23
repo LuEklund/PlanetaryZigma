@@ -41,13 +41,20 @@ pub fn coords(gpa: std.mem.Allocator, radius: u32, clamp: ?Box) ![]Coord {
         span_min = @max(span_min, box.min.position);
         span_max = @min(span_max, box.max.position);
     }
+    const surface_reach: f32 = @floatFromInt(radius + sdf.noise_amplitude + planet.cell_margin);
+    const surface_reach_squared = surface_reach * surface_reach;
     var x = span_min[0];
     while (x <= span_max[0]) : (x += 1) {
         var y = span_min[1];
         while (y <= span_max[1]) : (y += 1) {
             var z = span_min[2];
             while (z <= span_max[2]) : (z += 1) {
-                try chunks.append(gpa, .{ .position = .{ x, y, z } });
+                const chunk: Coord = .{ .position = .{ x, y, z } };
+                const box_min: nz.Vec3(f32) = @floatFromInt(min(chunk));
+                const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk));
+                const chunk_nearest_point_to_planet = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
+                if (nz.vec.dot(chunk_nearest_point_to_planet, chunk_nearest_point_to_planet) > surface_reach_squared) continue;
+                try chunks.append(gpa, chunk);
             }
         }
     }

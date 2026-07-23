@@ -37,8 +37,6 @@ pub fn Planet(kind: PlanetKind) type {
         };
 
         pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
-            const tracy_scope = tracy.zone(@src());
-            defer tracy_scope.end();
             const radius_float: f32 = @floatFromInt(radius);
 
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
@@ -71,6 +69,8 @@ pub fn Planet(kind: PlanetKind) type {
         }
 
         fn buildMesh(gpa: std.mem.Allocator, node_map: *const std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const sdf.DensityGrid, radius: f32, owned_region: ?CellRegion) !@This() {
+            const tracy_scope = tracy.zone(@src());
+            defer tracy_scope.end();
             var vertices: std.ArrayList(Vertex) = .empty;
             var indices: std.ArrayList(u32) = .empty;
 

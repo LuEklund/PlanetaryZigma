@@ -2,6 +2,7 @@ const Planet = @This();
 
 const std = @import("std");
 const shared = @import("shared");
+const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../system.zig");
 const World = system.World;
@@ -10,17 +11,15 @@ const Vma = @import("Vulkan/Vma.zig");
 const Device = @import("Vulkan/device.zig").Logical;
 const FrameData = @import("Vulkan/FrameData.zig");
 
-id: shared.entity.Id,
+planet_id: shared.entity.Id,
 radius: u32,
-player_chunk: ?shared.planet.Chunk.Coord,
-chunk_view_distance: i32,
 meshes: std.AutoArrayHashMapUnmanaged(shared.planet.Chunk.Coord, Mesh),
 job: ?RunningJob,
 retired: std.ArrayList(RetiredChunk),
 
 const RunningJob = struct {
     job: shared.planet.Chunk.Job(.renderable),
-    id: shared.entity.Id,
+    planet_id: shared.entity.Id,
 };
 
 const RetiredChunk = struct {
@@ -28,12 +27,12 @@ const RetiredChunk = struct {
     frame: u32,
 };
 
+const job_batch_max: usize = 16;
+
 pub fn init() Planet {
     return .{
-        .id = .none,
+        .planet_id = .none,
         .radius = 0,
-        .player_chunk = null,
-        .chunk_view_distance = 0,
         .meshes = .empty,
         .job = null,
         .retired = .empty,
@@ -49,21 +48,18 @@ pub fn deinit(self: *Planet, gpa: std.mem.Allocator, vma: Vma) void {
 }
 
 pub fn build(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, radius: u32, frame: u32) !void {
-    try self.remove(gpa, self.id, frame);
-    self.id = id;
+    try self.remove(gpa, self.planet_id, frame);
+    self.planet_id = id;
     self.radius = radius;
-    self.player_chunk = null;
-    self.chunk_view_distance = 0;
 }
 
 pub fn remove(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, frame: u32) !void {
-    if (self.id == .none or self.id != id) return;
+    if (self.planet_id == .none or self.planet_id != id) return;
     for (self.meshes.values()) |mesh| {
         try self.retired.append(gpa, .{ .mesh = mesh, .frame = frame });
     }
     self.meshes.clearRetainingCapacity();
-    self.id = .none;
-    self.player_chunk = null;
+    self.planet_id = .none;
 }
 
 pub fn drainRetired(self: *Planet, gpa: std.mem.Allocator, vma: Vma, frame: u32) void {
@@ -79,26 +75,21 @@ pub fn drainRetired(self: *Planet, gpa: std.mem.Allocator, vma: Vma, frame: u32)
 }
 
 pub fn update(self: *Planet, gpa: std.mem.Allocator, world: *World) !void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
     if (self.job) |_| return;
-    if (self.id == .none) return;
+    if (self.planet_id == .none) return;
     const position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position;
     const player_chunk: shared.planet.Chunk.Coord = .fromPosition(position);
     const chunk_view_distance: i32 = @max(world.chunk_view_distance, 1);
-    if (self.player_chunk) |previous_player_chunk| {
-        if (self.radius <= @as(u32, @intCast(shared.planet.Chunk.dim))) return;
-        if (previous_player_chunk.eql(player_chunk) and self.chunk_view_distance == chunk_view_distance) return;
-    }
-    self.player_chunk = player_chunk;
-    self.chunk_view_distance = chunk_view_distance;
-    try self.startJob(gpa);
+    try self.startJob(gpa, player_chunk, chunk_view_distance);
 }
 
-fn startJob(self: *Planet, gpa: std.mem.Allocator) !void {
-    const player_chunk = self.player_chunk.?;
+fn startJob(self: *Planet, gpa: std.mem.Allocator, player_chunk: shared.planet.Chunk.Coord, chunk_view_distance: i32) !void {
     const small = self.radius <= @as(u32, @intCast(shared.planet.Chunk.dim));
     const clamp: ?shared.planet.Chunk.Box = if (small) null else .{
-        .min = player_chunk.offset(@splat(-self.chunk_view_distance)),
-        .max = player_chunk.offset(@splat(self.chunk_view_distance)),
+        .min = player_chunk.offset(@splat(-chunk_view_distance)),
+        .max = player_chunk.offset(@splat(chunk_view_distance)),
     };
     const window_coords = try shared.planet.Chunk.coords(gpa, self.radius, clamp);
     defer gpa.free(window_coords);
@@ -109,15 +100,27 @@ fn startJob(self: *Planet, gpa: std.mem.Allocator) !void {
             if (existing_coord.eql(coord)) break;
         } else try coords.append(gpa, coord);
     }
+    if (coords.items.len == 0) return;
+    if (coords.items.len > job_batch_max) {
+        std.sort.pdq(shared.planet.Chunk.Coord, coords.items, player_chunk, closerToPlayer);
+        coords.shrinkRetainingCapacity(job_batch_max);
+    }
     self.job = .{
         .job = try .start(gpa, self.radius, try coords.toOwnedSlice(gpa)),
-        .id = self.id,
+        .planet_id = self.planet_id,
     };
+}
+fn closerToPlayer(player_chunk: shared.planet.Chunk.Coord, a: shared.planet.Chunk.Coord, b: shared.planet.Chunk.Coord) bool {
+    const delta_a = a.position - player_chunk.position;
+    const delta_b = b.position - player_chunk.position;
+    return @reduce(.Add, delta_a * delta_a) < @reduce(.Add, delta_b * delta_b);
 }
 
 pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, world: *World, frame: u32) !void {
     const running = self.job orelse return;
     var results = running.job.collect() orelse return;
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
     self.job = null;
     defer {
         for (results.items) |result| {
@@ -126,8 +129,7 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
         }
         results.deinit(gpa);
     }
-    if (self.id != running.id) return;
-    const streamed_player_chunk = self.player_chunk.?;
+    if (self.planet_id != running.planet_id) return;
 
     var evicted: usize = 0;
     if (self.radius > @as(u32, @intCast(shared.planet.Chunk.dim))) {
@@ -144,14 +146,13 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
                 evicted += 1;
             }
         }
-        if (!live_player_chunk.eql(streamed_player_chunk) or live_chunk_view_distance != self.chunk_view_distance) self.player_chunk = null;
     }
     for (results.items) |*cpu_chunk| {
         if (cpu_chunk.indices.len == 0) continue;
         var name_buffer: [64]u8 = undefined;
-        const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(running.id), cpu_chunk.coord.position[0], cpu_chunk.coord.position[1], cpu_chunk.coord.position[2] });
+        const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(running.planet_id), cpu_chunk.coord.position[0], cpu_chunk.coord.position[1], cpu_chunk.coord.position[2] });
         const mesh = try Mesh.init(gpa, vma, name, device, Mesh.StaticVertex, cpu_chunk.vertices, cpu_chunk.indices, &.{.{ .index_start = 0, .index_count = @intCast(cpu_chunk.indices.len), .texture = .blank }});
         try self.meshes.put(gpa, cpu_chunk.coord, mesh);
     }
-    std.log.debug("planet chunks: player_chunk={any}, added={d}, evicted={d}, active={d}", .{ streamed_player_chunk, results.items.len, evicted, self.meshes.count() });
+    // std.log.debug("planet chunks: added={d}, evicted={d}, active={d}", .{ results.items.len, evicted, self.meshes.count() });
 }

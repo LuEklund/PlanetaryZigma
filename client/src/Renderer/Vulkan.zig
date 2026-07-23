@@ -540,8 +540,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         try drawStatic(self, cmd, entity.model_handle, base_matrix);
     }
 
-    if (info.world.getPtr(self.planet.id)) |entity| {
-        const transform = entity.transform.toMat4x4();
+    if (info.world.getPtr(self.planet.planet_id)) |planet| {
+        const transform = planet.transform.toMat4x4();
         for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
