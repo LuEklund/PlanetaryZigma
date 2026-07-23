@@ -10,7 +10,6 @@ const Ui = @import("Ui.zig");
 const yes = @import("yes");
 const tracy = @import("ztracy");
 
-
 inner: Inner,
 
 const Vulkan = @import("Renderer/Vulkan.zig");
@@ -101,7 +100,7 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, desktop: y
             .extensions = extensions,
             .layers = if (builtin.mode == .Debug) &.{
                 "VK_LAYER_KHRONOS_validation",
-            } else &.{},
+            } else &.{} ++ "VK_LAYER_KHRONOS_shader_object",
         },
         .device = .{
             .extensions = &.{
