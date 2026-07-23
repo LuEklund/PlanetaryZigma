@@ -302,30 +302,3 @@ pub fn moveOnPlanet(
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + walk));
 }
 
-pub fn moveTowardsOnPlanet(
-    body_id: c.b3BodyId,
-    planet_up: nz.Vec3(f32),
-    dir: nz.Vec3(f32),
-    target_speed: f32,
-    accel: f32,
-    delta_time: f32,
-) void {
-    const velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
-    const radial = nz.vec.scale(planet_up, nz.vec.dot(velocity, planet_up));
-    const tangential = velocity - radial;
-
-    const target: nz.Vec3(f32) = if (nz.vec.length(dir) > 0.0001)
-        nz.vec.scale(nz.vec.normalize(dir), target_speed)
-    else
-        .{ 0, 0, 0 };
-
-    const to_target = target - tangential;
-    const distance_to_target = nz.vec.length(to_target);
-    const step = accel * delta_time;
-    const new_tangential = if (distance_to_target <= step)
-        target
-    else
-        tangential + nz.vec.scale(to_target, step / distance_to_target);
-
-    c.b3Body_SetLinearVelocity(body_id, toB3(radial + new_tangential));
-}

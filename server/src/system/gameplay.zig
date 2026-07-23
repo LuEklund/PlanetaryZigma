@@ -95,7 +95,7 @@ pub fn updateEnemies(info: *const Info) !void {
         switch (enemy.kind.enemy) {
             .tubloida => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
@@ -118,7 +118,7 @@ pub fn updateEnemies(info: *const Info) !void {
             },
             .tubloid => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     if (info.world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
@@ -127,7 +127,7 @@ pub fn updateEnemies(info: *const Info) !void {
             },
             .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveTowardsOnPlanet(body_id, planet_up, chase_dir, speed, speed * 10, info.delta_time);
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
                 if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
                     enemy.last_attack = info.elapsed_time;
                     _ = info.world.spawn(.{
