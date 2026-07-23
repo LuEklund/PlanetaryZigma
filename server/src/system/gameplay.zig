@@ -59,15 +59,17 @@ pub fn updateEnemies(info: *const Info) !void {
         if (enemy.kind != .enemy) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
-        var closest: f32 = std.math.floatMax(f32);
-        const player = for (info.world.players.items) |player_id| {
+        var closest_player: ?*system.Entity = null;
+        var closest_distance: f32 = std.math.floatMax(f32);
+        for (info.world.players.items) |player_id| {
             const current_player = info.world.getPtr(player_id) orelse continue;
             if (current_player.flags.is_dead) continue;
-            const distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
-            if (distance >= closest) continue;
-            closest = distance;
-            break current_player;
-        } else return;
+            const player_distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
+            if (player_distance >= closest_distance) continue;
+            closest_distance = player_distance;
+            closest_player = current_player;
+        }
+        const player = closest_player orelse return;
         const to_player = player.transform.position - enemy.transform.position;
         const distance = nz.vec.length(to_player);
 

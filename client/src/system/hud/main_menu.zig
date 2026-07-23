@@ -61,6 +61,15 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
         return .quit;
     }
 
+    ui.add(null, .{
+        .name = "menu_version",
+        .size = .{ .fixed = .{ .heigth = 22, .width = 140 } },
+        .offset = .{ .left = 10, .top = ui.screen_heigth - 28 },
+        .color = .new(0, 0, 0, 0),
+        .child_anchor = .{ .x = .start, .y = .center },
+        .text = .{ .data = "v" ++ shared.version, .size = 18, .color = .new(0.55, 0.58, 0.54, 1) },
+    });
+
     switch (hud.screen) {
         .main => {},
         .multiplayer => try multiplayerPanel(network_manager, ui, options, panel_left, panel_top, panel_width),

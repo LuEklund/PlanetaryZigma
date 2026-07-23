@@ -17,6 +17,8 @@ pub const Inventory = inventory.Inventory;
 
 pub const entity = @import("entity.zig");
 
+pub const version: []const u8 = "0.1.0";
+
 pub const tick_seconds: f32 = 0.0167;
 pub const max_entities: usize = 1024;
 pub const max_enemies: usize = 100;

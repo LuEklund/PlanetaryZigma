@@ -279,7 +279,7 @@ fn steamCallback(
                     },
                     .k_ESteamNetworkingConnectionState_Connected => {
                         var remote_identity = event.m_info.m_identityRemote;
-                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id) {
+                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id and self.?.host_state != .connected) {
                             self.?.host_conn = event.m_hConn;
                             self.?.host_state = .connected;
                             std.log.info("host connected (conn={d})", .{event.m_hConn});
