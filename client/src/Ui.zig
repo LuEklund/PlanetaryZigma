@@ -5,7 +5,7 @@ const nz = @import("shared").numz;
 const Font = @import("asset/Font.zig");
 const Image = @import("Renderer/Vulkan/Image.zig");
 
-pub const max_ui_quads: usize = 1024;
+pub const max_ui_quads: usize = 2048;
 
 pub const Vertex = extern struct {
     position: [2]f32,

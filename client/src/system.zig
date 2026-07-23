@@ -14,6 +14,7 @@ pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
 
 pub const Camera = @import("system/Camera.zig");
+pub const Chat = @import("system/Chat.zig");
 pub const Controller = @import("system/Controller.zig");
 pub const Hud = @import("system/Hud.zig");
 pub const Ui = @import("Ui.zig");
@@ -113,7 +114,7 @@ pub const Context = struct {
             .main_menu => try self.network_manager.returnToMainMenu(),
             .quit => self.request_exit = true,
         }
-        if (paused_before_hud or self.hud.overlay != .none) {
+        if (paused_before_hud or self.hud.overlay != .none or info.world.chat.open) {
             info.world.controller.clearInput();
         }
         try self.applyOptions(info);
@@ -142,6 +143,19 @@ pub const Context = struct {
         if (info.world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
             info.world.controller.eventUpdate(event);
             return;
+        }
+        if (event.* == .key and self.scene == .game and self.hud.overlay == .none) {
+            const key = event.key;
+            if (info.world.chat.open) {
+                info.world.chat.handleKey(key);
+                if (key.sym == .escape and key.state == .pressed) info.world.controller.suppress_escape_release = true;
+                return;
+            }
+            if (key.state == .pressed and key.sym == Chat.open_key) {
+                info.world.chat.open = true;
+                info.world.controller.clearInput();
+                return;
+            }
         }
         if (event.* == .key) {
             const key = event.key;
