@@ -76,7 +76,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.joint_buffers = .init(gpa);
-    self.planet = .init(gpa);
+    self.planet = .init();
     self.current_frame_inflight = 0;
 
     self.instance = try .init(gpa, options.instance.extensions, options.instance.layers);
@@ -540,11 +540,9 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         try drawStatic(self, cmd, entity.model_handle, base_matrix);
     }
 
-    for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .planet) continue;
-        const set = self.planet.chunks.getPtr(entity.id) orelse continue;
+    if (info.world.getPtr(self.planet.id)) |entity| {
         const transform = entity.transform.toMat4x4();
-        for (set.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
+        for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned_vert));
@@ -981,7 +979,10 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
     }
     for (world.render_outbox.items) |command| switch (command) {
         .entity_spawned => |spawned| {
-            if (spawned.kind == .planet) continue;
+            if (spawned.kind == .planet) {
+                try self.planet.build(gpa, spawned.id, @intFromFloat(world.planet_radius), self.current_frame_inflight);
+                continue;
+            }
             const entity = world.getPtr(spawned.id) orelse continue;
             const path = shared.entity.modelSpec(spawned.kind).path;
             entity.model_handle = if (std.mem.endsWith(u8, path, ".glb"))
@@ -998,7 +999,6 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
             self.removeSkeleton(gpa, id);
             try self.planet.remove(gpa, id, self.current_frame_inflight);
         },
-        .planet_spawned => |spawned| try self.planet.build(gpa, spawned.id, spawned.radius, self.current_frame_inflight),
     };
     world.render_outbox.clearRetainingCapacity();
     try self.planet.update(gpa, world);
