@@ -63,7 +63,7 @@ pub fn max(chunk: Coord) nz.Vec3(i32) {
 }
 
 pub fn range(radius: u32) Range {
-    const bound: i32 = @intCast(@max(radius, planet.min_radius) + sdf.noise_amplitude + planet.cell_margin);
+    const bound: i32 = @intCast(radius + sdf.noise_amplitude + planet.cell_margin);
     return .{
         .min = @divFloor(-bound, dim),
         .max = @divFloor(bound, dim),

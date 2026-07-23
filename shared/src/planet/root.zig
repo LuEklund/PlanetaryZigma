@@ -39,7 +39,7 @@ pub fn Planet(kind: PlanetKind) type {
         pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
             const tracy_scope = tracy.zone(@src());
             defer tracy_scope.end();
-            const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
+            const radius_float: f32 = @floatFromInt(radius);
 
             var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
             defer node_map.deinit(gpa);
@@ -55,7 +55,7 @@ pub fn Planet(kind: PlanetKind) type {
         pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: Chunk.Coord) !@This() {
             const tracy_scope = tracy.zone(@src());
             defer tracy_scope.end();
-            const radius_float: f32 = @floatFromInt(@max(radius, min_radius));
+            const radius_float: f32 = @floatFromInt(radius);
             const cell_min = Chunk.min(chunk);
             const cell_max = Chunk.max(chunk);
             const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
