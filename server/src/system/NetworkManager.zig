@@ -77,12 +77,20 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
         },
         .disconnect => .disconnect,
         .input => |input| .{ .input = input },
+        .chat => |chat| chat: {
+            const text = try gpa.dupe(u8, chat.text);
+            break :chat .{ .chat = .{
+                .text_len = @intCast(text.len),
+                .text = text,
+            } };
+        },
     };
 }
 
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
         .connect => |connect| if (connect.name.len != 0) gpa.free(connect.name),
+        .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
         .disconnect, .input => {},
     }
 }
@@ -161,7 +169,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     }
                     var player_name_changed = false;
                     var name_buf: [shared.max_player_name_len]u8 = undefined;
-                    const name = sanitizePlayerName(&name_buf, connect.name);
+                    const name = sanitizeText(&name_buf, connect.name);
                     const display_name = if (name.len == 0) shared.default_player_name else name;
                     if (!std.mem.eql(u8, client.name, display_name)) {
                         if (client.name.len != 0) self.gpa.free(client.name);
@@ -213,6 +221,14 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     if (world.getPtr(client.entity_id)) |entity| {
                         entity.controller.input = command.input;
                     }
+                },
+                .chat => |chat| {
+                    if (client.entity_id == .none) continue;
+                    var text_buf: [shared.max_chat_len]u8 = undefined;
+                    const text = sanitizeText(&text_buf, chat.text);
+                    if (text.len == 0) continue;
+                    std.log.debug("chat {s}: {s}", .{ client.name, text });
+                    try self.broadcastChat(writer, client.entity_id, text);
                 },
             }
         }
@@ -438,6 +454,18 @@ fn broadcastPlayerName(self: *NetworkManager, writer: *std.Io.Writer, entity_id:
     }
 }
 
+fn broadcastChat(self: *NetworkManager, writer: *std.Io.Writer, sender_id: shared.entity.Id, text: []const u8) !void {
+    var it = self.clients.valueIterator();
+    while (it.next()) |client| {
+        if (client.entity_id == .none) continue;
+        try client.sendCommand(writer, .{ .chat_message = .{
+            .id = sender_id,
+            .text_len = @intCast(text.len),
+            .text = text,
+        } }, .reliable);
+    }
+}
+
 fn updateAdvertisedSession(self: *NetworkManager) void {
     var player_names: [shared.max_players][]const u8 = undefined;
     var player_count: usize = 0;
@@ -458,7 +486,7 @@ fn updateAdvertisedSession(self: *NetworkManager) void {
     self.session_metadata_dirty = false;
 }
 
-fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
+fn sanitizeText(buffer: []u8, raw: []const u8) []const u8 {
     var len: usize = 0;
     for (std.mem.trim(u8, raw, " \t\r\n")) |char| {
         if (len >= buffer.len) break;

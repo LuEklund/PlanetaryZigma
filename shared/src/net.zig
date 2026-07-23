@@ -26,6 +26,7 @@ pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
     input: Input,
+    chat: ChatSend,
 };
 
 /// server → client
@@ -40,6 +41,7 @@ pub const ServerPacket = union(enum) {
     update_inventory: UpdateInventory,
     update_player_name: PlayerNameUpdate,
     set_currency: SetCurrency,
+    chat_message: ChatMessage,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -108,6 +110,17 @@ pub const PlayerNameUpdate = struct {
     id: entity.Id,
     name_len: u16,
     name: []const u8,
+};
+
+pub const ChatSend = struct {
+    text_len: u16,
+    text: []const u8,
+};
+
+pub const ChatMessage = struct {
+    id: entity.Id,
+    text_len: u16,
+    text: []const u8,
 };
 
 pub const Acknowledge = struct {

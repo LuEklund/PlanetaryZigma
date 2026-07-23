@@ -31,6 +31,8 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
 
+    addChat(info, ui);
+
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
         addEnemyHealthBars(info, ui);
@@ -251,6 +253,48 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                 .fill_color = .new(1, 0, 0, 1),
             });
         }
+    }
+}
+
+fn addChat(info: *const Info, ui: *Ui) void {
+    const chat = &info.world.chat;
+    const text_size: f32 = 18;
+    const line_heigth: f32 = 22;
+    const left: f32 = 12;
+    var top = ui.screen_heigth - 70 - line_heigth;
+
+    if (chat.open) {
+        const input_text = ui.print("> {s}_", .{chat.text()});
+        const size = ui.textSize(input_text, text_size);
+        ui.add(null, .{
+            .offset = .{ .left = left, .top = top },
+            .size = .{ .fixed = .{ .width = @max(size.width + 8, 240), .heigth = line_heigth } },
+            .color = .new(0, 0, 0, 0.6),
+            .child_anchor = .{ .x = .start, .y = .center },
+            .children = &.{.{
+                .size = .{ .fixed = size },
+                .text = .{ .data = input_text, .size = text_size },
+            }},
+        });
+    }
+
+    var index = chat.count();
+    while (index > 0) {
+        index -= 1;
+        const line = chat.get(index);
+        if (!chat.open and info.elapsed_time - line.time > system.Chat.visible_seconds) break;
+        top -= line_heigth;
+        const size = ui.textSize(line.slice(), text_size);
+        ui.add(null, .{
+            .offset = .{ .left = left, .top = top },
+            .size = .{ .fixed = .{ .width = size.width + 8, .heigth = line_heigth } },
+            .color = .new(0, 0, 0, 0.45),
+            .child_anchor = .{ .x = .start, .y = .center },
+            .children = &.{.{
+                .size = .{ .fixed = size },
+                .text = .{ .data = line.slice(), .size = text_size },
+            }},
+        });
     }
 }
 
