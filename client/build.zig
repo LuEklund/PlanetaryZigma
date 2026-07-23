@@ -32,6 +32,15 @@ pub fn build(b: *std.Build) void {
     });
     stb_truetype.addIncludePath(b.dependency("stb", .{}).path("."));
 
+    const miniaudio_dep = b.dependency("miniaudio", .{});
+    const miniaudio_translate_c = b.addTranslateC(.{
+        .root_source_file = miniaudio_dep.path("miniaudio.h"),
+        .optimize = optimize,
+        .target = target,
+    });
+    const miniaudio = miniaudio_translate_c.createModule();
+    miniaudio.addCSourceFile(.{ .file = miniaudio_dep.path("miniaudio.c") });
+
     const system = b.addLibrary(.{
         .name = "system_client",
         .root_module = b.createModule(.{
@@ -75,6 +84,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "yes", .module = yes },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "miniaudio", .module = miniaudio },
             },
             .link_libc = true,
         }),

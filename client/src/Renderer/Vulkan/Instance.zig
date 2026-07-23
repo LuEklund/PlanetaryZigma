@@ -37,6 +37,25 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, 
         return error.ExtensionsNotFound;
     }
 
+    var layer_count: u32 = undefined;
+    try check(c.vkEnumerateInstanceLayerProperties(&layer_count, null));
+    const available_layers: []c.VkLayerProperties = try gpa.alloc(c.VkLayerProperties, layer_count);
+    defer gpa.free(available_layers);
+    try check(c.vkEnumerateInstanceLayerProperties(&layer_count, available_layers.ptr));
+
+    var enabled_layers: std.ArrayList([*:0]const u8) = .empty;
+    defer enabled_layers.deinit(gpa);
+    for (layers) |requested_layer| {
+        const requested_name = std.mem.span(requested_layer);
+        for (available_layers) |available_layer| {
+            const available_name_len = std.mem.findScalar(u8, available_layer.layerName[0..], 0).?;
+            if (std.mem.eql(u8, requested_name, available_layer.layerName[0..available_name_len])) {
+                try enabled_layers.append(gpa, requested_layer);
+                break;
+            }
+        } else std.log.warn("vulkan layer not installed, skipping: {s}", .{requested_layer});
+    }
+
     const instane_create_info: *const c.VkInstanceCreateInfo = &.{
         .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &.{
@@ -49,8 +68,8 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, 
         },
         .enabledExtensionCount = @intCast(required_extensions.len),
         .ppEnabledExtensionNames = required_extensions.ptr,
-        .enabledLayerCount = @intCast(layers.len),
-        .ppEnabledLayerNames = layers.ptr,
+        .enabledLayerCount = @intCast(enabled_layers.items.len),
+        .ppEnabledLayerNames = enabled_layers.items.ptr,
     };
 
     var instance: c.VkInstance = undefined;

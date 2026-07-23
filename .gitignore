@@ -7,6 +7,8 @@ scrapDir
 
 steam/
 client.log
+server/server.log
+STEAM_LINUX_HANDOFF.md
 
 implementation_ideas/
 Videos/
