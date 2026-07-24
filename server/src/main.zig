@@ -18,7 +18,8 @@ pub fn main(init: std.process.Init) !void {
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "server.log");
 
-    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
+    shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
+    std.log.info("\n====\nNET = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
 
     var args_iterator = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
     defer args_iterator.deinit();

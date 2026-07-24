@@ -276,6 +276,12 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
         info.world.controller.input_map.dev_command = .none;
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
+    if (info.world.chat.pending) {
+        const chat_text = info.world.chat.text();
+        try self.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
+        info.world.chat.pending = false;
+        info.world.chat.input_len = 0;
+    }
     if (info.world.getPtr(info.world.player_id)) |player| {
         if (player.kind == .player and player.player_name.len == 0) {
             try info.world.setPlayerName(player, self.playerDisplayName());
@@ -388,6 +394,14 @@ fn handleCommand(
             if (info.world.getPtr(set_currency.id)) |entity| {
                 entity.currency = set_currency.amount;
             }
+        },
+        .chat_message => |chat_message| {
+            const sender = info.world.getPtr(chat_message.id);
+            const name = if (sender != null and sender.?.player_name.len != 0)
+                sender.?.player_name
+            else
+                shared.default_player_name;
+            info.world.chat.push(name, chat_message.text, info.elapsed_time);
         },
     }
 }

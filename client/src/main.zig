@@ -23,12 +23,13 @@ pub fn main(init: std.process.Init) !void {
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
     defer miniaudio.ma_engine_uninit(&eng);
     // _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
-    // _ = miniaudio.ma_engine_set_volume(&eng, 0.05);
+    // _ = miniaudio.ma_engine_set_volume(&eng, 1);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
     const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
-    shared.SteamNet.log_connection_status = std.process.Environ.contains(.empty, gpa, "NET") catch false;
+    shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
+    std.log.info("\n====\nNET = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
     var steam_client: shared.SteamNet.Client = try .init(gpa, io);
     steam_client.handle_packets_future = try io.concurrent(shared.SteamNet.Client.handlePackets, .{&steam_client});
     steam_zone.end();

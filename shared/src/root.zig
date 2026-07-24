@@ -25,6 +25,7 @@ pub const max_enemies: usize = 100;
 pub const max_players: usize = 4;
 pub const max_player_name_len: usize = 32;
 pub const default_player_name: []const u8 = "Player";
+pub const max_chat_len: usize = 128;
 
 pub fn redirectStderrToFile(io: std.Io, path: []const u8) void {
     const file = std.Io.Dir.cwd().createFile(io, path, .{}) catch return;

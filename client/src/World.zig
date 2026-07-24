@@ -4,6 +4,7 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
+const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
 const Model = @import("asset/Model.zig");
@@ -36,6 +37,7 @@ emitters: std.ArrayList(Emitter) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
+chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
@@ -128,6 +130,7 @@ pub fn clearSession(self: *World) void {
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
+    self.chat = .{};
     self.controller.clearInput();
     self.controller.releaseMouseButtons();
     self.controller.resetMouseDelta();
