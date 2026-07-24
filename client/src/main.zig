@@ -22,8 +22,8 @@ pub fn main(init: std.process.Init) !void {
     var eng: miniaudio.ma_engine = undefined;
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
     defer miniaudio.ma_engine_uninit(&eng);
-    _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
-    _ = miniaudio.ma_engine_set_volume(&eng, 1);
+    // _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
+    // _ = miniaudio.ma_engine_set_volume(&eng, 1);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
