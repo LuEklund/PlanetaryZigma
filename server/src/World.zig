@@ -13,6 +13,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet_radius: f32,
+phase: Phase,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
@@ -32,6 +33,8 @@ pub const PendingDespawn = struct {
     id: shared.entity.Id,
     remove: bool,
 };
+
+pub const Phase = enum { waiting, playing };
 
 pub const Director = struct {
     credits: f32,
@@ -126,6 +129,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
+        .phase = .waiting,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
         .next_entity_id = 1,
         .next_stage = 0,

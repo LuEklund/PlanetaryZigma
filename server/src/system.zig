@@ -74,7 +74,7 @@ pub const Context = struct {
             self.world.next_stage_requested = false;
             try self.world.startStage(&self.physics);
         }
-        try gameplay.updateDirector(info);
+        if (self.world.phase == .playing) try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);
