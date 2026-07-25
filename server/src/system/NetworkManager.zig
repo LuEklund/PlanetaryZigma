@@ -182,7 +182,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = .{ 0, info.world.planet_radius + 10, 0 } },
+                            .transform = .{ .position = info.world.playerSpawnPosition() },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 
@@ -422,7 +422,7 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
             .planet => .{ .planet_radius = @intFromFloat(info.world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform => .none,
         },
     };
 }

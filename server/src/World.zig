@@ -17,12 +17,20 @@ phase: Phase,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
+start_round_requested: bool,
 toggle_spawning_requested: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
+ready_platform_id: shared.entity.Id,
 next_entity_id: u32,
 next_stage: u32,
 prng: std.Random.DefaultPrng,
+
+// ponytail: ready-room lives at altitude directly above the north pole; radial gravity
+// already points "down" through the platform, so no physics change needed. Tune to taste.
+pub const ready_room_altitude_factor: f32 = 2.5;
+pub const ready_room_stand_height: f32 = 2;
+pub const ready_room_platform_scale: nz.Vec3(f32) = .{ 20, 0.5, 20 };
 
 pub const spawn_hover: f32 = 1.5;
 pub const item_throw_speed: f32 = 18;
@@ -125,9 +133,11 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
+        .start_round_requested = false,
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
+        .ready_platform_id = .none,
         .planet_radius = 100,
         .phase = .waiting,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
@@ -251,6 +261,21 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
+fn readyPlatformPosition(self: *const World) nz.Vec3(f32) {
+    return nz.Vec3(f32){ 0, self.planet_radius * ready_room_altitude_factor, 0 };
+}
+
+pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
+    if (self.phase == .waiting)
+        return self.readyPlatformPosition() + nz.Vec3(f32){ 0, ready_room_stand_height, 0 };
+    return shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 };
+}
+
+pub fn startRound(self: *World, physics: *Physics) !void {
+    self.phase = .playing;
+    try self.startStage(physics);
+}
+
 pub fn startStage(self: *World, physics: *Physics) !void {
     self.next_stage += 1;
     for (self.entities.values()) |entry| {
@@ -265,14 +290,21 @@ pub fn startStage(self: *World, physics: *Physics) !void {
     else
         random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
     std.log.debug("startStage planet_radius={d}", .{self.planet_radius});
-    const player_spawn_surface = shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius);
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},
     });
     try self.flush(physics);
 
-    const player_spawn_position = player_spawn_surface + nz.Vec3(f32){ 0, 2, 0 };
+    if (self.phase == .waiting) {
+        const platform = try self.spawn(.{
+            .kind = .platform,
+            .transform = .{ .position = self.readyPlatformPosition(), .scale = ready_room_platform_scale },
+        });
+        self.ready_platform_id = platform.id;
+        try self.flush(physics);
+    }
+    const player_spawn_position = self.playerSpawnPosition();
     for (self.entities.values()) |*player| {
         if (player.kind != .player) continue;
         player.transform.position = player_spawn_position;
