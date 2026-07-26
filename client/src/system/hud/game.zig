@@ -425,7 +425,6 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
 
         const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
-        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;
         const text_size = ui.textSize(name, label_size);
         const tag_width = text_size.width + padding_x * 2;
@@ -454,12 +453,22 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     }
 }
 
-//TODO: account for hills.
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+    const surface_epsilon: f32 = 0.2;
+    const step_safety: f32 = 0.7;
+    const max_steps: usize = 48;
+
     const segment = tag_position - camera_position;
-    const segment_len_sq = nz.vec.dot(segment, segment);
-    if (segment_len_sq <= 0.0001) return false;
-    const t = std.math.clamp(-nz.vec.dot(camera_position, segment) / segment_len_sq, 0, 1);
-    const closest = camera_position + nz.vec.scale(segment, t);
-    return nz.vec.length(closest) < planet_radius + 0.2;
+    const distance_to_tag = nz.vec.length(segment);
+    if (distance_to_tag <= surface_epsilon) return false;
+    const direction = nz.vec.scale(segment, 1 / distance_to_tag);
+
+    var travelled: f32 = surface_epsilon;
+    for (0..max_steps) |_| {
+        if (travelled >= distance_to_tag - surface_epsilon) return false;
+        const value = shared.planet.sdf.sampled(camera_position + nz.vec.scale(direction, travelled), planet_radius);
+        if (value < 0) return true;
+        travelled += @max(value * step_safety, surface_epsilon);
+    }
+    return false;
 }
