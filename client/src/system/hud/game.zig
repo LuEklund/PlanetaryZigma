@@ -35,7 +35,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
-        addEnemyHealthBars(info, ui);
+        addWorldHealthBars(info, ui);
         addDamagePopups(info, ui, damage_popups);
 
         const health_current = player.stats.current.get(.health);
@@ -353,26 +353,35 @@ fn addHealthBar(ui: *Ui, args: struct {
     });
 }
 
-fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
+fn addWorldHealthBars(info: *const Info, ui: *Ui) void {
     const bar_width: f32 = 46;
     const bar_heigth: f32 = 4;
+    const bar_reference_distance: f32 = 20;
+    const bar_min_scale: f32 = 0.35;
+    const bar_max_scale: f32 = 1;
+    const camera_position = info.world.camera.transform.position;
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .enemy) continue;
+        if (!entity.kind.hasHealth()) continue;
+        if (entity.id == info.world.player_id) continue;
         const health_current = entity.stats.current.get(.health);
         const health_max = entity.stats.max.get(.health);
         if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
 
         const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
-        if (isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
 
+        const distance = nz.vec.distance(camera_position, bar_position);
+        const scale = std.math.clamp(bar_reference_distance / @max(distance, 0.001), bar_min_scale, bar_max_scale);
+        const scaled_width = bar_width * scale;
+        const scaled_heigth = bar_heigth * scale;
+
         addHealthBar(ui, .{
-            .left = screen[0] - bar_width / 2,
-            .top = screen[1] - bar_heigth,
-            .width = bar_width,
-            .heigth = bar_heigth,
+            .left = screen[0] - scaled_width / 2,
+            .top = screen[1] - scaled_heigth,
+            .width = scaled_width,
+            .heigth = scaled_heigth,
             .fraction = health_current / health_max,
             .fill_color = .new(0.9, 0.2, 0.15, 0.9),
         });
@@ -416,7 +425,6 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
 
         const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
-        if (info.world.planet_radius > 0 and isOccludedByPlanet(info.world.camera.transform.position, tag_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;
         const text_size = ui.textSize(name, label_size);
         const tag_width = text_size.width + padding_x * 2;
@@ -445,12 +453,22 @@ fn addNameTags(info: *const Info, ui: *Ui) void {
     }
 }
 
-//TODO: account for hills.
 fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+    const surface_epsilon: f32 = 0.2;
+    const step_safety: f32 = 0.7;
+    const max_steps: usize = 48;
+
     const segment = tag_position - camera_position;
-    const segment_len_sq = nz.vec.dot(segment, segment);
-    if (segment_len_sq <= 0.0001) return false;
-    const t = std.math.clamp(-nz.vec.dot(camera_position, segment) / segment_len_sq, 0, 1);
-    const closest = camera_position + nz.vec.scale(segment, t);
-    return nz.vec.length(closest) < planet_radius + 0.2;
+    const distance_to_tag = nz.vec.length(segment);
+    if (distance_to_tag <= surface_epsilon) return false;
+    const direction = nz.vec.scale(segment, 1 / distance_to_tag);
+
+    var travelled: f32 = surface_epsilon;
+    for (0..max_steps) |_| {
+        if (travelled >= distance_to_tag - surface_epsilon) return false;
+        const value = shared.planet.sdf.sampled(camera_position + nz.vec.scale(direction, travelled), planet_radius);
+        if (value < 0) return true;
+        travelled += @max(value * step_safety, surface_epsilon);
+    }
+    return false;
 }

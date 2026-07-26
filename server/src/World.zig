@@ -244,8 +244,19 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     if (!entity.kind.hasHealth()) return .ignored;
     const before = entity.stats.current.get(.health);
     if (before <= 0) return .ignored;
-    const current = entity.stats.addCurrent(.health, amount);
+    var current = entity.stats.addCurrent(.health, amount);
     if (current == before) return .ignored;
+    if (current <= 0 and entity.kind == .target_dummy) {
+        current = entity.stats.max.get(.health);
+        entity.stats.current.set(.health, current);
+        self.client_updates.appendAssumeCapacity(.{ .stat = .{
+            .id = entity.id,
+            .stat_kind = .health,
+            .source = if (source) |source_entity| source_entity.id else .none,
+            .amount = .{ .set_current = @floatCast(current) },
+        } });
+        return .changed;
+    }
     if (current <= 0) self.queueDespawn(entity.id);
     self.client_updates.appendAssumeCapacity(.{ .stat = .{
         .id = entity.id,
@@ -313,6 +324,16 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                     },
                 });
             }
+
+            const dummy_capsule = shared.entity.collider(.target_dummy).?.shape.capsule;
+            _ = try self.spawn(.{
+                .kind = .target_dummy,
+                .transform = .{ .position = floor_position + nz.Vec3(f32){
+                    slab.x * 0.5,
+                    slab.y + dummy_capsule.half_heigth + dummy_capsule.radius,
+                    0,
+                } },
+            });
 
             const portal = try self.spawn(.{
                 .kind = .teleporter,

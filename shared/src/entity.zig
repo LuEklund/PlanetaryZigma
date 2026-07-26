@@ -153,6 +153,18 @@ pub fn spec(kind: Kind) Spec {
             .has_health = false,
             .expects_model = false,
         },
+        .target_dummy => .{
+            .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
+            .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .idle = "idle",
+                .walk = "walk",
+                .attack = "attack",
+                .death = "Death",
+            } },
+            .has_health = true,
+            .expects_model = true,
+            .stats = .initDefault(0, .{ .health = 1000 }),
+        },
         .projectile_cube => .{
             .collider = null,
             .model = .{ .path = "cube_projectile", .skinned = false, .clip_names = null },
@@ -219,11 +231,11 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
-const all_kind_count = 8 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
+const all_kind_count = 9 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;
-    kinds[0..8].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .projectile_cube, .projectile_rocket };
-    var kind_index: usize = 8;
+    kinds[0..9].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };
+    var kind_index: usize = 9;
     for (std.enums.values(EnemyKind)) |enemy_kind| {
         kinds[kind_index] = .{ .enemy = enemy_kind };
         kind_index += 1;
@@ -246,6 +258,7 @@ pub const Kind = union(enum) {
     teleporter,
     lootbox,
     platform,
+    target_dummy,
 
     projectile_cube,
     projectile_rocket,
