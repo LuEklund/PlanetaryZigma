@@ -144,14 +144,19 @@ pub const Context = struct {
             info.world.controller.eventUpdate(event);
             return;
         }
-        if (event.* == .key and self.scene == .game and self.hud.overlay == .none) {
-            const key = event.key;
-            if (info.world.chat.open) {
-                info.world.chat.handleKey(key);
-                if (key.sym == .escape and key.state == .pressed) info.world.controller.suppress_escape_release = true;
-                return;
-            }
-            if (key.state == .pressed and key.sym == Chat.open_key) {
+        if (self.scene == .game and self.hud.overlay == .none) {
+            if (info.world.chat.open) switch (event.*) {
+                .key => |key| {
+                    info.world.chat.handleKey(key);
+                    if (key.sym == .escape and key.state == .pressed) info.world.controller.suppress_escape_release = true;
+                    return;
+                },
+                .text => |typed| {
+                    info.world.chat.handleText(typed.slice());
+                    return;
+                },
+                else => {},
+            } else if (event.* == .key and event.key.state == .released and event.key.sym == Chat.open_key) {
                 info.world.chat.open = true;
                 info.world.controller.clearInput();
                 return;
