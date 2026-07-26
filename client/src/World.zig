@@ -139,8 +139,6 @@ pub fn clearSession(self: *World) void {
 pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
-        // Spawn data is per-kind creation payload: read ONCE, here, in the switch below.
-        // A re-sent spawn for an entity we already have carries nothing new.
         if (self.getPtr(entity_info.id) != null) continue;
         const entity = try self.spawn(entity_info.id);
         entity.* = .{

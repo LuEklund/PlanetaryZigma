@@ -2,7 +2,7 @@ const NetworkManager = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;

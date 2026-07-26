@@ -25,8 +25,6 @@ next_entity_id: u32,
 stage: u32,
 prng: std.Random.DefaultPrng,
 
-// ponytail: ship room lives at altitude directly above the north pole; radial gravity
-// already points "down" through the floor, so no physics change needed. Tune to taste.
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
 
@@ -292,9 +290,6 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
 
     switch (place) {
         .ship => {
-            // ponytail: the room is 5 copies of the ONE `.platform` collider — a floor plus
-            // 4 of the same slab stood on edge by a quarter turn. No visual, no new Kind, no
-            // per-entity collider size. Swap for a mesh collider when the spaceship model lands.
             const floor_position: nz.Vec3(f32) = self.shipRoomPosition();
             _ = try self.spawn(.{
                 .kind = .platform,
@@ -319,10 +314,6 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 });
             }
 
-            // ponytail: the start portal IS a teleporter, spawned already active and fully
-            // charged. That skips the idle->interact branch (which spawns a boss) and lands
-            // straight on "charged and no bosses left -> next_stage_requested", so interact
-            // launches the round. No new Kind, no stage check inside PlayerController.
             const portal = try self.spawn(.{
                 .kind = .teleporter,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){ 0, slab.y, 0 } },

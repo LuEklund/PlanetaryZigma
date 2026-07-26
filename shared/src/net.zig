@@ -99,12 +99,6 @@ fn protocolDescription(comptime T: type) []const u8 {
     };
 }
 
-// Names are bounded at 32 bytes, so they ride the wire BY VALUE — an array field IS the
-// bytes, so a plain struct assignment copies them. A slice field would only copy ptr+len
-// and keep aliasing the receive buffer (unmarshal takes no allocator), which is what forced
-// a dupe into every queue that outlives the packet plus a free at every clear site.
-// Zero-padded instead of length-prefixed: the length comes from the bytes, so there is no
-// peer-supplied length to distrust.
 pub const PlayerName = struct {
     name: [root.max_player_name_len]u8,
 
