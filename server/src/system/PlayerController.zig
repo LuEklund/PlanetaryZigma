@@ -70,7 +70,6 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
                 Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
             },
-            // ponytail: temp Start-the-round key until the lobby start portal (rung 4)
             .f9 => info.world.start_round_requested = true,
 
             else => {},

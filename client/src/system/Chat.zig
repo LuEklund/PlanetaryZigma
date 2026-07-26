@@ -25,7 +25,6 @@ pushed: usize = 0,
 open: bool = false,
 input: [shared.max_chat_len]u8 = undefined,
 input_len: usize = 0,
-shift: bool = false,
 pending: bool = false,
 
 pub fn push(self: *Chat, name: []const u8, message: []const u8, time: f32) void {
@@ -50,13 +49,6 @@ pub fn text(self: *const Chat) []const u8 {
 }
 
 pub fn handleKey(self: *Chat, key: yes.Window.Event.Key) void {
-    switch (key.sym) {
-        .left_shift, .right_shift => {
-            self.shift = key.state == .pressed;
-            return;
-        },
-        else => {},
-    }
     if (key.state != .pressed) return;
     switch (key.sym) {
         .escape => {
@@ -67,25 +59,16 @@ pub fn handleKey(self: *Chat, key: yes.Window.Event.Key) void {
             self.open = false;
             self.pending = self.input_len != 0;
         },
-        .backspace => {
-            if (self.input_len > 0) self.input_len -= 1;
+        .backspace => while (self.input_len > 0) {
+            self.input_len -= 1;
+            if (self.input[self.input_len] & 0xC0 != 0x80) break;
         },
-        else => {
-            if (charFromSym(key.sym, self.shift)) |char| {
-                if (self.input_len < self.input.len) {
-                    self.input[self.input_len] = char;
-                    self.input_len += 1;
-                }
-            }
-        },
+        else => {},
     }
 }
 
-fn charFromSym(sym: KeySym, shift: bool) ?u8 {
-    const value = @intFromEnum(sym);
-    // every non-printable key (control, modifier, navigation, function, numpad) sits above '~'
-    if (value < ' ' or value > '~') return null;
-    if (value >= 'A' and value <= 'Z') return if (shift) value else value + ('a' - 'A');
-    // no keyboard-layout table, so shifted digits/punctuation type unshifted
-    return value;
+pub fn handleText(self: *Chat, bytes: []const u8) void {
+    if (self.input_len + bytes.len > self.input.len) return;
+    @memcpy(self.input[self.input_len..][0..bytes.len], bytes);
+    self.input_len += bytes.len;
 }
