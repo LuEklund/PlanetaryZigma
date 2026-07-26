@@ -13,7 +13,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet_radius: f32,
-stage: Stage,
+place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
@@ -22,7 +22,7 @@ toggle_spawning_requested: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
 next_entity_id: u32,
-next_stage: u32,
+stage: u32,
 prng: std.Random.DefaultPrng,
 
 // ponytail: ship room lives at altitude directly above the north pole; radial gravity
@@ -40,7 +40,7 @@ pub const PendingDespawn = struct {
     remove: bool,
 };
 
-pub const Stage = enum { ship, planet };
+pub const Place = enum { ship, planet };
 
 pub const Director = struct {
     credits: f32,
@@ -136,10 +136,10 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
-        .stage = .ship,
+        .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
         .next_entity_id = 1,
-        .next_stage = 0,
+        .stage = 0,
         .prng = .init(0xACE1),
     };
 }
@@ -179,7 +179,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     if (kind_spec.stats) |stats_spec| {
         var values = stats_spec;
         if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
-            values.set(.health, values.get(.health) * @as(f32, @floatFromInt(self.next_stage)));
+            values.set(.health, values.get(.health) * @as(f32, @floatFromInt(self.stage)));
         }
         entity.stats = .init(values);
     }
@@ -263,34 +263,34 @@ pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
 }
 
 pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
-    return switch (self.stage) {
+    return switch (self.place) {
         .ship => self.shipRoomPosition() + nz.Vec3(f32){ 0, ship_room_stand_height, 0 },
         .planet => shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 },
     };
 }
 
-pub fn loadStage(self: *World, stage: Stage, physics: *Physics) !void {
-    self.stage = stage;
-    self.next_stage += 1;
+pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
+    self.place = place;
+    self.stage += 1;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
     try self.flush(physics);
     const random = self.prng.random();
     self.teleporter_id = .none;
-    self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.next_stage } });
+    self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
     self.planet_radius = @floatFromInt(if (self.dev_mode)
         random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
     else
         random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
-    std.log.debug("loadStage {s} planet_radius={d}", .{ @tagName(stage), self.planet_radius });
+    std.log.debug("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},
     });
     try self.flush(physics);
 
-    switch (stage) {
+    switch (place) {
         .ship => {
             // ponytail: the room is 5 copies of the ONE `.platform` collider — a floor plus
             // 4 of the same slab stood on edge by a quarter turn. No visual, no new Kind, no
@@ -318,6 +318,18 @@ pub fn loadStage(self: *World, stage: Stage, physics: *Physics) !void {
                     },
                 });
             }
+
+            // ponytail: the start portal IS a teleporter, spawned already active and fully
+            // charged. That skips the idle->interact branch (which spawns a boss) and lands
+            // straight on "charged and no bosses left -> next_stage_requested", so interact
+            // launches the round. No new Kind, no stage check inside PlayerController.
+            const portal = try self.spawn(.{
+                .kind = .teleporter,
+                .transform = .{ .position = floor_position + nz.Vec3(f32){ 0, slab.y, 0 } },
+            });
+            portal.teleporter.state = .active;
+            portal.teleporter.charged = portal.teleporter.max_charge;
+            self.teleporter_id = portal.id;
             try self.flush(physics);
         },
         .planet => {

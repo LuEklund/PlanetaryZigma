@@ -30,7 +30,6 @@ pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
-pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
 emitters: std.ArrayList(Emitter) = .empty,
@@ -87,7 +86,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_stats = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
-        .pending_player_names = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .emitters = try .initCapacity(gpa, 256),
@@ -106,8 +104,6 @@ pub fn deinit(self: *World) void {
     self.pending_despawn.deinit(self.gpa);
     self.pending_stats.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
-    clearPendingPlayerNames(self);
-    self.pending_player_names.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.emitters.deinit(self.gpa);
@@ -121,11 +117,11 @@ pub fn clearSession(self: *World) void {
     }
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
-    self.clearPendingSpawns();
+    self.pending_spawn.clearRetainingCapacity();
+
     self.pending_despawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
-    clearPendingPlayerNames(self);
     self.attack_events.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
@@ -140,27 +136,12 @@ pub fn clearSession(self: *World) void {
     self.stage = 0;
 }
 
-pub fn clearPendingSpawns(self: *World) void {
-    for (self.pending_spawn.items) |entity_info| {
-        switch (entity_info.data) {
-            .player_name => |player_name| if (player_name.name.len != 0) self.gpa.free(player_name.name),
-            .none, .planet_radius, .is_teleporter_boss => {},
-        }
-    }
-    self.pending_spawn.clearRetainingCapacity();
-}
-
 pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
-    defer self.clearPendingSpawns();
-
-    if (self.controller.free_camera)
-        std.log.debug("sdf at camera: {d:.3}", .{shared.planet.sdf.sampled(self.camera.transform.position, self.planet_radius)});
-
+    defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
-        if (self.getPtr(entity_info.id)) |entity| {
-            try self.applySpawnData(entity, entity_info);
-            continue;
-        }
+        // Spawn data is per-kind creation payload: read ONCE, here, in the switch below.
+        // A re-sent spawn for an entity we already have carries nothing new.
+        if (self.getPtr(entity_info.id) != null) continue;
         const entity = try self.spawn(entity_info.id);
         entity.* = .{
             .id = entity_info.id,
@@ -178,9 +159,11 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
                 .tick = entity_info.tick,
             } },
         };
-        try self.applySpawnData(entity, entity_info);
         switch (entity_info.kind) {
             .player => {
+                if (entity_info.data == .player_name) {
+                    try self.setPlayerName(entity, entity_info.data.player_name.slice());
+                }
                 if (entity_info.id == self.player_id) {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
                     self.controller.free_camera = false;
@@ -204,13 +187,6 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
         }
         self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }
-
-    for (self.pending_player_names.items) |player_name| {
-        if (self.getPtr(player_name.id)) |entity| {
-            if (entity.kind == .player) try self.setPlayerName(entity, player_name.name);
-        }
-    }
-    self.clearPendingPlayerNames();
 
     for (self.pending_stats.items) |command| {
         if (self.getPtr(command.id)) |entity| self.applyStat(entity, command);
@@ -246,15 +222,6 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
         if (id == self.player_id) self.controller.free_camera = true;
         self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
         _ = self.despawn(id);
-    }
-}
-
-pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.SpawnEntity) !void {
-    switch (entity_info.data) {
-        .player_name => |player_name| {
-            if (entity.kind == .player) try self.setPlayerName(entity, player_name.name);
-        },
-        .none, .planet_radius, .is_teleporter_boss => {},
     }
 }
 
@@ -310,11 +277,4 @@ fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) 
 pub fn despawn(self: *World, id: shared.entity.Id) bool {
     if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
-}
-
-pub fn clearPendingPlayerNames(self: *World) void {
-    for (self.pending_player_names.items) |player_name| {
-        if (player_name.name.len != 0) self.gpa.free(player_name.name);
-    }
-    self.pending_player_names.clearRetainingCapacity();
 }

@@ -46,7 +46,7 @@ pub const Context = struct {
             .request_exit = false,
         };
 
-        try self.world.loadStage(.ship, &self.physics);
+        try self.world.loadPlace(.ship, &self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
@@ -69,20 +69,20 @@ pub const Context = struct {
             },
         }
         try PlayerController.update(info, &self.physics);
-        if (self.world.stage == .planet) try gameplay.updateEnemies(info);
+        if (self.world.place == .planet) try gameplay.updateEnemies(info);
         if (self.world.next_stage_requested) {
             self.world.next_stage_requested = false;
-            try self.world.loadStage(.planet, &self.physics);
+            try self.world.loadPlace(.planet, &self.physics);
         }
         if (self.world.start_round_requested) {
             self.world.start_round_requested = false;
-            try self.world.loadStage(.planet, &self.physics);
+            try self.world.loadPlace(.planet, &self.physics);
         }
-        if (self.world.stage == .planet) try gameplay.updateDirector(info);
+        if (self.world.place == .planet) try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);
-        if (self.world.stage == .planet) gameplay.updateTeleporter(info);
+        if (self.world.place == .planet) gameplay.updateTeleporter(info);
         gameplay.updateLifetimes(info);
         gameplay.playerRegen(info);
         try self.world.flush(&self.physics);
@@ -124,7 +124,7 @@ pub const ffi = struct {
         std.log.debug("system init", .{});
         context.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context init: {s}", .{@errorName(err)});
+            std.log.err("system init: {s}", .{@errorName(err)});
             return;
         };
     }
@@ -133,7 +133,7 @@ pub const ffi = struct {
         std.log.debug("system deinit", .{});
         context.deinit() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context init: {s}", .{@errorName(err)});
+            std.log.err("system deinit: {s}", .{@errorName(err)});
             return;
         };
         context.* = undefined;
@@ -145,7 +145,7 @@ pub const ffi = struct {
         const result = context.update(info);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
+            std.log.err("system update: {s}", .{@errorName(err)});
             return;
         };
     }
@@ -153,7 +153,7 @@ pub const ffi = struct {
         const result = context.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.log.err("context update: {any}", .{@errorName(err)});
+            std.log.err("system reload: {s}", .{@errorName(err)});
             return;
         };
     }

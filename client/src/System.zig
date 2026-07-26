@@ -249,7 +249,9 @@ pub const ffi = struct {
         const context = data.gpa.create(System) catch return null;
         context.init(data.*) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.debug.panic("context init: {s}", .{@errorName(err)});
+            std.log.err("system init: {s}", .{@errorName(err)});
+            data.gpa.destroy(context);
+            return null;
         };
         return context;
     }
@@ -269,7 +271,7 @@ pub const ffi = struct {
         const result = if (event != null) context.eventUpdate(info, event.?) else context.update(info);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.debug.panic("context update: {s}", .{@errorName(err)});
+            std.log.err("system update: {s}", .{@errorName(err)});
         };
         return context.request_exit;
     }
@@ -279,7 +281,7 @@ pub const ffi = struct {
         const result = context.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            std.debug.panic("context reload: {s}", .{@errorName(err)});
+            std.log.err("system reload: {s}", .{@errorName(err)});
         };
     }
 };

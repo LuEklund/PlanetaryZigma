@@ -39,7 +39,6 @@ pub const ServerPacket = union(enum) {
     update_stat: UpdateStat,
     update_event: Event,
     update_inventory: UpdateInventory,
-    update_player_name: PlayerNameUpdate,
     set_currency: SetCurrency,
     chat_message: ChatMessage,
 };
@@ -64,8 +63,7 @@ pub const DevCommand = enum(u8) {
 
 pub const Connect = struct {
     protocol_version: u32,
-    name_len: u16,
-    name: []const u8,
+    player_name: PlayerName,
 };
 
 // Comptime fingerprint of the entire wire format. Changes if and only if the
@@ -101,16 +99,27 @@ fn protocolDescription(comptime T: type) []const u8 {
     };
 }
 
+// Names are bounded at 32 bytes, so they ride the wire BY VALUE — an array field IS the
+// bytes, so a plain struct assignment copies them. A slice field would only copy ptr+len
+// and keep aliasing the receive buffer (unmarshal takes no allocator), which is what forced
+// a dupe into every queue that outlives the packet plus a free at every clear site.
+// Zero-padded instead of length-prefixed: the length comes from the bytes, so there is no
+// peer-supplied length to distrust.
 pub const PlayerName = struct {
-    name_len: u16,
-    name: []const u8,
+    name: [root.max_player_name_len]u8,
+
+    pub fn copy(text: []const u8) PlayerName {
+        var self: PlayerName = .{ .name = @splat(0) };
+        const length = @min(text.len, root.max_player_name_len);
+        @memcpy(self.name[0..length], text[0..length]);
+        return self;
+    }
+
+    pub fn slice(self: *const PlayerName) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
 };
 
-pub const PlayerNameUpdate = struct {
-    id: entity.Id,
-    name_len: u16,
-    name: []const u8,
-};
 
 pub const ChatSend = struct {
     text_len: u16,
