@@ -35,7 +35,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
 
     if (info.world.getPtr(info.world.player_id)) |player| {
         addNameTags(info, ui);
-        addEnemyHealthBars(info, ui);
+        addWorldHealthBars(info, ui);
         addDamagePopups(info, ui, damage_popups);
 
         const health_current = player.stats.current.get(.health);
@@ -353,26 +353,35 @@ fn addHealthBar(ui: *Ui, args: struct {
     });
 }
 
-fn addEnemyHealthBars(info: *const Info, ui: *Ui) void {
+fn addWorldHealthBars(info: *const Info, ui: *Ui) void {
     const bar_width: f32 = 46;
     const bar_heigth: f32 = 4;
+    const bar_reference_distance: f32 = 20;
+    const bar_min_scale: f32 = 0.35;
+    const bar_max_scale: f32 = 1;
+    const camera_position = info.world.camera.transform.position;
     const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .enemy) continue;
+        if (!entity.kind.hasHealth()) continue;
+        if (entity.id == info.world.player_id) continue;
         const health_current = entity.stats.current.get(.health);
         const health_max = entity.stats.max.get(.health);
         if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
 
         const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
-        if (isOccludedByPlanet(info.world.camera.transform.position, bar_position, info.world.planet_radius)) continue;
         const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
 
+        const distance = nz.vec.distance(camera_position, bar_position);
+        const scale = std.math.clamp(bar_reference_distance / @max(distance, 0.001), bar_min_scale, bar_max_scale);
+        const scaled_width = bar_width * scale;
+        const scaled_heigth = bar_heigth * scale;
+
         addHealthBar(ui, .{
-            .left = screen[0] - bar_width / 2,
-            .top = screen[1] - bar_heigth,
-            .width = bar_width,
-            .heigth = bar_heigth,
+            .left = screen[0] - scaled_width / 2,
+            .top = screen[1] - scaled_heigth,
+            .width = scaled_width,
+            .heigth = scaled_heigth,
             .fraction = health_current / health_max,
             .fill_color = .new(0.9, 0.2, 0.15, 0.9),
         });

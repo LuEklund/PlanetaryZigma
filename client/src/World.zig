@@ -181,7 +181,7 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },
-            .unknown, .item, .lootbox, .platform => {},
+            .unknown, .item, .lootbox, .platform, .target_dummy => {},
         }
         self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }
