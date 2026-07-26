@@ -82,7 +82,7 @@ fn addServerArtifacts(
     const system = b.addLibrary(.{
         .name = "system_server",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/system.zig"),
+            .root_source_file = b.path("src/System.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{

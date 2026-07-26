@@ -1,9 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const system = @import("system");
+const System = @import("system");
 const shared = @import("shared");
 const tracy = @import("ztracy");
-const World = system.World;
+const World = System.World;
 const nz = shared.numz;
 
 pub fn main(init: std.process.Init) !void {
@@ -55,24 +55,24 @@ pub fn main(init: std.process.Init) !void {
     var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
-    var system_context: system.Context = undefined;
-    var system_table: system.ffi.Table = try .load(&watcher.dynlib.?);
+    var system_instance: System = undefined;
+    var system_table: System.ffi.Table = try .load(&watcher.dynlib.?);
 
-    system_table.systemContextInit(&system_context, &system.Context.Data{
+    system_table.systemInit(&system_instance, &System.Data{
         .io = io,
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
     });
 
-    defer system_table.systemContextDeinit(&system_context);
+    defer system_table.systemDeinit(&system_instance);
 
     var loop_time_tracker: f32 = 0;
     var elapsed_time: f32 = 0;
     var tick: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
     while (true) {
-        if (system_context.request_exit) break;
+        if (system_instance.request_exit) break;
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;
@@ -84,7 +84,7 @@ pub fn main(init: std.process.Init) !void {
         elapsed_time += time_step;
         loop_time_tracker -= time_step;
 
-        system_table.systemContextUpdate(&system_context, &.{
+        system_table.systemUpdate(&system_instance, &.{
             .tick = tick,
             .delta_time = time_step,
             .elapsed_time = elapsed_time,
@@ -92,10 +92,10 @@ pub fn main(init: std.process.Init) !void {
         });
 
         if (try watcher.reload(io)) {
-            system_table.systemContextReload(&system_context, true);
+            system_table.systemReload(&system_instance, true);
             std.log.debug("system table updated", .{});
             system_table = try .load(&watcher.dynlib.?);
-            system_table.systemContextReload(&system_context, false);
+            system_table.systemReload(&system_instance, false);
         }
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {

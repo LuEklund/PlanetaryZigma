@@ -1,7 +1,7 @@
 const Animations = @This();
 
 const std = @import("std");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const Info = system.Info;

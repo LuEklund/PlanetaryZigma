@@ -147,6 +147,12 @@ pub fn spec(kind: Kind) Spec {
             .death_duration = 0.35,
             .currency = 10,
         },
+        .platform => .{
+            .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
+            .model = .{ .path = "default", .skinned = false, .clip_names = null },
+            .has_health = false,
+            .expects_model = false,
+        },
         .projectile_cube => .{
             .collider = null,
             .model = .{ .path = "cube_projectile", .skinned = false, .clip_names = null },
@@ -213,11 +219,11 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
-const all_kind_count = 7 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
+const all_kind_count = 8 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;
-    kinds[0..7].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
-    var kind_index: usize = 7;
+    kinds[0..8].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .projectile_cube, .projectile_rocket };
+    var kind_index: usize = 8;
     for (std.enums.values(EnemyKind)) |enemy_kind| {
         kinds[kind_index] = .{ .enemy = enemy_kind };
         kind_index += 1;
@@ -239,6 +245,7 @@ pub const Kind = union(enum) {
     planet,
     teleporter,
     lootbox,
+    platform,
 
     projectile_cube,
     projectile_rocket,

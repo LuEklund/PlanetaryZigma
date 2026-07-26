@@ -2,7 +2,7 @@ const NetworkManager = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const Info = system.Info;
 const nz = shared.numz;
@@ -67,14 +67,7 @@ pub fn deinit(self: *NetworkManager) !void {
 
 fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
     return switch (packet) {
-        .connect => |connect| connect: {
-            const name = try gpa.dupe(u8, connect.name);
-            break :connect .{ .connect = .{
-                .protocol_version = connect.protocol_version,
-                .name_len = @intCast(name.len),
-                .name = name,
-            } };
-        },
+        .connect => |connect| .{ .connect = connect },
         .disconnect => .disconnect,
         .input => |input| .{ .input = input },
         .chat => |chat| chat: {
@@ -89,9 +82,8 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
 
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
-        .connect => |connect| if (connect.name.len != 0) gpa.free(connect.name),
         .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
-        .disconnect, .input => {},
+        .connect, .disconnect, .input => {},
     }
 }
 
@@ -154,8 +146,6 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
     const writer = &fix_writer;
 
     var sync_all_clients = false;
-    var player_name_update_ids: [shared.max_players]shared.entity.Id = undefined;
-    var player_name_update_count: usize = 0;
     var it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
@@ -167,22 +157,20 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                         _ = self.steam_server.socket.CloseConnection(client.conn, 0, "protocol version mismatch", false);
                         continue;
                     }
-                    var player_name_changed = false;
                     var name_buf: [shared.max_player_name_len]u8 = undefined;
-                    const name = sanitizeText(&name_buf, connect.name);
+                    const name = sanitizeText(&name_buf, connect.player_name.slice());
                     const display_name = if (name.len == 0) shared.default_player_name else name;
                     if (!std.mem.eql(u8, client.name, display_name)) {
                         if (client.name.len != 0) self.gpa.free(client.name);
                         client.name = try self.gpa.dupe(u8, display_name);
                         self.session_metadata_dirty = true;
                         sync_all_clients = true;
-                        player_name_changed = true;
                     }
 
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = .{ 0, info.world.planet_radius + 10, 0 } },
+                            .transform = .{ .position = info.world.playerSpawnPosition() },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 
@@ -190,14 +178,13 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                         info.world.players.appendAssumeCapacity(client.entity_id);
                         self.session_metadata_dirty = true;
                         sync_all_clients = true;
-                        player_name_changed = true;
 
                         try client.sendCommand(
                             writer,
                             .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
                             .reliable,
                         );
-                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
+                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.stage } }, .reliable);
                         if (info.world.getPtr(info.world.teleporter_id)) |entity| {
                             if (entity.teleporter.state == .active) {
                                 try client.sendCommand(writer, .{
@@ -206,10 +193,6 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                             }
                         }
                         std.log.debug("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
-                    }
-                    if (player_name_changed and client.entity_id != .none and player_name_update_count < player_name_update_ids.len) {
-                        player_name_update_ids[player_name_update_count] = client.entity_id;
-                        player_name_update_count += 1;
                     }
                 },
                 .disconnect => {
@@ -338,9 +321,6 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
-    for (player_name_update_ids[0..player_name_update_count]) |id| {
-        try self.broadcastPlayerName(writer, id, self.nameForEntity(id));
-    }
     world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
@@ -421,8 +401,8 @@ fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []c
         .data = switch (entity.kind) {
             .planet => .{ .planet_radius = @intFromFloat(info.world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
+            .player => .{ .player_name = .copy(player_name) },
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform => .none,
         },
     };
 }
@@ -439,18 +419,6 @@ fn markAllClientsForFullSync(self: *NetworkManager) void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         client.needs_full_sync = true;
-    }
-}
-
-fn broadcastPlayerName(self: *NetworkManager, writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
-    var it = self.clients.valueIterator();
-    while (it.next()) |client| {
-        if (client.entity_id == .none) continue;
-        try client.sendCommand(writer, .{ .update_player_name = .{
-            .id = entity_id,
-            .name_len = @intCast(name.len),
-            .name = name,
-        } }, .reliable);
     }
 }
 

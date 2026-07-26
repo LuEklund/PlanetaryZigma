@@ -1,6 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const Physics = @import("Physics.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
@@ -70,6 +70,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
                 Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
             },
+            .f9 => info.world.start_round_requested = true,
 
             else => {},
         }

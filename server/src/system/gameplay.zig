@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const Physics = @import("Physics.zig");
 const Info = system.Info;
 
