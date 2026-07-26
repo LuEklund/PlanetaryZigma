@@ -55,7 +55,7 @@ pub const Item = enum(u16) {
                 .icon = "textures/item.png",
             },
             .tougherer_times => .{
-                .attributes = .initDefault(0, .{ .block_chance = 0.01 }),
+                .attributes = .initDefault(0, .{ .block_chance = 0.15 }),
                 .model = "objects/item.glb",
                 .icon = "textures/item.png",
             },

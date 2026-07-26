@@ -253,6 +253,33 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                 .fill_color = .new(1, 0, 0, 1),
             });
         }
+
+        if (player.flags.is_dying) {
+            const deah_message = ui.print("Died of cringe", .{});
+            ui.death_time = std.math.clamp(ui.death_time + info.delta_time * 0.3, 0, 1);
+            ui.add(null, .{
+                .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
+                .child_anchor = .{ .x = .center, .y = .center },
+                .name = "death",
+            });
+            ui.add("death", .{
+                .size = .{ .fixed = .{ .heigth = std.math.clamp(ui.screen_heigth * (1 - ui.death_time), 32 * 3, ui.screen_heigth), .width = ui.screen_width } },
+                .color = .new(
+                    0,
+                    0,
+                    0,
+                    ui.death_time,
+                ),
+
+                .text = .{ .data = deah_message },
+                .child_anchor = .{ .x = .center, .y = .center },
+            });
+            // ui.add("death", .{
+            //     .size = .{ .fixed = ui.textSize(deah_message, 32) },
+            // });
+        } else {
+            ui.death_time = 0;
+        }
     }
 }
 
