@@ -58,14 +58,14 @@ pub fn main(init: std.process.Init) !void {
     var system_context: system.Context = undefined;
     var system_table: system.ffi.Table = try .load(&watcher.dynlib.?);
 
-    system_table.systemContextInit(&system_context, &system.Context.Data{
+    system_table.systemInit(&system_context, &system.Context.Data{
         .io = io,
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
     });
 
-    defer system_table.systemContextDeinit(&system_context);
+    defer system_table.systemDeinit(&system_context);
 
     var loop_time_tracker: f32 = 0;
     var elapsed_time: f32 = 0;
@@ -84,7 +84,7 @@ pub fn main(init: std.process.Init) !void {
         elapsed_time += time_step;
         loop_time_tracker -= time_step;
 
-        system_table.systemContextUpdate(&system_context, &.{
+        system_table.systemUpdate(&system_context, &.{
             .tick = tick,
             .delta_time = time_step,
             .elapsed_time = elapsed_time,
@@ -92,10 +92,10 @@ pub fn main(init: std.process.Init) !void {
         });
 
         if (try watcher.reload(io)) {
-            system_table.systemContextReload(&system_context, true);
+            system_table.systemReload(&system_context, true);
             std.log.debug("system table updated", .{});
             system_table = try .load(&watcher.dynlib.?);
-            system_table.systemContextReload(&system_context, false);
+            system_table.systemReload(&system_context, false);
         }
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {

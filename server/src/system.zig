@@ -46,7 +46,7 @@ pub const Context = struct {
             .request_exit = false,
         };
 
-        try self.world.startStage(&self.physics);
+        try self.world.loadStage(.ship, &self.physics);
     }
 
     pub fn deinit(self: *Context) !void {
@@ -69,20 +69,20 @@ pub const Context = struct {
             },
         }
         try PlayerController.update(info, &self.physics);
-        try gameplay.updateEnemies(info);
+        if (self.world.stage == .planet) try gameplay.updateEnemies(info);
         if (self.world.next_stage_requested) {
             self.world.next_stage_requested = false;
-            try self.world.startStage(&self.physics);
+            try self.world.loadStage(.planet, &self.physics);
         }
         if (self.world.start_round_requested) {
             self.world.start_round_requested = false;
-            try self.world.startRound(&self.physics);
+            try self.world.loadStage(.planet, &self.physics);
         }
-        if (self.world.phase == .playing) try gameplay.updateDirector(info);
+        if (self.world.stage == .planet) try gameplay.updateDirector(info);
         try self.physics.update(info);
         gameplay.updateProjectiles(info, &self.physics);
         try gameplay.updateItems(info);
-        gameplay.updateTeleporter(info);
+        if (self.world.stage == .planet) gameplay.updateTeleporter(info);
         gameplay.updateLifetimes(info);
         gameplay.playerRegen(info);
         try self.world.flush(&self.physics);
@@ -99,10 +99,10 @@ comptime {
 
 pub const ffi = struct {
     pub const Table = struct {
-        systemContextInit: *const fn (*Context, data: *const Context.Data) callconv(.c) void,
-        systemContextDeinit: *const fn (*Context) callconv(.c) void,
-        systemContextUpdate: *const fn (*Context, data: *const Info) callconv(.c) void,
-        systemContextReload: *const fn (*Context, pre_reload: bool) callconv(.c) void,
+        systemInit: *const fn (*Context, data: *const Context.Data) callconv(.c) void,
+        systemDeinit: *const fn (*Context) callconv(.c) void,
+        systemUpdate: *const fn (*Context, data: *const Info) callconv(.c) void,
+        systemReload: *const fn (*Context, pre_reload: bool) callconv(.c) void,
 
         pub fn load(dynlib: *shared.DynLib) !Table {
             var self: Table = undefined;
@@ -120,8 +120,8 @@ pub const ffi = struct {
         }
     };
 
-    pub export fn systemContextInit(context: *Context, data: *const Context.Data) void {
-        std.log.debug("system context init", .{});
+    pub export fn systemInit(context: *Context, data: *const Context.Data) void {
+        std.log.debug("system init", .{});
         context.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("context init: {s}", .{@errorName(err)});
@@ -129,8 +129,8 @@ pub const ffi = struct {
         };
     }
 
-    pub export fn systemContextDeinit(context: *Context) void {
-        std.log.debug("system context deinit", .{});
+    pub export fn systemDeinit(context: *Context) void {
+        std.log.debug("system deinit", .{});
         context.deinit() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("context init: {s}", .{@errorName(err)});
@@ -139,7 +139,7 @@ pub const ffi = struct {
         context.* = undefined;
     }
 
-    pub export fn systemContextUpdate(context: *Context, info: *const Info) void {
+    pub export fn systemUpdate(context: *Context, info: *const Info) void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const result = context.update(info);
@@ -149,7 +149,7 @@ pub const ffi = struct {
             return;
         };
     }
-    pub export fn systemContextReload(context: *Context, pre_reload: bool) void {
+    pub export fn systemReload(context: *Context, pre_reload: bool) void {
         const result = context.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);

@@ -77,13 +77,15 @@ pub fn load(self: *Watcher, io: std.Io) !void {
         return err;
     };
 
-    if (dynlib.lookup(*const fn () void, "systemContextInit") == null) {
+    if (dynlib.lookup(*const fn () void, "systemInit") == null) {
         dynlib.close();
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
-        return error.SystemContextInitSymbolNotFound;
+        return error.SystemInitSymbolNotFound;
     }
 
-    std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
+    // Debug keeps the copy on disk: an unlinked file has no DWARF for the panic
+    // unwinder, which is why in-lib frames print as "??? in ???".
+    if (builtin.mode != .Debug) std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
 
     self.dynlib = dynlib;
     self.mtime = stat.mtime;

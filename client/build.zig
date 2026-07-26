@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) void {
     const system = b.addLibrary(.{
         .name = "system_client",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/system.zig"),
+            .root_source_file = b.path("src/System.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{

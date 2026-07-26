@@ -200,8 +200,7 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },
-            .platform => entity.transform.scale = .{ 20, 0.5, 20 },
-            .unknown, .item, .lootbox => {},
+            .unknown, .item, .lootbox, .platform => {},
         }
         self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }

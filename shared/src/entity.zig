@@ -149,9 +149,9 @@ pub fn spec(kind: Kind) Spec {
         },
         .platform => .{
             .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "objects/Cube.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "default", .skinned = false, .clip_names = null },
             .has_health = false,
-            .expects_model = true,
+            .expects_model = false,
         },
         .projectile_cube => .{
             .collider = null,

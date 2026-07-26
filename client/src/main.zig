@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
-const system = @import("system");
-const World = system.World;
+const System = @import("system");
+const World = System.World;
 const yes = @import("yes");
 const tracy = @import("ztracy");
 const miniaudio = @import("miniaudio");
@@ -55,7 +55,7 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close(desktop);
 
-    var asset_server = try system.AssetServer.init(gpa, init.io);
+    var asset_server = try System.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
     var world: World = try .init(gpa);
@@ -65,11 +65,10 @@ pub fn main(init: std.process.Init) !void {
     defer watcher.deinit(io);
     try watcher.load(io);
 
-    var system_context: system.Context = undefined;
-    var system_table: system.ffi.Table = try .load(&watcher.dynlib.?);
+    var system_table: System.Table = try .load(&watcher.dynlib.?);
 
-    const ctx_zone = tracy.zoneNamed(@src(), "SystemContextInit");
-    system_table.systemContextInit(&system_context, &system.Context.Data{
+    const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
+    const system: *anyopaque = system_table.systemInit(&System.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
         .desktop = desktop,
@@ -77,9 +76,9 @@ pub fn main(init: std.process.Init) !void {
         .io = io,
         .world = &world,
         .steam_client = &steam_client,
-    });
+    }) orelse return error.SystemInit;
     ctx_zone.end();
-    defer system_table.systemContextDeinit(&system_context);
+    defer system_table.systemDeinit(system);
 
     var elapsed_time: f32 = 0;
     var accumlated_time: f32 = 0;
@@ -96,26 +95,19 @@ pub fn main(init: std.process.Init) !void {
         }
         accumlated_time -= time_step;
         while (try window.poll(desktop)) |event| {
-            const options_was_open = system_context.hud.overlay == .options;
-            system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event);
+            if (system_table.systemUpdate(system, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event)) break :main_loop;
             switch (event) {
                 .close => break :main_loop,
-                .resize => {
-                    try system_context.renderer.resize(gpa, window);
-                    system_context.ui.screen_width = @floatFromInt(window.size.width);
-                    system_context.ui.screen_heigth = @floatFromInt(window.size.height);
-                },
                 .key => |key| {
-                    if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;
                     if (key.state == .released) {
                         // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
                         const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
                         const sym = @intFromEnum(key.sym);
                         if (sym >= np0 and sym < np0 + 10) {
                             if (watcher.version(sym - np0)) |lib| {
-                                system_table.systemContextReload(&system_context, true);
+                                system_table.systemReload(system, true);
                                 system_table = try .load(lib);
-                                system_table.systemContextReload(&system_context, false);
+                                system_table.systemReload(system, false);
                                 std.log.err("switched to version slot {d}", .{sym - np0});
                             }
                         }
@@ -123,16 +115,14 @@ pub fn main(init: std.process.Init) !void {
                 },
                 else => {},
             }
-            if (system_context.request_exit) break :main_loop;
         }
-        system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null);
-        if (system_context.request_exit) break :main_loop;
+        if (system_table.systemUpdate(system, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null)) break :main_loop;
 
         if (try watcher.reload(io)) {
             std.log.err("system table updated", .{});
-            system_table.systemContextReload(&system_context, true);
+            system_table.systemReload(system, true);
             system_table = try .load(&watcher.dynlib.?);
-            system_table.systemContextReload(&system_context, false);
+            system_table.systemReload(system, false);
         }
 
         elapsed_time += time_step;

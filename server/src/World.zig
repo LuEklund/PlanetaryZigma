@@ -13,7 +13,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet_radius: f32,
-phase: Phase,
+stage: Stage,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
@@ -21,16 +21,14 @@ start_round_requested: bool,
 toggle_spawning_requested: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
-ready_platform_id: shared.entity.Id,
 next_entity_id: u32,
 next_stage: u32,
 prng: std.Random.DefaultPrng,
 
-// ponytail: ready-room lives at altitude directly above the north pole; radial gravity
-// already points "down" through the platform, so no physics change needed. Tune to taste.
-pub const ready_room_altitude_factor: f32 = 2.5;
-pub const ready_room_stand_height: f32 = 2;
-pub const ready_room_platform_scale: nz.Vec3(f32) = .{ 20, 0.5, 20 };
+// ponytail: ship room lives at altitude directly above the north pole; radial gravity
+// already points "down" through the floor, so no physics change needed. Tune to taste.
+pub const ship_room_altitude_factor: f32 = 2.5;
+pub const ship_room_stand_height: f32 = 2;
 
 pub const spawn_hover: f32 = 1.5;
 pub const item_throw_speed: f32 = 18;
@@ -42,7 +40,7 @@ pub const PendingDespawn = struct {
     remove: bool,
 };
 
-pub const Phase = enum { waiting, playing };
+pub const Stage = enum { ship, planet };
 
 pub const Director = struct {
     credits: f32,
@@ -137,9 +135,8 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
-        .ready_platform_id = .none,
         .planet_radius = 100,
-        .phase = .waiting,
+        .stage = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
         .next_entity_id = 1,
         .next_stage = 0,
@@ -261,22 +258,19 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
-fn readyPlatformPosition(self: *const World) nz.Vec3(f32) {
-    return nz.Vec3(f32){ 0, self.planet_radius * ready_room_altitude_factor, 0 };
+pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
+    return nz.Vec3(f32){ 0, self.planet_radius * ship_room_altitude_factor, 0 };
 }
 
 pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
-    if (self.phase == .waiting)
-        return self.readyPlatformPosition() + nz.Vec3(f32){ 0, ready_room_stand_height, 0 };
-    return shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 };
+    return switch (self.stage) {
+        .ship => self.shipRoomPosition() + nz.Vec3(f32){ 0, ship_room_stand_height, 0 },
+        .planet => shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 },
+    };
 }
 
-pub fn startRound(self: *World, physics: *Physics) !void {
-    self.phase = .playing;
-    try self.startStage(physics);
-}
-
-pub fn startStage(self: *World, physics: *Physics) !void {
+pub fn loadStage(self: *World, stage: Stage, physics: *Physics) !void {
+    self.stage = stage;
     self.next_stage += 1;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
@@ -289,21 +283,80 @@ pub fn startStage(self: *World, physics: *Physics) !void {
         random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
     else
         random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
-    std.log.debug("startStage planet_radius={d}", .{self.planet_radius});
+    std.log.debug("loadStage {s} planet_radius={d}", .{ @tagName(stage), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},
     });
     try self.flush(physics);
 
-    if (self.phase == .waiting) {
-        const platform = try self.spawn(.{
-            .kind = .platform,
-            .transform = .{ .position = self.readyPlatformPosition(), .scale = ready_room_platform_scale },
-        });
-        self.ready_platform_id = platform.id;
-        try self.flush(physics);
+    switch (stage) {
+        .ship => {
+            // ponytail: the room is 5 copies of the ONE `.platform` collider — a floor plus
+            // 4 of the same slab stood on edge by a quarter turn. No visual, no new Kind, no
+            // per-entity collider size. Swap for a mesh collider when the spaceship model lands.
+            const floor_position: nz.Vec3(f32) = self.shipRoomPosition();
+            _ = try self.spawn(.{
+                .kind = .platform,
+                .transform = .{ .position = floor_position },
+            });
+            const slab: shared.entity.ColliderShape.HalfBoxExtent = shared.entity.collider(.platform).?.shape.box;
+            const wall_center: nz.Vec3(f32) = floor_position + nz.Vec3(f32){ 0, slab.x, 0 };
+            const wall_distance: f32 = slab.x + slab.y;
+            const walls: [4]struct { offset: nz.Vec3(f32), axis: nz.Vec3(f32) } = .{
+                .{ .offset = .{ wall_distance, 0, 0 }, .axis = .{ 0, 0, 1 } },
+                .{ .offset = .{ -wall_distance, 0, 0 }, .axis = .{ 0, 0, 1 } },
+                .{ .offset = .{ 0, 0, wall_distance }, .axis = .{ 1, 0, 0 } },
+                .{ .offset = .{ 0, 0, -wall_distance }, .axis = .{ 1, 0, 0 } },
+            };
+            for (walls) |wall| {
+                _ = try self.spawn(.{
+                    .kind = .platform,
+                    .transform = .{
+                        .position = wall_center + wall.offset,
+                        .rotation = nz.quat.Hamiltonian(f32).angleAxis(std.math.pi / 2.0, wall.axis),
+                    },
+                });
+            }
+            try self.flush(physics);
+        },
+        .planet => {
+            self.director.spawning = true;
+            const teleporter_direction = if (self.dev_mode)
+                nz.Vec3(f32){ 0, 1, 0 }
+            else
+                nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            const teleporter_position = shared.planet.surfacePoint(teleporter_direction, self.planet_radius);
+            for (0..25) |_| {
+                const vector_direction = if (self.dev_mode)
+                    nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
+                else
+                    nz.vec.randomUnitVector(nz.Vec3(f32), random);
+                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
+                _ = try self.spawn(.{
+                    .kind = .lootbox,
+                    .transform = transform,
+                });
+            }
+
+            const teleporter = try self.spawn(.{
+                .kind = .teleporter,
+                .transform = .{ .position = teleporter_position },
+            });
+            const teleport_planet_up = nz.vec.normalize(teleporter_position);
+            const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+            const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
+            teleporter.transform.rotation = if (dot < 0.9999) blk: {
+                const axis = if (dot > -0.9999)
+                    nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
+                else
+                    nz.Vec3(f32){ 1, 0, 0 };
+                break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
+            } else .identity;
+            self.teleporter_id = teleporter.id;
+        },
     }
+
     const player_spawn_position = self.playerSpawnPosition();
     for (self.entities.values()) |*player| {
         if (player.kind != .player) continue;
@@ -320,40 +373,6 @@ pub fn startStage(self: *World, physics: *Physics) !void {
             Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
         }
     }
-
-    self.director.spawning = true;
-    const teleporter_direction = if (self.dev_mode)
-        nz.Vec3(f32){ 0, 1, 0 }
-    else
-        nz.vec.randomUnitVector(nz.Vec3(f32), random);
-    const teleporter_position = shared.planet.surfacePoint(teleporter_direction, self.planet_radius);
-    for (0..25) |_| {
-        const vector_direction = if (self.dev_mode)
-            nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
-        else
-            nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
-        _ = try self.spawn(.{
-            .kind = .lootbox,
-            .transform = transform,
-        });
-    }
-
-    const teleporter = try self.spawn(.{
-        .kind = .teleporter,
-        .transform = .{ .position = teleporter_position },
-    });
-    const teleport_planet_up = nz.vec.normalize(teleporter_position);
-    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
-    const dot = std.math.clamp(nz.vec.dot(default_up, teleport_planet_up), -1.0, 1.0);
-    teleporter.transform.rotation = if (dot < 0.9999) blk: {
-        const axis = if (dot > -0.9999)
-            nz.vec.normalize(nz.vec.cross(default_up, teleport_planet_up))
-        else
-            nz.Vec3(f32){ 1, 0, 0 };
-        break :blk nz.quat.Hamiltonian(f32).angleAxis(std.math.acos(dot), axis);
-    } else .identity;
-    self.teleporter_id = teleporter.id;
 }
 
 pub fn flush(self: *World, physics: *Physics) !void {

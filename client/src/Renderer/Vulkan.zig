@@ -7,7 +7,7 @@ const nz = shared.numz;
 const AssetServer = @import("../AssetServer.zig");
 const ModelLoader = @import("loader/ModelLoader.zig");
 const TextureTable = @import("loader/TextureTable.zig");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const World = system.World;
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
@@ -293,7 +293,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         .pStencilAttachment = null,
     };
 
-    setDefaultRenderState(self, cmd, elapsed_time);
+    setDefaultRenderState(self, cmd);
 
     const width: f32 = @floatFromInt(self.swapchain.draw_image.extent.width);
     const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
@@ -365,7 +365,7 @@ const alpha_blend_eq: c.VkColorBlendEquationEXT = .{
     .alphaBlendOp = c.VK_BLEND_OP_ADD,
 };
 
-fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f32) void {
+fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     {
         const stages = [_]c.VkShaderStageFlagBits{
             c.VK_SHADER_STAGE_VERTEX_BIT,
@@ -395,9 +395,9 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer, elapsed_time: f3
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);
 
     // std.debug.print("time: {d}\n", .{self.elapsed_time});
-    const tmp: i32 = @intFromFloat(elapsed_time);
+    // const tmp: i32 = @intFromFloat(elapsed_time);
     // std.debug.print("fixed-time: {d}\n", .{tmp});
-    if (@mod(tmp, 2) == -1) {
+    if (false) {
         ext.vkCmdSetPolygonModeEXT(cmd, c.VK_POLYGON_MODE_LINE);
         c.vkCmdSetLineWidth(cmd, 1);
         ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
