@@ -37,6 +37,7 @@ fire_item: ?[]const u8 = null,
 left_click_prev: bool = false,
 pressed: bool = false,
 released: bool = false,
+death_time: f32 = 0,
 
 const Node = struct {
     id: u32,

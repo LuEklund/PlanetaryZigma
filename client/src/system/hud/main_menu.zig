@@ -12,7 +12,8 @@ const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
+pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
+    _ = info;
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));

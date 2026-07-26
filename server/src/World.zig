@@ -234,8 +234,8 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     if (source) |source_entity| {
         if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
         const tougherer_times = entity.inventory.get(.tougherer_times);
-        const block_chance = shared.Item.attributes(.tougherer_times).get(.block_chance);
-        if (random.float(f32) < tougherer_times * block_chance) new_amount = 0;
+        const block_chance = 1 - (1 / (1 + tougherer_times * shared.Item.attributes(.tougherer_times).get(.block_chance)));
+        if (random.float(f32) < block_chance) new_amount = 0;
     }
     return self.addHealth(entity, -new_amount, source);
 }
@@ -369,7 +369,6 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
             player.flags.is_dead = false;
             player.stats.current.set(.health, player.stats.max.get(.health));
             try physics.createBody(player);
-            self.players.appendAssumeCapacity(player.id);
             self.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
         } else if (player.collider.body_id) |body_id| {
             Physics.setPosition(body_id, player_spawn_position);

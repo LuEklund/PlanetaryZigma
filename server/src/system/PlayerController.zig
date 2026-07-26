@@ -27,8 +27,9 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                _ = info.world.giveItem(player, .pickaxe, 1);
-                _ = info.world.giveItem(player, .energy_drink, 1);
+                // _ = info.world.giveItem(player, .pickaxe, 1);
+                // _ = info.world.giveItem(player, .energy_drink, 1);
+                _ = info.world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
                 // _ = info.world.giveItem(player, .rocket, 1);
