@@ -135,7 +135,9 @@ pub fn build(b: *std.Build) void {
         system.root_module.linkSystemLibrary("vulkan-1", .{});
         exe.root_module.linkSystemLibrary("vulkan-1", .{});
     } else {
+        system.root_module.linkSystemLibrary("vulkan", .{});
         exe.root_module.linkSystemLibrary("vulkan", .{});
+        system.link_z_defs = true;
     }
     exe.root_module.link_libcpp = true;
 
