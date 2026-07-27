@@ -292,7 +292,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
         random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
     else
         random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
-    std.log.debug("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
+    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},

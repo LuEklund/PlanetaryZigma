@@ -115,7 +115,7 @@ pub fn reload(self: *Watcher, io: std.Io) !bool {
     };
     self.old_dynlib = null; // ring retains the old lib; never close it mid-run
 
-    std.log.debug("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
+    std.log.info("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
     return true;
 }
 

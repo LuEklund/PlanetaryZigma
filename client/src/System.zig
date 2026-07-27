@@ -98,7 +98,7 @@ pub fn deinit(self: *System) void {
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
-    self.hud = .{ .transition = self.hud.transition };
+    self.hud = .{};
     switch (next) {
         .menu => try menu_world.populate(world),
         .game => {},
@@ -247,13 +247,9 @@ pub const Table = struct {
     }
 };
 
-// Keep these in a namespace, NOT at container level: the comptime block above only
-// analyzes them when building the .so. At container level the exe analyzes them too,
-// which drags Renderer.init and all of Vulkan into the exe (8.3s vs 5.7s full build).
-// The wrappers exist because errors can't cross a C ABI and the handle is opaque.
 pub const ffi = struct {
     pub export fn systemInit(data: *const Data) ?*anyopaque {
-        std.log.debug("system init", .{});
+        std.log.info("system init", .{});
         const context = data.gpa.create(System) catch return null;
         context.init(data.*) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
@@ -265,7 +261,7 @@ pub const ffi = struct {
     }
 
     pub export fn systemDeinit(handle: *anyopaque) void {
-        std.log.debug("system deinit", .{});
+        std.log.info("system deinit", .{});
         const context: *System = @ptrCast(@alignCast(handle));
         const gpa = context.gpa;
         context.deinit();

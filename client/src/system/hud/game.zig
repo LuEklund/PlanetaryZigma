@@ -85,7 +85,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                 } },
 
                 .color = .new(1, 1, 1, 1),
-                .name = ui.print("{t}", .{item_kind}),
+                .name = @tagName(item_kind),
                 .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
@@ -254,31 +254,20 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
             });
         }
 
-        if (player.flags.is_dying) {
+        const death_time = ui.animate("death_screen", if (player.flags.is_dying) 1 else 0, 1.2);
+        if (death_time > 0) {
             const deah_message = ui.print("Died of cringe", .{});
-            ui.death_time = std.math.clamp(ui.death_time + info.delta_time * 0.3, 0, 1);
             ui.add(null, .{
                 .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
                 .child_anchor = .{ .x = .center, .y = .center },
                 .name = "death",
             });
             ui.add("death", .{
-                .size = .{ .fixed = .{ .heigth = std.math.clamp(ui.screen_heigth * (1 - ui.death_time), 32 * 3, ui.screen_heigth), .width = ui.screen_width } },
-                .color = .new(
-                    0,
-                    0,
-                    0,
-                    ui.death_time,
-                ),
-
+                .size = .{ .fixed = .{ .heigth = std.math.clamp(ui.screen_heigth * (1 - death_time), 32 * 3, ui.screen_heigth), .width = ui.screen_width } },
+                .color = .new(0, 0, 0, death_time),
                 .text = .{ .data = deah_message },
                 .child_anchor = .{ .x = .center, .y = .center },
             });
-            // ui.add("death", .{
-            //     .size = .{ .fixed = ui.textSize(deah_message, 32) },
-            // });
-        } else {
-            ui.death_time = 0;
         }
     }
 }

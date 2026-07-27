@@ -96,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
 
         if (try watcher.reload(io)) {
             system_table.systemReload(&system_instance, true);
-            std.log.debug("system table updated", .{});
+            std.log.info("system table updated", .{});
             system_table = try .load(&watcher.dynlib.?);
             system_table.systemReload(&system_instance, false);
         }

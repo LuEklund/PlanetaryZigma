@@ -124,7 +124,7 @@ pub const ffi = struct {
     };
 
     pub export fn systemInit(system: *System, data: *const Data) void {
-        std.log.debug("system init", .{});
+        std.log.info("system init", .{});
         system.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system init: {s}", .{@errorName(err)});
@@ -133,7 +133,7 @@ pub const ffi = struct {
     }
 
     pub export fn systemDeinit(system: *System) void {
-        std.log.debug("system deinit", .{});
+        std.log.info("system deinit", .{});
         system.deinit() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system deinit: {s}", .{@errorName(err)});

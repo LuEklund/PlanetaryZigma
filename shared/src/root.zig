@@ -27,12 +27,8 @@ pub const max_player_name_len: usize = 32;
 pub const default_player_name: []const u8 = "Player";
 pub const max_chat_len: usize = 128;
 
-/// Set once per compilation unit (exe and each hot-reload .so keep their own
-/// copy of this module's globals). Null = log lines print without a timestamp.
 pub var log_io: ?std.Io = null;
 
-/// std.log.defaultLog with a UTC wall-clock stamp in front, so client.log and
-/// server.log lines can be lined up against each other.
 pub fn logFn(
     comptime level: std.log.Level,
     comptime scope: @EnumLiteral(),

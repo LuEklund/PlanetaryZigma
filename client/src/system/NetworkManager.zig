@@ -46,8 +46,6 @@ pub const HostIntent = enum(u8) {
     multiplayer,
 };
 
-/// What the player is waiting on, derived from state that already exists.
-/// Drives the transition veil's status text.
 pub const Phase = enum(u8) {
     idle,
     starting_server,
@@ -127,8 +125,6 @@ fn stopHostServer(self: *NetworkManager) void {
     self.server_process = null;
 }
 
-/// server_conn is set only from the Steam `.connected` event. steam_client.server_conn
-/// is set the instant ConnectP2P returns -- still FindingRoute, not connected.
 pub fn connected(self: *const NetworkManager) bool {
     return self.server_conn != 0;
 }

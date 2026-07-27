@@ -26,23 +26,34 @@ text_buffer: [8192]u8 = undefined,
 text_len: usize = 0,
 quads: std.ArrayList(Quad) = .empty,
 nodes: std.ArrayList(Node) = .empty,
-names: std.StringArrayHashMapUnmanaged(u32) = .empty,
+names: std.AutoArrayHashMapUnmanaged(u64, u32) = .empty,
+animations: std.AutoArrayHashMapUnmanaged(u64, Animation) = .empty,
 mouse_state: MouseState = .{},
 screen_width: f32,
 screen_heigth: f32,
 default_font: *Font,
-hot_item: ?[]const u8 = null,
-active_item: ?[]const u8 = null,
-fire_item: ?[]const u8 = null,
+hot_item: ?u64 = null,
+active_item: ?u64 = null,
+fire_item: ?u64 = null,
 left_click_prev: bool = false,
 pressed: bool = false,
 released: bool = false,
-death_time: f32 = 0,
+delta_time: f32 = 0,
+frame_index: u64 = 0,
+
+pub fn key(name: []const u8) u64 {
+    return std.hash.Wyhash.hash(0, name);
+}
+
+const Animation = struct {
+    value: f32,
+    last_frame: u64,
+};
 
 const Node = struct {
     id: u32,
     layout: Layout,
-    name: ?[]const u8,
+    name: ?u64,
     parent_id: ?u32,
     rect: Rect,
     offset: f32,
@@ -102,12 +113,15 @@ pub fn init(
     screen_width: u32,
     screen_heigth: u32,
 ) !Ui {
-    var names: std.StringArrayHashMapUnmanaged(u32) = .empty;
+    var names: std.AutoArrayHashMapUnmanaged(u64, u32) = .empty;
     try names.ensureTotalCapacity(gpa, max_ui_quads);
+    var animations: std.AutoArrayHashMapUnmanaged(u64, Animation) = .empty;
+    try animations.ensureTotalCapacity(gpa, max_ui_quads);
     return .{
         .quads = try .initCapacity(gpa, max_ui_quads),
         .nodes = try .initCapacity(gpa, max_ui_quads),
         .names = names,
+        .animations = animations,
         .screen_width = @floatFromInt(screen_width),
         .screen_heigth = @floatFromInt(screen_heigth),
         .default_font = undefined,
@@ -118,13 +132,15 @@ pub fn deinit(self: *Ui, gpa: std.mem.Allocator) void {
     self.quads.deinit(gpa);
     self.nodes.deinit(gpa);
     self.names.deinit(gpa);
+    self.animations.deinit(gpa);
 }
 
-pub fn start(self: *Ui, mouse_state: MouseState) void {
+pub fn start(self: *Ui, mouse_state: MouseState, delta_time: f32) void {
     const left_click_prev = self.mouse_state.left_click;
     self.mouse_state = mouse_state;
+    self.delta_time = delta_time;
+    self.frame_index += 1;
     self.hotUpdate();
-    // self.activeUpdate();
     if (mouse_state.left_click and !left_click_prev) self.active_item = self.hot_item;
     if (!mouse_state.left_click) self.active_item = null;
     self.text_len = 0;
@@ -140,6 +156,25 @@ pub fn start(self: *Ui, mouse_state: MouseState) void {
 pub fn end(self: *Ui) void {
     self.resolveLayout();
     self.pushQuads();
+
+    var index: usize = 0;
+    while (index < self.animations.count()) {
+        if (self.animations.values()[index].last_frame == self.frame_index) {
+            index += 1;
+        } else {
+            self.animations.swapRemoveAt(index);
+        }
+    }
+}
+
+pub fn animate(self: *Ui, name: []const u8, target: f32, seconds: f32) f32 {
+    const entry = self.animations.getOrPutAssumeCapacity(key(name));
+    if (!entry.found_existing) entry.value_ptr.* = .{ .value = 0, .last_frame = self.frame_index };
+    const animation: *Animation = entry.value_ptr;
+    animation.last_frame = self.frame_index;
+    animation.value += (target - animation.value) * (1 - @exp(-self.delta_time / @max(seconds, 0.0001)));
+    if (@abs(target - animation.value) < 0.001) animation.value = target;
+    return animation.value;
 }
 
 pub fn print(self: *Ui, comptime fmt: []const u8, args: anytype) []const u8 {
@@ -149,7 +184,7 @@ pub fn print(self: *Ui, comptime fmt: []const u8, args: anytype) []const u8 {
 }
 
 pub fn add(self: *Ui, parent: ?[]const u8, layout: Layout) void {
-    const parent_id: ?u32 = if (parent) |name| (self.names.get(name) orelse return) else null;
+    const parent_id: ?u32 = if (parent) |name| (self.names.get(key(name)) orelse return) else null;
     self.addNode(parent_id, layout);
 }
 
@@ -157,7 +192,7 @@ fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
     const handle: u32 = @intCast(self.nodes.items.len);
     self.nodes.appendAssumeCapacity(.{
         .id = handle,
-        .name = layout.name,
+        .name = if (layout.name) |node_name| key(node_name) else null,
         .layout = layout,
         .parent_id = parent_id,
         .rect = .{ .left = 0, .top = 0, .width = 0, .heigth = 0 },
@@ -172,7 +207,7 @@ fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
         self.text_len += data.len;
     }
 
-    if (layout.name) |add_name| self.names.putAssumeCapacity(add_name, handle);
+    if (layout.name) |add_name| self.names.putAssumeCapacity(key(add_name), handle);
     for (layout.children) |child| self.addNode(handle, child);
 }
 
@@ -329,25 +364,20 @@ fn pushQuads(self: *Ui) void {
     }
 }
 
-// pub fn clicked(self: *Ui, id: u32) ?*Layout {
-//     if (id >= self.nodes.items.len) return null;
-//     const node = self.nodes.items[id];
-// }
-
 pub fn isHot(self: *Ui, name: []const u8) bool {
-    return eqlName(name, self.hot_item);
+    return self.hot_item == key(name);
 }
 
 pub fn isActive(self: *Ui, name: []const u8) bool {
-    return (eqlName(name, self.hot_item) and self.mouse_state.left_click);
+    return (self.hot_item == key(name) and self.mouse_state.left_click);
 }
 
 pub fn isClicked(self: *Ui, name: []const u8) bool {
-    return (eqlName(name, self.hot_item) and self.pressed);
+    return (self.hot_item == key(name) and self.pressed);
 }
 
 pub fn isDragging(self: *Ui, name: []const u8) bool {
-    return (eqlName(name, self.active_item) and self.mouse_state.left_click);
+    return (self.active_item == key(name) and self.mouse_state.left_click);
 }
 
 fn hotUpdate(self: *Ui) void {
@@ -373,8 +403,3 @@ fn hotUpdate(self: *Ui) void {
 //     if (self.left_click_prev) return;
 // }
 
-fn eqlName(a: ?[]const u8, b: ?[]const u8) bool {
-    if (a == null or b == null)
-        return false;
-    return std.mem.eql(u8, a.?, b.?);
-}

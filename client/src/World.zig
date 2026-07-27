@@ -170,7 +170,7 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
                 self.planet_radius = @floatFromInt(radius);
-                std.log.debug("SPAWNED: Planet {d}", .{radius});
+                std.log.info("SPAWNED: Planet {d}", .{radius});
             },
             .projectile_cube => entity.transform.scale = @splat(0.3),
             .projectile_rocket => entity.transform.scale = @splat(0.9),

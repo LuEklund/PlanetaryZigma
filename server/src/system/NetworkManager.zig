@@ -112,7 +112,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     .steam_server = self.steam_server,
                     .conn = conn,
                 };
-                std.log.debug("client connected: conn={d}", .{conn});
+                std.log.info("client connected: conn={d}", .{conn});
             }
         },
         .disconnected => |conn| {
@@ -121,7 +121,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 self.session_metadata_dirty = true;
-                std.log.debug("client disconnected: conn={d}", .{conn});
+                std.log.info("client disconnected: conn={d}", .{conn});
             }
         },
     };
@@ -192,13 +192,13 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                                 }, .reliable);
                             }
                         }
-                        std.log.debug("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
+                        std.log.info("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
                     }
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
                     world.queueRemove(client.entity_id);
-                    std.log.debug("player disconnect", .{});
+                    std.log.info("player disconnect", .{});
                 },
                 .input => {
                     if (world.getPtr(client.entity_id)) |entity| {

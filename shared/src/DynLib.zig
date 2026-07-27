@@ -17,9 +17,6 @@ pub const DynLib = struct {
         } };
     }
 
-    // std.DynLib collapses every dlopen failure to error.FileNotFound and never calls
-    // dlerror, so the real message (missing dep, undefined symbol) is still pending here.
-    // Read it before any other dl* call on this thread clears it.
     fn lastError() []const u8 {
         if (builtin.os.tag == .windows) return "use GetLastError";
         return std.mem.span(std.c.dlerror() orelse return "(no dlerror)");
