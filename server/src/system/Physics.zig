@@ -117,7 +117,8 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
-        if (!isGrounded(entity, info.world.planet_radius)) {
+        entity.flags.is_grounded = self.isGrounded(entity, info.world.planet_radius);
+        if (!entity.flags.is_grounded) {
             const mass = c.b3Body_GetMass(body_id);
             c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(-planet_up, mass * gravity_accel)), true);
         }
@@ -193,11 +194,20 @@ fn colliderGroundExtent(collider: Collider) f32 {
     };
 }
 
-fn isGrounded(entity: *const system.Entity, planet_radius: f32) bool {
+pub fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
     const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
     const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;
-    return distance < colliderGroundExtent(entity.collider) + ground_check_skin;
+    if (distance < colliderGroundExtent(entity.collider) + ground_check_skin) return true;
+    const position = entity.transform.position;
+    const direction = -nz.vec.normalize(position);
+    const ray_hit = Physics.c.b3World_CastRayClosest(
+        self.world,
+        .{ .x = position[0], .y = position[1], .z = position[2] },
+        .{ .x = direction[0], .y = direction[1], .z = direction[2] },
+        Physics.c.b3DefaultQueryFilter(),
+    );
+    return (ray_hit.hit);
 }
 
 pub fn createBody(self: *Physics, entity: *system.Entity) !void {
@@ -301,4 +311,3 @@ pub fn moveOnPlanet(
         nz.vec.scale(planet_up, nz.vec.dot(v, planet_up));
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + walk));
 }
-

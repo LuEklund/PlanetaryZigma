@@ -173,8 +173,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
             const speed = player.stats.current.get(.speed);
 
             var vertical: f32 = 0;
-            if (input.keys.space) vertical += speed;
-            if (input.keys.l_shift) vertical -= speed;
+            if (input.keys.space and player.flags.is_grounded) vertical += 2 * speed;
 
             Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
 

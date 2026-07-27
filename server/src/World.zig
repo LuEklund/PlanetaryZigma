@@ -101,6 +101,7 @@ pub const Entity = struct {
         invinsible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
+        is_grounded: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
