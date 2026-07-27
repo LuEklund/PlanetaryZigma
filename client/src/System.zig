@@ -21,6 +21,8 @@ pub const Controller = @import("system/Controller.zig");
 pub const Hud = @import("system/Hud.zig");
 pub const Ui = @import("Ui.zig");
 
+pub const std_options: std.Options = .{ .logFn = shared.logFn };
+
 pub const Info = struct {
     delta_time: f32,
     elapsed_time: f32,
@@ -64,6 +66,7 @@ pub const Data = struct {
 };
 
 pub fn init(self: *System, data: Data) !void {
+    shared.log_io = data.io;
     self.gpa = data.gpa;
     self.io = data.io;
     self.desktop = data.desktop;
@@ -95,7 +98,7 @@ pub fn deinit(self: *System) void {
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
-    self.hud = .{};
+    self.hud = .{ .transition = self.hud.transition };
     switch (next) {
         .menu => try menu_world.populate(world),
         .game => {},

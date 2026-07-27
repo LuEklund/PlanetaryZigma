@@ -14,6 +14,8 @@ pub const Entity = World.Entity;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
 
+pub const std_options: std.Options = .{ .logFn = shared.logFn };
+
 pub const Info = struct {
     tick: u32,
     delta_time: f32,
@@ -37,6 +39,7 @@ pub const Data = struct {
 };
 
 pub fn init(self: *System, data: *const Data) !void {
+    shared.log_io = data.io;
     self.* = .{
         .gpa = data.gpa,
         .io = data.io,

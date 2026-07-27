@@ -47,6 +47,9 @@ overlay: Overlay = .none,
 options_tab: OptionsTab = .gameplay,
 damage_popups: DamagePopup.List = .{},
 popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
+transition: f32 = 0,
+
+pub const transition_seconds: f32 = 0.35;
 
 pub const crosshair_texture = "textures/crosshair.png";
 pub const texture_paths = [_][]const u8{crosshair_texture};
@@ -99,7 +102,36 @@ pub fn update(
             .options => options_menu.update(ui, hud, options, controller),
         }
     }
+    hud.addTransition(ui, info.delta_time, network_manager.phase());
 
     ui.end();
     return request;
+}
+
+/// Added last on purpose: hotUpdate takes the last named node under the cursor,
+/// so a full-screen named node IS the input block.
+fn addTransition(hud: *Hud, ui: *Ui, delta_time: f32, phase: NetworkManager.Phase) void {
+    const covering = switch (phase) {
+        .starting_server, .waiting_for_server, .connecting => true,
+        .idle, .connected => false,
+    };
+    const step = delta_time / transition_seconds;
+    hud.transition = if (covering)
+        @min(1, hud.transition + step)
+    else
+        @max(0, hud.transition - step);
+    if (hud.transition <= 0) return;
+
+    ui.add(null, .{
+        .name = if (covering) "transition_veil" else null,
+        .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
+        .offset = .{ .left = 0, .top = 0 },
+        .color = .new(0, 0, 0, hud.transition),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = phase.text(),
+            .size = 30,
+            .color = .new(0.94, 0.96, 0.9, hud.transition),
+        },
+    });
 }

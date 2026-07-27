@@ -7,6 +7,8 @@ const yes = @import("yes");
 const tracy = @import("ztracy");
 const miniaudio = @import("miniaudio");
 
+pub const std_options: std.Options = .{ .logFn = shared.logFn };
+
 pub fn main(init: std.process.Init) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -18,6 +20,7 @@ pub fn main(init: std.process.Init) !void {
     }
     const gpa = if (builtin.mode == .Debug) gpa_impl.allocator() else gpa_impl;
     const io = init.io;
+    shared.log_io = io;
 
     var eng: miniaudio.ma_engine = undefined;
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
