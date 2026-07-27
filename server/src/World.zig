@@ -41,10 +41,9 @@ pub const PendingDespawn = struct {
 pub const Place = enum { ship, planet };
 
 pub const Director = struct {
-    credits: f32,
-    salary_per_second: f32,
+    credits: u32,
+    salary_per_second: u32,
     last_salary: f32,
-    enemy_cost: f32,
     spawning: bool,
 };
 
@@ -136,7 +135,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .teleporter_id = .none,
         .planet_radius = 100,
         .place = .ship,
-        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
+        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
         .stage = 0,
         .prng = .init(0xACE1),
