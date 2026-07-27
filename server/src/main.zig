@@ -6,6 +6,8 @@ const tracy = @import("ztracy");
 const World = System.World;
 const nz = shared.numz;
 
+pub const std_options: std.Options = .{ .logFn = shared.logFn };
+
 pub fn main(init: std.process.Init) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -15,6 +17,7 @@ pub fn main(init: std.process.Init) !void {
     }
     const gpa = if (builtin.mode == .Debug) gpa_impl.allocator() else gpa_impl;
     const io = init.io;
+    shared.log_io = io;
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "server.log");
 
@@ -93,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
 
         if (try watcher.reload(io)) {
             system_table.systemReload(&system_instance, true);
-            std.log.debug("system table updated", .{});
+            std.log.info("system table updated", .{});
             system_table = try .load(&watcher.dynlib.?);
             system_table.systemReload(&system_instance, false);
         }

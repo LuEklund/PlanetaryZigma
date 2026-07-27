@@ -7,10 +7,8 @@ pub const cell_margin = 1;
 
 pub const Chunk = @import("Chunk.zig");
 
-pub const min_radius: u32 = 20;
-pub const radius_max: u32 = 80;
+pub const radius_min: u32 = 15;
 pub const dev_radius_min: u32 = 1000;
-pub const dev_radius_max: u32 = 1100;
 
 pub const PlanetKind = enum {
     logical,

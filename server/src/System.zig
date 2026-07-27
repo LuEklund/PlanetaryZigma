@@ -14,6 +14,8 @@ pub const Entity = World.Entity;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
 
+pub const std_options: std.Options = .{ .logFn = shared.logFn };
+
 pub const Info = struct {
     tick: u32,
     delta_time: f32,
@@ -37,6 +39,7 @@ pub const Data = struct {
 };
 
 pub fn init(self: *System, data: *const Data) !void {
+    shared.log_io = data.io;
     self.* = .{
         .gpa = data.gpa,
         .io = data.io,
@@ -121,7 +124,7 @@ pub const ffi = struct {
     };
 
     pub export fn systemInit(system: *System, data: *const Data) void {
-        std.log.debug("system init", .{});
+        std.log.info("system init", .{});
         system.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system init: {s}", .{@errorName(err)});
@@ -130,7 +133,7 @@ pub const ffi = struct {
     }
 
     pub export fn systemDeinit(system: *System) void {
-        std.log.debug("system deinit", .{});
+        std.log.info("system deinit", .{});
         system.deinit() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system deinit: {s}", .{@errorName(err)});

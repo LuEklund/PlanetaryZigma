@@ -41,10 +41,9 @@ pub const PendingDespawn = struct {
 pub const Place = enum { ship, planet };
 
 pub const Director = struct {
-    credits: f32,
-    salary_per_second: f32,
+    credits: u32,
+    salary_per_second: u32,
     last_salary: f32,
-    enemy_cost: f32,
     spawning: bool,
 };
 
@@ -101,6 +100,7 @@ pub const Entity = struct {
         invinsible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
+        is_grounded: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -135,7 +135,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .teleporter_id = .none,
         .planet_radius = 100,
         .place = .ship,
-        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .enemy_cost = 10, .spawning = false },
+        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
         .stage = 0,
         .prng = .init(0xACE1),
@@ -280,7 +280,6 @@ pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
 
 pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     self.place = place;
-    self.stage += 1;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
@@ -288,11 +287,12 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     const random = self.prng.random();
     self.teleporter_id = .none;
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
+    self.stage += 1;
     self.planet_radius = @floatFromInt(if (self.dev_mode)
-        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
+        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
     else
-        random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
-    std.log.debug("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
+        (shared.planet.radius_min + (self.stage - 1) * 9) - 9);
+    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
         .transform = .{},

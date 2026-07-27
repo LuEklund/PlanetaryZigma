@@ -98,6 +98,7 @@ fn addServerArtifacts(
     });
 
     system.root_module.linkLibrary(box3d_lib);
+    if (target.result.os.tag != .windows) system.link_z_defs = true;
 
     const exe = b.addExecutable(.{
         .name = "server",

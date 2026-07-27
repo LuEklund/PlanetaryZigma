@@ -23,9 +23,13 @@ ping_milliseconds: i32 = -1,
 server_list: ServerList = .{},
 host_state: HostState = .none,
 host_intent: HostIntent = .none,
+host_state_time: f32 = 0,
+elapsed_time: f32 = 0,
 steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
 dev_mode: bool = false,
+
+pub const host_wait_timeout_seconds: f32 = 15;
 
 pub const HostState = enum(u8) {
     none,
@@ -41,6 +45,47 @@ pub const HostIntent = enum(u8) {
     singleplayer,
     multiplayer,
 };
+
+pub const Phase = enum(u8) {
+    idle,
+    starting_server,
+    waiting_for_server,
+    connecting,
+    connected,
+
+    pub fn text(self: Phase) []const u8 {
+        return switch (self) {
+            .idle => "",
+            .starting_server => "Starting server...",
+            .waiting_for_server => "Waiting for server...",
+            .connecting => "Connecting...",
+            .connected => "Entering ship...",
+        };
+    }
+};
+
+pub fn phase(self: *const NetworkManager) Phase {
+    if (self.server_conn != 0) return .connected;
+    if (self.steam_client.server_conn != 0) return .connecting;
+    return switch (self.host_state) {
+        .requested => .starting_server,
+        .waiting => .waiting_for_server,
+        .hosting => .connecting,
+        .none, .failed, .steam_offline => .idle,
+    };
+}
+
+fn setHostState(self: *NetworkManager, next: HostState) void {
+    if (self.host_state == next) return;
+    std.log.info("host: {t} -> {t} after {d:.2}s (intent={t})", .{
+        self.host_state,
+        next,
+        self.elapsed_time - self.host_state_time,
+        self.host_intent,
+    });
+    self.host_state = next;
+    self.host_state_time = self.elapsed_time;
+}
 
 const ServerList = struct {
     servers: [8]Client.ServerInfo = undefined,
@@ -81,7 +126,7 @@ fn stopHostServer(self: *NetworkManager) void {
 }
 
 pub fn connected(self: *const NetworkManager) bool {
-    return self.server_conn != 0 or self.steam_client.server_conn != 0;
+    return self.server_conn != 0;
 }
 
 pub fn returnToMainMenu(self: *NetworkManager) !void {
@@ -94,20 +139,20 @@ pub fn returnToMainMenu(self: *NetworkManager) !void {
     self.server_tick_estimate = 0;
     self.server_tick_latest = 0;
     self.sent_connect = false;
-    self.host_state = .none;
+    self.setHostState(.none);
     self.host_intent = .none;
 }
 
 pub fn requestHost(self: *NetworkManager, intent: HostIntent, dev_mode: bool) void {
     self.dev_mode = dev_mode;
     if (intent == .multiplayer and !self.steam_logged_on) {
-        self.host_state = .steam_offline;
         self.host_intent = intent;
+        self.setHostState(.steam_offline);
         return;
     }
     if (self.host_state == .none or self.host_state == .failed or self.host_state == .steam_offline) {
-        self.host_state = .requested;
         self.host_intent = intent;
+        self.setHostState(.requested);
     }
 }
 
@@ -134,8 +179,8 @@ fn spawnHostServer(self: *NetworkManager) void {
     var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
-        self.host_state = .failed;
         std.log.err("host: {s} not found; build the server for this OS first", .{server_exe_name});
+        self.setHostState(.failed);
         return;
     };
 
@@ -151,6 +196,8 @@ fn spawnHostServer(self: *NetworkManager) void {
         &.{ host_server.exe_path, "--dev", host_steam_id_text }
     else
         &.{ host_server.exe_path, host_steam_id_text };
+    std.log.info("host: spawning {s} (cwd={s}, id_file={s})", .{ host_server.exe_path, host_server.dir, server_id_path });
+    for (argv, 0..) |arg, index| std.log.info("host: argv[{d}]=\"{s}\"", .{ index, arg });
     self.server_process = std.process.spawn(self.io, .{
         .argv = argv,
         .cwd = .{ .path = host_server.dir },
@@ -159,11 +206,11 @@ fn spawnHostServer(self: *NetworkManager) void {
         .stderr = .inherit,
         .create_no_window = true,
     }) catch |err| {
-        self.host_state = .failed;
-        std.log.err("spawn host server: {t}", .{err});
+        std.log.err("host: spawn failed: {t}", .{err});
+        self.setHostState(.failed);
         return;
     };
-    self.host_state = .waiting;
+    self.setHostState(.waiting);
 }
 
 fn sendConnect(self: *NetworkManager) !void {
@@ -195,18 +242,20 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
+    self.elapsed_time = info.elapsed_time;
     self.steam_logged_on = self.steam_client.isLoggedOn();
     self.ping_milliseconds = self.steam_client.pingMilliseconds();
     if (!self.steam_logged_on) {
         self.server_list.refresh = false;
         self.server_list.count = 0;
         if (self.host_intent == .multiplayer and (self.host_state == .requested or self.host_state == .waiting or self.host_state == .hosting)) {
+            std.log.warn("host: steam went offline mid-host, killing server", .{});
             self.stopHostServer();
-            self.host_state = .steam_offline;
+            self.setHostState(.steam_offline);
         }
     } else if (self.host_state == .steam_offline) {
-        self.host_state = .none;
         self.host_intent = .none;
+        self.setHostState(.none);
     }
 
     if (self.host_state == .requested) self.spawnHostServer();
@@ -216,24 +265,33 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
             const id_path = std.fmt.bufPrint(&id_path_buf, "{s}/{s}", .{ dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
             var id_buf: [20]u8 = undefined;
             if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
-                self.host_state = .hosting;
+                std.log.info("host: read {s} = \"{s}\"", .{ id_path, id_text });
+                self.setHostState(.hosting);
                 std.Io.Dir.cwd().deleteFile(self.io, id_path) catch {};
                 if (std.mem.startsWith(u8, id_text, "local:")) {
                     const port = std.fmt.parseInt(u16, id_text["local:".len..], 10) catch 0;
                     if (port == 0) {
-                        std.log.err("host: bad local server file", .{});
+                        std.log.err("host: bad local server file \"{s}\"", .{id_text});
                     } else if (self.steam_client.server_conn == 0) {
                         try self.steam_client.connectToLocalServer(port);
                     }
                 } else if (self.steam_client.server_conn == 0) {
                     const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
                     if (server_steam_id == 0) {
-                        std.log.err("host: bad server id file", .{});
+                        std.log.err("host: bad server id file \"{s}\"", .{id_text});
                     } else {
                         try self.steam_client.connectToServer(server_steam_id);
                     }
                 }
             } else |_| {}
+        }
+        if (self.host_state == .waiting and self.elapsed_time - self.host_state_time > host_wait_timeout_seconds) {
+            std.log.err("host: server never wrote {s} within {d:.0}s; giving up", .{
+                shared.SteamNet.Server.server_file_name,
+                host_wait_timeout_seconds,
+            });
+            self.stopHostServer();
+            self.setHostState(.failed);
         }
     }
 
@@ -253,13 +311,20 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
 
     for (self.steam_client.packets.events.items) |ev| switch (ev) {
         .connected => |conn| {
+            std.log.info("host: connected (conn={d}) {d:.2}s after {t}", .{ conn, self.elapsed_time - self.host_state_time, self.host_state });
             self.server_conn = conn;
             self.sent_connect = false;
         },
         .disconnected => |conn| {
-            if (self.server_conn == conn) {
+            const reached_game = self.server_conn == conn;
+            std.log.warn("host: disconnected (conn={d}) while phase={t}, reached_game={}", .{ conn, self.phase(), reached_game });
+            if (reached_game) {
                 self.server_conn = 0;
                 self.sent_connect = false;
+            }
+            if (self.host_state == .waiting or self.host_state == .hosting) {
+                self.stopHostServer();
+                self.setHostState(if (reached_game) .none else .failed);
             }
         },
     };

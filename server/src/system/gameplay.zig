@@ -25,24 +25,30 @@ pub fn updateDirector(info: *const Info) !void {
         std.log.debug("dev: enemy spawning {s}", .{if (director.spawning) "on" else "off"});
     }
 
-    if (director.spawning and info.world.players.items.len != 0) {
+    if (director.spawning) {
         if (info.elapsed_time - director.last_salary >= 1.0) {
             director.last_salary = info.elapsed_time;
             director.credits += director.salary_per_second * 15;
         }
-        const rand = info.world.prng.random();
-        if (director.credits >= director.enemy_cost) {
-            const player_index = rand.uintLessThan(usize, info.world.players.items.len);
+        const random = info.world.prng.random();
+        const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
+            0...70 => .tubloid,
+            71...90 => .tubloida,
+            else => .bloorp_lord,
+        };
+        const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
+        if (director.credits >= cost) {
+            const player_index = random.uintLessThan(usize, info.world.players.items.len);
             if (info.world.getPtr(info.world.players.items[player_index])) |player| {
                 const radius_float = info.world.planet_radius;
-                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, rand);
+                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, random);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (info.world.spawn(.{
-                    .kind = .{ .enemy = .tubloida },
+                    .kind = .{ .enemy = enemy_kind },
                     .transform = .{ .position = spawn_position },
                     .last_attack = info.elapsed_time,
                 })) |_| {
-                    director.credits -= director.enemy_cost;
+                    director.credits -= cost;
                 } else |_| {}
             }
         }
