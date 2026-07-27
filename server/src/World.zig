@@ -281,7 +281,6 @@ pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
 
 pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     self.place = place;
-    self.stage += 1;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
@@ -289,10 +288,11 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     const random = self.prng.random();
     self.teleporter_id = .none;
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
+    self.stage += 1;
     self.planet_radius = @floatFromInt(if (self.dev_mode)
-        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_max)
+        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
     else
-        random.intRangeAtMost(u32, shared.planet.min_radius, shared.planet.min_radius));
+        (shared.planet.radius_min + (self.stage - 1) * 9) - 9);
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
