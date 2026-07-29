@@ -682,7 +682,7 @@ fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *cons
         ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 
         const push = particlePushConstant(self, current_frame, world, effect, batch);
-        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
+        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
         const thread_count = batch.emitter_count * push.particle_count;
         c.vkCmdDispatch(cmd, (thread_count + particle_workgroup_size - 1) / particle_workgroup_size, 1, 1);
     }
@@ -713,7 +713,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
         bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(effect, .frag));
 
         const push = particlePushConstant(self, current_frame, world, effect, batch);
-        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
+        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
         c.vkCmdDraw(cmd, 6, batch.emitter_count * Shader.instancesPerEmitter(effect), 0, 0);
     }
 

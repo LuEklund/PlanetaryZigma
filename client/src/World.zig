@@ -90,9 +90,17 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .emitters = Emitter.initList(),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
+        .emitters = @splat(.{
+            .effect = .explosion,
+            .origin = .{ 0, 0, 0 },
+            .target = .{ 0, 0, 0 },
+            .spawn_time = Emitter.free_spawn_time,
+            .owner = .none,
+            .index = 0,
+            .last_seen = Emitter.free_spawn_time,
+        }),
     };
 }
 

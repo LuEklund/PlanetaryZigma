@@ -104,21 +104,21 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     });
 
     const pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout) = .init(.{
-        .world = try .init(device, Shader.WorldPushConstant, Shader.pushConstantStages(.world), &.{
+        .world = try .init(device, @sizeOf(Shader.WorldPushConstant), c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.textures).handle,
             descriptor_layouts.get(.shadow).handle,
         }),
-        .particle = try .init(device, Shader.ParticlePushConstant, Shader.pushConstantStages(.particle), &.{
+        .particle = try .init(device, @sizeOf(Shader.ParticlePushConstant), c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.textures).handle,
             descriptor_layouts.get(.shadow).handle,
         }),
-        .sky = try .init(device, Shader.WorldPushConstant, Shader.pushConstantStages(.world), &.{
+        .sky = try .init(device, @sizeOf(Shader.WorldPushConstant), c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),
-        .ui = try .init(device, Shader.UiPushConstant, Shader.pushConstantStages(.ui), &.{
+        .ui = try .init(device, @sizeOf(Shader.UiPushConstant), c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, &.{
             descriptor_layouts.get(.textures).handle,
         }),
     });
@@ -257,12 +257,12 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     self.texture_loader = try gpa.create(TextureLoader);
     self.texture_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
     self.shader_loader = try gpa.create(ShaderLoader);
-    self.shader_loader.* = try .init(gpa, asset_server.io, device, .{
+    self.shader_loader.* = try .init(gpa, asset_server.io, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
         .material = descriptor_layouts.get(.material).handle,
         .textures = descriptor_layouts.get(.textures).handle,
         .shadow = descriptor_layouts.get(.shadow).handle,
-    });
+    }));
     self.font_loader = try gpa.create(FontLoader);
     self.font_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
 

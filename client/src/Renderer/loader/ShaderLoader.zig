@@ -9,20 +9,13 @@ const DescriptorLayout = @import("../Vulkan/DesrciptorLayout.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 device: Device,
-layouts: LayoutHandles,
+layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout),
 shaders: []StageSlots,
 interface: Loader,
 
 pub const StageSlots = [std.enums.values(Shader.Stage).len]Shader;
 
-pub const LayoutHandles = struct {
-    scene: c.VkDescriptorSetLayout,
-    material: c.VkDescriptorSetLayout,
-    textures: c.VkDescriptorSetLayout,
-    shadow: c.VkDescriptorSetLayout,
-};
-
-pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: LayoutHandles) !ShaderLoader {
+pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout)) !ShaderLoader {
     const files = try gpa.alloc([]const u8, std.enums.values(Shader.Kind).len);
     for (std.enums.values(Shader.Kind), files) |kind, *file| {
         file.* = Shader.get(kind).path["shaders/".len..];
@@ -88,12 +81,9 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     for (spec.stages) |stage| {
         const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
         if (shader.handle == null) {
-            const layout_handles: []const c.VkDescriptorSetLayout = switch (spec.layout) {
-                .scene_textures => &.{ self.layouts.scene, self.layouts.textures, self.layouts.shadow },
-                .sky => &.{ self.layouts.scene, self.layouts.material },
-                .ui => &.{self.layouts.textures},
-            };
-            shader.* = .init(self.device, kind, stage, layout_handles);
+            var layout_handles: [4]c.VkDescriptorSetLayout = undefined;
+            for (spec.layout, 0..) |layout_kind, i| layout_handles[i] = self.layouts.get(layout_kind);
+            shader.* = .init(self.device, kind, stage, layout_handles[0..spec.layout.len]);
         }
         try shader.load(data);
     }

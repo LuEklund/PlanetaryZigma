@@ -27,20 +27,8 @@ last_seen: f32,
 
 pub const List = [max_emitters]Emitter;
 
-const free_spawn_time: f32 = -1.0e9;
+pub const free_spawn_time: f32 = -1.0e9;
 const refresh_timeout: f32 = 0.25;
-
-pub fn initList() List {
-    return @splat(.{
-        .effect = .explosion,
-        .origin = .{ 0, 0, 0 },
-        .target = .{ 0, 0, 0 },
-        .spawn_time = free_spawn_time,
-        .owner = .none,
-        .index = 0,
-        .last_seen = free_spawn_time,
-    });
-}
 
 pub fn alive(self: Emitter, elapsed_time: f32) bool {
     const duration = Shader.particleInfo(self.effect).duration orelse

@@ -7,11 +7,11 @@ const check = @import("utils.zig").check;
 pub const Kind = enum { world, particle, sky, ui };
 handle: c.VkPipelineLayout,
 
-pub fn init(device: Device, comptime PushConstant: type, stage_flags: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
+pub fn init(device: Device, push_constant_size: u32, stage_flags: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
     const ranges: c.VkPushConstantRange = .{
         .stageFlags = stage_flags,
         .offset = 0,
-        .size = @sizeOf(PushConstant),
+        .size = push_constant_size,
     };
 
     var layout_create_info: c.VkPipelineLayoutCreateInfo = .{

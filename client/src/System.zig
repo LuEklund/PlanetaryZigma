@@ -120,7 +120,8 @@ pub fn update(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| {
         if (entity.kind != .item) continue;
         for (0..item_smoke_strands) |strand| {
-            Emitter.refresh(&world.emitters, .smoke, entity.id, @intCast(strand), entity.transform.position, world.elapsed_time);
+            const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+            Emitter.refresh(&world.emitters, .smoke, entity.id, @intCast(strand), entity.transform.position - offset, world.elapsed_time);
         }
     }
     try self.renderer.update(world, &self.animation_instances, &self.ui);

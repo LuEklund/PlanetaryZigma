@@ -5,6 +5,7 @@ const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
 const check = @import("utils.zig").check;
+const DescriptorLayout = @import("DesrciptorLayout.zig");
 
 handle: c.VkShaderEXT = null,
 device: Device,
@@ -15,8 +16,6 @@ push_constant_size: u32,
 push_constant_stages: c.VkShaderStageFlags,
 
 pub const Stage = enum { vert, frag, comp };
-pub const Layout = enum { scene_textures, sky, ui };
-pub const PushConstantKind = enum { world, ui, particle, none };
 pub const Topology = enum { quad, ribbon };
 
 pub const ParticleInfo = struct {
@@ -42,25 +41,25 @@ pub const Kind = enum {
 pub const Spec = struct {
     path: []const u8,
     stages: []const Stage,
-    layout: Layout,
-    push_constant: PushConstantKind,
+    layout: []const DescriptorLayout.Kind,
+    push_constant_size: u32,
     particle: ?ParticleInfo,
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .static = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .skinned = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .mesh = .{ .path = "shaders/mesh.spv", .stages = &.{.frag}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .shadow_static = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .shadow_skinned = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .sky = .{ .path = "shaders/sky.spv", .stages = &.{ .vert, .frag }, .layout = .sky, .push_constant = .none, .particle = null },
-    .ui = .{ .path = "shaders/ui.spv", .stages = &.{ .vert, .frag }, .layout = .ui, .push_constant = .ui, .particle = null },
-    .debug = .{ .path = "shaders/debug.spv", .stages = &.{ .vert, .frag }, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .static = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .skinned = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .mesh = .{ .path = "shaders/mesh.spv", .stages = &.{.frag}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_static = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_skinned = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .sky = .{ .path = "shaders/sky.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
+    .ui = .{ .path = "shaders/ui.spv", .stages = &.{ .vert, .frag }, .layout = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
+    .debug = .{ .path = "shaders/debug.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
     .explosion = .{
         .path = "shaders/particle/explosion.spv",
         .stages = &.{ .vert, .frag, .comp },
-        .layout = .scene_textures,
-        .push_constant = .particle,
+        .layout = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
         .particle = .{
             .particle_count = 40,
             .duration = 0.8,
@@ -70,8 +69,8 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
     .lightning = .{
         .path = "shaders/particle/lightning.spv",
         .stages = &.{ .vert, .frag },
-        .layout = .scene_textures,
-        .push_constant = .particle,
+        .layout = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
         .particle = .{
             .particle_count = 64,
             .duration = 0.3,
@@ -81,8 +80,8 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
     .smoke = .{
         .path = "shaders/particle/smoke.spv",
         .stages = &.{ .vert, .frag },
-        .layout = .scene_textures,
-        .push_constant = .particle,
+        .layout = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
         .particle = .{
             .particle_count = 14,
             .duration = null,
@@ -139,20 +138,11 @@ pub const ParticlePushConstant = extern struct {
     emitter_count: u32,
 };
 
-fn pushConstantSize(kind: Kind) u32 {
-    return switch (get(kind).push_constant) {
-        .world => @sizeOf(WorldPushConstant),
-        .ui => @sizeOf(UiPushConstant),
-        .particle => @sizeOf(ParticlePushConstant),
-        .none => 0,
-    };
-}
-
-pub fn pushConstantStages(push_constant: PushConstantKind) c.VkShaderStageFlags {
-    return switch (push_constant) {
-        .particle => c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT,
-        .world, .ui, .none => c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-    };
+fn pushConstantStages(kind: Kind) c.VkShaderStageFlags {
+    return if (get(kind).particle != null)
+        c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT
+    else
+        c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT;
 }
 
 pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
@@ -174,8 +164,8 @@ pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []
             .pName = entryPoint(kind, stage).ptr,
         },
         .handle = null,
-        .push_constant_size = pushConstantSize(kind),
-        .push_constant_stages = pushConstantStages(shader_spec.push_constant),
+        .push_constant_size = shader_spec.push_constant_size,
+        .push_constant_stages = pushConstantStages(kind),
         .descriptor_set_count = @intCast(descriptor_set_layouts.len),
         .descriptor_set_layouts = undefined,
     };
