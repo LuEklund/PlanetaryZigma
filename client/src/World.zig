@@ -32,7 +32,7 @@ pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
-emitters: std.ArrayList(Emitter) = .empty,
+emitters: Emitter.List,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
@@ -88,7 +88,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .emitters = try .initCapacity(gpa, 256),
+        .emitters = Emitter.initList(),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
@@ -106,7 +106,6 @@ pub fn deinit(self: *World) void {
     self.pending_inventory.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
-    self.emitters.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
 

@@ -13,6 +13,7 @@ const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("Shader.zig");
 const FrameData = @import("FrameData.zig");
+const Emitter = @import("../../system/Emitter.zig");
 const Ui = @import("../../Ui.zig");
 const AssetServer = @import("../../AssetServer.zig");
 const TextureTable = @import("../loader/TextureTable.zig");
@@ -25,8 +26,6 @@ const Mesh = @import("../Vulkan/Mesh.zig");
 
 const check = @import("utils.zig").check;
 
-pub const explosion_particle_name: []const u8 = "explosion_particle";
-pub const lightning_particle_name: []const u8 = "lightning_particle";
 const particle_texture_size: u32 = 64;
 pub const max_textures = 256;
 
@@ -55,6 +54,7 @@ pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
 
 identity_joint_buffer: Buffer,
 ui_index_buffer: Buffer,
+particle_buffer: Buffer,
 
 shadow_image: Image,
 shadow_sampler: c.VkSampler,
@@ -151,6 +151,15 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         index_data[quad_index * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
     }
 
+    const particle_buffer: Buffer = try .init(
+        device,
+        vma,
+        FrameData.GPUParticle,
+        Emitter.max_emitters * Emitter.max_particles_per_effect,
+        c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+        .{ .usage = Vma.c.VMA_MEMORY_USAGE_GPU_ONLY },
+    );
+
     const shadow_image: Image = try .init(
         vma,
         device,
@@ -224,6 +233,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
         .ui_index_buffer = ui_index_buffer,
+        .particle_buffer = particle_buffer,
         .shadow_image = shadow_image,
         .shadow_sampler = shadow_sampler,
         .shadow_descriptor_buffers = shadow_descriptor_buffers,
@@ -262,8 +272,10 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
     self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
 
-    try createParticleTexture(vma, device, gpa, &self.texture_table, explosion_particle_name, .{ 255, 70, 12 }, .{ 255, 235, 48 });
-    try createParticleTexture(vma, device, gpa, &self.texture_table, lightning_particle_name, .{ 110, 160, 255 }, .{ 255, 255, 255 });
+    for (std.enums.values(Shader.Kind)) |kind| {
+        const particle = Shader.get(kind).particle orelse continue;
+        try createParticleTexture(vma, device, gpa, &self.texture_table, particle.texture_name, particle.texture_edge_color, particle.texture_center_color);
+    }
     return self;
 }
 
@@ -288,6 +300,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     }
     self.identity_joint_buffer.deinit(vma);
     self.ui_index_buffer.deinit(vma);
+    self.particle_buffer.deinit(vma);
     self.shadow_image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.shadow_sampler, null);
     for (&self.shadow_descriptor_buffers) |*shadow_descriptor_buffer| shadow_descriptor_buffer.deinit(vma);

@@ -153,9 +153,17 @@ pub const Logical = struct {
             .shaderSampledImageArrayNonUniformIndexing = c.VK_TRUE,
         };
 
+        // Slang lowers SV_InstanceID to gl_InstanceIndex - gl_BaseInstance, and reading
+        // gl_BaseInstance needs this. Every slang vertex shader depends on it.
+        var shader_draw_parameters_features: c.VkPhysicalDeviceShaderDrawParametersFeatures = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+            .pNext = &descriptor_indexing_feature,
+            .shaderDrawParameters = c.VK_TRUE,
+        };
+
         const device_info = c.VkDeviceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &descriptor_indexing_feature,
+            .pNext = &shader_draw_parameters_features,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queue_info,
             .pEnabledFeatures = &features,

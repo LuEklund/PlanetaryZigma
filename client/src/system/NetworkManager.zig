@@ -9,7 +9,6 @@ const system = @import("../System.zig");
 const Emitter = @import("Emitter.zig");
 const World = system.World;
 const Info = system.Info;
-const nz = shared.numz;
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -421,11 +420,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Emitter.spawnRocketExplosion(&info.world.emitters, position, info.elapsed_time);
+                        Emitter.spawnQuad(&info.world.emitters, .explosion, position, info.elapsed_time);
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = info.world.getPtr(id) orelse continue;
-                        Emitter.spawnLightningArc(&info.world.emitters, bolt.start_position, target.transform.position, info.elapsed_time);
+                        Emitter.spawnRibbon(&info.world.emitters, .lightning, bolt.start_position, target.transform.position, info.elapsed_time);
                     },
                 },
                 .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {

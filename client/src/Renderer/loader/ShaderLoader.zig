@@ -10,8 +10,12 @@ const check = @import("../Vulkan/utils.zig").check;
 
 device: Device,
 layouts: LayoutHandles,
-items: []Shader,
+shaders: []StageSlots,
 interface: Loader,
+
+/// One row per file, one slot per stage. Files that lack a stage just leave
+/// that slot null -- a few unused slots is cheaper than index arithmetic.
+pub const StageSlots = [std.enums.values(Shader.Stage).len]Shader;
 
 pub const LayoutHandles = struct {
     scene: c.VkDescriptorSetLayout,
@@ -26,13 +30,15 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: LayoutH
         file.* = Shader.get(kind).path["shaders/".len..];
     }
 
-    const items = try gpa.alloc(Shader, std.enums.values(Shader.Kind).len);
-    for (items) |*shader| shader.handle = null;
+    const shaders = try gpa.alloc(StageSlots, std.enums.values(Shader.Kind).len);
+    for (shaders) |*slots| for (slots) |*shader| {
+        shader.handle = null;
+    };
 
     return .{
         .device = device,
         .layouts = layouts,
-        .items = items,
+        .shaders = shaders,
         .interface = .{
             .gpa = gpa,
             .io = io,
@@ -45,46 +51,69 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: LayoutH
 
 pub fn deinit(self: *ShaderLoader) void {
     const gpa = self.interface.gpa;
-    for (self.items) |*shader| {
+    for (self.shaders) |*slots| for (slots) |*shader| {
         if (shader.handle != null) shader.deinit();
-    }
-    gpa.free(self.items);
+    };
+    gpa.free(self.shaders);
     gpa.free(self.interface.files);
 }
 
-pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind) *Shader {
-    return &self.items[@intFromEnum(kind)];
+pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind, stage: Shader.Stage) *Shader {
+    return &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
 }
 
 pub fn verifyAllKindsLoaded(self: *const ShaderLoader) void {
     for (std.enums.values(Shader.Kind)) |kind| {
-        if (self.items[@intFromEnum(kind)].handle == null)
-            std.debug.panic("shader missing or failed to load: {s} -- run the build so glslc emits it", .{Shader.get(kind).path});
+        for (Shader.get(kind).stages) |stage| {
+            if (self.shaders[@intFromEnum(kind)][@intFromEnum(stage)].handle == null)
+                std.debug.panic("shader missing or failed to load: {s} ({t}) -- run the build so the .spv is emitted", .{ Shader.get(kind).path, stage });
+        }
     }
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
     const kind: Shader.Kind = @enumFromInt(index);
+    const spec = Shader.get(kind);
     const file = err_file catch |err| std.debug.panic(
         "shader missing: assets/shaders/{s} ({t})",
         .{ loader.files[index], err },
     );
-    if (self.items[index].handle == null) {
-        const layout_handles: []const c.VkDescriptorSetLayout = switch (Shader.get(kind).layout) {
-            .scene_textures => &.{ self.layouts.scene, self.layouts.textures, self.layouts.shadow },
-            .sky => &.{ self.layouts.scene, self.layouts.material },
-            .ui => &.{self.layouts.textures},
-        };
-        self.items[index] = .init(self.device, kind, layout_handles);
+
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(loader.io, &buffer);
+    const len: usize = @intCast((try file.stat(loader.io)).size);
+    const data = try loader.gpa.alignedAlloc(u8, .@"4", len);
+    defer loader.gpa.free(data);
+    try reader.interface.readSliceAll(data);
+
+    // A slang file holds every stage, so one file change rebuilds all of them.
+    for (spec.stages) |stage| {
+        const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
+        if (shader.handle == null) {
+            const layout_handles: []const c.VkDescriptorSetLayout = switch (spec.layout) {
+                .scene_textures => &.{ self.layouts.scene, self.layouts.textures, self.layouts.shadow },
+                .sky => &.{ self.layouts.scene, self.layouts.material },
+                .ui => &.{self.layouts.textures},
+            };
+            shader.* = .init(self.device, kind, stage, layout_handles);
+        }
+        try shader.load(data);
     }
-    try self.items[index].load(loader.gpa, loader.io, file);
 }
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
-    if (self.items[index].handle == null) return;
-    check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
-    self.items[index].deinit();
-    self.items[index].handle = null;
+    const kind: Shader.Kind = @enumFromInt(index);
+    var waited: bool = false;
+    for (Shader.get(kind).stages) |stage| {
+        const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
+        if (shader.handle == null) continue;
+        if (!waited) {
+            check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
+            waited = true;
+        }
+        shader.deinit();
+        shader.handle = null;
+    }
 }

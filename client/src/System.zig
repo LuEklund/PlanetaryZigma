@@ -10,7 +10,6 @@ pub const AssetServer = @import("AssetServer.zig");
 const Animation = @import("system/Animations.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
 const motion = @import("system/motion.zig");
-const Emitter = @import("system/Emitter.zig");
 const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
@@ -111,7 +110,6 @@ pub fn update(self: *System, info: *const Info) !void {
     defer tracy_scope.end();
     // tracy.frameMark();
     const paused_before_hud = self.hud.overlay != .none;
-    Emitter.update(&info.world.emitters, info.elapsed_time);
     if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
     switch (try self.hud.update(info, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &info.world.controller, &self.options)) {
         .none => {},
