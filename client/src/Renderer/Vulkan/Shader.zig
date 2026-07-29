@@ -76,9 +76,9 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
     .explosion = .{
         .path = "shaders/particle/explosion.spv",
         .source = .slang,
-        .stages = &.{ .vert, .frag },
+        .stages = &.{ .vert, .frag, .comp },
         .layout = .scene_textures,
-        .push_constant = .world,
+        .push_constant = .particle,
         .particle = .{
             .particle_count = 40,
             .duration = 0.8,
@@ -93,7 +93,7 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
         .source = .slang,
         .stages = &.{ .vert, .frag },
         .layout = .scene_textures,
-        .push_constant = .world,
+        .push_constant = .particle,
         .particle = .{
             .particle_count = 64,
             .duration = 0.3,
@@ -113,6 +113,12 @@ pub fn particleInfo(kind: Kind) ParticleInfo {
     return get(kind).particle orelse std.debug.panic("shader {t} is not a particle effect", .{kind});
 }
 
+/// Compute is opt-in per effect: an effect that stays closed-form just leaves
+/// `.comp` out of its `stages` and never gets dispatched.
+pub fn hasStage(kind: Kind, stage: Stage) bool {
+    return std.mem.indexOfScalar(Stage, get(kind).stages, stage) != null;
+}
+
 pub fn entryPoint(source: Source, stage: Stage) [:0]const u8 {
     return switch (source) {
         .glsl => "main",
@@ -129,19 +135,22 @@ pub const WorldPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
     joint_matrices_address: c.VkDeviceAddress,
     texture_index: u32,
-    particle_count: u32 = 0,
 };
 pub const UiPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
     screnn_size: [2]f32,
 };
+/// One struct for all three particle stages, so compute, vert and frag share a
+/// pipeline layout and a single vkCmdPushConstants.
 pub const ParticlePushConstant = extern struct {
     particle_buffer_address: c.VkDeviceAddress,
     emitter_buffer_address: c.VkDeviceAddress,
     elapsed_time: f32,
     delta_time: f32,
-    particles_per_effect: u32,
+    particle_count: u32,
+    particle_stride: u32,
     emitter_count: u32,
+    texture_index: u32,
 };
 
 fn pushConstantSize(kind: Kind) u32 {
@@ -150,6 +159,13 @@ fn pushConstantSize(kind: Kind) u32 {
         .ui => @sizeOf(UiPushConstant),
         .particle => @sizeOf(ParticlePushConstant),
         .none => 0,
+    };
+}
+
+pub fn pushConstantStages(push_constant: PushConstantKind) c.VkShaderStageFlags {
+    return switch (push_constant) {
+        .particle => c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT | c.VK_SHADER_STAGE_COMPUTE_BIT,
+        .world, .ui, .none => c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
     };
 }
 
@@ -173,10 +189,7 @@ pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []
         },
         .handle = null,
         .push_constant_size = pushConstantSize(kind),
-        .push_constant_stages = switch (stage) {
-            .vert, .frag => c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .comp => c.VK_SHADER_STAGE_COMPUTE_BIT,
-        },
+        .push_constant_stages = pushConstantStages(shader_spec.push_constant),
         .descriptor_set_count = @intCast(descriptor_set_layouts.len),
         .descriptor_set_layouts = undefined,
     };

@@ -32,7 +32,7 @@ pub fn update(info: *const system.Info, physics: *Physics) !void {
                 _ = info.world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
-                // _ = info.world.giveItem(player, .rocket, 1);
+                _ = info.world.giveItem(player, .rocket, 1);
                 _ = info.world.giveItem(player, .lightning, 1);
                 // _ = info.world.giveItem(player, .tougherer_times, 1);
             },

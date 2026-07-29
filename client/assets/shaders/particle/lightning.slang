@@ -18,12 +18,26 @@ struct Emitter {
     uint slot;
 };
 
+struct Particle {
+    float3 position;
+    float scale;
+    float3 velocity;
+    float age;
+    float4 color;
+    float seed;
+    float lifetime;
+    float2 padding;
+};
+
 struct PushConstant {
-    float4x4 model_matrix;
+    Particle *particle_buffer;
     Emitter *emitter_buffer;
-    float4x4 *joint_buffer;
-    uint texture_index;
+    float elapsed_time;
+    float delta_time;
     uint particle_count;
+    uint particle_stride;
+    uint emitter_count;
+    uint texture_index;
 };
 [[vk::push_constant]] PushConstant push_constant;
 
@@ -64,7 +78,7 @@ VertexOutput vertMain(uint vertex_index: SV_VertexID, uint instance_index: SV_In
     uint emitter_index = instance_index / push_constant.particle_count;
     Emitter emitter = push_constant.emitter_buffer[emitter_index];
 
-    float age = scene_data.time - emitter.spawn_time;
+    float age = push_constant.elapsed_time - emitter.spawn_time;
     float seed = frac(emitter.spawn_time * 7.13);
 
     float3 segment = emitter.target - emitter.origin;

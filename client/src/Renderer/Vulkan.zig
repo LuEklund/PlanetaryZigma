@@ -26,6 +26,7 @@ const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Planet = @import("Planet.zig");
 const Shader = @import("Vulkan/Shader.zig");
+const Emitter = @import("../system/Emitter.zig");
 const Ui = @import("../Ui.zig");
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
@@ -344,10 +345,13 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
 
     try renderShadowPass(self, cmd, info, instances, cascade_vps);
 
+    const particle_batches = packEmitters(current_frame, info);
+    dispatchParticles(self, cmd, current_frame, info, particle_batches);
+
     ext.vkCmdBeginRendering(cmd, &render_info);
     try renderWorldPass(self, cmd, current_frame, info, instances);
     renderSkyPass(self, cmd, current_frame);
-    renderParticlePass(self, cmd, current_frame, info);
+    renderParticlePass(self, cmd, current_frame, info, particle_batches);
     try renderDebugPass(self, cmd, current_frame, info);
     renderUiPass(self, cmd, current_frame, ui, width, height);
     ext.vkCmdEndRendering(cmd);
@@ -529,7 +533,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
 }
 
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
-    self.bindWorldDescriptors(cmd, current_frame);
+    self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static_vert, .vert));
     bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.mesh_frag, .frag));
@@ -591,54 +595,140 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    self.bindWorldDescriptors(cmd, current_frame);
+    self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) void {
-    const emitters = &info.world.emitters;
+const particle_workgroup_size: u32 = 64;
 
-    var color_blend_enables: c.VkBool32 = c.VK_TRUE;
-    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
-    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
+/// Compacts the live emitters into this frame's emitter buffer, grouped per effect.
+/// Runs before rendering opens so the compute stage can read the same packing the
+/// draws will. The slot each emitter owns rides along in GPUEmitter.slot, so
+/// compaction never moves a particle's place in the persistent particle buffer.
+fn packEmitters(current_frame: *const FrameData, info: *const Info) std.EnumArray(Shader.Kind, ParticleBatch) {
     const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-
-    var first_instance: u32 = 0;
+    var batches: std.EnumArray(Shader.Kind, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
+    var first_emitter: u32 = 0;
     for (std.enums.values(Shader.Kind)) |effect| {
-        const particle_info = Shader.get(effect).particle orelse continue;
-        var effect_emitter_count: u32 = 0;
-        for (emitters, 0..) |emitter, slot| {
+        if (Shader.get(effect).particle == null) continue;
+        var emitter_count: u32 = 0;
+        for (&info.world.emitters, 0..) |emitter, slot| {
             if (emitter.effect != effect) continue;
             if (!emitter.alive(info.elapsed_time)) continue;
-            gpu_emitters[first_instance + effect_emitter_count] = .{
+            gpu_emitters[first_emitter + emitter_count] = .{
                 .origin = emitter.origin,
                 .spawn_time = emitter.spawn_time,
                 .target = emitter.target,
                 .slot = @intCast(slot),
             };
-            effect_emitter_count += 1;
+            emitter_count += 1;
         }
-        if (effect_emitter_count == 0) continue;
+        batches.set(effect, .{ .first_emitter = first_emitter, .emitter_count = emitter_count });
+        first_emitter += emitter_count;
+    }
+    return batches;
+}
+
+fn particlePushConstant(self: *Vulkan, current_frame: *const FrameData, info: *const Info, effect: Shader.Kind, batch: ParticleBatch) Shader.ParticlePushConstant {
+    const particle_info = Shader.particleInfo(effect);
+    return .{
+        .particle_buffer_address = self.resources.particle_buffer.getGPUAddress(),
+        .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
+            batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
+        .elapsed_time = info.elapsed_time,
+        .delta_time = info.delta_time,
+        .particle_count = particle_info.particle_count,
+        .particle_stride = Emitter.max_particles_per_effect,
+        .emitter_count = batch.emitter_count,
+        .texture_index = @intCast(self.resources.texture_table.handle(particle_info.texture_name).index()),
+    };
+}
+
+fn memoryBarrier(
+    cmd: c.VkCommandBuffer,
+    src_stage: c.VkPipelineStageFlags2,
+    src_access: c.VkAccessFlags2,
+    dst_stage: c.VkPipelineStageFlags2,
+    dst_access: c.VkAccessFlags2,
+) void {
+    const barrier: c.VkMemoryBarrier2 = .{
+        .sType = c.VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = src_stage,
+        .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
+        .dstAccessMask = dst_access,
+    };
+    const dependency: c.VkDependencyInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    c.vkCmdPipelineBarrier2(cmd, &dependency);
+}
+
+/// Must run outside a dynamic rendering scope -- binding a compute shader inside one
+/// is illegal. Every effect that declares a `.comp` stage simulates here; the rest
+/// stay closed-form in their vertex shader.
+fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+    // covers last frame's vertex reads (WAR) and the previous frame's compute writes (WAW)
+    memoryBarrier(
+        cmd,
+        c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | c.VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+        c.VK_ACCESS_2_SHADER_STORAGE_READ_BIT | c.VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        c.VK_ACCESS_2_SHADER_STORAGE_READ_BIT | c.VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    );
+
+    const particle_pipeline_layout_handle = self.resources.pipeline_layouts.get(.particle).handle;
+    for (std.enums.values(Shader.Kind)) |effect| {
+        if (!Shader.hasStage(effect, .comp)) continue;
+        const batch = batches.get(effect);
+        if (batch.emitter_count == 0) continue;
+
+        const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_COMPUTE_BIT};
+        const handle = [_]c.VkShaderEXT{self.resources.shader_loader.shaderPtr(effect, .comp).handle};
+        ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
+
+        const push = particlePushConstant(self, current_frame, info, effect, batch);
+        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
+        const thread_count = batch.emitter_count * push.particle_count;
+        c.vkCmdDispatch(cmd, (thread_count + particle_workgroup_size - 1) / particle_workgroup_size, 1, 1);
+    }
+
+    memoryBarrier(
+        cmd,
+        c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        c.VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        c.VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+        c.VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+    );
+}
+
+fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+    var color_blend_enables: c.VkBool32 = c.VK_TRUE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+
+    const particle_pipeline_layout_handle = self.resources.pipeline_layouts.get(.particle).handle;
+    self.bindWorldDescriptors(cmd, current_frame, particle_pipeline_layout_handle);
+
+    for (std.enums.values(Shader.Kind)) |effect| {
+        if (Shader.get(effect).particle == null) continue;
+        const batch = batches.get(effect);
+        if (batch.emitter_count == 0) continue;
 
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(effect, .vert));
         bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(effect, .frag));
 
-        const push: Shader.WorldPushConstant = .{
-            .model_matrix = nz.Mat4x4(f32).identity.d,
-            .vertex_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
-                first_instance * @sizeOf(FrameData.GPUEmitter),
-            .joint_matrices_address = 0,
-            .texture_index = @intCast(self.resources.texture_table.handle(particle_info.texture_name).index()),
-            .particle_count = particle_info.particle_count,
-        };
-        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
-        c.vkCmdDraw(cmd, 6, effect_emitter_count * particle_info.particle_count, 0, 0);
-        first_instance += effect_emitter_count;
+        const push = particlePushConstant(self, current_frame, info, effect, batch);
+        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
+        c.vkCmdDraw(cmd, 6, batch.emitter_count * push.particle_count, 0, 0);
     }
 
     color_blend_enables = c.VK_FALSE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+    self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 }
 
 fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
@@ -904,8 +994,7 @@ fn emitNode(
     }
 }
 
-fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData) void {
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
+fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world_pipeline_layout_handle: c.VkPipelineLayout) void {
     const shadow_descriptor_buffer = &self.resources.shadow_descriptor_buffers[self.current_frame_inflight % self.frames.len];
     const world_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
         .{

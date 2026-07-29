@@ -29,8 +29,6 @@ const check = @import("utils.zig").check;
 const particle_texture_size: u32 = 64;
 pub const max_textures = 256;
 
-pub const PipelineLayoutKind = enum { world, sky, ui };
-
 pub const shadow_cascade_count = 3;
 pub const shadow_map_size: u32 = 2048;
 
@@ -50,7 +48,7 @@ font_loader: *FontLoader,
 generated: std.EnumArray(Model.Generated, ?Mesh),
 
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
-pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout),
+pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
 
 identity_joint_buffer: Buffer,
 ui_index_buffer: Buffer,
@@ -106,17 +104,22 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
     });
 
-    const pipeline_layouts: std.EnumArray(PipelineLayoutKind, PipelineLayout) = .init(.{
-        .world = try .init(device, Shader.WorldPushConstant, &.{
+    const pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout) = .init(.{
+        .world = try .init(device, Shader.WorldPushConstant, Shader.pushConstantStages(.world), &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.textures).handle,
             descriptor_layouts.get(.shadow).handle,
         }),
-        .sky = try .init(device, Shader.WorldPushConstant, &.{
+        .particle = try .init(device, Shader.ParticlePushConstant, Shader.pushConstantStages(.particle), &.{
+            descriptor_layouts.get(.scene).handle,
+            descriptor_layouts.get(.textures).handle,
+            descriptor_layouts.get(.shadow).handle,
+        }),
+        .sky = try .init(device, Shader.WorldPushConstant, Shader.pushConstantStages(.world), &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),
-        .ui = try .init(device, Shader.UiPushConstant, &.{
+        .ui = try .init(device, Shader.UiPushConstant, Shader.pushConstantStages(.ui), &.{
             descriptor_layouts.get(.textures).handle,
         }),
     });
