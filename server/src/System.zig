@@ -61,6 +61,8 @@ pub fn deinit(self: *System) !void {
 pub fn update(self: *System, info: *const Info) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+
+    info.world.elapsed_time = info.elapsed_time;
     switch (try self.network_manager.update(info)) {
         .running => {},
         .host_left => {

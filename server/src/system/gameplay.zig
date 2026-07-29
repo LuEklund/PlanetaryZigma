@@ -63,6 +63,8 @@ pub fn updateEnemies(info: *const Info) !void {
 
     for (info.world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy) continue;
+        // std.log.debug("elapsed_time = {d}, un_stun_at {d}", .{ info.elapsed_time, enemy.un_stun_at });
+        if (enemy.un_stun_at > info.elapsed_time) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
         var closest_player: ?*system.Entity = null;
