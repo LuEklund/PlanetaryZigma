@@ -138,6 +138,7 @@ pub fn rebindProcs(self: *Vulkan) void {
 }
 
 pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+    // if (true) @panic("test");
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // const time = data.delta_time;
@@ -378,7 +379,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
             c.VK_SHADER_STAGE_GEOMETRY_BIT,
         };
 
-        const bound = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.skinned_vert, .vert).handle, self.resources.shader_loader.shaderPtr(.mesh_frag, .frag).handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.skinned, .vert).handle, self.resources.shader_loader.shaderPtr(.mesh, .frag).handle, null, null, null };
         ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
     }
 
@@ -472,7 +473,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
     ext.vkCmdBeginRendering(cmd, &shadow_render_info);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.shadow_static_vert, .vert).handle, null };
+        const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.shadow_static, .vert).handle, null };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     }
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
@@ -491,14 +492,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
         ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
         ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
 
-        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_static_vert, .vert));
+        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_static, .vert));
         for (info.world.entities.values()) |*entity| {
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             try drawStatic(self, cmd, entity.model_handle, base_matrix);
         }
-        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_skinned_vert, .vert));
+        bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_skinned, .vert));
         for (info.world.entities.values()) |*entity| {
             const instance = instances.getPtr(entity.id) orelse continue;
             const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
@@ -535,8 +536,8 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
-    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static_vert, .vert));
-    bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.mesh_frag, .frag));
+    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static, .vert));
+    bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.mesh, .frag));
     for (info.world.entities.values()) |*entity| {
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
@@ -548,7 +549,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
-    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned_vert, .vert));
+    bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned, .vert));
     for (info.world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
@@ -567,7 +568,7 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handle = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.sky_vert, .vert).handle, self.resources.shader_loader.shaderPtr(.sky_frag, .frag).handle };
+        const handle = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.sky, .vert).handle, self.resources.shader_loader.shaderPtr(.sky, .frag).handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
     }
     const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -602,10 +603,6 @@ const particle_workgroup_size: u32 = 64;
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
-/// Compacts the live emitters into this frame's emitter buffer, grouped per effect.
-/// Runs before rendering opens so the compute stage can read the same packing the
-/// draws will. The slot each emitter owns rides along in GPUEmitter.slot, so
-/// compaction never moves a particle's place in the persistent particle buffer.
 fn packEmitters(current_frame: *const FrameData, info: *const Info) std.EnumArray(Shader.Kind, ParticleBatch) {
     const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
     var batches: std.EnumArray(Shader.Kind, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
@@ -667,11 +664,7 @@ fn memoryBarrier(
     c.vkCmdPipelineBarrier2(cmd, &dependency);
 }
 
-/// Must run outside a dynamic rendering scope -- binding a compute shader inside one
-/// is illegal. Every effect that declares a `.comp` stage simulates here; the rest
-/// stay closed-form in their vertex shader.
 fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
-    // covers last frame's vertex reads (WAR) and the previous frame's compute writes (WAW)
     memoryBarrier(
         cmd,
         c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | c.VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
@@ -723,7 +716,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
 
         const push = particlePushConstant(self, current_frame, info, effect, batch);
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
-        c.vkCmdDraw(cmd, 6, batch.emitter_count * push.particle_count, 0, 0);
+        c.vkCmdDraw(cmd, 6, batch.emitter_count * Shader.instancesPerEmitter(effect), 0, 0);
     }
 
     color_blend_enables = c.VK_FALSE;
@@ -735,7 +728,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     if (!info.world.controller.debug_draw_colliders) return;
 
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-    const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.debug_vert, .vert).handle, self.resources.shader_loader.shaderPtr(.debug_frag, .frag).handle };
+    const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.debug, .vert).handle, self.resources.shader_loader.shaderPtr(.debug, .frag).handle };
     ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     c.vkCmdSetLineWidth(cmd, 1);
@@ -770,13 +763,14 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         var collider_transform = entity.transform;
         collider_transform.scale = @splat(1);
         var push: Shader.WorldPushConstant = .{
-            .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress(),
+            .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress() +
+                first_vertex * @sizeOf(FrameData.DebugVertex),
             .model_matrix = collider_transform.toMat4x4().d,
             .joint_matrices_address = 0,
             .texture_index = 0,
         };
         c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
-        c.vkCmdDraw(cmd, debug_vertex_count - first_vertex, 1, first_vertex, 0);
+        c.vkCmdDraw(cmd, debug_vertex_count - first_vertex, 1, 0, 0);
     }
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 }
@@ -789,8 +783,8 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
     };
 
     const bounds_ui = [_]c.VkShaderEXT{
-        self.resources.shader_loader.shaderPtr(.ui_vert, .vert).handle,
-        self.resources.shader_loader.shaderPtr(.ui_frag, .frag).handle,
+        self.resources.shader_loader.shaderPtr(.ui, .vert).handle,
+        self.resources.shader_loader.shaderPtr(.ui, .frag).handle,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);

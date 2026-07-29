@@ -19,12 +19,6 @@ pub const Layout = enum { scene_textures, sky, ui };
 pub const PushConstantKind = enum { world, ui, particle, none };
 pub const Topology = enum { quad, ribbon };
 
-/// glsl = one file per stage, entry point always "main".
-/// slang = one file holding every stage, entry point named after the stage.
-pub const Source = enum { glsl, slang };
-
-/// Layer 1 of a particle effect: emitter config. Layer 2 (sim) and 4 (shading)
-/// live in the .slang; layer 3 (geometry) is picked by `topology`.
 pub const ParticleInfo = struct {
     particle_count: u32,
     duration: f32,
@@ -34,27 +28,21 @@ pub const ParticleInfo = struct {
     texture_center_color: [3]f32,
 };
 
-/// One arm per FILE. A slang file carries several stages, so this is no longer
-/// one-arm-per-shader-object.
 pub const Kind = enum {
-    skinned_vert,
-    static_vert,
-    ui_vert,
-    sky_vert,
-    debug_vert,
-    shadow_static_vert,
-    shadow_skinned_vert,
-    ui_frag,
-    sky_frag,
-    mesh_frag,
-    debug_frag,
+    static,
+    skinned,
+    mesh,
+    shadow_static,
+    shadow_skinned,
+    sky,
+    ui,
+    debug,
     explosion,
     lightning,
 };
 
 pub const Spec = struct {
     path: []const u8,
-    source: Source,
     stages: []const Stage,
     layout: Layout,
     push_constant: PushConstantKind,
@@ -62,20 +50,16 @@ pub const Spec = struct {
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .skinned_vert = .{ .path = "shaders/skinned.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .static_vert = .{ .path = "shaders/static.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .ui_vert = .{ .path = "shaders/ui.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .ui, .push_constant = .ui, .particle = null },
-    .sky_vert = .{ .path = "shaders/sky.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .sky, .push_constant = .none, .particle = null },
-    .debug_vert = .{ .path = "shaders/debug.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .shadow_static_vert = .{ .path = "shaders/shadow_static.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .shadow_skinned_vert = .{ .path = "shaders/shadow_skinned.vert.spv", .source = .glsl, .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .ui_frag = .{ .path = "shaders/ui.frag.spv", .source = .glsl, .stages = &.{.frag}, .layout = .ui, .push_constant = .ui, .particle = null },
-    .sky_frag = .{ .path = "shaders/sky.frag.spv", .source = .glsl, .stages = &.{.frag}, .layout = .sky, .push_constant = .none, .particle = null },
-    .mesh_frag = .{ .path = "shaders/mesh.frag.spv", .source = .glsl, .stages = &.{.frag}, .layout = .scene_textures, .push_constant = .world, .particle = null },
-    .debug_frag = .{ .path = "shaders/debug.frag.spv", .source = .glsl, .stages = &.{.frag}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .static = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .skinned = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .mesh = .{ .path = "shaders/mesh.spv", .stages = &.{.frag}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .shadow_static = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .shadow_skinned = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = .scene_textures, .push_constant = .world, .particle = null },
+    .sky = .{ .path = "shaders/sky.spv", .stages = &.{ .vert, .frag }, .layout = .sky, .push_constant = .none, .particle = null },
+    .ui = .{ .path = "shaders/ui.spv", .stages = &.{ .vert, .frag }, .layout = .ui, .push_constant = .ui, .particle = null },
+    .debug = .{ .path = "shaders/debug.spv", .stages = &.{ .vert, .frag }, .layout = .scene_textures, .push_constant = .world, .particle = null },
     .explosion = .{
         .path = "shaders/particle/explosion.spv",
-        .source = .slang,
         .stages = &.{ .vert, .frag, .comp },
         .layout = .scene_textures,
         .push_constant = .particle,
@@ -90,7 +74,6 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
     },
     .lightning = .{
         .path = "shaders/particle/lightning.spv",
-        .source = .slang,
         .stages = &.{ .vert, .frag },
         .layout = .scene_textures,
         .push_constant = .particle,
@@ -113,19 +96,22 @@ pub fn particleInfo(kind: Kind) ParticleInfo {
     return get(kind).particle orelse std.debug.panic("shader {t} is not a particle effect", .{kind});
 }
 
-/// Compute is opt-in per effect: an effect that stays closed-form just leaves
-/// `.comp` out of its `stages` and never gets dispatched.
+pub fn instancesPerEmitter(kind: Kind) u32 {
+    const particle_info = particleInfo(kind);
+    return switch (particle_info.topology) {
+        .quad => particle_info.particle_count,
+        .ribbon => particle_info.particle_count - 1,
+    };
+}
+
 pub fn hasStage(kind: Kind, stage: Stage) bool {
     return std.mem.indexOfScalar(Stage, get(kind).stages, stage) != null;
 }
 
-pub fn entryPoint(source: Source, stage: Stage) [:0]const u8 {
-    return switch (source) {
-        .glsl => "main",
-        .slang => switch (stage) {
-            .vert => "vertMain",
-            .frag => "fragMain",
-            .comp => "computeMain",
+pub fn entryPoint(kind: Kind, stage: Stage) [:0]const u8 {
+    return switch (kind) {
+        inline else => |kind_tag| switch (stage) {
+            inline else => |stage_tag| @tagName(kind_tag) ++ "_" ++ @tagName(stage_tag),
         },
     };
 }
@@ -140,8 +126,6 @@ pub const UiPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
     screnn_size: [2]f32,
 };
-/// One struct for all three particle stages, so compute, vert and frag share a
-/// pipeline layout and a single vkCmdPushConstants.
 pub const ParticlePushConstant = extern struct {
     particle_buffer_address: c.VkDeviceAddress,
     emitter_buffer_address: c.VkDeviceAddress,
@@ -185,7 +169,7 @@ pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []
                 .frag, .comp => 0,
             },
             .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pName = entryPoint(shader_spec.source, stage).ptr,
+            .pName = entryPoint(kind, stage).ptr,
         },
         .handle = null,
         .push_constant_size = pushConstantSize(kind),

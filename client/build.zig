@@ -171,21 +171,13 @@ fn compileShaders(b: *std.Build) void {
     defer walker.deinit();
     while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
-        if (std.mem.endsWith(u8, entry.basename, ".spv")) continue;
-        if (std.mem.endsWith(u8, entry.basename, ".slang")) {
-            const cmd = b.addSystemCommand(&.{"slangc"});
-            cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
-            cmd.addArgs(&.{ "-target", "spirv" });
-            cmd.addArg("-o");
-            const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
-            usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
-            continue;
-        }
-        const cmd = b.addSystemCommand(&.{"glslc"});
+        if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
+        const cmd = b.addSystemCommand(&.{"slangc"});
         cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
+        cmd.addArgs(&.{ "-target", "spirv" });
         cmd.addArg("-o");
-        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename}));
-        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path}));
+        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
+        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
 }

@@ -28,8 +28,6 @@ pub const GPUEmitter = extern struct {
     slot: u32,
 };
 
-/// Persistent VRAM state, written only by the compute stage. Slot stride is
-/// Emitter.max_particles_per_effect, so a slot owns the same slice for its whole life.
 pub const GPUParticle = extern struct {
     position: [3]f32,
     scale: f32,

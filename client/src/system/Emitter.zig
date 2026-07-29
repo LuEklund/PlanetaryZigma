@@ -22,9 +22,6 @@ origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
 
-/// Slots are never compacted: a slot index owns the same particle_buffer slice
-/// for the whole life of the emitter sitting in it. Liveness is derived from
-/// age, so a slot older than its effect duration is free.
 pub const List = [max_emitters]Emitter;
 
 const free_spawn_time: f32 = -1.0e9;
@@ -51,11 +48,9 @@ fn claim(list: *List, emitter: Emitter, elapsed_time: f32) void {
         }
         if (slot.spawn_time < oldest.spawn_time) oldest = slot;
     }
-    // ponytail: all 256 slots busy, overwrite the oldest. Free-list if that ever shows.
     oldest.* = emitter;
 }
 
-/// Quad effects sit at a point; the shader derives its own orientation.
 pub fn spawnQuad(list: *List, effect: Shader.Kind, origin: nz.Vec3(f32), elapsed_time: f32) void {
     std.debug.assert(Shader.particleInfo(effect).topology == .quad);
     claim(list, .{
@@ -66,7 +61,6 @@ pub fn spawnQuad(list: *List, effect: Shader.Kind, origin: nz.Vec3(f32), elapsed
     }, elapsed_time);
 }
 
-/// Ribbon effects span two points and the strip is built between them.
 pub fn spawnRibbon(list: *List, effect: Shader.Kind, from: nz.Vec3(f32), to: nz.Vec3(f32), elapsed_time: f32) void {
     std.debug.assert(Shader.particleInfo(effect).topology == .ribbon);
     claim(list, .{

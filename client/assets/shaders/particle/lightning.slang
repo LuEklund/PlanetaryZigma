@@ -57,8 +57,8 @@ static const float jitter_nodes = 8.0;
 
 float hash(float n) { return frac(sin(n) * 43758.5453123); }
 
-// Node positions on the smooth arc, offset perpendicular. Particles interpolate BETWEEN
-// these, so the bolt stays continuous -- offsetting each particle on its own breaks it.
+static const float thickness = 0.55;
+
 float3 nodePosition(float node, float3 origin, float3 segment, float3 direction, float3 planet_up, float arch_height, float seed) {
     float t = node / jitter_nodes;
     float3 on_arc = origin + segment * t + planet_up * (arch_height * 4.0 * t * (1.0 - t));
@@ -72,10 +72,21 @@ float3 nodePosition(float node, float3 origin, float3 segment, float3 direction,
     return on_arc + (raw - direction * dot(raw, direction)) * 0.6;
 }
 
+float3 boltPoint(float t, float3 origin, float3 segment, float3 direction, float3 planet_up, float arch_height, float seed) {
+    float node_position = t * jitter_nodes;
+    float node = floor(node_position);
+    return lerp(
+        nodePosition(node, origin, segment, direction, planet_up, arch_height, seed),
+        nodePosition(node + 1.0, origin, segment, direction, planet_up, arch_height, seed),
+        frac(node_position)
+    );
+}
+
 [shader("vertex")]
-VertexOutput vertMain(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
-    uint particle_index = instance_index % push_constant.particle_count;
-    uint emitter_index = instance_index / push_constant.particle_count;
+VertexOutput lightning_vert(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
+    uint segment_count = push_constant.particle_count - 1;
+    uint segment_index = instance_index % segment_count;
+    uint emitter_index = instance_index / segment_count;
     Emitter emitter = push_constant.emitter_buffer[emitter_index];
 
     float age = push_constant.elapsed_time - emitter.spawn_time;
@@ -87,37 +98,28 @@ VertexOutput vertMain(uint vertex_index: SV_VertexID, uint instance_index: SV_In
     float3 planet_up = normalize(emitter.origin);
     float arch_height = length_along * 0.35;
 
-    float t = float(particle_index) / float(push_constant.particle_count - 1);
-    float node_position = t * jitter_nodes;
-    float node = floor(node_position);
-    float3 particle_position = lerp(
-        nodePosition(node, emitter.origin, segment, direction, planet_up, arch_height, seed),
-        nodePosition(node + 1.0, emitter.origin, segment, direction, planet_up, arch_height, seed),
-        frac(node_position)
-    );
+    float3 start = boltPoint(float(segment_index) / float(segment_count), emitter.origin, segment, direction, planet_up, arch_height, seed);
+    float3 end = boltPoint(float(segment_index + 1) / float(segment_count), emitter.origin, segment, direction, planet_up, arch_height, seed);
 
     float lifetime = 0.22 + hash(seed * 3.0) * 0.08;
     float life = clamp(1.0 - age / lifetime, 0.0, 1.0);
-    // overlap neighbours whatever the bolt length, so it never reads as dots
-    float spacing = length_along / float(push_constant.particle_count);
-    float scale = max(0.55, spacing * 2.0) + hash(float(particle_index) + seed) * 0.15;
 
     float2 corner = corners[vertex_index];
-    float3 forward = normalize(scene_data.camera_position.xyz - particle_position);
-    float3 right = normalize(cross(scene_data.camera_up.xyz, forward));
-    float3 up = cross(forward, right);
-    float3 world_position = particle_position + (right * corner.x + up * corner.y) * scale * life;
+    float3 center = lerp(start, end, corner.x + 0.5);
+    float3 forward = normalize(scene_data.camera_position.xyz - center);
+    float3 across = cross(end - start, forward);
+    float3 world_position = center + across / max(length(across), 0.0001) * corner.y * thickness * life;
 
     VertexOutput output;
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
     output.color = float4(1.0, 1.0, 1.0, 1.0);
-    output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
+    output.uv = float2(0.5, corner.y + 0.5);
     output.texture_index = push_constant.texture_index;
     return output;
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target {
+float4 lightning_frag(VertexOutput input) : SV_Target {
     float4 texel = textures[input.texture_index].Sample(input.uv) * input.color;
     return float4(texel.rgb, texel.a * 0.45);
 }

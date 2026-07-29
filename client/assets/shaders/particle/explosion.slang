@@ -65,16 +65,14 @@ static const float3 puff_velocity[puff_count] = {
 static const float puff_scale[puff_count] = { 2.2, 1.95, 1.75, 1.55, 1.35, 1.2, 1.1, 1.0 };
 static const float puff_lifetime[puff_count] = { 0.34, 0.38, 0.4, 0.42, 0.46, 0.5, 0.44, 0.48 };
 
-// matches the CPU drag that used to live in Particle.update: v *= 0.08^dt
 static const float drag = 0.08;
-static const float drag_falloff = 2.5257286; // -ln(drag)
+static const float drag_falloff = 2.5257286;
 
 float hash(float n) { return frac(sin(n) * 43758.5453123); }
 
 Particle spawnParticle(Emitter emitter, uint particle_index) {
     float seed = frac(emitter.spawn_time * 7.13);
     float3 surface_up = normalize(emitter.origin);
-    // lift the blast off the impact point -- visual authoring, belongs here not on the CPU
     float3 emitter_origin = emitter.origin + surface_up * 1.15;
 
     Particle particle;
@@ -105,7 +103,6 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
     }
     particle.age = 0.0;
     particle.color = float4(1.0, 1.0, 1.0, 1.0);
-    // exact spawn_time, so a slot recognises whose particle it is holding
     particle.seed = emitter.spawn_time;
     particle.padding = float2(0.0, 0.0);
     return particle;
@@ -113,7 +110,7 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void computeMain(uint3 thread_id: SV_DispatchThreadID) {
+void explosion_comp(uint3 thread_id: SV_DispatchThreadID) {
     uint index = thread_id.x;
     if (index >= push_constant.emitter_count * push_constant.particle_count) return;
 
@@ -126,7 +123,6 @@ void computeMain(uint3 thread_id: SV_DispatchThreadID) {
     if (particle.seed != emitter.spawn_time) {
         particle = spawnParticle(emitter, particle_index);
     } else {
-        // exact integral of v *= drag^dt, so the curve matches the old closed form
         float decay = pow(drag, push_constant.delta_time);
         particle.position += particle.velocity * (1.0 - decay) / drag_falloff;
         particle.velocity *= decay;
@@ -136,7 +132,7 @@ void computeMain(uint3 thread_id: SV_DispatchThreadID) {
 }
 
 [shader("vertex")]
-VertexOutput vertMain(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
+VertexOutput explosion_vert(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
     uint particle_index = instance_index % push_constant.particle_count;
     uint emitter_index = instance_index / push_constant.particle_count;
     Emitter emitter = push_constant.emitter_buffer[emitter_index];
@@ -159,6 +155,6 @@ VertexOutput vertMain(uint vertex_index: SV_VertexID, uint instance_index: SV_In
 }
 
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target {
+float4 explosion_frag(VertexOutput input) : SV_Target {
     return textures[input.texture_index].Sample(input.uv) * input.color;
 }

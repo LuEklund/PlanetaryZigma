@@ -13,8 +13,6 @@ layouts: LayoutHandles,
 shaders: []StageSlots,
 interface: Loader,
 
-/// One row per file, one slot per stage. Files that lack a stage just leave
-/// that slot null -- a few unused slots is cheaper than index arithmetic.
 pub const StageSlots = [std.enums.values(Shader.Stage).len]Shader;
 
 pub const LayoutHandles = struct {
@@ -87,7 +85,6 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     defer loader.gpa.free(data);
     try reader.interface.readSliceAll(data);
 
-    // A slang file holds every stage, so one file change rebuilds all of them.
     for (spec.stages) |stage| {
         const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
         if (shader.handle == null) {
