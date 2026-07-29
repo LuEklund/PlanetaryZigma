@@ -26,6 +26,8 @@ packets: Packets,
 
 pub const max_connections: usize = 32;
 pub const server_file_name = "server_id";
+const auth_poll_milliseconds: u32 = 50;
+const auth_timeout_milliseconds: u32 = 8000;
 
 pub const Mode = enum(u8) {
     steam_p2p,
@@ -93,6 +95,25 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
     std.log.info("\nSTEAM_ID {d}\n", .{gs.GetSteamID()});
 
     const sock = steam.SteamGameServerNetworkingSockets_SteamAPI();
+
+    if (options.mode == .steam_p2p) {
+        _ = sock.InitAuthentication();
+        var auth_status: steam.SteamNetAuthenticationStatus_t = undefined;
+        var availability: steam.ESteamNetworkingAvailability = sock.GetAuthenticationStatus(&auth_status);
+        var waited_milliseconds: u32 = 0;
+        while (availability != .k_ESteamNetworkingAvailability_Current and waited_milliseconds < auth_timeout_milliseconds) : (waited_milliseconds += auth_poll_milliseconds) {
+            _ = try steamCallback(null, gpa, pipe, null);
+            try io.sleep(.{ .nanoseconds = auth_poll_milliseconds * std.time.ns_per_ms }, .real);
+            availability = sock.GetAuthenticationStatus(&auth_status);
+        }
+        std.log.info("networking auth {t} after {d}ms: {s}", .{
+            availability,
+            waited_milliseconds,
+            std.mem.sliceTo(&auth_status.m_debugMsg, 0),
+        });
+        if (availability != .k_ESteamNetworkingAvailability_Current) return error.NetworkingAuthTimeout;
+    }
+
     const listen = switch (options.mode) {
         .steam_p2p => sock.CreateListenSocketP2P(0, &.{}),
         .local_singleplayer => listen: {

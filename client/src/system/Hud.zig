@@ -101,19 +101,24 @@ pub fn update(
             .options => options_menu.update(ui, hud, options, controller),
         }
     }
-    addTransition(ui, network_manager.phase());
+    addTransition(ui, network_manager.phase(), network_manager.elapsed_time - network_manager.host_state_time);
 
     ui.end();
     return request;
 }
 
-fn addTransition(ui: *Ui, phase: NetworkManager.Phase) void {
+fn addTransition(ui: *Ui, phase: NetworkManager.Phase, phase_seconds: f32) void {
     const covering = switch (phase) {
         .starting_server, .waiting_for_server, .connecting => true,
         .idle, .connected => false,
     };
     const transition = ui.animate("transition_veil", if (covering) 1 else 0, transition_seconds);
     if (transition <= 0) return;
+
+    const status_text: []const u8 = if (covering)
+        ui.print("{s} {d:.0}s", .{ phase.text(), phase_seconds })
+    else
+        phase.text();
 
     ui.add(null, .{
         .name = if (covering) "transition_veil" else null,
@@ -122,7 +127,7 @@ fn addTransition(ui: *Ui, phase: NetworkManager.Phase) void {
         .color = .new(0, 0, 0, transition),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
-            .data = phase.text(),
+            .data = status_text,
             .size = 30,
             .color = .new(0.94, 0.96, 0.9, transition),
         },
