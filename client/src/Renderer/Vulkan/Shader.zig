@@ -23,9 +23,6 @@ pub const ParticleInfo = struct {
     particle_count: u32,
     duration: f32,
     topology: Topology,
-    texture_name: []const u8,
-    texture_edge_color: [3]f32,
-    texture_center_color: [3]f32,
 };
 
 pub const Kind = enum {
@@ -67,9 +64,6 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
             .particle_count = 40,
             .duration = 0.8,
             .topology = .quad,
-            .texture_name = "explosion_particle",
-            .texture_edge_color = .{ 255, 70, 12 },
-            .texture_center_color = .{ 255, 235, 48 },
         },
     },
     .lightning = .{
@@ -81,9 +75,6 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
             .particle_count = 64,
             .duration = 0.3,
             .topology = .ribbon,
-            .texture_name = "lightning_particle",
-            .texture_edge_color = .{ 110, 160, 255 },
-            .texture_center_color = .{ 255, 255, 255 },
         },
     },
 });
@@ -134,7 +125,6 @@ pub const ParticlePushConstant = extern struct {
     particle_count: u32,
     particle_stride: u32,
     emitter_count: u32,
-    texture_index: u32,
 };
 
 fn pushConstantSize(kind: Kind) u32 {

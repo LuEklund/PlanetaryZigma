@@ -638,7 +638,6 @@ fn particlePushConstant(self: *Vulkan, current_frame: *const FrameData, info: *c
         .particle_count = particle_info.particle_count,
         .particle_stride = Emitter.max_particles_per_effect,
         .emitter_count = batch.emitter_count,
-        .texture_index = @intCast(self.resources.texture_table.handle(particle_info.texture_name).index()),
     };
 }
 

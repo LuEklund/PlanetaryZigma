@@ -26,7 +26,6 @@ const Mesh = @import("../Vulkan/Mesh.zig");
 
 const check = @import("utils.zig").check;
 
-const particle_texture_size: u32 = 64;
 pub const max_textures = 256;
 
 pub const shadow_cascade_count = 3;
@@ -275,10 +274,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
     self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
 
-    for (std.enums.values(Shader.Kind)) |kind| {
-        const particle = Shader.get(kind).particle orelse continue;
-        try createParticleTexture(vma, device, gpa, &self.texture_table, particle.texture_name, particle.texture_edge_color, particle.texture_center_color);
-    }
     return self;
 }
 
@@ -324,42 +319,4 @@ fn makeBoxMesh(gpa: std.mem.Allocator, vma: Vma, device: Device, name: []const u
         .index_count = @intCast(Mesh.box.indicies.len),
         .texture = .blank,
     }});
-}
-
-fn createParticleTexture(vma: Vma, device: Device, gpa: std.mem.Allocator, table_table: *TextureTable, name: []const u8, edge_color: [3]f32, center_color: [3]f32) !void {
-    var texture = try Image.init(
-        vma,
-        device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = particle_texture_size, .height = particle_texture_size, .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    errdefer texture.deinit(vma, device);
-
-    var pixels: [particle_texture_size * particle_texture_size * 4]u8 = undefined;
-    const size_float: f32 = @floatFromInt(particle_texture_size);
-    const center = (size_float - 1.0) * 0.5;
-    const radius = center;
-    for (0..particle_texture_size) |y| {
-        for (0..particle_texture_size) |x| {
-            const x_float: f32 = @floatFromInt(x);
-            const y_float: f32 = @floatFromInt(y);
-            const dx = (x_float - center) / radius;
-            const dy = (y_float - center) / radius;
-            const distance = @sqrt(dx * dx + dy * dy);
-            const core = std.math.clamp(1.0 - distance, 0.0, 1.0);
-            const alpha = core * core;
-            const heat = @sqrt(core);
-            const pixel_index = (y * particle_texture_size + x) * 4;
-            for (0..3) |channel| {
-                pixels[pixel_index + channel] = @intFromFloat(edge_color[channel] + (center_color[channel] - edge_color[channel]) * heat);
-            }
-            pixels[pixel_index + 3] = @intFromFloat(alpha * 255.0);
-        }
-    }
-    try texture.uploadDataToImage(vma, device, &pixels, 4, 0);
-    _ = try table_table.allocSlot(gpa, texture, table_table.samplers.items[0], name);
 }

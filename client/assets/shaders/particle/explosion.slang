@@ -9,8 +9,6 @@ struct SceneData {
 };
 [[vk::binding(0, 0)]] ConstantBuffer<SceneData> scene_data;
 
-[[vk::binding(0, 1)]] Sampler2D textures[256];
-
 struct Emitter {
     float3 origin;
     float spawn_time;
@@ -37,7 +35,6 @@ struct PushConstant {
     uint particle_count;
     uint particle_stride;
     uint emitter_count;
-    uint texture_index;
 };
 [[vk::push_constant]] PushConstant push_constant;
 
@@ -45,8 +42,10 @@ struct VertexOutput {
     float4 position : SV_Position;
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
-    nointerpolation uint texture_index : TEXCOORD1;
 };
+
+static const float3 edge_color = float3(1.0, 0.275, 0.047);
+static const float3 center_color = float3(1.0, 0.922, 0.188);
 
 static const float2 corners[6] = {
     float2(-0.5, 0.5), float2(-0.5, -0.5), float2(0.5, 0.5),
@@ -150,11 +149,11 @@ VertexOutput explosion_vert(uint vertex_index: SV_VertexID, uint instance_index:
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
     output.color = particle.color;
     output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
-    output.texture_index = push_constant.texture_index;
     return output;
 }
 
 [shader("fragment")]
 float4 explosion_frag(VertexOutput input) : SV_Target {
-    return textures[input.texture_index].Sample(input.uv) * input.color;
+    float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
+    return float4(lerp(edge_color, center_color, sqrt(core)), core * core) * input.color;
 }

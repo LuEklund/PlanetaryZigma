@@ -9,8 +9,6 @@ struct SceneData {
 };
 [[vk::binding(0, 0)]] ConstantBuffer<SceneData> scene_data;
 
-[[vk::binding(0, 1)]] Sampler2D textures[256];
-
 struct Emitter {
     float3 origin;
     float spawn_time;
@@ -37,7 +35,6 @@ struct PushConstant {
     uint particle_count;
     uint particle_stride;
     uint emitter_count;
-    uint texture_index;
 };
 [[vk::push_constant]] PushConstant push_constant;
 
@@ -45,8 +42,10 @@ struct VertexOutput {
     float4 position : SV_Position;
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
-    nointerpolation uint texture_index : TEXCOORD1;
 };
+
+static const float3 edge_color = float3(0.431, 0.627, 1.0);
+static const float3 center_color = float3(1.0, 1.0, 1.0);
 
 static const float2 corners[6] = {
     float2(-0.5, 0.5), float2(-0.5, -0.5), float2(0.5, 0.5),
@@ -114,12 +113,12 @@ VertexOutput lightning_vert(uint vertex_index: SV_VertexID, uint instance_index:
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
     output.color = float4(1.0, 1.0, 1.0, 1.0);
     output.uv = float2(0.5, corner.y + 0.5);
-    output.texture_index = push_constant.texture_index;
     return output;
 }
 
 [shader("fragment")]
 float4 lightning_frag(VertexOutput input) : SV_Target {
-    float4 texel = textures[input.texture_index].Sample(input.uv) * input.color;
+    float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
+    float4 texel = float4(lerp(edge_color, center_color, sqrt(core)), core * core) * input.color;
     return float4(texel.rgb, texel.a * 0.45);
 }
