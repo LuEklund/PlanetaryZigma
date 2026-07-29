@@ -172,6 +172,15 @@ fn compileShaders(b: *std.Build) void {
     while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
         if (std.mem.endsWith(u8, entry.basename, ".spv")) continue;
+        if (std.mem.endsWith(u8, entry.basename, ".slang")) {
+            const cmd = b.addSystemCommand(&.{"slangc"});
+            cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
+            cmd.addArgs(&.{ "-target", "spirv" });
+            cmd.addArg("-o");
+            const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
+            usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
+            continue;
+        }
         const cmd = b.addSystemCommand(&.{"glslc"});
         cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
         cmd.addArg("-o");
