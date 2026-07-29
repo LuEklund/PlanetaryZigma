@@ -3,7 +3,7 @@ const Renderer = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
-const Info = @import("System.zig").Info;
+const World = @import("System.zig").World;
 const AssetServer = @import("AssetServer.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
 const Ui = @import("Ui.zig");
@@ -34,10 +34,10 @@ pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     }
 }
 
-pub fn update(self: *Renderer, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+pub fn update(self: *Renderer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    try self.inner.update(info, instances, ui);
+    try self.inner.update(world, instances, ui);
 }
 
 const debug_instance_extensions = if (builtin.mode == .Debug)

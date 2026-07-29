@@ -83,7 +83,6 @@ pub fn main(init: std.process.Init) !void {
     ctx_zone.end();
     defer system_table.systemDeinit(system);
 
-    var elapsed_time: f32 = 0;
     var accumlated_time: f32 = 0;
     const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
@@ -97,8 +96,10 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
         accumlated_time -= time_step;
+        world.elapsed_time += time_step;
+        world.delta_time = time_step;
         while (try window.poll(desktop)) |event| {
-            if (system_table.systemUpdate(system, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event)) break :main_loop;
+            if (system_table.systemUpdate(system, &world, &event)) break :main_loop;
             switch (event) {
                 .close => break :main_loop,
                 .key => |key| {
@@ -119,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
                 else => {},
             }
         }
-        if (system_table.systemUpdate(system, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null)) break :main_loop;
+        if (system_table.systemUpdate(system, &world, null)) break :main_loop;
 
         if (try watcher.reload(io)) {
             std.log.err("system table updated", .{});
@@ -128,7 +129,6 @@ pub fn main(init: std.process.Init) !void {
             system_table.systemReload(system, false);
         }
 
-        elapsed_time += time_step;
     }
 }
 

@@ -25,6 +25,8 @@ next_entity_id: u32,
 stage: u32,
 prng: std.Random.DefaultPrng,
 elapsed_time: f32,
+delta_time: f32,
+tick: u32,
 
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
@@ -143,6 +145,8 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .stage = 0,
         .prng = .init(0xACE1),
         .elapsed_time = 0,
+        .delta_time = 0,
+        .tick = 0,
     };
 }
 

@@ -35,7 +35,6 @@ const tracy = @import("ztracy");
 const check = @import("Vulkan/utils.zig").check;
 
 pub const Model = @import("../asset/Model.zig");
-pub const Info = system.Info;
 pub const c = @import("vulkan");
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
@@ -137,7 +136,7 @@ pub fn rebindProcs(self: *Vulkan) void {
     procs.device.load(self.device.handle, null);
 }
 
-pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
     // if (true) @panic("test");
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -175,7 +174,7 @@ pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shar
     };
     try check(c.vkBeginCommandBuffer(cmd_buffer, &cmd_begin_info));
 
-    try render(self, cmd_buffer, current_frame, info, instances, ui);
+    try render(self, cmd_buffer, current_frame, world, instances, ui);
 
     var swapchain_image_barrier: Image.Barrier = .init(cmd_buffer, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
     swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -230,8 +229,8 @@ pub fn update(self: *Vulkan, info: *const Info, instances: *std.AutoHashMap(shar
     self.current_frame_inflight += 1;
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
-    const elapsed_time = info.elapsed_time;
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+    const elapsed_time = world.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
     draw_image_barrier.transition(
@@ -257,7 +256,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = .{
             .color = .{
-                // .float32 = .{ (@sin(info.elapsed_time) + 1) / 2, (@cos(info.elapsed_time) + 1) / 2, (@tan(info.elapsed_time) + 1) / 2, 1.0 },
+                // .float32 = .{ (@sin(world.elapsed_time) + 1) / 2, (@cos(world.elapsed_time) + 1) / 2, (@tan(world.elapsed_time) + 1) / 2, 1.0 },
                 .float32 = .{ 0, 0, 0, 1 },
             },
         },
@@ -300,13 +299,13 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
     const aspect: f32 = width / height;
 
-    const camera_transform = info.world.camera.transform;
+    const camera_transform = world.camera.transform;
     const view_matrix = getViewMatrix(&camera_transform);
-    const fov_rad: f32 = info.world.camera.fov_rad;
+    const fov_rad: f32 = world.camera.fov_rad;
     var proj = perspective(fov_rad, aspect, 0.01, 1000);
     const proj_view = proj.mul(view_matrix);
 
-    const light_time = info.elapsed_time * 0.01 + 0.9;
+    const light_time = world.elapsed_time * 0.01 + 0.9;
     const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
@@ -314,7 +313,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         .global_light_direction = light_dir,
         .time = elapsed_time,
         .camera_position = camera_transform.position,
-        .light_color = if (info.world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
+        .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
             1, 0.5, 0.5, 1,
         },
         .camera_up = up: {
@@ -344,16 +343,16 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         }
     }
 
-    try renderShadowPass(self, cmd, info, instances, cascade_vps);
+    try renderShadowPass(self, cmd, world, instances, cascade_vps);
 
-    const particle_batches = packEmitters(current_frame, info);
-    dispatchParticles(self, cmd, current_frame, info, particle_batches);
+    const particle_batches = packEmitters(current_frame, world);
+    dispatchParticles(self, cmd, current_frame, world, particle_batches);
 
     ext.vkCmdBeginRendering(cmd, &render_info);
-    try renderWorldPass(self, cmd, current_frame, info, instances);
+    try renderWorldPass(self, cmd, current_frame, world, instances);
     renderSkyPass(self, cmd, current_frame);
-    renderParticlePass(self, cmd, current_frame, info, particle_batches);
-    try renderDebugPass(self, cmd, current_frame, info);
+    renderParticlePass(self, cmd, current_frame, world, particle_batches);
+    try renderDebugPass(self, cmd, current_frame, world);
     renderUiPass(self, cmd, current_frame, ui, width, height);
     ext.vkCmdEndRendering(cmd);
 
@@ -440,7 +439,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
@@ -493,14 +492,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
         ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
 
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_static, .vert));
-        for (info.world.entities.values()) |*entity| {
+        for (world.entities.values()) |*entity| {
             if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             try drawStatic(self, cmd, entity.model_handle, base_matrix);
         }
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_skinned, .vert));
-        for (info.world.entities.values()) |*entity| {
+        for (world.entities.values()) |*entity| {
             const instance = instances.getPtr(entity.id) orelse continue;
             const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
             const entry = fileEntry(self, entity.model_handle) orelse continue;
@@ -533,24 +532,24 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, info: *const Info, in
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
-fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static, .vert));
     bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(.mesh, .frag));
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         try drawStatic(self, cmd, entity.model_handle, base_matrix);
     }
 
-    if (info.world.getPtr(self.planet.planet_id)) |planet| {
+    if (world.getPtr(self.planet.planet_id)) |planet| {
         const transform = planet.transform.toMat4x4();
         for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.skinned, .vert));
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
         const entry = fileEntry(self, entity.model_handle) orelse continue;
@@ -603,16 +602,16 @@ const particle_workgroup_size: u32 = 64;
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
-fn packEmitters(current_frame: *const FrameData, info: *const Info) std.EnumArray(Shader.Kind, ParticleBatch) {
+fn packEmitters(current_frame: *const FrameData, world: *World) std.EnumArray(Shader.Kind, ParticleBatch) {
     const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
     var batches: std.EnumArray(Shader.Kind, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
     var first_emitter: u32 = 0;
     for (std.enums.values(Shader.Kind)) |effect| {
         if (Shader.get(effect).particle == null) continue;
         var emitter_count: u32 = 0;
-        for (&info.world.emitters, 0..) |emitter, slot| {
+        for (&world.emitters, 0..) |emitter, slot| {
             if (emitter.effect != effect) continue;
-            if (!emitter.alive(info.elapsed_time)) continue;
+            if (!emitter.alive(world.elapsed_time)) continue;
             gpu_emitters[first_emitter + emitter_count] = .{
                 .origin = emitter.origin,
                 .spawn_time = emitter.spawn_time,
@@ -627,14 +626,14 @@ fn packEmitters(current_frame: *const FrameData, info: *const Info) std.EnumArra
     return batches;
 }
 
-fn particlePushConstant(self: *Vulkan, current_frame: *const FrameData, info: *const Info, effect: Shader.Kind, batch: ParticleBatch) Shader.ParticlePushConstant {
+fn particlePushConstant(self: *Vulkan, current_frame: *const FrameData, world: *World, effect: Shader.Kind, batch: ParticleBatch) Shader.ParticlePushConstant {
     const particle_info = Shader.particleInfo(effect);
     return .{
         .particle_buffer_address = self.resources.particle_buffer.getGPUAddress(),
         .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
             batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
-        .elapsed_time = info.elapsed_time,
-        .delta_time = info.delta_time,
+        .elapsed_time = world.elapsed_time,
+        .delta_time = world.delta_time,
         .particle_count = particle_info.particle_count,
         .particle_stride = Emitter.max_particles_per_effect,
         .emitter_count = batch.emitter_count,
@@ -663,7 +662,7 @@ fn memoryBarrier(
     c.vkCmdPipelineBarrier2(cmd, &dependency);
 }
 
-fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
     memoryBarrier(
         cmd,
         c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | c.VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
@@ -682,7 +681,7 @@ fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *cons
         const handle = [_]c.VkShaderEXT{self.resources.shader_loader.shaderPtr(effect, .comp).handle};
         ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 
-        const push = particlePushConstant(self, current_frame, info, effect, batch);
+        const push = particlePushConstant(self, current_frame, world, effect, batch);
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
         const thread_count = batch.emitter_count * push.particle_count;
         c.vkCmdDispatch(cmd, (thread_count + particle_workgroup_size - 1) / particle_workgroup_size, 1, 1);
@@ -697,7 +696,7 @@ fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *cons
     );
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
     var color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
@@ -713,7 +712,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(effect, .vert));
         bindFragmentShader(cmd, self.resources.shader_loader.shaderPtr(effect, .frag));
 
-        const push = particlePushConstant(self, current_frame, info, effect, batch);
+        const push = particlePushConstant(self, current_frame, world, effect, batch);
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, Shader.pushConstantStages(.particle), 0, @sizeOf(Shader.ParticlePushConstant), &push);
         c.vkCmdDraw(cmd, 6, batch.emitter_count * Shader.instancesPerEmitter(effect), 0, 0);
     }
@@ -723,8 +722,8 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 }
 
-fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, info: *const Info) !void {
-    if (!info.world.controller.debug_draw_colliders) return;
+fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World) !void {
+    if (!world.controller.debug_draw_colliders) return;
 
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
     const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.debug, .vert).handle, self.resources.shader_loader.shaderPtr(.debug, .frag).handle };
@@ -748,7 +747,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
     var debug_vertex_count: u32 = 0;
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         const collider_shape = (shared.entity.collider(entity.kind) orelse continue).shape;
         const first_vertex = debug_vertex_count;
         switch (collider_shape) {

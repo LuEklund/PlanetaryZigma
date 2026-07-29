@@ -10,6 +10,9 @@ pub const AssetServer = @import("AssetServer.zig");
 const Animation = @import("system/Animations.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
 const motion = @import("system/motion.zig");
+const Emitter = @import("system/Emitter.zig");
+
+const item_smoke_strands: u32 = 7;
 const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
@@ -21,12 +24,6 @@ pub const Hud = @import("system/Hud.zig");
 pub const Ui = @import("Ui.zig");
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
-
-pub const Info = struct {
-    delta_time: f32,
-    elapsed_time: f32,
-    world: *World,
-};
 
 pub const Scene = enum {
     menu,
@@ -105,41 +102,47 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     self.scene = next;
 }
 
-pub fn update(self: *System, info: *const Info) !void {
+pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // tracy.frameMark();
     const paused_before_hud = self.hud.overlay != .none;
-    if (self.scene == .menu) menu_world.update(info.world, info.elapsed_time);
-    switch (try self.hud.update(info, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &info.world.controller, &self.options)) {
+    if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
     }
-    if (paused_before_hud or self.hud.overlay != .none or info.world.chat.open) {
-        info.world.controller.clearInput();
+    if (paused_before_hud or self.hud.overlay != .none or world.chat.open) {
+        world.controller.clearInput();
     }
-    try self.applyOptions(info);
-    try self.renderer.update(info, &self.animation_instances, &self.ui);
+    try self.applyOptions(world);
+    for (world.entities.values()) |*entity| {
+        if (entity.kind != .item) continue;
+        for (0..item_smoke_strands) |strand| {
+            Emitter.refresh(&world.emitters, .smoke, entity.id, @intCast(strand), entity.transform.position, world.elapsed_time);
+        }
+    }
+    try self.renderer.update(world, &self.animation_instances, &self.ui);
     try self.asset_server.reloadChangedAssets();
-    try self.network_manager.update(info);
+    try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
-    if (next_scene != self.scene) try self.enterScene(info.world, next_scene);
-    try info.world.flush(info.delta_time, &self.animation_instances);
-    try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, info.world);
-    try self.animation.updateStates(info, &self.animation_instances);
-    try self.animation.update(info, &self.animation_instances);
+    if (next_scene != self.scene) try self.enterScene(world, next_scene);
+    try world.flush(world.delta_time, &self.animation_instances);
+    try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, world);
+    try self.animation.updateStates(world, &self.animation_instances);
+    try self.animation.update(world, &self.animation_instances);
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
-    motion.evaluate(info, server_time);
+    motion.evaluate(world, server_time);
 
-    if (!paused_before_hud and self.hud.overlay == .none) info.world.camera.update(info, &self.options);
-    info.world.controller.resetMouseDelta();
-    info.world.controller.mouse_wheel = 0;
-    // std.log.debug("time : {d}", .{info.elapsed_time});
+    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &self.options);
+    world.controller.resetMouseDelta();
+    world.controller.mouse_wheel = 0;
+    // std.log.debug("time : {d}", .{world.elapsed_time});
 }
 
-pub fn eventUpdate(self: *System, info: *const Info, event: *const yes.Window.Event) !void {
+pub fn eventUpdate(self: *System, world: *World, event: *const yes.Window.Event) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     if (event.* == .resize) {
@@ -147,44 +150,44 @@ pub fn eventUpdate(self: *System, info: *const Info, event: *const yes.Window.Ev
         self.ui.screen_width = @floatFromInt(self.window.size.width);
         self.ui.screen_heigth = @floatFromInt(self.window.size.height);
     }
-    if (info.world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
-        info.world.controller.eventUpdate(event);
+    if (world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
+        world.controller.eventUpdate(event);
         return;
     }
     if (self.scene == .game and self.hud.overlay == .none) {
-        if (info.world.chat.open) switch (event.*) {
+        if (world.chat.open) switch (event.*) {
             .key => |key| {
-                info.world.chat.handleKey(key);
-                if (key.sym == .escape and key.state == .pressed) info.world.controller.suppress_escape_release = true;
+                world.chat.handleKey(key);
+                if (key.sym == .escape and key.state == .pressed) world.controller.suppress_escape_release = true;
                 return;
             },
             .text => |typed| {
-                info.world.chat.handleText(typed.slice());
+                world.chat.handleText(typed.slice());
                 return;
             },
             else => {},
         } else if (event.* == .key and event.key.state == .released and event.key.sym == Chat.open_key) {
-            info.world.chat.open = true;
-            info.world.controller.clearInput();
+            world.chat.open = true;
+            world.controller.clearInput();
             return;
         }
     }
     if (event.* == .key) {
         const key = event.key;
-        if (key.state == .released and key.sym == .escape and info.world.controller.suppress_escape_release) {
-            info.world.controller.suppress_escape_release = false;
+        if (key.state == .released and key.sym == .escape and world.controller.suppress_escape_release) {
+            world.controller.suppress_escape_release = false;
             return;
         }
         if (key.state == .released and key.sym == .escape and self.hud.overlay == .options) {
             self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
-            info.world.controller.clearInput();
-            info.world.controller.resetMouseDelta();
+            world.controller.clearInput();
+            world.controller.resetMouseDelta();
             return;
         }
         if (key.state == .released and key.sym == .escape and self.scene == .game) {
             self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
-            info.world.controller.clearInput();
-            info.world.controller.resetMouseDelta();
+            world.controller.clearInput();
+            world.controller.resetMouseDelta();
             return;
         }
         if (key.state == .released and key.sym == .escape) {
@@ -192,12 +195,12 @@ pub fn eventUpdate(self: *System, info: *const Info, event: *const yes.Window.Ev
             return;
         }
     }
-    info.world.controller.eventUpdate(event);
+    world.controller.eventUpdate(event);
 }
 
-fn applyOptions(self: *System, info: *const Info) !void {
-    if (self.scene == .game) info.world.camera.fov_rad = self.options.fov_rad;
-    info.world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
+fn applyOptions(self: *System, world: *World) !void {
+    if (self.scene == .game) world.camera.fov_rad = self.options.fov_rad;
+    world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
     if (self.fullscreen_applied != self.options.fullscreen) {
         const mode: yes.Window.Mode = if (self.options.fullscreen) .fullscreen else .windowed;
         try self.window.setMode(self.desktop, mode);
@@ -208,7 +211,7 @@ fn applyOptions(self: *System, info: *const Info) !void {
     if (self.cursor_mode_applied != cursor_mode) {
         try self.window.setCursorMode(self.desktop, cursor_mode);
         self.cursor_mode_applied = cursor_mode;
-        info.world.controller.resetMouseDelta();
+        world.controller.resetMouseDelta();
     }
 }
 
@@ -228,7 +231,7 @@ comptime {
 pub const Table = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
-    systemUpdate: *const fn (*anyopaque, data: *const Info, event: ?*const yes.Window.Event) callconv(.c) bool,
+    systemUpdate: *const fn (*anyopaque, world: *World, event: ?*const yes.Window.Event) callconv(.c) bool,
     systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 
     pub fn load(dynlib: *shared.DynLib) !Table {
@@ -266,11 +269,11 @@ pub const ffi = struct {
         gpa.destroy(context);
     }
 
-    pub export fn systemUpdate(handle: *anyopaque, info: *const Info, event: ?*const yes.Window.Event) bool {
+    pub export fn systemUpdate(handle: *anyopaque, world: *World, event: ?*const yes.Window.Event) bool {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const context: *System = @ptrCast(@alignCast(handle));
-        const result = if (event != null) context.eventUpdate(info, event.?) else context.update(info);
+        const result = if (event != null) context.eventUpdate(world, event.?) else context.update(world);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system update: {s}", .{@errorName(err)});

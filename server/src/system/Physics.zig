@@ -2,6 +2,7 @@ const Physics = @This();
 
 const std = @import("std");
 const shared = @import("shared");
+const World = @import("../World.zig");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
@@ -98,26 +99,26 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
     }
 }
 
-pub fn update(self: *Physics, info: *const system.Info) !void {
+pub fn update(self: *Physics, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
         if (entity.collider.motion_type != .dynamic) continue;
 
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
-            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), info.world.prng.random());
-            var point = shared.planet.surfacePoint(direction, info.world.planet_radius);
+            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), world.prng.random());
+            var point = shared.planet.surfacePoint(direction, world.planet_radius);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
             continue;
         }
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
-        entity.flags.is_grounded = self.isGrounded(entity, info.world.planet_radius);
+        entity.flags.is_grounded = self.isGrounded(entity, world.planet_radius);
         if (!entity.flags.is_grounded) {
             const mass = c.b3Body_GetMass(body_id);
             c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(-planet_up, mass * gravity_accel)), true);
@@ -137,9 +138,9 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         }
     }
 
-    c.b3World_Step(self.world, info.delta_time, 4);
+    c.b3World_Step(self.world, world.delta_time, 4);
 
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
 
@@ -149,15 +150,15 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         entity.replicated_velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
     }
 
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
         if (entity.collider.motion_type != .dynamic) continue;
 
         const clearance = colliderGroundExtent(entity.collider);
-        const value = shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius);
+        const value = shared.planet.sdf.sampled(entity.transform.position, world.planet_radius);
         if (value >= (clearance + ground_check_skin) * 2) continue;
-        const gradient = sdfGradient(entity.transform.position, info.world.planet_radius);
+        const gradient = sdfGradient(entity.transform.position, world.planet_radius);
         const gradient_length = nz.vec.length(gradient);
         const normal = if (gradient_length > 0.0001) nz.vec.scale(gradient, 1.0 / gradient_length) else nz.vec.normalize(entity.transform.position);
         const distance = if (gradient_length > 0.0001) value / gradient_length else value;
@@ -169,7 +170,7 @@ pub fn update(self: *Physics, info: *const system.Info) !void {
         }
         const radial = nz.vec.scale(normal, nz.vec.dot(entity.replicated_velocity, normal));
         const tangential = entity.replicated_velocity - radial;
-        entity.replicated_velocity = radial + nz.vec.scale(tangential, @exp(-ground_friction * info.delta_time));
+        entity.replicated_velocity = radial + nz.vec.scale(tangential, @exp(-ground_friction * world.delta_time));
         c.b3Body_SetTransform(body_id, toB3(entity.transform.position), c.b3Body_GetRotation(body_id));
         c.b3Body_SetLinearVelocity(body_id, toB3(entity.replicated_velocity));
     }

@@ -21,7 +21,7 @@ pub const Topology = enum { quad, ribbon };
 
 pub const ParticleInfo = struct {
     particle_count: u32,
-    duration: f32,
+    duration: ?f32,
     topology: Topology,
 };
 
@@ -36,6 +36,7 @@ pub const Kind = enum {
     debug,
     explosion,
     lightning,
+    smoke,
 };
 
 pub const Spec = struct {
@@ -74,6 +75,17 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
         .particle = .{
             .particle_count = 64,
             .duration = 0.3,
+            .topology = .ribbon,
+        },
+    },
+    .smoke = .{
+        .path = "shaders/particle/smoke.spv",
+        .stages = &.{ .vert, .frag },
+        .layout = .scene_textures,
+        .push_constant = .particle,
+        .particle = .{
+            .particle_count = 14,
+            .duration = null,
             .topology = .ribbon,
         },
     },

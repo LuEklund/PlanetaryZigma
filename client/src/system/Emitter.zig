@@ -21,10 +21,14 @@ effect: Shader.Kind,
 origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
+owner: shared.entity.Id,
+index: u32,
+last_seen: f32,
 
 pub const List = [max_emitters]Emitter;
 
 const free_spawn_time: f32 = -1.0e9;
+const refresh_timeout: f32 = 0.25;
 
 pub fn initList() List {
     return @splat(.{
@@ -32,11 +36,16 @@ pub fn initList() List {
         .origin = .{ 0, 0, 0 },
         .target = .{ 0, 0, 0 },
         .spawn_time = free_spawn_time,
+        .owner = .none,
+        .index = 0,
+        .last_seen = free_spawn_time,
     });
 }
 
 pub fn alive(self: Emitter, elapsed_time: f32) bool {
-    return elapsed_time - self.spawn_time < Shader.particleInfo(self.effect).duration;
+    const duration = Shader.particleInfo(self.effect).duration orelse
+        return elapsed_time - self.last_seen < refresh_timeout;
+    return elapsed_time - self.spawn_time < duration;
 }
 
 fn claim(list: *List, emitter: Emitter, elapsed_time: f32) void {
@@ -58,6 +67,9 @@ pub fn spawnQuad(list: *List, effect: Shader.Kind, origin: nz.Vec3(f32), elapsed
         .origin = origin,
         .target = origin,
         .spawn_time = elapsed_time,
+        .owner = .none,
+        .index = 0,
+        .last_seen = elapsed_time,
     }, elapsed_time);
 }
 
@@ -68,5 +80,28 @@ pub fn spawnRibbon(list: *List, effect: Shader.Kind, from: nz.Vec3(f32), to: nz.
         .origin = from,
         .target = to,
         .spawn_time = elapsed_time,
+        .owner = .none,
+        .index = 0,
+        .last_seen = elapsed_time,
+    }, elapsed_time);
+}
+
+pub fn refresh(list: *List, effect: Shader.Kind, owner: shared.entity.Id, index: u32, origin: nz.Vec3(f32), elapsed_time: f32) void {
+    std.debug.assert(Shader.particleInfo(effect).duration == null);
+    for (list) |*slot| {
+        if (slot.owner != owner or slot.index != index or slot.effect != effect) continue;
+        slot.origin = origin;
+        slot.target = origin;
+        slot.last_seen = elapsed_time;
+        return;
+    }
+    claim(list, .{
+        .effect = effect,
+        .origin = origin,
+        .target = origin,
+        .spawn_time = elapsed_time,
+        .owner = owner,
+        .index = index,
+        .last_seen = elapsed_time,
     }, elapsed_time);
 }
