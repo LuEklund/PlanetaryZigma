@@ -16,13 +16,6 @@ pub const Controller = World.Controller;
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
-pub const Info = struct {
-    tick: u32,
-    delta_time: f32,
-    elapsed_time: f32,
-    world: *World,
-};
-
 gpa: std.mem.Allocator,
 io: std.Io,
 world: *World,
@@ -58,10 +51,11 @@ pub fn deinit(self: *System) !void {
     try self.network_manager.deinit();
 }
 
-pub fn update(self: *System, info: *const Info) !void {
+pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    switch (try self.network_manager.update(info)) {
+
+    switch (try self.network_manager.update(world)) {
         .running => {},
         .host_left => {
             std.log.info("host disconnected, shutting down", .{});
@@ -72,8 +66,8 @@ pub fn update(self: *System, info: *const Info) !void {
             self.request_exit = true;
         },
     }
-    try PlayerController.update(info, &self.physics);
-    if (self.world.place == .planet) try gameplay.updateEnemies(info);
+    try PlayerController.update(world, &self.physics);
+    if (self.world.place == .planet) try gameplay.updateEnemies(world);
     if (self.world.next_stage_requested) {
         self.world.next_stage_requested = false;
         try self.world.loadPlace(.planet, &self.physics);
@@ -82,13 +76,13 @@ pub fn update(self: *System, info: *const Info) !void {
         self.world.start_round_requested = false;
         try self.world.loadPlace(.planet, &self.physics);
     }
-    if (self.world.place == .planet) try gameplay.updateDirector(info);
-    try self.physics.update(info);
-    gameplay.updateProjectiles(info, &self.physics);
-    try gameplay.updateItems(info);
-    if (self.world.place == .planet) gameplay.updateTeleporter(info);
-    gameplay.updateLifetimes(info);
-    gameplay.playerRegen(info);
+    if (self.world.place == .planet) try gameplay.updateDirector(world);
+    try self.physics.update(world);
+    gameplay.updateProjectiles(world, &self.physics);
+    try gameplay.updateItems(world);
+    if (self.world.place == .planet) gameplay.updateTeleporter(world);
+    gameplay.updateLifetimes(world);
+    gameplay.playerRegen(world);
     try self.world.flush(&self.physics);
 }
 
@@ -104,7 +98,7 @@ pub const ffi = struct {
     pub const Table = struct {
         systemInit: *const fn (*System, data: *const Data) callconv(.c) void,
         systemDeinit: *const fn (*System) callconv(.c) void,
-        systemUpdate: *const fn (*System, data: *const Info) callconv(.c) void,
+        systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
         systemReload: *const fn (*System, pre_reload: bool) callconv(.c) void,
 
         pub fn load(dynlib: *shared.DynLib) !Table {
@@ -142,10 +136,10 @@ pub const ffi = struct {
         system.* = undefined;
     }
 
-    pub export fn systemUpdate(system: *System, info: *const Info) void {
+    pub export fn systemUpdate(system: *System, world: *World) void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        const result = system.update(info);
+        const result = system.update(world);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system update: {s}", .{@errorName(err)});

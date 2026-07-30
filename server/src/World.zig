@@ -24,6 +24,9 @@ teleporter_id: shared.entity.Id,
 next_entity_id: u32,
 stage: u32,
 prng: std.Random.DefaultPrng,
+elapsed_time: f32,
+delta_time: f32,
+tick: u32,
 
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
@@ -94,6 +97,8 @@ pub const Entity = struct {
     stats: shared.Stats = .init(.initFill(0)),
     regen_carry: f32 = 0,
 
+    un_stun_at: f32 = 0,
+
     last_attack: f32 = 0,
 
     pub const Flags = packed struct {
@@ -139,6 +144,9 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .next_entity_id = 1,
         .stage = 0,
         .prng = .init(0xACE1),
+        .elapsed_time = 0,
+        .delta_time = 0,
+        .tick = 0,
     };
 }
 
@@ -233,9 +241,14 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     new_amount = @min(new_amount, amount);
     if (source) |source_entity| {
         if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
+
         const tougherer_times = entity.inventory.get(.tougherer_times);
         const block_chance = 1 - (1 / (1 + tougherer_times * shared.Item.attributes(.tougherer_times).get(.block_chance)));
+
         if (random.float(f32) < block_chance) new_amount = 0;
+
+        const icicles = (source_entity.inventory.get(.icicle));
+        if (random.float(f32) < icicles * @as(f32, 0.05)) entity.un_stun_at = self.elapsed_time + 2;
     }
     return self.addHealth(entity, -new_amount, source);
 }

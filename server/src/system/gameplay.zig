@@ -4,7 +4,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../System.zig");
 const Physics = @import("Physics.zig");
-const Info = system.Info;
+const World = system.World;
 
 const rocket_damage_multiplier: f32 = 1.5;
 const enemy_max_spawn_distance: f32 = 85;
@@ -14,39 +14,43 @@ const lightning = .{
     .max_victims = 256,
 };
 
-pub fn updateDirector(info: *const Info) !void {
+pub fn updateDirector(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    const director = &info.world.director;
-    if (info.world.toggle_spawning_requested) {
-        info.world.toggle_spawning_requested = false;
+    const director = &world.director;
+    if (world.toggle_spawning_requested) {
+        world.toggle_spawning_requested = false;
         director.spawning = !director.spawning;
         std.log.debug("dev: enemy spawning {s}", .{if (director.spawning) "on" else "off"});
     }
 
     if (director.spawning) {
-        if (info.elapsed_time - director.last_salary >= 1.0) {
-            director.last_salary = info.elapsed_time;
+        if (world.elapsed_time - director.last_salary >= 1.0) {
+            director.last_salary = world.elapsed_time;
             director.credits += director.salary_per_second * 15;
         }
-        const random = info.world.prng.random();
+        const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...70 => .tubloid,
-            71...90 => .tubloida,
+            0...40 => .tubloid,
+            41...60 => .tubloida,
+            61...75 => .hunkloid,
+            76...90 => .blooploid,
             else => .bloorp_lord,
+            // 0...50 => .hunkloid,
+            // else => .blooploid,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
-            const player_index = random.uintLessThan(usize, info.world.players.items.len);
-            if (info.world.getPtr(info.world.players.items[player_index])) |player| {
-                const radius_float = info.world.planet_radius;
+            const player_index = random.uintLessThan(usize, world.players.items.len);
+            if (world.getPtr(world.players.items[player_index])) |player| {
+                const radius_float = world.planet_radius;
                 const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, random);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
-                if (info.world.spawn(.{
+                if (world.spawn(.{
                     .kind = .{ .enemy = enemy_kind },
                     .transform = .{ .position = spawn_position },
-                    .last_attack = info.elapsed_time,
+                    .last_attack = world.elapsed_time,
                 })) |_| {
                     director.credits -= cost;
                 } else |_| {}
@@ -55,20 +59,22 @@ pub fn updateDirector(info: *const Info) !void {
     }
 }
 
-pub fn updateEnemies(info: *const Info) !void {
+pub fn updateEnemies(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    if (info.world.players.items.len == 0) return;
+    if (world.players.items.len == 0) return;
 
-    for (info.world.entities.values()) |*enemy| {
+    for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy) continue;
+        // std.log.debug("elapsed_time = {d}, un_stun_at {d}", .{ world.elapsed_time, enemy.un_stun_at });
+        if (enemy.un_stun_at > world.elapsed_time) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
         var closest_player: ?*system.Entity = null;
         var closest_distance: f32 = std.math.floatMax(f32);
-        for (info.world.players.items) |player_id| {
-            const current_player = info.world.getPtr(player_id) orelse continue;
+        for (world.players.items) |player_id| {
+            const current_player = world.getPtr(player_id) orelse continue;
             if (current_player.flags.is_dead) continue;
             const player_distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
             if (player_distance >= closest_distance) continue;
@@ -80,7 +86,7 @@ pub fn updateEnemies(info: *const Info) !void {
         const distance = nz.vec.length(to_player);
 
         if (distance > enemy_max_spawn_distance * 1.7) {
-            const surface = shared.planet.surfacePointNear(player.transform.position, info.world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, info.world.prng.random());
+            const surface = shared.planet.surfacePointNear(player.transform.position, world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
             Physics.setPosition(body_id, leash_position);
@@ -104,13 +110,13 @@ pub fn updateEnemies(info: *const Info) !void {
             .tubloida => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
-                if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
-                    enemy.last_attack = info.elapsed_time;
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
                     const muzzle_velocity = nz.vec.scale(aim_dir, 50);
-                    const bullet = try info.world.spawn(.{
+                    const bullet = try world.spawn(.{
                         .kind = .projectile_cube,
                         .owner_id = enemy.id,
                         .transform = .{
@@ -121,41 +127,77 @@ pub fn updateEnemies(info: *const Info) !void {
                         .lifetime = 2,
                     });
                     bullet.stats.current.set(.damage, damage);
-                    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .tubloid => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
-                if (distance < range and info.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
-                    enemy.last_attack = info.elapsed_time;
-                    if (info.world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
-                    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
             .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
-                if (distance < range and info.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
-                    enemy.last_attack = info.elapsed_time;
-                    _ = info.world.spawn(.{
+                if (distance < range and world.elapsed_time - enemy.last_attack > enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    _ = world.spawn(.{
                         .kind = .{ .enemy = .tubloid },
                         .transform = .{ .position = enemy.transform.position },
-                        .last_attack = info.elapsed_time,
+                        .last_attack = world.elapsed_time,
                     }) catch {};
-                    info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
+            },
+            .hunkloid => {
+                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                }
+            },
+            .blooploid => {
+                const sdf_distance = @max(shared.planet.sdf.sampled(enemy.transform.position, world.planet_radius), 0.01);
+                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
+                if (sdf_distance < 7) Physics.c.b3Body_ApplyForceToCenter(body_id, Physics.toB3(nz.vec.scale(planet_up, 10 * distance)), true);
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
+                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
+                    const bullet = try world.spawn(.{
+                        .kind = .projectile_cube,
+                        .owner_id = enemy.id,
+                        .transform = .{
+                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                        },
+                        .replicated_velocity = muzzle_velocity,
+                        .lifetime = 2,
+                    });
+                    bullet.stats.current.set(.damage, damage);
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                }
+                const vel = Physics.toVec(Physics.c.b3Body_GetLinearVelocity(body_id));
+                Physics.c.b3Body_SetLinearVelocity(body_id, Physics.toB3(nz.vec.scale(vel, 0.5)));
             },
         }
     }
 }
 
-pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
-    for (info.world.entities.values()) |*entity| {
+pub fn updateProjectiles(world: *World, physics: *Physics) void {
+    for (world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
         entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
-        entity.transform.position += nz.vec.scale(entity.replicated_velocity, info.delta_time);
+        entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
         const travel = entity.transform.position - previous_position;
 
         const ray_hit = Physics.c.b3World_CastRayClosest(
@@ -165,17 +207,17 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
             Physics.c.b3DefaultQueryFilter(),
         );
         if (!ray_hit.hit) {
-            if (shared.planet.sdf.sampled(entity.transform.position, info.world.planet_radius) < 0) {
-                if (info.world.getPtr(entity.owner_id)) |owner_entity| {
+            if (shared.planet.sdf.sampled(entity.transform.position, world.planet_radius) < 0) {
+                if (world.getPtr(entity.owner_id)) |owner_entity| {
                     switch (projectile_kind) {
                         .cube => {},
                         .rocket => {
-                            damageRocketImpact(info, owner_entity, entity.transform.position);
-                            info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = entity.transform.position } } });
+                            damageRocketImpact(world, owner_entity, entity.transform.position);
+                            world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = entity.transform.position } } });
                         },
                     }
                 }
-                info.world.queueDespawn(entity.id);
+                world.queueDespawn(entity.id);
             }
             continue;
         }
@@ -185,31 +227,31 @@ pub fn updateProjectiles(info: *const Info, physics: *Physics) void {
         const hit_id: shared.entity.Id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
         if (hit_id == entity.owner_id) continue;
 
-        const owner_entity = info.world.getPtr(entity.owner_id) orelse continue;
-        const hit_entity = info.world.getPtr(hit_id) orelse continue;
+        const owner_entity = world.getPtr(entity.owner_id) orelse continue;
+        const hit_entity = world.getPtr(hit_id) orelse continue;
         if (owner_entity.kind.eql(hit_entity.kind)) continue;
 
         switch (projectile_kind) {
             .cube => {
-                if (info.world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity) != .ignored) {
-                    tryProcLightning(info, owner_entity, hit_entity.transform.position, hit_entity);
+                if (world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity) != .ignored) {
+                    tryProcLightning(world, owner_entity, hit_entity.transform.position, hit_entity);
                 }
             },
             .rocket => {
-                damageRocketImpact(info, owner_entity, impact_position);
-                info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
+                damageRocketImpact(world, owner_entity, impact_position);
+                world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
             },
         }
-        info.world.queueDespawn(entity.id);
+        world.queueDespawn(entity.id);
     }
 }
 
-fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
+fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
     const lightning_count = owner_entity.inventory.get(.lightning);
     var lightning_jumps = lightning_count;
     const damage = owner_entity.stats.current.get(.damage) * lightning_count * 0.1;
     const lightning_chance = shared.Item.lightning.attributes().get(.lightning_chance);
-    if (!(owner_entity.kind == .player or lightning_jumps > 0 and info.world.prng.random().float(f32) < lightning_chance)) return;
+    if (!(owner_entity.kind == .player or lightning_jumps > 0 and world.prng.random().float(f32) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;
     var visited_count: usize = 0;
@@ -232,7 +274,7 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
         var chained: [lightning.max_targets]Chained = undefined;
         var chained_count: usize = 0;
         const max_targets = @min(chained.len, visited.len - visited_count);
-        for (info.world.entities.values()) |*candidate| {
+        for (world.entities.values()) |*candidate| {
             if (candidate.kind.eql(owner_entity.kind) or !candidate.kind.hasHealth()) continue;
             if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count], candidate.id) != null) continue;
             const candidate_distance = nz.vec.distance(candidate.transform.position, source.position);
@@ -257,21 +299,21 @@ fn tryProcLightning(info: *const Info, owner_entity: *const system.Entity, origi
             slot.* = kept.entity.id;
             visited[visited_count] = kept.entity.id;
             visited_count += 1;
-            _ = info.world.removeHealth(kept.entity, damage, owner_entity);
+            _ = world.removeHealth(kept.entity, damage, owner_entity);
             queue[queue_tail] = .{ .position = kept.entity.transform.position };
             queue_tail += 1;
         }
-        info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .lightning = .{
+        world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .lightning = .{
             .start_position = source.position,
             .targets = targets,
         } } } });
     }
 }
 
-fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32)) void {
+fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32)) void {
     const base_damage = owner_entity.stats.current.get(.damage);
     const blast_radius: f32 = @as(f32, owner_entity.inventory.get(.rocket)) * 0.5 + 2;
-    for (info.world.entities.values()) |*candidate| {
+    for (world.entities.values()) |*candidate| {
         if (!candidate.kind.hasHealth()) continue;
         if (candidate.id == owner_entity.id) continue;
         if (owner_entity.kind.eql(candidate.kind)) continue;
@@ -281,64 +323,64 @@ fn damageRocketImpact(info: *const Info, owner_entity: *const system.Entity, imp
 
         const falloff = 1.0 - distance / blast_radius;
         const damage = base_damage * rocket_damage_multiplier * (0.5 + falloff * 0.5);
-        _ = info.world.removeHealth(candidate, damage, owner_entity);
+        _ = world.removeHealth(candidate, damage, owner_entity);
     }
-    tryProcLightning(info, owner_entity, impact_position, null);
+    tryProcLightning(world, owner_entity, impact_position, null);
 }
 
-pub fn updateItems(info: *const Info) !void {
-    for (info.world.entities.values()) |*entity| {
+pub fn updateItems(world: *World) !void {
+    for (world.entities.values()) |*entity| {
         if (entity.kind != .item) continue;
         const item_kind = entity.kind.item;
-        for (info.world.players.items) |player_id| {
-            const player = info.world.getPtr(player_id) orelse return error.PlayerNotFound;
+        for (world.players.items) |player_id| {
+            const player = world.getPtr(player_id) orelse return error.PlayerNotFound;
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
-            const item_count = info.world.giveItem(player, item_kind, 1) orelse continue;
-            info.world.queueDespawn(entity.id);
+            const item_count = world.giveItem(player, item_kind, 1) orelse continue;
+            world.queueDespawn(entity.id);
             std.log.debug("item {t}, count: {d}", .{ item_kind, item_count });
         }
     }
 }
 
-pub fn updateTeleporter(info: *const Info) void {
-    const entity = info.world.getPtr(info.world.teleporter_id) orelse return;
+pub fn updateTeleporter(world: *World) void {
+    const entity = world.getPtr(world.teleporter_id) orelse return;
     const teleporter = &entity.teleporter;
     if (teleporter.charged == teleporter.max_charge) {
-        info.world.director.spawning = false;
+        world.director.spawning = false;
         teleporter.state = .completed;
         return;
     }
     const old_teleporter_charge = teleporter.charged;
-    for (info.world.players.items) |player_id| {
-        const player = info.world.getPtr(player_id) orelse continue;
+    for (world.players.items) |player_id| {
+        const player = world.getPtr(player_id) orelse continue;
         if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
-            teleporter.charged += info.delta_time * 10;
+            teleporter.charged += world.delta_time * 10;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
         }
     }
     if (old_teleporter_charge != teleporter.charged) {
-        info.world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+        world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
     }
 }
 
-pub fn updateLifetimes(info: *const Info) void {
-    for (info.world.entities.values()) |*entity| {
+pub fn updateLifetimes(world: *World) void {
+    for (world.entities.values()) |*entity| {
         if (entity.lifetime) |*lifetime| {
-            lifetime.* -= info.delta_time;
-            if (lifetime.* <= 0) info.world.queueDespawn(entity.id);
+            lifetime.* -= world.delta_time;
+            if (lifetime.* <= 0) world.queueDespawn(entity.id);
         }
     }
 }
 
-pub fn playerRegen(info: *const Info) void {
-    for (info.world.players.items) |player_id| {
-        const player = info.world.getPtr(player_id) orelse continue;
-        player.regen_carry += info.delta_time * player.stats.current.get(.regen);
+pub fn playerRegen(world: *World) void {
+    for (world.players.items) |player_id| {
+        const player = world.getPtr(player_id) orelse continue;
+        player.regen_carry += world.delta_time * player.stats.current.get(.regen);
         if (player.regen_carry < 1) continue;
         const whole_points = @floor(player.regen_carry);
         player.regen_carry -= whole_points;
-        _ = info.world.addHealth(player, whole_points, null);
+        _ = world.addHealth(player, whole_points, null);
     }
 }

@@ -71,8 +71,6 @@ pub fn main(init: std.process.Init) !void {
     defer system_table.systemDeinit(&system_instance);
 
     var loop_time_tracker: f32 = 0;
-    var elapsed_time: f32 = 0;
-    var tick: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
     while (true) {
         if (system_instance.request_exit) break;
@@ -83,16 +81,12 @@ pub fn main(init: std.process.Init) !void {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
             continue;
         }
-        tick += 1;
-        elapsed_time += time_step;
+        world.tick += 1;
+        world.elapsed_time += time_step;
+        world.delta_time = time_step;
         loop_time_tracker -= time_step;
 
-        system_table.systemUpdate(&system_instance, &.{
-            .tick = tick,
-            .delta_time = time_step,
-            .elapsed_time = elapsed_time,
-            .world = &world,
-        });
+        system_table.systemUpdate(&system_instance, &world);
 
         if (try watcher.reload(io)) {
             system_table.systemReload(&system_instance, true);

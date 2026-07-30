@@ -10,6 +10,10 @@ pub const Item = enum(u16) {
     lightning,
     crit,
     tougherer_times,
+    icicle,
+    hearth,
+
+    pub const count: usize = @typeInfo(Item).@"enum".fields.len;
 
     pub const Spec = struct {
         attributes: Stats.Values,
@@ -56,6 +60,16 @@ pub const Item = enum(u16) {
             },
             .tougherer_times => .{
                 .attributes = .initDefault(0, .{ .block_chance = 0.15 }),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
+            .icicle => .{
+                .attributes = .initDefault(0, .{}),
+                .model = "objects/item.glb",
+                .icon = "textures/item.png",
+            },
+            .hearth => .{
+                .attributes = .initDefault(0, .{ .regen = 1 }),
                 .model = "objects/item.glb",
                 .icon = "textures/item.png",
             },

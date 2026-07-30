@@ -4,7 +4,7 @@ const std = @import("std");
 const system = @import("../System.zig");
 const shared = @import("shared");
 const tracy = @import("ztracy");
-const Info = system.Info;
+const World = system.World;
 const nz = shared.numz;
 const Model = @import("../asset/Model.zig");
 const Node = @import("../asset/Node.zig");
@@ -30,16 +30,16 @@ pub fn init(gpa: std.mem.Allocator) Animations {
     return .{ .gpa = gpa };
 }
 
-pub fn updateStates(self: *Animations, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     _ = self;
-    for (info.world.attack_events.items) |id| {
+    for (world.attack_events.items) |id| {
         const instance = instances.getPtr(id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
         const model = instance.model.?;
         skeleton.playOverlay(model, model.state_clips.get(.attack));
     }
-    info.world.attack_events.clearRetainingCapacity();
-    for (info.world.entities.values()) |*entity| {
+    world.attack_events.clearRetainingCapacity();
+    for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton == null) continue;
 
@@ -53,22 +53,22 @@ pub fn updateStates(self: *Animations, info: *const Info, instances: *std.AutoHa
     }
 }
 
-pub fn update(self: *Animations, info: *const Info, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
 
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton) |*skeleton| {
             const model = instance.model.?;
             if (model.clips.len == 0) continue;
             const clip_index = model.state_clips.get(instance.state);
-            playAnimation(info, entity, skeleton, model, clip_index);
+            playAnimation(world, entity, skeleton, model, clip_index);
         }
     }
 
-    for (info.world.entities.values()) |*entity| {
+    for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         switch (entity.kind) {
             .lootbox => {
@@ -78,12 +78,12 @@ pub fn update(self: *Animations, info: *const Info, instances: *std.AutoHashMap(
             },
             .item => {
                 if (instance.spawn_time < instance.spawnDuration()) {
-                    instance.spawn_time += info.delta_time;
+                    instance.spawn_time += world.delta_time;
                     entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawnDuration(), 0, 1)));
                 }
                 if (entity.motion.update) |*update_motion| {
                     const spun = nz.Quat(f32).fromVec(update_motion.rotation)
-                        .mul(nz.Quat(f32).angleAxis(item_spin_speed * info.delta_time, .{ 0, 1, 0 }))
+                        .mul(nz.Quat(f32).angleAxis(item_spin_speed * world.delta_time, .{ 0, 1, 0 }))
                         .normalize();
                     update_motion.rotation = spun.toVec();
                 }
@@ -93,13 +93,13 @@ pub fn update(self: *Animations, info: *const Info, instances: *std.AutoHashMap(
     }
 }
 
-fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *AnimationInstance.Skeleton, model: *Model, clip_index: usize) void {
+fn playAnimation(world: *World, entity: *system.Entity, skeleton: *AnimationInstance.Skeleton, model: *Model, clip_index: usize) void {
     if (clip_index != skeleton.player.active) {
         skeleton.playClip(model, clip_index);
     }
 
     if (skeleton.overlay) |*overlay| {
-        overlay.current_time += info.delta_time;
+        overlay.current_time += world.delta_time;
         if (overlay.current_time > model.clips[overlay.active].end) {
             skeleton.overlay = null;
             skeleton.startFade();
@@ -107,7 +107,7 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *Animation
     }
 
     const animation = model.clips[skeleton.player.active];
-    skeleton.player.current_time += info.delta_time;
+    skeleton.player.current_time += world.delta_time;
 
     if (skeleton.player.current_time > animation.end) {
         skeleton.player.current_time -= animation.end - animation.start;
@@ -117,7 +117,7 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *Animation
         sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
     }
     if (skeleton.fade_time > 0) {
-        skeleton.fade_time -= info.delta_time;
+        skeleton.fade_time -= world.delta_time;
         const alpha = @max(skeleton.fade_time, 0) / AnimationInstance.fade_duration;
         for (skeleton.nodes, skeleton.fade_joints) |*node, fade_joint| {
             node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
@@ -126,12 +126,12 @@ fn playAnimation(info: *const Info, entity: *system.Entity, skeleton: *Animation
         }
     }
     var saved_look_rotations: [3]nz.Quat(f32) = undefined;
-    const looking = entity.id == info.world.player_id and model.look_nodes.len > 0;
+    const looking = entity.id == world.player_id and model.look_nodes.len > 0;
     if (looking) {
         for (model.look_nodes, 0..) |node_index, saved_index| {
             saved_look_rotations[saved_index] = skeleton.nodes[node_index].rotation;
         }
-        const camera = &info.world.camera;
+        const camera = &world.camera;
         const look_pitch = std.math.clamp(camera.pitch * look_pitch_sign, -1.0, 1.0);
         var yaw_offset = entity.transform.rotation.conjugate().mul(camera.yaw_rotation);
         if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };

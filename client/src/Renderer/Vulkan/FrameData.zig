@@ -7,6 +7,7 @@ const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Ui = @import("../../Ui.zig");
+const Emitter = @import("../../system/Emitter.zig");
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,
@@ -19,13 +20,11 @@ emitter_buffer: Buffer,
 
 pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
-pub const max_emitters: u32 = 256;
 
 pub const GPUEmitter = extern struct {
     origin: [3]f32,
     spawn_time: f32,
     target: [3]f32,
-    _: f32 = 0,
 };
 
 pub const DebugVertex = extern struct {
@@ -110,7 +109,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             device,
             vma,
             GPUEmitter,
-            max_emitters,
+            Emitter.max_emitters,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,

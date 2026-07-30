@@ -5,7 +5,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
-const Info = system.Info;
+const World = system.World;
 const Options = @import("../Options.zig");
 const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
@@ -40,11 +40,11 @@ pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
     return proj.mul(view);
 }
 
-pub fn update(self: *Camera, info: *const Info, options: *const Options) void {
+pub fn update(self: *Camera, world: *World, options: *const Options) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    const controller = &info.world.controller;
+    const controller = &world.controller;
     const keys = controller.input_map.keys;
     const mouse_sensitivity = sensitivity * options.mouse_sensitivity;
     const pitch_direction: f64 = if (options.invert_y) 1 else -1;
@@ -78,13 +78,13 @@ pub fn update(self: *Camera, info: *const Info, options: *const Options) void {
         if (keys.l_shift) direction[1] -= 1;
         if (nz.vec.length(direction) > 0) {
             const world_direction = rotation.rotateVec(nz.vec.normalize(direction));
-            self.transform.position += nz.vec.scale(world_direction, self.free_speed * info.delta_time);
+            self.transform.position += nz.vec.scale(world_direction, self.free_speed * world.delta_time);
         }
         self.transform.rotation = rotation;
         return;
     }
 
-    if (info.world.getPtr(info.world.player_id)) |player| {
+    if (world.getPtr(world.player_id)) |player| {
         if (nz.vec.length(player.transform.position) > 0.001) {
             const planet_up = nz.vec.normalize(player.transform.position);
             const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
@@ -101,11 +101,11 @@ pub fn update(self: *Camera, info: *const Info, options: *const Options) void {
         const pivot = player.transform.position + self.yaw_rotation.rotateVec(.{ self.boom_offset[0], self.boom_offset[1], 0 });
         const arm_direction = final_rotation.rotateVec(.{ 0, 0, 1 });
 
-        const clear_length = traceArm(pivot, arm_direction, self.boom_offset[2], info.world.planet_radius);
+        const clear_length = traceArm(pivot, arm_direction, self.boom_offset[2], world.planet_radius);
         if (clear_length < self.arm_length) {
             self.arm_length = clear_length;
         } else {
-            self.arm_length += (clear_length - self.arm_length) * @min(1, arm_ease_speed * info.delta_time);
+            self.arm_length += (clear_length - self.arm_length) * @min(1, arm_ease_speed * world.delta_time);
         }
 
         self.transform.position = pivot + nz.vec.scale(arm_direction, self.arm_length);

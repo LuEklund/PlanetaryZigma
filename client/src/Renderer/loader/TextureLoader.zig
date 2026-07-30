@@ -4,7 +4,8 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const entity = shared.entity;
-const Loader = @import("../../AssetServer.zig").Loader;
+const AssetServer = @import("../../AssetServer.zig");
+const Loader = AssetServer.Loader;
 const Image = @import("../Vulkan/Image.zig");
 const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
@@ -15,7 +16,7 @@ table: *TextureTable,
 items: []?Image.Handle,
 interface: Loader,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLoader {
+pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
     const spec_capacity = entity.all_kinds.len + 2;
     const files = try gpa.alloc([]const u8, spec_capacity);
     files[0] = skybox_file;
@@ -35,17 +36,18 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !TextureLo
     const items = try gpa.alloc(?Image.Handle, count);
     @memset(items, null);
 
-    return .{
+    self.* = .{
         .table = table,
         .items = items,
         .interface = .{
             .gpa = gpa,
-            .io = io,
+            .io = asset_server.io,
             .root_path = "textures",
             .files = try gpa.realloc(files, count),
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
+    try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *TextureLoader) void {

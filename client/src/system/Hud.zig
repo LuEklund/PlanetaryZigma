@@ -5,7 +5,7 @@ const nz = @import("shared").numz;
 const shared = @import("shared");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
-const Info = system.Info;
+const World = system.World;
 const Ui = @import("../Ui.zig");
 const Renderer = @import("../Renderer.zig");
 const NetworkManager = @import("NetworkManager.zig");
@@ -55,7 +55,7 @@ pub const texture_paths = [_][]const u8{crosshair_texture};
 
 pub fn update(
     hud: *Hud,
-    info: *const Info,
+    world: *World,
     scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
@@ -71,14 +71,14 @@ pub fn update(
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
-    }, info.delta_time);
-    hud.damage_popups.update(info.delta_time);
-    if (info.world.getPtr(info.world.player_id)) |player| {
-        for (info.world.damage_events.items) |damage_event| {
-            if (damage_event.source != info.world.player_id and damage_event.target != info.world.player_id) continue;
+    }, world.delta_time);
+    hud.damage_popups.update(world.delta_time);
+    if (world.getPtr(world.player_id)) |player| {
+        for (world.damage_events.items) |damage_event| {
+            if (damage_event.source != world.player_id and damage_event.target != world.player_id) continue;
             const color: [3]f32 = if (damage_event.delta < 0)
                 .{ 0.3, 0.95, 0.35 }
-            else if (damage_event.target == info.world.player_id)
+            else if (damage_event.target == world.player_id)
                 .{ 0.95, 0.25, 0.2 }
             else if (damage_event.delta > player.stats.max.get(.damage))
                 .{ 1, 0, 0 }
@@ -87,33 +87,38 @@ pub fn update(
             hud.damage_popups.spawn(hud.popup_prng.random(), damage_event.position, damage_event.delta, color);
         }
     }
-    info.world.damage_events.clearRetainingCapacity();
+    world.damage_events.clearRetainingCapacity();
 
     var request: Request = .none;
     if (scene == .menu) {
-        request = try main_menu.update(info, network_manager, ui, hud, options);
+        request = try main_menu.update(world, network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(info, network_manager, ui, texture_table, options, &hud.damage_popups);
+        try game_hud.update(world, network_manager, ui, texture_table, options, &hud.damage_popups);
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pause_menu.update(ui, hud),
             .options => options_menu.update(ui, hud, options, controller),
         }
     }
-    addTransition(ui, network_manager.phase());
+    addTransition(ui, network_manager.phase(), network_manager.elapsed_time - network_manager.host_state_time);
 
     ui.end();
     return request;
 }
 
-fn addTransition(ui: *Ui, phase: NetworkManager.Phase) void {
+fn addTransition(ui: *Ui, phase: NetworkManager.Phase, phase_seconds: f32) void {
     const covering = switch (phase) {
         .starting_server, .waiting_for_server, .connecting => true,
         .idle, .connected => false,
     };
     const transition = ui.animate("transition_veil", if (covering) 1 else 0, transition_seconds);
     if (transition <= 0) return;
+
+    const status_text: []const u8 = if (covering)
+        ui.print("{s} {d:.0}s", .{ phase.text(), phase_seconds })
+    else
+        phase.text();
 
     ui.add(null, .{
         .name = if (covering) "transition_veil" else null,
@@ -122,7 +127,7 @@ fn addTransition(ui: *Ui, phase: NetworkManager.Phase) void {
         .color = .new(0, 0, 0, transition),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
-            .data = phase.text(),
+            .data = status_text,
             .size = 30,
             .color = .new(0.94, 0.96, 0.9, transition),
         },

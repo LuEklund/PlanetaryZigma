@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../../System.zig");
-const Info = system.Info;
+const World = system.World;
 const Ui = @import("../../Ui.zig");
 const Renderer = @import("../../Renderer.zig");
 const NetworkManager = @import("../NetworkManager.zig");
@@ -13,7 +13,7 @@ const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List) !void {
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -31,12 +31,12 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
 
-    addChat(info, ui);
+    addChat(world, ui);
 
-    if (info.world.getPtr(info.world.player_id)) |player| {
-        addNameTags(info, ui);
-        addWorldHealthBars(info, ui);
-        addDamagePopups(info, ui, damage_popups);
+    if (world.getPtr(world.player_id)) |player| {
+        addNameTags(world, ui);
+        addWorldHealthBars(world, ui);
+        addDamagePopups(world, ui, damage_popups);
 
         const health_current = player.stats.current.get(.health);
         const health_max = player.stats.max.get(.health);
@@ -122,26 +122,26 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
         ui.add(
             "HUD",
             .{
-                .name = "info",
+                .name = "world",
                 .axis_align = .vertical,
                 .size = .{ .percent = .{ .heigth = 1, .width = 0.2 } },
             },
         );
-        const stage_text = ui.print("stage: {d}", .{info.world.stage});
+        const stage_text = ui.print("stage: {d}", .{world.stage});
 
         ui.add(
-            "info",
+            "world",
             .{
                 .name = "stage",
                 .size = .{ .fixed = ui.textSize(stage_text, 18) },
                 .text = .{ .data = stage_text, .size = 18 },
             },
         );
-        if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+        if (world.getPtr(world.teleporter_id)) |entity| {
             const teleporter = entity.teleporter;
             // const active = entity.teleporter.active;
             ui.add(
-                "info",
+                "world",
                 .{
                     .size = .{ .percent = .{ .heigth = 1, .width = 1 } },
                     .text = .{
@@ -201,7 +201,7 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
         }
 
         if (player.interacting != .none) {
-            if (info.world.getPtr(player.interacting)) |entity| {
+            if (world.getPtr(player.interacting)) |entity| {
                 ui.add(
                     null,
                     .{
@@ -235,11 +235,11 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
                 }
             }
         }
-        if (info.world.teleporter_bosses.items.len > 0) {
+        if (world.teleporter_bosses.items.len > 0) {
             var total_boss_health: f32 = 0;
             var total_boss_max_health: f32 = 0;
-            for (info.world.teleporter_bosses.items) |boss_id| {
-                const boss = info.world.getPtr(boss_id) orelse continue;
+            for (world.teleporter_bosses.items) |boss_id| {
+                const boss = world.getPtr(boss_id) orelse continue;
                 total_boss_health += boss.stats.current.get(.health);
                 total_boss_max_health += boss.stats.max.get(.health);
             }
@@ -272,8 +272,8 @@ pub fn update(info: *const Info, network_manager: *NetworkManager, ui: *Ui, text
     }
 }
 
-fn addChat(info: *const Info, ui: *Ui) void {
-    const chat = &info.world.chat;
+fn addChat(world: *World, ui: *Ui) void {
+    const chat = &world.chat;
     const text_size: f32 = 18;
     const line_heigth: f32 = 22;
     const left: f32 = 12;
@@ -298,7 +298,7 @@ fn addChat(info: *const Info, ui: *Ui) void {
     while (index > 0) {
         index -= 1;
         const line = chat.get(index);
-        if (!chat.open and info.elapsed_time - line.time > system.Chat.visible_seconds) break;
+        if (!chat.open and world.elapsed_time - line.time > system.Chat.visible_seconds) break;
         top -= line_heigth;
         const size = ui.textSize(line.slice(), text_size);
         ui.add(null, .{
@@ -342,17 +342,17 @@ fn addHealthBar(ui: *Ui, args: struct {
     });
 }
 
-fn addWorldHealthBars(info: *const Info, ui: *Ui) void {
+fn addWorldHealthBars(world: *World, ui: *Ui) void {
     const bar_width: f32 = 46;
     const bar_heigth: f32 = 4;
     const bar_reference_distance: f32 = 20;
     const bar_min_scale: f32 = 0.35;
     const bar_max_scale: f32 = 1;
-    const camera_position = info.world.camera.transform.position;
-    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
-    for (info.world.entities.values()) |*entity| {
+    const camera_position = world.camera.transform.position;
+    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+    for (world.entities.values()) |*entity| {
         if (!entity.kind.hasHealth()) continue;
-        if (entity.id == info.world.player_id) continue;
+        if (entity.id == world.player_id) continue;
         const health_current = entity.stats.current.get(.health);
         const health_max = entity.stats.max.get(.health);
         if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
@@ -377,8 +377,8 @@ fn addWorldHealthBars(info: *const Info, ui: *Ui) void {
     }
 }
 
-fn addDamagePopups(info: *const Info, ui: *Ui, damage_popups: *const DamagePopup.List) void {
-    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+fn addDamagePopups(world: *World, ui: *Ui, damage_popups: *const DamagePopup.List) void {
+    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (damage_popups.items()) |popup| {
         const up = shared.planet.up(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
@@ -398,14 +398,14 @@ fn addDamagePopups(info: *const Info, ui: *Ui, damage_popups: *const DamagePopup
     }
 }
 
-fn addNameTags(info: *const Info, ui: *Ui) void {
+fn addNameTags(world: *World, ui: *Ui) void {
     const label_size: f32 = 18;
     const padding_x: f32 = 8;
     const padding_y: f32 = 3;
-    const view_proj = info.world.camera.viewProj(ui.screen_width / ui.screen_heigth);
+    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_heigth);
 
-    for (info.world.entities.values()) |*entity| {
-        if (entity.kind != .player or entity.id == info.world.player_id) continue;
+    for (world.entities.values()) |*entity| {
+        if (entity.kind != .player or entity.id == world.player_id) continue;
 
         const name = if (entity.player_name.len != 0)
             entity.player_name

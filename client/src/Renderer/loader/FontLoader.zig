@@ -2,7 +2,8 @@ const FontLoader = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const Loader = @import("../../AssetServer.zig").Loader;
+const AssetServer = @import("../../AssetServer.zig");
+const Loader = AssetServer.Loader;
 const Font = @import("../../asset/Font.zig");
 const Image = @import("../Vulkan/Image.zig");
 const TextureTable = @import("TextureTable.zig");
@@ -15,24 +16,25 @@ items: []Font,
 samplers: []c.VkSampler,
 interface: Loader,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !FontLoader {
+pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
     const items = try gpa.alloc(Font, font_files.len);
     @memset(items, .empty);
     const samplers = try gpa.alloc(c.VkSampler, font_files.len);
     @memset(samplers, null);
 
-    return .{
+    self.* = .{
         .table = table,
         .items = items,
         .samplers = samplers,
         .interface = .{
             .gpa = gpa,
-            .io = io,
+            .io = asset_server.io,
             .root_path = "fonts",
             .files = font_files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
+    try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *FontLoader) void {

@@ -5,63 +5,108 @@ const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const ext = @import("procs.zig").device.ProcTable;
 const check = @import("utils.zig").check;
+const DescriptorLayout = @import("DesrciptorLayout.zig");
 
-handle: c.VkShaderEXT = null,
+handle: c.VkShaderEXT,
 device: Device,
-shader_create_info: c.VkShaderCreateInfoEXT,
-descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
-descriptor_set_count: u32,
-push_constant_size: u32,
 
-pub const Stage = enum { vert, frag };
-pub const Layout = enum { scene_textures, sky, ui };
-pub const PushConstantKind = enum { world, ui, none };
+pub const Topology = enum { quad, ribbon };
+
+pub const ParticleInfo = struct {
+    particle_count: u32,
+    strands: u32,
+    duration: ?f32,
+    topology: Topology,
+};
 
 pub const Kind = enum {
-    skinned_vert,
-    static_vert,
-    ui_vert,
-    sky_vert,
-    debug_vert,
-    shadow_static_vert,
-    shadow_skinned_vert,
-    ui_frag,
-    sky_frag,
-    mesh_frag,
-    debug_frag,
-    explosion_vert,
-    lightning_vert,
-    explosion_frag,
-    lightning_frag,
+    static,
+    skinned,
+    mesh,
+    shadow_static,
+    shadow_skinned,
+    sky,
+    ui,
+    debug,
+    explosion,
+    lightning,
+    smoke,
+    pub const count: usize = @typeInfo(Kind).@"enum".fields.len;
 };
 
 pub const Spec = struct {
     path: []const u8,
-    stage: Stage,
-    layout: Layout,
-    push_constant: PushConstantKind,
+    vert: ?[:0]const u8,
+    frag: ?[:0]const u8,
+    descriptors: []const DescriptorLayout.Kind,
+    push_constant_size: u32,
+    particle: ?ParticleInfo,
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .skinned_vert = .{ .path = "shaders/skinned.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .static_vert = .{ .path = "shaders/static.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .ui_vert = .{ .path = "shaders/ui.vert.spv", .stage = .vert, .layout = .ui, .push_constant = .ui },
-    .sky_vert = .{ .path = "shaders/sky.vert.spv", .stage = .vert, .layout = .sky, .push_constant = .none },
-    .debug_vert = .{ .path = "shaders/debug.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .shadow_static_vert = .{ .path = "shaders/shadow_static.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .shadow_skinned_vert = .{ .path = "shaders/shadow_skinned.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .ui_frag = .{ .path = "shaders/ui.frag.spv", .stage = .frag, .layout = .ui, .push_constant = .ui },
-    .sky_frag = .{ .path = "shaders/sky.frag.spv", .stage = .frag, .layout = .sky, .push_constant = .none },
-    .mesh_frag = .{ .path = "shaders/mesh.frag.spv", .stage = .frag, .layout = .scene_textures, .push_constant = .world },
-    .debug_frag = .{ .path = "shaders/debug.frag.spv", .stage = .frag, .layout = .scene_textures, .push_constant = .world },
-    .explosion_vert = .{ .path = "shaders/particle/explosion.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .lightning_vert = .{ .path = "shaders/particle/lightning.vert.spv", .stage = .vert, .layout = .scene_textures, .push_constant = .world },
-    .explosion_frag = .{ .path = "shaders/particle/explosion.frag.spv", .stage = .frag, .layout = .scene_textures, .push_constant = .world },
-    .lightning_frag = .{ .path = "shaders/particle/lightning.frag.spv", .stage = .frag, .layout = .scene_textures, .push_constant = .world },
+    .static = .{ .path = "mesh.spv", .vert = "static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .skinned = .{ .path = "mesh.spv", .vert = "skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .mesh = .{ .path = "mesh.spv", .vert = null, .frag = "mesh_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_static = .{ .path = "shadow.spv", .vert = "shadow_static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_skinned = .{ .path = "shadow.spv", .vert = "shadow_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .sky = .{ .path = "sky.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
+    .ui = .{ .path = "ui.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
+    .debug = .{ .path = "debug.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .explosion = .{
+        .path = "particle/explosion.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
+        .particle = .{
+            .particle_count = 40,
+            .strands = 1,
+            .duration = 0.8,
+            .topology = .quad,
+        },
+    },
+    .lightning = .{
+        .path = "particle/lightning.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
+        .particle = .{
+            .particle_count = 64,
+            .strands = 1,
+            .duration = 0.3,
+            .topology = .ribbon,
+        },
+    },
+    .smoke = .{
+        .path = "particle/smoke.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
+        .particle = .{
+            .particle_count = 98,
+            .strands = 7,
+            .duration = null,
+            .topology = .ribbon,
+        },
+    },
 });
 
 pub fn get(kind: Kind) Spec {
     return specs.get(kind);
+}
+
+pub fn particleInfo(kind: Kind) ParticleInfo {
+    return get(kind).particle orelse std.debug.panic("shader {t} is not a particle effect", .{kind});
+}
+
+pub fn instancesPerEmitter(kind: Kind) u32 {
+    const particle_info = particleInfo(kind);
+    return switch (particle_info.topology) {
+        .quad => particle_info.particle_count,
+        .ribbon => particle_info.particle_count - particle_info.strands,
+    };
 }
 
 pub const WorldPushConstant = extern struct {
@@ -69,75 +114,44 @@ pub const WorldPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
     joint_matrices_address: c.VkDeviceAddress,
     texture_index: u32,
-    particle_count: u32 = 0,
 };
 pub const UiPushConstant = extern struct {
     vertex_buffer_address: c.VkDeviceAddress,
     screnn_size: [2]f32,
 };
+pub const ParticlePushConstant = extern struct {
+    emitter_buffer_address: c.VkDeviceAddress,
+    elapsed_time: f32,
+    particle_count: u32,
+    emitter_count: u32,
+    duration: f32,
+};
 
-fn pushConstantSize(kind: Kind) u32 {
-    return switch (get(kind).push_constant) {
-        .world => @sizeOf(WorldPushConstant),
-        .ui => @sizeOf(UiPushConstant),
-        .none => 0,
+pub fn init(device: Device, kind: Kind, entry_point: [:0]const u8, stage: c.VkShaderStageFlagBits, next_stage: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout, data: []align(4) const u8) !Shader {
+    const push_constant_size: u32 = get(kind).push_constant_size;
+    const push_constant_range: c.VkPushConstantRange = .{
+        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = push_constant_size,
     };
-}
-
-pub fn init(device: Device, kind: Kind, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
-    const shader_def = get(kind);
-    var self: Shader = .{
-        .device = device,
-        .shader_create_info = .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = switch (shader_def.stage) {
-                .vert => c.VK_SHADER_STAGE_VERTEX_BIT,
-                .frag => c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            },
-            .nextStage = switch (shader_def.stage) {
-                .vert => c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .frag => 0,
-            },
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pName = "main",
-        },
-        .handle = null,
-        .push_constant_size = pushConstantSize(kind),
-        .descriptor_set_count = @intCast(descriptor_set_layouts.len),
-        .descriptor_set_layouts = undefined,
+    const shader_create_info: c.VkShaderCreateInfoEXT = .{
+        .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+        .stage = stage,
+        .nextStage = next_stage,
+        .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+        .pName = entry_point.ptr,
+        .pSetLayouts = descriptor_set_layouts.ptr,
+        .setLayoutCount = @intCast(descriptor_set_layouts.len),
+        .pPushConstantRanges = &push_constant_range,
+        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
+        .codeSize = data.len,
+        .pCode = data.ptr,
     };
-    std.debug.assert(descriptor_set_layouts.len <= self.descriptor_set_layouts.len);
-    @memcpy(self.descriptor_set_layouts[0..self.descriptor_set_count], descriptor_set_layouts);
-    return self;
+    var handle: c.VkShaderEXT = null;
+    try check(ext.vkCreateShadersEXT(device.handle, 1, &shader_create_info, null, &handle));
+    return .{ .device = device, .handle = handle };
 }
 
 pub fn deinit(self: *Shader) void {
     ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
-}
-
-pub fn load(self: *Shader, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !void {
-    var buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &buffer);
-    const len: usize = @intCast((try file.stat(io)).size);
-    const data = try gpa.alignedAlloc(u8, .@"4", len);
-    defer gpa.free(data);
-    try reader.interface.readSliceAll(data);
-
-    const ranges: c.VkPushConstantRange = .{
-        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = self.push_constant_size,
-    };
-    if (self.push_constant_size != 0) {
-        self.shader_create_info.pPushConstantRanges = &ranges;
-        self.shader_create_info.pushConstantRangeCount = 1;
-    } else {
-        self.shader_create_info.pushConstantRangeCount = 0;
-    }
-    self.shader_create_info.pSetLayouts = &self.descriptor_set_layouts;
-    self.shader_create_info.setLayoutCount = self.descriptor_set_count;
-    self.shader_create_info.codeSize = len;
-    self.shader_create_info.pCode = data.ptr;
-    if (self.handle != null) ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
-    try check(ext.vkCreateShadersEXT(self.device.handle, 1, &self.shader_create_info, null, &self.handle));
 }

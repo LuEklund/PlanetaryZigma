@@ -4,7 +4,8 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const entity = shared.entity;
-const Loader = @import("../../AssetServer.zig").Loader;
+const AssetServer = @import("../../AssetServer.zig");
+const Loader = AssetServer.Loader;
 const Model = @import("../../asset/Model.zig");
 const gltf = @import("../../asset/gltf.zig");
 const Mesh = @import("../Vulkan/Mesh.zig");
@@ -26,7 +27,7 @@ pub const Entry = struct {
     image_slots: []Image.Handle,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoader {
+pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
     const files = try gpa.alloc([]const u8, entity.all_kinds.len);
     const entries_storage = try gpa.alloc(Entry, entity.all_kinds.len);
     var indices_by_path: std.StringHashMapUnmanaged(u32) = .empty;
@@ -48,19 +49,20 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, table: *TextureTable) !ModelLoad
     }
     const entries = try gpa.realloc(entries_storage, count);
 
-    return .{
+    self.* = .{
         .table = table,
         .entries = entries,
         .indices_by_path = indices_by_path,
         .reloaded = .empty,
         .interface = .{
             .gpa = gpa,
-            .io = io,
+            .io = asset_server.io,
             .root_path = "objects",
             .files = try gpa.realloc(files, count),
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
+    try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *ModelLoader) void {

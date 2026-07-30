@@ -32,7 +32,7 @@ pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 attack_events: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
-emitters: std.ArrayList(Emitter) = .empty,
+emitters: Emitter.List,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
@@ -40,6 +40,8 @@ chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
+elapsed_time: f32 = 0,
+delta_time: f32 = 0,
 stage: u32 = 0,
 chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
@@ -88,9 +90,9 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .attack_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .emitters = try .initCapacity(gpa, 256),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
+        .emitters = @splat(Emitter.free),
     };
 }
 
@@ -106,7 +108,6 @@ pub fn deinit(self: *World) void {
     self.pending_inventory.deinit(self.gpa);
     self.attack_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
-    self.emitters.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
 

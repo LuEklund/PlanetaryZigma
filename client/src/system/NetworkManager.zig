@@ -8,8 +8,6 @@ const Client = shared.SteamNet.Client;
 const system = @import("../System.zig");
 const Emitter = @import("Emitter.zig");
 const World = system.World;
-const Info = system.Info;
-const nz = shared.numz;
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -236,13 +234,13 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *NetworkManager, info: *const Info) !void {
+pub fn update(self: *NetworkManager, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
-    self.elapsed_time = info.elapsed_time;
+    self.elapsed_time = world.elapsed_time;
     self.steam_logged_on = self.steam_client.isLoggedOn();
     self.ping_milliseconds = self.steam_client.pingMilliseconds();
     if (!self.steam_logged_on) {
@@ -335,17 +333,17 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
         self.sent_connect = true;
     }
     if (self.server_conn != 0) {
-        var input = info.world.controller.input_map;
-        if (info.world.controller.free_camera) input.keys = .{};
+        var input = world.controller.input_map;
+        if (world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
-        info.world.controller.input_map.dev_command = .none;
+        world.controller.input_map.dev_command = .none;
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
-    if (info.world.chat.pending) {
-        const chat_text = info.world.chat.text();
+    if (world.chat.pending) {
+        const chat_text = world.chat.text();
         try self.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
-        info.world.chat.pending = false;
-        info.world.chat.input_len = 0;
+        world.chat.pending = false;
+        world.chat.input_len = 0;
     }
     // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     for (self.steam_client.packets.incoming.items) |*msg| {
@@ -355,103 +353,103 @@ pub fn update(self: *NetworkManager, info: *const Info) !void {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try self.handleCommand(info, parsed);
+        try self.handleCommand(world, parsed);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
 
-    self.server_tick_estimate += info.delta_time / shared.tick_seconds;
+    self.server_tick_estimate += world.delta_time / shared.tick_seconds;
     const target = @as(f32, @floatFromInt(self.server_tick_latest)) - self.render_delay_ticks;
     self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
 }
 
 fn handleCommand(
     self: *NetworkManager,
-    info: *const Info,
+    world: *World,
     command: shared.net.ServerPacket,
 ) !void {
     // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
-            info.world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            try queueSpawn(info.world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
-            info.world.player_id = acknowledge.id;
+            world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+            try queueSpawn(world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
+            world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
         },
         .spawn_entity => |spawn_entity| {
-            if (info.world.getPtr(spawn_entity.id) != null) return;
+            if (world.getPtr(spawn_entity.id) != null) return;
             if (spawn_entity.kind == .unknown) {
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            try queueSpawn(info.world, spawn_entity);
+            try queueSpawn(world, spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
-            info.world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
+            world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
-            const entity = info.world.getPtr(update_motion_command.id) orelse return;
+            const entity = world.getPtr(update_motion_command.id) orelse return;
             entity.motion.update = update_motion_command;
         },
         .server_tick => |tick| {
             self.server_tick_latest = @max(self.server_tick_latest, tick);
         },
         .update_stat => |update_stat_command| {
-            const entity = info.world.getPtr(update_stat_command.id) orelse {
-                info.world.pending_stats.appendAssumeCapacity(update_stat_command);
+            const entity = world.getPtr(update_stat_command.id) orelse {
+                world.pending_stats.appendAssumeCapacity(update_stat_command);
                 return;
             };
-            info.world.applyStat(entity, update_stat_command);
+            world.applyStat(entity, update_stat_command);
         },
         .update_event => |event| {
             switch (event) {
-                .teleport_start => if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {
                     entity.teleporter.state = .active;
                 },
-                .teleporter_charge => |charged| if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
                     entity.teleporter.charged = charged;
                 },
                 .new_stage => |new_stage| {
-                    info.world.teleporter_id = .none;
-                    info.world.stage = new_stage;
+                    world.teleporter_id = .none;
+                    world.stage = new_stage;
                 },
                 .attack => |id| {
-                    info.world.attack_events.appendAssumeCapacity(id);
+                    world.attack_events.appendAssumeCapacity(id);
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Emitter.spawnRocketExplosion(&info.world.emitters, position, info.elapsed_time);
+                        Emitter.spawnQuad(world, .explosion, position);
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
-                        const target = info.world.getPtr(id) orelse continue;
-                        Emitter.spawnLightningArc(&info.world.emitters, bolt.start_position, target.transform.position, info.elapsed_time);
+                        const target = world.getPtr(id) orelse continue;
+                        Emitter.spawnRibbon(world, .lightning, bolt.start_position, target.transform.position);
                     },
                 },
-                .interact => |interact| if (info.world.getPtr(interact.interactor)) |entity| {
+                .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
                     entity.interacting = interact.interacted;
                 },
             }
         },
         .update_inventory => |inventory| {
-            const entity = info.world.getPtr(inventory.id) orelse {
-                info.world.pending_inventory.appendAssumeCapacity(inventory);
+            const entity = world.getPtr(inventory.id) orelse {
+                world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
             entity.inventory.set(inventory.item_kind, inventory.set);
         },
         .set_currency => |set_currency| {
-            if (info.world.getPtr(set_currency.id)) |entity| {
+            if (world.getPtr(set_currency.id)) |entity| {
                 entity.currency = set_currency.amount;
             }
         },
         .chat_message => |chat_message| {
-            const sender = info.world.getPtr(chat_message.id);
+            const sender = world.getPtr(chat_message.id);
             const name = if (sender != null and sender.?.player_name.len != 0)
                 sender.?.player_name
             else
                 shared.default_player_name;
-            info.world.chat.push(name, chat_message.text, info.elapsed_time);
+            world.chat.push(name, chat_message.text, world.elapsed_time);
         },
     }
 }
