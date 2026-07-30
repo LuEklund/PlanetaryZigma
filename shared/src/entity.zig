@@ -12,6 +12,8 @@ pub const EnemyKind = enum(u16) {
     tubloid = 0,
     tubloida = 1,
     bloorp_lord = 2,
+    hunkloid = 3,
+    pub const count: usize = @typeInfo(EnemyKind).@"enum".fields.len;
 };
 
 pub const ProjectileKind = enum(u16) {
@@ -56,12 +58,12 @@ pub fn collider(kind: Kind) ?Collider {
     return spec(kind).collider;
 }
 
-//TODO: merge with entiy.State
 pub const ModelClipNames = struct {
     idle: ?[]const u8,
     walk: []const u8,
     attack: []const u8,
     death: ?[]const u8,
+    secondary: ?[]const u8 = null,
 };
 
 pub const ModelLookNodeNames = struct {
@@ -204,6 +206,20 @@ pub fn spec(kind: Kind) Spec {
                 .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
             },
+            .hunkloid => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Hunkloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                    .idle = "Idle",
+                    .walk = "Walk",
+                    .attack = "Attack",
+                    .death = "Idle",
+                    .secondary = "secondary",
+                } },
+                .has_health = true,
+                .expects_model = true,
+                .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
+                .currency = 7,
+            },
             .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
@@ -231,7 +247,7 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
-const all_kind_count = 9 + std.enums.values(EnemyKind).len + std.enums.values(Item).len;
+const all_kind_count: usize = 9 + EnemyKind.count + Item.count;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;
     kinds[0..9].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };

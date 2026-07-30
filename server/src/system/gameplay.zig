@@ -148,6 +148,7 @@ pub fn updateEnemies(world: *World) !void {
                     world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
+            .hunkloid => {},
         }
     }
 }

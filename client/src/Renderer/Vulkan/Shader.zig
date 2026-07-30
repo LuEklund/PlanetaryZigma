@@ -7,15 +7,15 @@ const ext = @import("procs.zig").device.ProcTable;
 const check = @import("utils.zig").check;
 const DescriptorLayout = @import("DesrciptorLayout.zig");
 
-handle: c.VkShaderEXT = null,
+handle: c.VkShaderEXT,
 device: Device,
-shader_create_info: c.VkShaderCreateInfoEXT,
-descriptor_set_layouts: [5]c.VkDescriptorSetLayout,
-descriptor_set_count: u32,
-push_constant_size: u32,
-push_constant_stages: c.VkShaderStageFlags,
 
-pub const Stage = enum { vert, frag, comp };
+pub const Stage = enum {
+    vert,
+    frag,
+    comp,
+    pub const count: usize = @typeInfo(Stage).@"enum".fields.len;
+};
 pub const Topology = enum { quad, ribbon };
 
 pub const ParticleInfo = struct {
@@ -36,6 +36,7 @@ pub const Kind = enum {
     explosion,
     lightning,
     smoke,
+    pub const count: usize = @typeInfo(Kind).@"enum".fields.len;
 };
 
 pub const Spec = struct {
@@ -145,55 +146,38 @@ fn pushConstantStages(kind: Kind) c.VkShaderStageFlags {
         c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT;
 }
 
-pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []const c.VkDescriptorSetLayout) Shader {
-    const shader_spec = get(kind);
-    var self: Shader = .{
-        .device = device,
-        .shader_create_info = .{
-            .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-            .stage = switch (stage) {
-                .vert => c.VK_SHADER_STAGE_VERTEX_BIT,
-                .frag => c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .comp => c.VK_SHADER_STAGE_COMPUTE_BIT,
-            },
-            .nextStage = switch (stage) {
-                .vert => c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .frag, .comp => 0,
-            },
-            .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-            .pName = entryPoint(kind, stage).ptr,
-        },
-        .handle = null,
-        .push_constant_size = shader_spec.push_constant_size,
-        .push_constant_stages = pushConstantStages(kind),
-        .descriptor_set_count = @intCast(descriptor_set_layouts.len),
-        .descriptor_set_layouts = undefined,
+pub fn init(device: Device, kind: Kind, stage: Stage, descriptor_set_layouts: []const c.VkDescriptorSetLayout, data: []align(4) const u8) !Shader {
+    const push_constant_size: u32 = get(kind).push_constant_size;
+    const push_constant_range: c.VkPushConstantRange = .{
+        .stageFlags = pushConstantStages(kind),
+        .offset = 0,
+        .size = push_constant_size,
     };
-    std.debug.assert(descriptor_set_layouts.len <= self.descriptor_set_layouts.len);
-    @memcpy(self.descriptor_set_layouts[0..self.descriptor_set_count], descriptor_set_layouts);
-    return self;
+    const shader_create_info: c.VkShaderCreateInfoEXT = .{
+        .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
+        .stage = switch (stage) {
+            .vert => c.VK_SHADER_STAGE_VERTEX_BIT,
+            .frag => c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .comp => c.VK_SHADER_STAGE_COMPUTE_BIT,
+        },
+        .nextStage = switch (stage) {
+            .vert => c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .frag, .comp => 0,
+        },
+        .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
+        .pName = entryPoint(kind, stage).ptr,
+        .pSetLayouts = descriptor_set_layouts.ptr,
+        .setLayoutCount = @intCast(descriptor_set_layouts.len),
+        .pPushConstantRanges = &push_constant_range,
+        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
+        .codeSize = data.len,
+        .pCode = data.ptr,
+    };
+    var handle: c.VkShaderEXT = null;
+    try check(ext.vkCreateShadersEXT(device.handle, 1, &shader_create_info, null, &handle));
+    return .{ .device = device, .handle = handle };
 }
 
 pub fn deinit(self: *Shader) void {
     ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
-}
-
-pub fn load(self: *Shader, data: []align(4) const u8) !void {
-    const ranges: c.VkPushConstantRange = .{
-        .stageFlags = self.push_constant_stages,
-        .offset = 0,
-        .size = self.push_constant_size,
-    };
-    if (self.push_constant_size != 0) {
-        self.shader_create_info.pPushConstantRanges = &ranges;
-        self.shader_create_info.pushConstantRangeCount = 1;
-    } else {
-        self.shader_create_info.pushConstantRangeCount = 0;
-    }
-    self.shader_create_info.pSetLayouts = &self.descriptor_set_layouts;
-    self.shader_create_info.setLayoutCount = self.descriptor_set_count;
-    self.shader_create_info.codeSize = data.len;
-    self.shader_create_info.pCode = data.ptr;
-    if (self.handle != null) ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
-    try check(ext.vkCreateShadersEXT(self.device.handle, 1, &self.shader_create_info, null, &self.handle));
 }

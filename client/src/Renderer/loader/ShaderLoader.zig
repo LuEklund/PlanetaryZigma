@@ -11,16 +11,16 @@ const check = @import("../Vulkan/utils.zig").check;
 
 device: Device,
 layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout),
-shaders: [][std.enums.values(Shader.Stage).len]Shader,
+shaders: [][Shader.Stage.count]Shader,
 interface: Loader,
 
 pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, device: Device, layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout)) !void {
-    const files = try gpa.alloc([]const u8, std.enums.values(Shader.Kind).len);
+    const files = try gpa.alloc([]const u8, Shader.Kind.count);
     for (std.enums.values(Shader.Kind), files) |kind, *file| {
         file.* = Shader.get(kind).path;
     }
 
-    const shaders = try gpa.alloc([std.enums.values(Shader.Stage).len]Shader, std.enums.values(Shader.Kind).len);
+    const shaders = try gpa.alloc([Shader.Stage.count]Shader, Shader.Kind.count);
     for (shaders) |*slots| for (slots) |*shader| {
         shader.handle = null;
     };
@@ -53,15 +53,6 @@ pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind, stage: Shader.Stage) *S
     return &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
 }
 
-pub fn verifyAllKindsLoaded(self: *const ShaderLoader) void {
-    for (std.enums.values(Shader.Kind)) |kind| {
-        for (Shader.get(kind).stages) |stage| {
-            if (self.shaders[@intFromEnum(kind)][@intFromEnum(stage)].handle == null)
-                std.debug.panic("shader missing or failed to load: {s} ({t}) -- run the build so the .spv is emitted", .{ Shader.get(kind).path, stage });
-        }
-    }
-}
-
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
     const kind: Shader.Kind = @enumFromInt(index);
@@ -78,14 +69,11 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     defer loader.gpa.free(data);
     try reader.interface.readSliceAll(data);
 
+    var layout_handles: [4]c.VkDescriptorSetLayout = undefined;
+    for (spec.layout, 0..) |layout_kind, i| layout_handles[i] = self.layouts.get(layout_kind);
+
     for (spec.stages) |stage| {
-        const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
-        if (shader.handle == null) {
-            var layout_handles: [4]c.VkDescriptorSetLayout = undefined;
-            for (spec.layout, 0..) |layout_kind, i| layout_handles[i] = self.layouts.get(layout_kind);
-            shader.* = .init(self.device, kind, stage, layout_handles[0..spec.layout.len]);
-        }
-        try shader.load(data);
+        self.shaders[@intFromEnum(kind)][@intFromEnum(stage)] = try .init(self.device, kind, stage, layout_handles[0..spec.layout.len], data);
     }
 }
 

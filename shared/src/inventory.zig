@@ -13,6 +13,8 @@ pub const Item = enum(u16) {
     icicle,
     hearth,
 
+    pub const count: usize = @typeInfo(Item).@"enum".fields.len;
+
     pub const Spec = struct {
         attributes: Stats.Values,
         model: []const u8,

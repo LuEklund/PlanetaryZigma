@@ -108,7 +108,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     self.resources = try .init(gpa, asset_server, self.vma, self.physical_device, self.device);
 
     try asset_server.load();
-    self.resources.shader_loader.verifyAllKindsLoaded();
 
     return self;
 }
