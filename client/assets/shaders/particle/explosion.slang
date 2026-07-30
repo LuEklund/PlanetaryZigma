@@ -13,27 +13,19 @@ struct Emitter {
     float3 origin;
     float spawn_time;
     float3 target;
-    uint slot;
 };
 
 struct Particle {
     float3 position;
-    float scale;
     float3 velocity;
-    float age;
-    float4 color;
-    float seed;
+    float scale;
     float lifetime;
-    float2 padding;
 };
 
 struct PushConstant {
-    Particle *particle_buffer;
     Emitter *emitter_buffer;
     float elapsed_time;
-    float delta_time;
     uint particle_count;
-    uint particle_stride;
     uint emitter_count;
 };
 [[vk::push_constant]] PushConstant push_constant;
@@ -100,60 +92,35 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
         particle.scale = (0.3 + r0 * 0.22) * (1.0 - burst * 0.15);
         particle.position = emitter_origin + direction * (burst * 0.35 + spark * 0.01);
     }
-    particle.age = 0.0;
-    particle.color = float4(1.0, 1.0, 1.0, 1.0);
-    particle.seed = emitter.spawn_time;
-    particle.padding = float2(0.0, 0.0);
     return particle;
 }
 
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void explosion_comp(uint3 thread_id: SV_DispatchThreadID) {
-    uint index = thread_id.x;
-    if (index >= push_constant.emitter_count * push_constant.particle_count) return;
-
-    uint emitter_index = index / push_constant.particle_count;
-    uint particle_index = index % push_constant.particle_count;
-    Emitter emitter = push_constant.emitter_buffer[emitter_index];
-    uint slot = emitter.slot * push_constant.particle_stride + particle_index;
-
-    Particle particle = push_constant.particle_buffer[slot];
-    if (particle.seed != emitter.spawn_time) {
-        particle = spawnParticle(emitter, particle_index);
-    } else {
-        float decay = pow(drag, push_constant.delta_time);
-        particle.position += particle.velocity * (1.0 - decay) / drag_falloff;
-        particle.velocity *= decay;
-        particle.age += push_constant.delta_time;
-    }
-    push_constant.particle_buffer[slot] = particle;
-}
-
 [shader("vertex")]
-VertexOutput explosion_vert(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
+VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
     uint particle_index = instance_index % push_constant.particle_count;
     uint emitter_index = instance_index / push_constant.particle_count;
     Emitter emitter = push_constant.emitter_buffer[emitter_index];
-    Particle particle = push_constant.particle_buffer[emitter.slot * push_constant.particle_stride + particle_index];
+    Particle particle = spawnParticle(emitter, particle_index);
 
-    float life = clamp(1.0 - particle.age / particle.lifetime, 0.0, 1.0);
+    float age = push_constant.elapsed_time - emitter.spawn_time;
+    float3 position = particle.position + particle.velocity * (1.0 - pow(drag, age)) / drag_falloff;
+    float life = clamp(1.0 - age / particle.lifetime, 0.0, 1.0);
 
     float2 corner = corners[vertex_index];
-    float3 forward = normalize(scene_data.camera_position.xyz - particle.position);
+    float3 forward = normalize(scene_data.camera_position.xyz - position);
     float3 right = normalize(cross(scene_data.camera_up.xyz, forward));
     float3 up = cross(forward, right);
-    float3 world_position = particle.position + (right * corner.x + up * corner.y) * particle.scale * life;
+    float3 world_position = position + (right * corner.x + up * corner.y) * particle.scale * life;
 
     VertexOutput output;
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
-    output.color = particle.color;
+    output.color = float4(1.0, 1.0, 1.0, 1.0);
     output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
     return output;
 }
 
 [shader("fragment")]
-float4 explosion_frag(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) : SV_Target {
     float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
     return float4(lerp(edge_color, center_color, sqrt(core)), core * core) * input.color;
 }

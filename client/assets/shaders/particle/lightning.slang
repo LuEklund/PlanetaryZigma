@@ -13,27 +13,12 @@ struct Emitter {
     float3 origin;
     float spawn_time;
     float3 target;
-    uint slot;
-};
-
-struct Particle {
-    float3 position;
-    float scale;
-    float3 velocity;
-    float age;
-    float4 color;
-    float seed;
-    float lifetime;
-    float2 padding;
 };
 
 struct PushConstant {
-    Particle *particle_buffer;
     Emitter *emitter_buffer;
     float elapsed_time;
-    float delta_time;
     uint particle_count;
-    uint particle_stride;
     uint emitter_count;
 };
 [[vk::push_constant]] PushConstant push_constant;
@@ -82,7 +67,7 @@ float3 boltPoint(float t, float3 origin, float3 segment, float3 direction, float
 }
 
 [shader("vertex")]
-VertexOutput lightning_vert(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
+VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_InstanceID) {
     uint segment_count = push_constant.particle_count - 1;
     uint segment_index = instance_index % segment_count;
     uint emitter_index = instance_index / segment_count;
@@ -117,7 +102,7 @@ VertexOutput lightning_vert(uint vertex_index: SV_VertexID, uint instance_index:
 }
 
 [shader("fragment")]
-float4 lightning_frag(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) : SV_Target {
     float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
     float4 texel = float4(lerp(edge_color, center_color, sqrt(core)), core * core) * input.color;
     return float4(texel.rgb, texel.a * 0.45);

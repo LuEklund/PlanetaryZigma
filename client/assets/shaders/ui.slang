@@ -24,7 +24,7 @@ struct VertexOutput {
 };
 
 [shader("vertex")]
-VertexOutput ui_vert(uint vertex_index: SV_VertexID) {
+VertexOutput vertex(uint vertex_index: SV_VertexID) {
     Vertex vertex = push_constant.vertex_buffer[vertex_index];
 
     VertexOutput output;
@@ -37,7 +37,7 @@ VertexOutput ui_vert(uint vertex_index: SV_VertexID) {
 }
 
 [shader("fragment")]
-float4 ui_frag(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) : SV_Target {
     float4 texel = textures[NonUniformResourceIndex(input.texture_index)].Sample(input.uv);
     if (input.is_sdf == 1) {
         float width = fwidth(texel.r);

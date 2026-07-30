@@ -14,27 +14,12 @@ struct Emitter {
   float3 origin;
   float spawn_time;
   float3 target;
-  uint slot;
-};
-
-struct Particle {
-  float3 position;
-  float scale;
-  float3 velocity;
-  float age;
-  float4 color;
-  float seed;
-  float lifetime;
-  float2 padding;
 };
 
 struct PushConstant {
-  Particle *particle_buffer;
   Emitter *emitter_buffer;
   float elapsed_time;
-  float delta_time;
   uint particle_count;
-  uint particle_stride;
   uint emitter_count;
 };
 [[vk::push_constant]]
@@ -76,6 +61,7 @@ static const float spin_speed = 0.55;
 static const float ribbon_width = 0.13;
 static const float scroll_speed = 0.4;
 static const float base_alpha = 0.8;
+static const uint strand_count = 7; // must match ParticleInfo.strands for .smoke
 
 float hash(float n) { return frac(sin(n) * 43758.5453123); }
 
@@ -118,14 +104,16 @@ float3 strandPoint(Strand strand, float t) {
 }
 
 [shader("vertex")]
-VertexOutput smoke_vert(uint vertex_index: SV_VertexID,
+VertexOutput vertex(uint vertex_index: SV_VertexID,
                         uint instance_index: SV_InstanceID) {
-  uint segment_count = push_constant.particle_count - 1;
-  uint emitter_index = instance_index / segment_count;
+  uint segment_count = push_constant.particle_count / strand_count - 1;
+  uint strand_instances = segment_count * strand_count;
+  uint emitter_index = instance_index / strand_instances;
+  uint strand_index = (instance_index % strand_instances) / segment_count;
   uint segment_index = instance_index % segment_count;
 
   Emitter emitter = push_constant.emitter_buffer[emitter_index];
-  float seed = hash(float(emitter.slot) * 1.618 + 0.37);
+  float seed = hash(frac(emitter.spawn_time * 7.13) * 1.618 + float(strand_index) * 7.77 + 0.37);
 
   Strand strand;
   strand.up = normalize(emitter.origin);
@@ -173,7 +161,7 @@ VertexOutput smoke_vert(uint vertex_index: SV_VertexID,
 }
 
 [shader("fragment")]
-float4 smoke_frag(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) : SV_Target {
   float2 base_uv =
       float2(input.uv.x * 1.4,
              input.uv.y * 2.6 - scene_data.time * scroll_speed *

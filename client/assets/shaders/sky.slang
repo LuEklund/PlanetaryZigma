@@ -17,7 +17,7 @@ struct VertexOutput {
 };
 
 [shader("vertex")]
-VertexOutput sky_vert(uint vertex_index: SV_VertexID) {
+VertexOutput vertex(uint vertex_index: SV_VertexID) {
     float2 corner = float2((vertex_index << 1) & 2, vertex_index & 2);
     VertexOutput output;
     output.ndc = corner * 2.0 - 1.0;
@@ -26,7 +26,7 @@ VertexOutput sky_vert(uint vertex_index: SV_VertexID) {
 }
 
 [shader("fragment")]
-float4 sky_frag(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) : SV_Target {
     float4 ray = mul(scene_data.inverse_proj_rotation, float4(input.ndc, 1.0, 1.0));
     float3 direction = normalize(ray.xyz / ray.w);
 

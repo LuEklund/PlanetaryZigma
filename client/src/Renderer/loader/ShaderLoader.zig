@@ -11,8 +11,13 @@ const check = @import("../Vulkan/utils.zig").check;
 
 device: Device,
 layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout),
-shaders: [][Shader.Stage.count]Shader,
+shaders: []Stages,
 interface: Loader,
+
+pub const Stages = struct {
+    vert: Shader,
+    frag: Shader,
+};
 
 pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, device: Device, layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout)) !void {
     const files = try gpa.alloc([]const u8, Shader.Kind.count);
@@ -20,10 +25,11 @@ pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, asset_server: *AssetSer
         file.* = Shader.get(kind).path;
     }
 
-    const shaders = try gpa.alloc([Shader.Stage.count]Shader, Shader.Kind.count);
-    for (shaders) |*slots| for (slots) |*shader| {
-        shader.handle = null;
-    };
+    const shaders = try gpa.alloc(Stages, Shader.Kind.count);
+    for (shaders) |*pair| {
+        pair.vert.handle = null;
+        pair.frag.handle = null;
+    }
 
     self.* = .{
         .device = device,
@@ -42,15 +48,19 @@ pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, asset_server: *AssetSer
 
 pub fn deinit(self: *ShaderLoader) void {
     const gpa = self.interface.gpa;
-    for (self.shaders) |*slots| for (slots) |*shader| {
+    for (self.shaders) |*pair| for ([_]*Shader{ &pair.vert, &pair.frag }) |shader| {
         if (shader.handle != null) shader.deinit();
     };
     gpa.free(self.shaders);
     gpa.free(self.interface.files);
 }
 
-pub fn shaderPtr(self: *ShaderLoader, kind: Shader.Kind, stage: Shader.Stage) *Shader {
-    return &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
+pub fn vert(self: *ShaderLoader, kind: Shader.Kind) *Shader {
+    return &self.shaders[@intFromEnum(kind)].vert;
+}
+
+pub fn frag(self: *ShaderLoader, kind: Shader.Kind) *Shader {
+    return &self.shaders[@intFromEnum(kind)].frag;
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -70,19 +80,19 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     try reader.interface.readSliceAll(data);
 
     var layout_handles: [4]c.VkDescriptorSetLayout = undefined;
-    for (spec.layout, 0..) |layout_kind, i| layout_handles[i] = self.layouts.get(layout_kind);
+    for (spec.descriptors, 0..) |descriptor_kind, i| layout_handles[i] = self.layouts.get(descriptor_kind);
 
-    for (spec.stages) |stage| {
-        self.shaders[@intFromEnum(kind)][@intFromEnum(stage)] = try .init(self.device, kind, stage, layout_handles[0..spec.layout.len], data);
-    }
+    const pair = &self.shaders[@intFromEnum(kind)];
+    if (spec.vert) |entry_point| pair.vert = try .init(self.device, kind, entry_point, c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT, layout_handles[0..spec.descriptors.len], data);
+    if (spec.frag) |entry_point| pair.frag = try .init(self.device, kind, entry_point, c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, layout_handles[0..spec.descriptors.len], data);
 }
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *ShaderLoader = @fieldParentPtr("interface", loader);
     const kind: Shader.Kind = @enumFromInt(index);
     var waited: bool = false;
-    for (Shader.get(kind).stages) |stage| {
-        const shader = &self.shaders[@intFromEnum(kind)][@intFromEnum(stage)];
+    const pair = &self.shaders[@intFromEnum(kind)];
+    for ([_]*Shader{ &pair.vert, &pair.frag }) |shader| {
         if (shader.handle == null) continue;
         if (!waited) {
             check(c.vkDeviceWaitIdle(self.device.handle)) catch {};

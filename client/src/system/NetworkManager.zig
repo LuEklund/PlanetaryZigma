@@ -419,11 +419,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Emitter.spawnQuad(&world.emitters, .explosion, position, world.elapsed_time);
+                        Emitter.spawnQuad(world, .explosion, position);
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = world.getPtr(id) orelse continue;
-                        Emitter.spawnRibbon(&world.emitters, .lightning, bolt.start_position, target.transform.position, world.elapsed_time);
+                        Emitter.spawnRibbon(world, .lightning, bolt.start_position, target.transform.position);
                     },
                 },
                 .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {

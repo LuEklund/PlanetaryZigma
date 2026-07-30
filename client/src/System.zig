@@ -12,7 +12,6 @@ const AnimationInstance = @import("asset/AnimationInstance.zig");
 const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
 
-const item_smoke_strands: u32 = 7;
 const menu_world = @import("system/menu.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
@@ -117,13 +116,7 @@ pub fn update(self: *System, world: *World) !void {
         world.controller.clearInput();
     }
     try self.applyOptions(world);
-    for (world.entities.values()) |*entity| {
-        if (entity.kind != .item) continue;
-        for (0..item_smoke_strands) |strand| {
-            const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-            Emitter.refresh(&world.emitters, .smoke, entity.id, @intCast(strand), entity.transform.position - offset, world.elapsed_time);
-        }
-    }
+    Emitter.update(world);
     try self.renderer.update(world, &self.animation_instances, &self.ui);
     try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);

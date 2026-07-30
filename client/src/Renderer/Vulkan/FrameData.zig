@@ -25,18 +25,6 @@ pub const GPUEmitter = extern struct {
     origin: [3]f32,
     spawn_time: f32,
     target: [3]f32,
-    slot: u32,
-};
-
-pub const GPUParticle = extern struct {
-    position: [3]f32,
-    scale: f32,
-    velocity: [3]f32,
-    age: f32,
-    color: [4]f32,
-    seed: f32,
-    lifetime: f32,
-    _: [2]f32,
 };
 
 pub const DebugVertex = extern struct {

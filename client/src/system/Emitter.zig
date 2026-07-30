@@ -2,33 +2,32 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const Shader = @import("../Renderer/Vulkan/Shader.zig");
+const World = @import("../World.zig");
 
 const Emitter = @This();
 
-pub const max_emitters: u32 = 256;
-pub const max_particles_per_effect: u32 = 64;
-
-comptime {
-    for (std.enums.values(Shader.Kind)) |kind| {
-        const info = Shader.get(kind).particle orelse continue;
-        if (info.particle_count > max_particles_per_effect) @compileError(
-            "particle_count exceeds max_particles_per_effect: " ++ @tagName(kind),
-        );
-    }
-}
+pub const max_emitters: u32 = 1024;
 
 effect: Shader.Kind,
 origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
 owner: shared.entity.Id,
-index: u32,
 last_seen: f32,
 
 pub const List = [max_emitters]Emitter;
 
-pub const free_spawn_time: f32 = -1.0e9;
+const free_spawn_time: f32 = -1.0e9;
 const refresh_timeout: f32 = 0.25;
+
+pub const free: Emitter = .{
+    .effect = .explosion,
+    .origin = .{ 0, 0, 0 },
+    .target = .{ 0, 0, 0 },
+    .spawn_time = free_spawn_time,
+    .owner = .none,
+    .last_seen = free_spawn_time,
+};
 
 pub fn alive(self: Emitter, elapsed_time: f32) bool {
     const duration = Shader.particleInfo(self.effect).duration orelse
@@ -36,60 +35,65 @@ pub fn alive(self: Emitter, elapsed_time: f32) bool {
     return elapsed_time - self.spawn_time < duration;
 }
 
-fn claim(list: *List, emitter: Emitter, elapsed_time: f32) void {
+fn insert(list: *List, new_emitter: Emitter, elapsed_time: f32) void {
     var oldest: *Emitter = &list[0];
-    for (list) |*slot| {
-        if (!slot.alive(elapsed_time)) {
-            slot.* = emitter;
+    for (list) |*emitter| {
+        if (!emitter.alive(elapsed_time)) {
+            emitter.* = new_emitter;
             return;
         }
-        if (slot.spawn_time < oldest.spawn_time) oldest = slot;
+        if (emitter.spawn_time < oldest.spawn_time) oldest = emitter;
     }
-    oldest.* = emitter;
+    oldest.* = new_emitter;
 }
 
-pub fn spawnQuad(list: *List, effect: Shader.Kind, origin: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn spawnQuad(world: *World, effect: Shader.Kind, origin: nz.Vec3(f32)) void {
     std.debug.assert(Shader.particleInfo(effect).topology == .quad);
-    claim(list, .{
+    insert(&world.emitters, .{
         .effect = effect,
         .origin = origin,
         .target = origin,
-        .spawn_time = elapsed_time,
+        .spawn_time = world.elapsed_time,
         .owner = .none,
-        .index = 0,
-        .last_seen = elapsed_time,
-    }, elapsed_time);
+        .last_seen = world.elapsed_time,
+    }, world.elapsed_time);
 }
 
-pub fn spawnRibbon(list: *List, effect: Shader.Kind, from: nz.Vec3(f32), to: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn spawnRibbon(world: *World, effect: Shader.Kind, from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
     std.debug.assert(Shader.particleInfo(effect).topology == .ribbon);
-    claim(list, .{
+    insert(&world.emitters, .{
         .effect = effect,
         .origin = from,
         .target = to,
-        .spawn_time = elapsed_time,
+        .spawn_time = world.elapsed_time,
         .owner = .none,
-        .index = 0,
-        .last_seen = elapsed_time,
-    }, elapsed_time);
+        .last_seen = world.elapsed_time,
+    }, world.elapsed_time);
 }
 
-pub fn refresh(list: *List, effect: Shader.Kind, owner: shared.entity.Id, index: u32, origin: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn keepAlive(world: *World, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32)) void {
     std.debug.assert(Shader.particleInfo(effect).duration == null);
-    for (list) |*slot| {
-        if (slot.owner != owner or slot.index != index or slot.effect != effect) continue;
-        slot.origin = origin;
-        slot.target = origin;
-        slot.last_seen = elapsed_time;
+    for (&world.emitters) |*emitter| {
+        if (emitter.owner != owner or emitter.effect != effect) continue;
+        emitter.origin = origin;
+        emitter.target = origin;
+        emitter.last_seen = world.elapsed_time;
         return;
     }
-    claim(list, .{
+    insert(&world.emitters, .{
         .effect = effect,
         .origin = origin,
         .target = origin,
-        .spawn_time = elapsed_time,
+        .spawn_time = world.elapsed_time,
         .owner = owner,
-        .index = index,
-        .last_seen = elapsed_time,
-    }, elapsed_time);
+        .last_seen = world.elapsed_time,
+    }, world.elapsed_time);
+}
+
+pub fn update(world: *World) void {
+    for (world.entities.values()) |*entity| {
+        if (entity.kind != .item) continue;
+        const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+        keepAlive(world, .smoke, entity.id, entity.transform.position - offset);
+    }
 }
