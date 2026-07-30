@@ -32,6 +32,9 @@ const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
+const matrix = @import("Vulkan/matrix.zig");
+const debug = @import("Vulkan/debug.zig");
+
 const check = @import("Vulkan/utils.zig").check;
 
 pub const Model = @import("../asset/Model.zig");
@@ -130,62 +133,88 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     self.instance.deinit();
 }
 
+pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
+    try self.swapchain.recreate(
+        gpa,
+        self.vma,
+        self.physical_device,
+        self.device,
+        self.surface,
+        width,
+        height,
+    );
+}
+
 pub fn rebindProcs(self: *Vulkan) void {
     procs.instance.load(self.instance.handle, null);
     procs.device.load(self.device.handle, null);
 }
 
+const frame_timeout_ns: u64 = 1000000000;
+
 pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
-    // if (true) @panic("test");
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    // const time = data.delta_time;
-    // const elapsed_time = data.elapsed_time;
+
+    const current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
+    const cmd_buffer = current_frame.command_buffer;
+
+    try check(c.vkWaitForFences(self.device.handle, 1, &current_frame.render_fence, 1, frame_timeout_ns));
+    const image_index = acquireNextImage(self, current_frame) orelse return;
+    try check(c.vkResetFences(self.device.handle, 1, &current_frame.render_fence));
+    const render_semaphore: c.VkSemaphore = self.swapchain.render_semaphores[image_index];
+
+    try beginCommandBuffer(cmd_buffer);
+    try render(self, cmd_buffer, current_frame, world, instances, ui);
+    blitOntoSwapchain(self, cmd_buffer, image_index);
+    try check(c.vkEndCommandBuffer(cmd_buffer));
+
+    try submitFrame(self, cmd_buffer, current_frame, render_semaphore);
+
+    const present_result = presentFrame(self, render_semaphore, image_index);
+    if (present_result == c.VK_ERROR_OUT_OF_DATE_KHR or present_result == c.VK_SUBOPTIMAL_KHR) {
+        return;
+    }
+    self.current_frame_inflight += 1;
+}
+
+fn acquireNextImage(self: *Vulkan, current_frame: *const FrameData) ?u32 {
     var image_index: u32 = undefined;
-    var current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
-    try check(c.vkWaitForFences(self.device.handle, 1, &current_frame.render_fence, 1, 1000000000));
-    // std.debug.print("------------ {d} \n", .{image_index});
-    const aquire_result = c.vkAcquireNextImageKHR(
+    const acquire_result = c.vkAcquireNextImageKHR(
         self.device.handle,
         self.swapchain.swapchain,
-        1000000000,
+        frame_timeout_ns,
         current_frame.swapchain_semaphore,
         null,
         &image_index,
     );
-    // std.debug.print("Acquire result={d} image_index={d}\n", .{ aquire_result, image_index });
-    switch (aquire_result) {
-        c.VK_ERROR_OUT_OF_DATE_KHR,
-        => return,
-        c.VK_TIMEOUT, c.VK_NOT_READY => return,
-        else => {},
-    }
-    try check(c.vkResetFences(self.device.handle, 1, &current_frame.render_fence));
-    const render_semaphore: c.VkSemaphore = self.swapchain.render_semaphores[image_index];
-    // try current_frame.descriptor.clearPools(self.device);
-    // current_frame.gpu_scene.deinit(self.vma.handle);
+    return switch (acquire_result) {
+        c.VK_ERROR_OUT_OF_DATE_KHR, c.VK_TIMEOUT, c.VK_NOT_READY => null,
+        else => image_index,
+    };
+}
 
-    const cmd_buffer = current_frame.command_buffer;
-    try check(c.vkResetCommandBuffer(cmd_buffer, 0));
-    var cmd_begin_info: c.VkCommandBufferBeginInfo = .{
+fn beginCommandBuffer(cmd: c.VkCommandBuffer) !void {
+    try check(c.vkResetCommandBuffer(cmd, 0));
+    const cmd_begin_info: c.VkCommandBufferBeginInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
-    try check(c.vkBeginCommandBuffer(cmd_buffer, &cmd_begin_info));
+    try check(c.vkBeginCommandBuffer(cmd, &cmd_begin_info));
+}
 
-    try render(self, cmd_buffer, current_frame, world, instances, ui);
-
-    var swapchain_image_barrier: Image.Barrier = .init(cmd_buffer, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
+fn blitOntoSwapchain(self: *Vulkan, cmd: c.VkCommandBuffer, image_index: u32) void {
+    var swapchain_image_barrier: Image.Barrier = .init(cmd, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
     swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT);
     self.swapchain.draw_image.copyOntoImage(
-        cmd_buffer,
+        cmd,
         .{ .vk_image = self.swapchain.images[image_index], .extent = self.swapchain.extent },
     );
-
     swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, c.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
-    try check(c.vkEndCommandBuffer(cmd_buffer));
+}
 
-    var submit_info: c.VkSubmitInfo2 = .{
+fn submitFrame(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, render_semaphore: c.VkSemaphore) !void {
+    const submit_info: c.VkSubmitInfo2 = .{
         .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
         .waitSemaphoreInfoCount = 1,
         .pWaitSemaphoreInfos = &.{
@@ -204,13 +233,14 @@ pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.e
         .commandBufferInfoCount = 1,
         .pCommandBufferInfos = &.{
             .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .commandBuffer = cmd_buffer,
+            .commandBuffer = cmd,
         },
     };
-
     try check(c.vkQueueSubmit2(self.device.graphics_queue, 1, &submit_info, current_frame.render_fence));
+}
 
-    var present_info: c.VkPresentInfoKHR = .{
+fn presentFrame(self: *Vulkan, render_semaphore: c.VkSemaphore, image_index: u32) c.VkResult {
+    const present_info: c.VkPresentInfoKHR = .{
         .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .pSwapchains = &self.swapchain.swapchain,
         .swapchainCount = 1,
@@ -218,18 +248,10 @@ pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.e
         .waitSemaphoreCount = 1,
         .pImageIndices = &image_index,
     };
-
-    const present_result = c.vkQueuePresentKHR(self.device.graphics_queue, &present_info);
-
-    if (present_result == c.VK_ERROR_OUT_OF_DATE_KHR or present_result == c.VK_SUBOPTIMAL_KHR) {
-        return;
-        // self.swapchain.recreate(self.physical_device, self.device, self.surface, )
-    }
-    self.current_frame_inflight += 1;
+    return c.vkQueuePresentKHR(self.device.graphics_queue, &present_info);
 }
 
 pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
-    const elapsed_time = world.elapsed_time;
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
     draw_image_barrier.transition(
@@ -243,116 +265,23 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     );
-    var color_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .pNext = null,
-        .imageView = self.swapchain.draw_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .resolveMode = c.VK_RESOLVE_MODE_NONE,
-        .resolveImageView = null,
-        .resolveImageLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .color = .{
-                // .float32 = .{ (@sin(world.elapsed_time) + 1) / 2, (@cos(world.elapsed_time) + 1) / 2, (@tan(world.elapsed_time) + 1) / 2, 1.0 },
-                .float32 = .{ 0, 0, 0, 1 },
-            },
-        },
-    };
-    var depth_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = self.swapchain.depth_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .depthStencil = .{
-                .depth = 1,
-                .stencil = 0,
-            },
-        },
-    };
-    var render_info: c.VkRenderingInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .pNext = null,
-        .flags = 0,
-        .renderArea = .{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = .{
-                .height = self.swapchain.draw_image.extent.height,
-                .width = self.swapchain.draw_image.extent.width,
-            },
-        },
-        .layerCount = 1,
-        .viewMask = 0,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-        .pDepthAttachment = &depth_attachment,
-        .pStencilAttachment = null,
-    };
-
     setDefaultRenderState(self, cmd);
 
-    const width: f32 = @floatFromInt(self.swapchain.draw_image.extent.width);
-    const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
-    const aspect: f32 = width / height;
+    uploadSceneData(self, current_frame, world);
+    const cascade_vps = uploadCascades(self, world);
+    uploadJointMatrices(self, instances);
 
-    const camera_transform = world.camera.transform;
-    const view_matrix = getViewMatrix(&camera_transform);
-    const fov_rad: f32 = world.camera.fov_rad;
-    var proj = perspective(fov_rad, aspect, 0.01, 1000);
-    const proj_view = proj.mul(view_matrix);
-
-    const light_time = world.elapsed_time * 0.01 + 0.9;
-    const light_dir = nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
-    var scene_data: FrameData.GPUScene = .{
-        .view_proj = proj_view.d,
-        .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
-        .global_light_direction = light_dir,
-        .time = elapsed_time,
-        .camera_position = camera_transform.position,
-        .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
-            1, 0.5, 0.5, 1,
-        },
-        .camera_up = up: {
-            const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
-            break :up .{ up[0], up[1], up[2], 0 };
-        },
-    };
-    current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
-
-    var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
-    var cascades: Resources.GPUCascades = undefined;
-    cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
-    for (0..Resources.shadow_cascade_count) |cascade_index| {
-        const slice_near: f32 = if (cascade_index == 0) 0.05 else shadow_splits[cascade_index - 1];
-        cascade_vps[cascade_index] = cascadeViewProj(camera_transform, fov_rad, aspect, slice_near, shadow_splits[cascade_index], light_dir);
-        cascades.light_view_proj[cascade_index] = cascade_vps[cascade_index].d;
-    }
-    const frame_index = self.current_frame_inflight % self.frames.len;
-    self.resources.writeCascades(frame_index, &cascades);
-
-    var joint_upload_iterator = self.joint_buffers.iterator();
-    while (joint_upload_iterator.next()) |entry| {
-        const instance = instances.getPtr(entry.key_ptr.*) orelse continue;
-        const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        for (skeleton.joint_matrices, entry.value_ptr.*) |cpu_matrices, *joint_buffer| {
-            joint_buffer.copy(nz.Mat4x4(f32), cpu_matrices);
-        }
-    }
-
-    try renderShadowPass(self, cmd, world, instances, cascade_vps);
+    renderShadowPass(self, cmd, world, instances, cascade_vps);
 
     const particle_batches = packEmitters(current_frame, world);
     dispatchParticles(self, cmd, current_frame, world, particle_batches);
 
-    ext.vkCmdBeginRendering(cmd, &render_info);
-    try renderWorldPass(self, cmd, current_frame, world, instances);
+    beginRendering(self, cmd);
+    renderWorldPass(self, cmd, current_frame, world, instances);
     renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, world, particle_batches);
-    try renderDebugPass(self, cmd, current_frame, world);
-    renderUiPass(self, cmd, current_frame, ui, width, height);
+    if (world.controller.debug_draw_colliders) renderDebugPass(self, cmd, current_frame, world);
+    renderUiPass(self, cmd, current_frame, ui);
     ext.vkCmdEndRendering(cmd);
 
     draw_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT);
@@ -438,7 +367,122 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) !void {
+fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, world: *World) void {
+    const camera_transform = world.camera.transform;
+    const view_matrix = matrix.getViewMatrix(&camera_transform);
+    var proj = matrix.perspective(world.camera.fov_rad, drawAspect(self), 0.01, 1000);
+    const proj_view = proj.mul(view_matrix);
+
+    var scene_data: FrameData.GPUScene = .{
+        .view_proj = proj_view.d,
+        .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
+        .global_light_direction = lightDirection(world.elapsed_time),
+        .time = world.elapsed_time,
+        .camera_position = camera_transform.position,
+        .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
+            1, 0.5, 0.5, 1,
+        },
+        .camera_up = up: {
+            const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
+            break :up .{ up[0], up[1], up[2], 0 };
+        },
+    };
+    current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
+}
+
+fn uploadCascades(self: *Vulkan, world: *World) [Resources.shadow_cascade_count]nz.Mat4x4(f32) {
+    const camera_transform = world.camera.transform;
+    const fov_rad: f32 = world.camera.fov_rad;
+    const aspect: f32 = drawAspect(self);
+    const light_dir = lightDirection(world.elapsed_time);
+
+    var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
+    var cascades: Resources.GPUCascades = undefined;
+    cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
+    for (0..Resources.shadow_cascade_count) |cascade_index| {
+        const slice_near: f32 = if (cascade_index == 0) 0.05 else shadow_splits[cascade_index - 1];
+        cascade_vps[cascade_index] = matrix.cascadeViewProj(camera_transform, fov_rad, aspect, slice_near, shadow_splits[cascade_index], light_dir);
+        cascades.light_view_proj[cascade_index] = cascade_vps[cascade_index].d;
+    }
+    self.resources.writeCascades(self.current_frame_inflight % self.frames.len, &cascades);
+    return cascade_vps;
+}
+
+fn uploadJointMatrices(self: *Vulkan, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) void {
+    var joint_upload_iterator = self.joint_buffers.iterator();
+    while (joint_upload_iterator.next()) |entry| {
+        const instance = instances.getPtr(entry.key_ptr.*) orelse continue;
+        const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
+        for (skeleton.joint_matrices, entry.value_ptr.*) |cpu_matrices, *joint_buffer| {
+            joint_buffer.copy(nz.Mat4x4(f32), cpu_matrices);
+        }
+    }
+}
+
+fn drawAspect(self: *const Vulkan) f32 {
+    const width: f32 = @floatFromInt(self.swapchain.draw_image.extent.width);
+    const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
+    return width / height;
+}
+
+fn lightDirection(elapsed_time: f32) nz.Vec3(f32) {
+    const light_time = elapsed_time * 0.01 + 0.9;
+    return nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
+}
+
+fn beginRendering(self: *Vulkan, cmd: c.VkCommandBuffer) void {
+    const color_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .pNext = null,
+        .imageView = self.swapchain.draw_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .resolveMode = c.VK_RESOLVE_MODE_NONE,
+        .resolveImageView = null,
+        .resolveImageLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{
+            .color = .{
+                // .float32 = .{ (@sin(world.elapsed_time) + 1) / 2, (@cos(world.elapsed_time) + 1) / 2, (@tan(world.elapsed_time) + 1) / 2, 1.0 },
+                .float32 = .{ 0, 0, 0, 1 },
+            },
+        },
+    };
+    const depth_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = self.swapchain.depth_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{
+            .depthStencil = .{
+                .depth = 1,
+                .stencil = 0,
+            },
+        },
+    };
+    const render_info: c.VkRenderingInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .pNext = null,
+        .flags = 0,
+        .renderArea = .{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = .{
+                .height = self.swapchain.draw_image.extent.height,
+                .width = self.swapchain.draw_image.extent.width,
+            },
+        },
+        .layerCount = 1,
+        .viewMask = 0,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+        .pDepthAttachment = &depth_attachment,
+        .pStencilAttachment = null,
+    };
+    ext.vkCmdBeginRendering(cmd, &render_info);
+}
+
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
@@ -492,10 +536,10 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instan
 
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_static, .vert));
         for (world.entities.values()) |*entity| {
-            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            if (!matrix.cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
-            try drawStatic(self, cmd, entity.model_handle, base_matrix);
+            drawStatic(self, cmd, entity.model_handle, base_matrix);
         }
         bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.shadow_skinned, .vert));
         for (world.entities.values()) |*entity| {
@@ -503,10 +547,10 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instan
             const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
             const entry = fileEntry(self, entity.model_handle) orelse continue;
             const joint_buffers = self.joint_buffers.getPtr(entity.id) orelse continue;
-            if (!cascadeContains(&cascade_vp, entity.transform.position)) continue;
+            if (!matrix.cascadeContains(&cascade_vp, entity.transform.position)) continue;
             const offset = shared.entity.spec(entity.kind).model.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
-            try drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
+            drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -531,7 +575,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instan
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
-fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) void {
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
     bindVertexShader(cmd, self.resources.shader_loader.shaderPtr(.static, .vert));
@@ -539,7 +583,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     for (world.entities.values()) |*entity| {
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
-        try drawStatic(self, cmd, entity.model_handle, base_matrix);
+        drawStatic(self, cmd, entity.model_handle, base_matrix);
     }
 
     if (world.getPtr(self.planet.planet_id)) |planet| {
@@ -555,7 +599,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         const joint_buffers = self.joint_buffers.getPtr(entity.id) orelse continue;
         const offset = shared.entity.spec(entity.kind).model.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
-        try drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
+        drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
     }
 }
 
@@ -639,28 +683,6 @@ fn particlePushConstant(self: *Vulkan, current_frame: *const FrameData, world: *
     };
 }
 
-fn memoryBarrier(
-    cmd: c.VkCommandBuffer,
-    src_stage: c.VkPipelineStageFlags2,
-    src_access: c.VkAccessFlags2,
-    dst_stage: c.VkPipelineStageFlags2,
-    dst_access: c.VkAccessFlags2,
-) void {
-    const barrier: c.VkMemoryBarrier2 = .{
-        .sType = c.VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = src_stage,
-        .srcAccessMask = src_access,
-        .dstStageMask = dst_stage,
-        .dstAccessMask = dst_access,
-    };
-    const dependency: c.VkDependencyInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &barrier,
-    };
-    c.vkCmdPipelineBarrier2(cmd, &dependency);
-}
-
 fn dispatchParticles(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
     memoryBarrier(
         cmd,
@@ -721,9 +743,29 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 }
 
-fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World) !void {
-    if (!world.controller.debug_draw_colliders) return;
+fn memoryBarrier(
+    cmd: c.VkCommandBuffer,
+    src_stage: c.VkPipelineStageFlags2,
+    src_access: c.VkAccessFlags2,
+    dst_stage: c.VkPipelineStageFlags2,
+    dst_access: c.VkAccessFlags2,
+) void {
+    const barrier: c.VkMemoryBarrier2 = .{
+        .sType = c.VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = src_stage,
+        .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
+        .dstAccessMask = dst_access,
+    };
+    const dependency: c.VkDependencyInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    c.vkCmdPipelineBarrier2(cmd, &dependency);
+}
 
+fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world: *World) void {
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
     const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.shaderPtr(.debug, .vert).handle, self.resources.shader_loader.shaderPtr(.debug, .frag).handle };
     ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
@@ -750,8 +792,8 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         const collider_shape = (shared.entity.collider(entity.kind) orelse continue).shape;
         const first_vertex = debug_vertex_count;
         switch (collider_shape) {
-            .capsule => |capsule| try appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
-            .box => |box| try appendBoxLines(
+            .capsule => |capsule| debug.appendCapsuleLines(debug_vertices, &debug_vertex_count, capsule.half_heigth, capsule.radius),
+            .box => |box| debug.appendBoxLines(
                 debug_vertices,
                 &debug_vertex_count,
                 box,
@@ -772,7 +814,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 }
 
-fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, ui: *const Ui, width: f32, height: f32) void {
+fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, ui: *const Ui) void {
     current_frame.ui_vertex_buffer.copy(Ui.Quad, ui.quads.items);
     const stages_ui = [_]c.VkShaderStageFlagBits{
         c.VK_SHADER_STAGE_VERTEX_BIT,
@@ -807,182 +849,11 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
 
     var push: Shader.UiPushConstant = .{
         .vertex_buffer_address = current_frame.ui_vertex_buffer.getGPUAddress(),
-        .screnn_size = .{ width, height },
+        .screnn_size = .{ ui.screen_width, ui.screen_heigth },
     };
     c.vkCmdPushConstants(cmd, ui_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
     c.vkCmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
     c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(ui.quads.items.len * 6)), 1, 0, 0, 0);
-}
-
-fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
-    return switch (model_handle) {
-        .file => |file_index| &self.resources.model_loader.entries[file_index],
-        .generated => null,
-    };
-}
-
-fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle, top_matrix: nz.Mat4x4(f32)) !void {
-    switch (model_handle) {
-        .generated => |generated_kind| {
-            const generated_slot = self.resources.generated.getPtr(generated_kind);
-            if (generated_slot.*) |*mesh| {
-                var push: Shader.WorldPushConstant = .{
-                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-                    .model_matrix = top_matrix.d,
-                    .joint_matrices_address = 0,
-                    .texture_index = 0,
-                };
-                try emitNode(self, cmd, mesh, &push);
-            }
-        },
-        .file => |file_index| {
-            const entry = &self.resources.model_loader.entries[file_index];
-            if (entry.model.isEmpty() or entry.model.isSkinned()) return;
-            for (entry.model.surfaces.items) |surface| {
-                const mesh = &entry.meshes[surface.mesh_id];
-                const surface_matrix = top_matrix.mul(surface.model_matrix);
-                var push: Shader.WorldPushConstant = .{
-                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-                    .model_matrix = surface_matrix.d,
-                    .joint_matrices_address = 0,
-                    .texture_index = 0,
-                };
-                try emitNode(self, cmd, mesh, &push);
-            }
-        },
-    }
-}
-
-fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) !void {
-    var push: Shader.WorldPushConstant = .{
-        .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-        .model_matrix = transform.d,
-        .joint_matrices_address = 0,
-        .texture_index = 0,
-    };
-    try emitNode(self, cmd, mesh, &push);
-}
-
-fn drawSkinned(
-    self: *Vulkan,
-    cmd: c.VkCommandBuffer,
-    skeleton: *const AnimationInstance.Skeleton,
-    meshes: []Mesh,
-    joint_buffers: []Buffer,
-    top_matrix: nz.Mat4x4(f32),
-) !void {
-    for (skeleton.nodes) |node| {
-        const mesh_id = node.mesh_id orelse continue;
-        const mesh = &meshes[mesh_id];
-        var push: Shader.WorldPushConstant = .{
-            .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-            .model_matrix = if (node.skin_id != null) top_matrix.d else top_matrix.mul(node.model_matrix).d,
-            .joint_matrices_address = if (node.skin_id) |skin_index|
-                joint_buffers[skin_index].getGPUAddress()
-            else
-                self.resources.identity_joint_buffer.getGPUAddress(),
-            .texture_index = 0,
-        };
-        try emitNode(self, cmd, mesh, &push);
-    }
-}
-
-const debug_collider_color: [4]f32 = .{ 0, 1, 0, 1 };
-const debug_circle_segments = 16;
-
-fn appendDebugLine(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, from: nz.Vec3(f32), to: nz.Vec3(f32)) !void {
-    if (vertex_count.* + 2 > FrameData.max_debug_vertices) return error.DebugVertexBufferFull;
-    vertices[vertex_count.*] = .{ .position = .{ from[0], from[1], from[2], 1 }, .color = debug_collider_color };
-    vertices[vertex_count.* + 1] = .{ .position = .{ to[0], to[1], to[2], 1 }, .color = debug_collider_color };
-    vertex_count.* += 2;
-}
-
-fn appendCapsuleLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, half_heigth: f32, radius: f32) !void {
-    for (0..debug_circle_segments) |segment| {
-        const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / debug_circle_segments;
-        const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / debug_circle_segments;
-        for ([2]f32{ -half_heigth, half_heigth }) |ring_y| {
-            try appendDebugLine(
-                vertices,
-                vertex_count,
-                .{ radius * @cos(angle_start), ring_y, radius * @sin(angle_start) },
-                .{ radius * @cos(angle_end), ring_y, radius * @sin(angle_end) },
-            );
-        }
-    }
-    for (0..4) |quarter| {
-        const angle = std.math.tau * @as(f32, @floatFromInt(quarter)) / 4;
-        try appendDebugLine(
-            vertices,
-            vertex_count,
-            .{ radius * @cos(angle), -half_heigth, radius * @sin(angle) },
-            .{ radius * @cos(angle), half_heigth, radius * @sin(angle) },
-        );
-    }
-    const arc_segments = debug_circle_segments / 2;
-    for (0..arc_segments) |segment| {
-        const angle_start = std.math.pi * @as(f32, @floatFromInt(segment)) / arc_segments;
-        const angle_end = std.math.pi * @as(f32, @floatFromInt(segment + 1)) / arc_segments;
-        for ([2]f32{ 1, -1 }) |cap_direction| {
-            const cap_y = cap_direction * half_heigth;
-            try appendDebugLine(
-                vertices,
-                vertex_count,
-                .{ radius * @cos(angle_start), cap_y + cap_direction * radius * @sin(angle_start), 0 },
-                .{ radius * @cos(angle_end), cap_y + cap_direction * radius * @sin(angle_end), 0 },
-            );
-            try appendDebugLine(
-                vertices,
-                vertex_count,
-                .{ 0, cap_y + cap_direction * radius * @sin(angle_start), radius * @cos(angle_start) },
-                .{ 0, cap_y + cap_direction * radius * @sin(angle_end), radius * @cos(angle_end) },
-            );
-        }
-    }
-}
-
-fn appendBoxLines(vertices: [*]FrameData.DebugVertex, vertex_count: *u32, box: shared.entity.ColliderShape.HalfBoxExtent) !void {
-    const bottom_corners = [4]nz.Vec3(f32){
-        .{ -box.x, -box.y, -box.z },
-        .{ box.x, -box.y, -box.z },
-        .{ box.x, -box.y, box.z },
-        .{ -box.x, -box.y, box.z },
-    };
-    var top_corners = bottom_corners;
-    for (&top_corners) |*corner| corner[1] = box.y;
-
-    for (0..4) |corner_index| {
-        const next_corner_index = (corner_index + 1) % 4;
-        try appendDebugLine(vertices, vertex_count, bottom_corners[corner_index], bottom_corners[next_corner_index]);
-        try appendDebugLine(vertices, vertex_count, top_corners[corner_index], top_corners[next_corner_index]);
-        try appendDebugLine(vertices, vertex_count, bottom_corners[corner_index], top_corners[corner_index]);
-    }
-}
-
-fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
-    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
-    const handle = [_]c.VkShaderEXT{shader.handle};
-    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
-}
-fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
-    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_FRAGMENT_BIT};
-    const handle = [_]c.VkShaderEXT{shader.handle};
-    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
-}
-
-fn emitNode(
-    self: *Vulkan,
-    cmd: c.VkCommandBuffer,
-    mesh: *const Mesh,
-    push: *Shader.WorldPushConstant,
-) !void {
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-    c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-    for (mesh.surfaces.items) |surface| {
-        push.texture_index = @intFromEnum(surface.texture);
-        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), push);
-        c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
-    }
 }
 
 fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, world_pipeline_layout_handle: c.VkPipelineLayout) void {
@@ -1018,16 +889,104 @@ fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *c
     ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 2, 1, &buf_idx_2, &off_2);
 }
 
-pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
-    try self.swapchain.recreate(
-        gpa,
-        self.vma,
-        self.physical_device,
-        self.device,
-        self.surface,
-        width,
-        height,
-    );
+fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
+    const handle = [_]c.VkShaderEXT{shader.handle};
+    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
+}
+
+fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+    const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_FRAGMENT_BIT};
+    const handle = [_]c.VkShaderEXT{shader.handle};
+    ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
+}
+
+fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle, top_matrix: nz.Mat4x4(f32)) void {
+    switch (model_handle) {
+        .generated => |generated_kind| {
+            const generated_slot = self.resources.generated.getPtr(generated_kind);
+            if (generated_slot.*) |*mesh| {
+                var push: Shader.WorldPushConstant = .{
+                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+                    .model_matrix = top_matrix.d,
+                    .joint_matrices_address = 0,
+                    .texture_index = 0,
+                };
+                emitNode(self, cmd, mesh, &push);
+            }
+        },
+        .file => |file_index| {
+            const entry = &self.resources.model_loader.entries[file_index];
+            if (entry.model.isEmpty() or entry.model.isSkinned()) return;
+            for (entry.model.surfaces.items) |surface| {
+                const mesh = &entry.meshes[surface.mesh_id];
+                const surface_matrix = top_matrix.mul(surface.model_matrix);
+                var push: Shader.WorldPushConstant = .{
+                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+                    .model_matrix = surface_matrix.d,
+                    .joint_matrices_address = 0,
+                    .texture_index = 0,
+                };
+                emitNode(self, cmd, mesh, &push);
+            }
+        },
+    }
+}
+
+fn drawSkinned(
+    self: *Vulkan,
+    cmd: c.VkCommandBuffer,
+    skeleton: *const AnimationInstance.Skeleton,
+    meshes: []Mesh,
+    joint_buffers: []Buffer,
+    top_matrix: nz.Mat4x4(f32),
+) void {
+    for (skeleton.nodes) |node| {
+        const mesh_id = node.mesh_id orelse continue;
+        const mesh = &meshes[mesh_id];
+        var push: Shader.WorldPushConstant = .{
+            .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+            .model_matrix = if (node.skin_id != null) top_matrix.d else top_matrix.mul(node.model_matrix).d,
+            .joint_matrices_address = if (node.skin_id) |skin_index|
+                joint_buffers[skin_index].getGPUAddress()
+            else
+                self.resources.identity_joint_buffer.getGPUAddress(),
+            .texture_index = 0,
+        };
+        emitNode(self, cmd, mesh, &push);
+    }
+}
+
+fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) !void {
+    var push: Shader.WorldPushConstant = .{
+        .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+        .model_matrix = transform.d,
+        .joint_matrices_address = 0,
+        .texture_index = 0,
+    };
+    emitNode(self, cmd, mesh, &push);
+}
+
+fn emitNode(
+    self: *Vulkan,
+    cmd: c.VkCommandBuffer,
+    mesh: *const Mesh,
+    push: *Shader.WorldPushConstant,
+) void {
+    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
+    c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
+    for (mesh.surfaces.items) |surface| {
+        push.texture_index = @intFromEnum(surface.texture);
+        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), push);
+        c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
+    }
+}
+
+fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
+    return switch (model_handle) {
+        .file => |file_index| &self.resources.model_loader.entries[file_index],
+        .generated => null,
+    };
 }
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World) !void {
@@ -1128,98 +1087,4 @@ fn clearSkeletons(self: *Vulkan, gpa: std.mem.Allocator) void {
         gpa.free(joint_buffers.*);
     }
     self.joint_buffers.clearRetainingCapacity();
-}
-
-fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
-    const inv_rotation = transform.rotation.conjugate().toMat4x4();
-    const inv_translation = nz.Mat4x4(f32).translate(-transform.position);
-
-    return inv_rotation.mul(inv_translation);
-}
-
-fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    const f = 1.0 / std.math.tan(fovy_rad / 2.0);
-    return .new(.{
-        f / aspect, 0, 0, 0,
-        0, -f, 0,                           0, // flip Y for Vulkan
-        0, 0,  far / (near - far),          -1,
-        0, 0,  (far * near) / (near - far), 0,
-    });
-}
-
-fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice_near: f32, slice_far: f32, light_dir: nz.Vec3(f32)) nz.Mat4x4(f32) {
-    const forward = camera.rotation.rotateVec(.{ 0, 0, -1 });
-    const right = camera.rotation.rotateVec(.{ 1, 0, 0 });
-    const up = camera.rotation.rotateVec(.{ 0, 1, 0 });
-    const tan_half_fov = @tan(fov_rad * 0.5);
-
-    var corners: [8]nz.Vec3(f32) = undefined;
-    for ([2]f32{ slice_near, slice_far }, 0..) |plane_distance, plane| {
-        const half_height = plane_distance * tan_half_fov;
-        const half_width = half_height * aspect;
-        const plane_center = camera.position + nz.vec.scale(forward, plane_distance);
-        for (0..4) |corner| {
-            const sign_x: f32 = if (corner & 1 == 0) -1 else 1;
-            const sign_y: f32 = if (corner & 2 == 0) -1 else 1;
-            corners[plane * 4 + corner] = plane_center +
-                nz.vec.scale(right, sign_x * half_width) +
-                nz.vec.scale(up, sign_y * half_height);
-        }
-    }
-
-    var center: nz.Vec3(f32) = .{ 0, 0, 0 };
-    for (corners) |corner| center += corner;
-    center = nz.vec.scale(center, 1.0 / 8.0);
-    var radius: f32 = 0;
-    for (corners) |corner| radius = @max(radius, nz.vec.length(corner - center));
-
-    const normalized_light = nz.vec.normalize(light_dir);
-    const up_reference: nz.Vec3(f32) = if (@abs(normalized_light[1]) > 0.99) .{ 0, 0, 1 } else .{ 0, 1, 0 };
-    const light_view = nz.Mat4x4(f32).lookAt(.{ 0, 0, 0 }, -normalized_light, up_reference);
-
-    const center_light = light_view.mulVec4(.{ center[0], center[1], center[2], 1 });
-    const texel_size = radius * 2.0 / @as(f32, @floatFromInt(Resources.shadow_map_size));
-    const snapped_x = @floor(center_light[0] / texel_size) * texel_size;
-    const snapped_y = @floor(center_light[1] / texel_size) * texel_size;
-
-    const caster_pad: f32 = 80; // room behind the slice for off-screen casters
-    const proj = shadowOrtho(
-        snapped_x - radius,
-        snapped_x + radius,
-        snapped_y - radius,
-        snapped_y + radius,
-        -(center_light[2] + radius + caster_pad),
-        -(center_light[2] - radius),
-    );
-    return proj.mul(light_view);
-}
-
-const shadow_caster_radius: f32 = 16;
-
-fn cascadeContains(cascade_vp: *const nz.Mat4x4(f32), position: nz.Vec3(f32)) bool {
-    const clip = cascade_vp.mulVec4(.{ position[0], position[1], position[2], 1 });
-    const margin_x = shadow_caster_radius * @abs(cascade_vp.d[0]);
-    const margin_y = shadow_caster_radius * @abs(cascade_vp.d[5]);
-    const margin_z = shadow_caster_radius * @abs(cascade_vp.d[10]);
-    return @abs(clip[0]) <= 1 + margin_x and
-        @abs(clip[1]) <= 1 + margin_y and
-        clip[2] >= -margin_z and clip[2] <= 1 + margin_z;
-}
-
-fn shadowOrtho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    return .new(.{
-        2.0 / (right - left),             0,                               0,                   0,
-        0,                                -2.0 / (top - bottom),           0,                   0,
-        0,                                0,                               1.0 / (near - far),  0,
-        -(right + left) / (right - left), (top + bottom) / (top - bottom), near / (near - far), 1,
-    });
-}
-
-fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) nz.Mat4x4(f32) {
-    return .new(.{
-        2.0 / (right - left),             0.0,                              0.0,                          0.0,
-        0.0,                              2.0 / (top - bottom),             0.0,                          0.0,
-        0.0,                              0.0,                              -2.0 / (far - near),          0.0,
-        -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0,
-    });
 }
