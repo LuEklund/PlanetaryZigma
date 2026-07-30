@@ -9,16 +9,17 @@ pub const Id = enum(u32) {
 };
 
 pub const EnemyKind = enum(u16) {
-    tubloid = 0,
-    tubloida = 1,
-    bloorp_lord = 2,
-    hunkloid = 3,
+    tubloid,
+    tubloida,
+    bloorp_lord,
+    hunkloid,
+    blooploid,
     pub const count: usize = @typeInfo(EnemyKind).@"enum".fields.len;
 };
 
 pub const ProjectileKind = enum(u16) {
-    cube = 0,
-    rocket = 1,
+    cube,
+    rocket,
 };
 
 pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
@@ -207,18 +208,18 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 7,
             },
             .hunkloid => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Hunkloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = face_camera }, .skinned = true, .clip_names = .{
                     .idle = "Idle",
                     .walk = "Walk",
                     .attack = "Attack",
-                    .death = "Idle",
+                    .death = "Death",
                     .secondary = "secondary",
                 } },
                 .has_health = true,
                 .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
-                .currency = 7,
+                .stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .attack_speed = 0.2, .range = 3 }),
+                .currency = 30,
             },
             .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
@@ -232,6 +233,14 @@ pub fn spec(kind: Kind) Spec {
                 .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
                 .currency = 100,
+            },
+            .blooploid => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .skinned = false, .clip_names = null },
+                .has_health = true,
+                .expects_model = true,
+                .stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .attack_speed = 0.2, .range = 15 }),
+                .currency = 7,
             },
         },
         .item => |item_kind| .{

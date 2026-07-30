@@ -89,7 +89,7 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
 
     float z = r0 * 2.0 - 1.0;
     float theta = r1 * 6.2831853;
-    float2 ring = sqrt(max(0.0, 1.0 - z * z)) * loat2(cos(theta), sin(theta));
+    float2 ring = sqrt(max(0.0, 1.0 - z * z)) * float2(cos(theta), sin(theta));
     float3 direction = float3(ring.x, z, ring.y);
     float outward = dot(direction, surface_up);
     if (outward < 0.2)

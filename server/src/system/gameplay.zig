@@ -32,9 +32,13 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...70 => .tubloid,
-            71...90 => .tubloida,
+            0...40 => .tubloid,
+            41...60 => .tubloida,
+            61...75 => .hunkloid,
+            76...90 => .blooploid,
             else => .bloorp_lord,
+            // 0...50 => .hunkloid,
+            // else => .blooploid,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -148,7 +152,42 @@ pub fn updateEnemies(world: *World) !void {
                     world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
                 }
             },
-            .hunkloid => {},
+            .hunkloid => {
+                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                }
+            },
+            .blooploid => {
+                const sdf_distance = @max(shared.planet.sdf.sampled(enemy.transform.position, world.planet_radius), 0.01);
+                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
+                if (sdf_distance < 7) Physics.c.b3Body_ApplyForceToCenter(body_id, Physics.toB3(nz.vec.scale(planet_up, 10 * distance)), true);
+                if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
+                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
+                    const bullet = try world.spawn(.{
+                        .kind = .projectile_cube,
+                        .owner_id = enemy.id,
+                        .transform = .{
+                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                        },
+                        .replicated_velocity = muzzle_velocity,
+                        .lifetime = 2,
+                    });
+                    bullet.stats.current.set(.damage, damage);
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                }
+                const vel = Physics.toVec(Physics.c.b3Body_GetLinearVelocity(body_id));
+                Physics.c.b3Body_SetLinearVelocity(body_id, Physics.toB3(nz.vec.scale(vel, 0.5)));
+            },
         }
     }
 }
