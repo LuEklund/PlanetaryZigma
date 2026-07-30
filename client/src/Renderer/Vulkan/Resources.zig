@@ -253,23 +253,18 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         physical_device.combined_image_sampler_descriptor_size,
     );
     self.model_loader = try gpa.create(ModelLoader);
-    self.model_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
+    try self.model_loader.init(gpa, asset_server, &self.texture_table);
     self.texture_loader = try gpa.create(TextureLoader);
-    self.texture_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
+    try self.texture_loader.init(gpa, asset_server, &self.texture_table);
     self.shader_loader = try gpa.create(ShaderLoader);
-    self.shader_loader.* = try .init(gpa, asset_server.io, device, .init(.{
+    try self.shader_loader.init(gpa, asset_server, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
         .material = descriptor_layouts.get(.material).handle,
         .textures = descriptor_layouts.get(.textures).handle,
         .shadow = descriptor_layouts.get(.shadow).handle,
     }));
     self.font_loader = try gpa.create(FontLoader);
-    self.font_loader.* = try .init(gpa, asset_server.io, &self.texture_table);
-
-    try asset_server.addLoader(&self.font_loader.interface);
-    try asset_server.addLoader(&self.shader_loader.interface);
-    try asset_server.addLoader(&self.model_loader.interface);
-    try asset_server.addLoader(&self.texture_loader.interface);
+    try self.font_loader.init(gpa, asset_server, &self.texture_table);
 
     self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
     self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));

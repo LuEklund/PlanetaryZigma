@@ -47,16 +47,16 @@ pub const Spec = struct {
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .static = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .skinned = .{ .path = "shaders/mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .mesh = .{ .path = "shaders/mesh.spv", .stages = &.{.frag}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .shadow_static = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .shadow_skinned = .{ .path = "shaders/shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .sky = .{ .path = "shaders/sky.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
-    .ui = .{ .path = "shaders/ui.spv", .stages = &.{ .vert, .frag }, .layout = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
-    .debug = .{ .path = "shaders/debug.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .static = .{ .path = "mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .skinned = .{ .path = "mesh.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .mesh = .{ .path = "mesh.spv", .stages = &.{.frag}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_static = .{ .path = "shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .shadow_skinned = .{ .path = "shadow.spv", .stages = &.{.vert}, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .sky = .{ .path = "sky.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
+    .ui = .{ .path = "ui.spv", .stages = &.{ .vert, .frag }, .layout = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
+    .debug = .{ .path = "debug.spv", .stages = &.{ .vert, .frag }, .layout = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
     .explosion = .{
-        .path = "shaders/particle/explosion.spv",
+        .path = "particle/explosion.spv",
         .stages = &.{ .vert, .frag, .comp },
         .layout = &.{ .scene, .textures, .shadow },
         .push_constant_size = @sizeOf(ParticlePushConstant),
@@ -67,7 +67,7 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
         },
     },
     .lightning = .{
-        .path = "shaders/particle/lightning.spv",
+        .path = "particle/lightning.spv",
         .stages = &.{ .vert, .frag },
         .layout = &.{ .scene, .textures, .shadow },
         .push_constant_size = @sizeOf(ParticlePushConstant),
@@ -78,7 +78,7 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
         },
     },
     .smoke = .{
-        .path = "shaders/particle/smoke.spv",
+        .path = "particle/smoke.spv",
         .stages = &.{ .vert, .frag },
         .layout = &.{ .scene, .textures, .shadow },
         .push_constant_size = @sizeOf(ParticlePushConstant),

@@ -2,7 +2,8 @@ const ShaderLoader = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const Loader = @import("../../AssetServer.zig").Loader;
+const AssetServer = @import("../../AssetServer.zig");
+const Loader = AssetServer.Loader;
 const Device = @import("../Vulkan/device.zig").Logical;
 const Shader = @import("../Vulkan/Shader.zig");
 const DescriptorLayout = @import("../Vulkan/DesrciptorLayout.zig");
@@ -10,34 +11,33 @@ const check = @import("../Vulkan/utils.zig").check;
 
 device: Device,
 layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout),
-shaders: []StageSlots,
+shaders: [][std.enums.values(Shader.Stage).len]Shader,
 interface: Loader,
 
-pub const StageSlots = [std.enums.values(Shader.Stage).len]Shader;
-
-pub fn init(gpa: std.mem.Allocator, io: std.Io, device: Device, layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout)) !ShaderLoader {
+pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, device: Device, layouts: std.EnumArray(DescriptorLayout.Kind, c.VkDescriptorSetLayout)) !void {
     const files = try gpa.alloc([]const u8, std.enums.values(Shader.Kind).len);
     for (std.enums.values(Shader.Kind), files) |kind, *file| {
-        file.* = Shader.get(kind).path["shaders/".len..];
+        file.* = Shader.get(kind).path;
     }
 
-    const shaders = try gpa.alloc(StageSlots, std.enums.values(Shader.Kind).len);
+    const shaders = try gpa.alloc([std.enums.values(Shader.Stage).len]Shader, std.enums.values(Shader.Kind).len);
     for (shaders) |*slots| for (slots) |*shader| {
         shader.handle = null;
     };
 
-    return .{
+    self.* = .{
         .device = device,
         .layouts = layouts,
         .shaders = shaders,
         .interface = .{
             .gpa = gpa,
-            .io = io,
+            .io = asset_server.io,
             .root_path = "shaders",
             .files = files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
+    try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *ShaderLoader) void {
