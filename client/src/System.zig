@@ -13,6 +13,7 @@ const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
 
 const menu_world = @import("system/menu.zig");
+const particle_lab = @import("system/particle_lab.zig");
 pub const Options = @import("Options.zig");
 pub const Renderer = @import("Renderer.zig");
 
@@ -27,6 +28,7 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 pub const Scene = enum {
     menu,
     game,
+    particle_lab,
 };
 
 pub const World = @import("World.zig");
@@ -97,6 +99,7 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     switch (next) {
         .menu => try menu_world.populate(world),
         .game => {},
+        .particle_lab => particle_lab.populate(world),
     }
     self.scene = next;
 }
@@ -107,6 +110,7 @@ pub fn update(self: *System, world: *World) !void {
     // tracy.frameMark();
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
+    if (self.scene == .particle_lab) particle_lab.update(world);
     switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -117,11 +121,11 @@ pub fn update(self: *System, world: *World) !void {
     }
     try self.applyOptions(world);
     Emitter.update(world);
-    try self.renderer.update(world, &self.animation_instances, &self.ui);
+    try self.renderer.update(world, &self.animation_instances, &self.ui, self.scene != .particle_lab);
     try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
-    if (next_scene != self.scene) try self.enterScene(world, next_scene);
+    if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush(world.delta_time, &self.animation_instances);
     try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, world);
     try self.animation.updateStates(world, &self.animation_instances);
@@ -184,8 +188,16 @@ pub fn eventUpdate(self: *System, world: *World, event: *const yes.Window.Event)
             world.controller.resetMouseDelta();
             return;
         }
+        if (key.state == .released and key.sym == .escape and self.scene == .particle_lab) {
+            try self.enterScene(world, .menu);
+            return;
+        }
         if (key.state == .released and key.sym == .escape) {
             self.request_exit = true;
+            return;
+        }
+        if (key.state == .released and key.sym == .f4 and self.scene == .menu) {
+            try self.enterScene(world, .particle_lab);
             return;
         }
     }

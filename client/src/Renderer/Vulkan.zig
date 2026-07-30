@@ -151,7 +151,7 @@ pub fn rebindProcs(self: *Vulkan) void {
 
 const frame_timeout_ns: u64 = 1000000000;
 
-pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui, draw_sky: bool) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -164,7 +164,7 @@ pub fn update(self: *Vulkan, world: *World, instances: *std.AutoHashMap(shared.e
     const render_semaphore: c.VkSemaphore = self.swapchain.render_semaphores[image_index];
 
     try beginCommandBuffer(cmd_buffer);
-    try render(self, cmd_buffer, current_frame, world, instances, ui);
+    try render(self, cmd_buffer, current_frame, world, instances, ui, draw_sky);
     blitOntoSwapchain(self, cmd_buffer, image_index);
     try check(c.vkEndCommandBuffer(cmd_buffer));
 
@@ -250,7 +250,7 @@ fn presentFrame(self: *Vulkan, render_semaphore: c.VkSemaphore, image_index: u32
     return c.vkQueuePresentKHR(self.device.graphics_queue, &present_info);
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui, draw_sky: bool) !void {
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
     draw_image_barrier.transition(
@@ -276,7 +276,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
 
     beginRendering(self, cmd);
     renderWorldPass(self, cmd, current_frame, world, instances);
-    renderSkyPass(self, cmd, current_frame);
+    if (draw_sky) renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, world, particle_batches);
     if (world.controller.debug_draw_colliders) renderDebugPass(self, cmd, current_frame, world);
     renderUiPass(self, cmd, current_frame, ui);
@@ -698,6 +698,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
             .elapsed_time = world.elapsed_time,
             .particle_count = Shader.particleInfo(effect).particle_count,
             .emitter_count = batch.emitter_count,
+            .duration = Shader.particleInfo(effect).duration orelse 0,
         };
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
         c.vkCmdDraw(cmd, 6, batch.emitter_count * Shader.instancesPerEmitter(effect), 0, 0);

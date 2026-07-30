@@ -124,6 +124,7 @@ pub const ParticlePushConstant = extern struct {
     elapsed_time: f32,
     particle_count: u32,
     emitter_count: u32,
+    duration: f32,
 };
 
 pub fn init(device: Device, kind: Kind, entry_point: [:0]const u8, stage: c.VkShaderStageFlagBits, next_stage: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout, data: []align(4) const u8) !Shader {

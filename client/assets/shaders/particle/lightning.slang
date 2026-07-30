@@ -20,6 +20,7 @@ struct PushConstant {
     float elapsed_time;
     uint particle_count;
     uint emitter_count;
+    float duration;
 };
 [[vk::push_constant]] PushConstant push_constant;
 
@@ -48,11 +49,10 @@ float3 nodePosition(float node, float3 origin, float3 segment, float3 direction,
     float3 on_arc = origin + segment * t + planet_up * (arch_height * 4.0 * t * (1.0 - t));
     if (node <= 0.0 || node >= jitter_nodes) return on_arc;
 
-    float3 raw = normalize(float3(
-        hash(node + seed * 31.0) * 2.0 - 1.0,
-        hash(node * 5.1 + seed * 17.0) * 2.0 - 1.0,
-        hash(node * 9.7 + seed * 73.0) * 2.0 - 1.0
-    ));
+    float r0 = hash(node + seed);
+    float r1 = hash(r0);
+    float r2 = hash(r1);
+    float3 raw = normalize(float3(r0 * 2.0 - 1.0, r1 * 2.0 - 1.0, r2 * 2.0 - 1.0));
     return on_arc + (raw - direction * dot(raw, direction)) * 0.6;
 }
 
@@ -74,7 +74,7 @@ VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_Inst
     Emitter emitter = push_constant.emitter_buffer[emitter_index];
 
     float age = push_constant.elapsed_time - emitter.spawn_time;
-    float seed = frac(emitter.spawn_time * 7.13);
+    float seed = frac(emitter.spawn_time);
 
     float3 segment = emitter.target - emitter.origin;
     float length_along = length(segment);
@@ -85,7 +85,7 @@ VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_Inst
     float3 start = boltPoint(float(segment_index) / float(segment_count), emitter.origin, segment, direction, planet_up, arch_height, seed);
     float3 end = boltPoint(float(segment_index + 1) / float(segment_count), emitter.origin, segment, direction, planet_up, arch_height, seed);
 
-    float lifetime = 0.22 + hash(seed * 3.0) * 0.08;
+    float lifetime = (0.733 + hash(seed) * 0.267) * push_constant.duration;
     float life = clamp(1.0 - age / lifetime, 0.0, 1.0);
 
     float2 corner = corners[vertex_index];

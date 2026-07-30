@@ -34,10 +34,10 @@ pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     }
 }
 
-pub fn update(self: *Renderer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui) !void {
+pub fn update(self: *Renderer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui, draw_sky: bool) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    try self.inner.update(world, instances, ui);
+    try self.inner.update(world, instances, ui, draw_sky);
 }
 
 const debug_instance_extensions = if (builtin.mode == .Debug)

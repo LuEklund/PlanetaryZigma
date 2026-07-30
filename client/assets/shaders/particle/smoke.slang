@@ -21,6 +21,7 @@ struct PushConstant {
   float elapsed_time;
   uint particle_count;
   uint emitter_count;
+  float duration;
 };
 [[vk::push_constant]]
 PushConstant push_constant;
@@ -97,7 +98,7 @@ float3 strandPoint(Strand strand, float t) {
                 scene_data.time * strand.spin;
   float radius = strand.radius * sin(t * 2.7 + 0.25);
   float sway =
-      sin(scene_data.time * 1.6 + strand.seed * 11.0 + t * 4.5) * 0.05 * t;
+      sin(scene_data.time * 1.6 + strand.seed * 6.2831853 + t * 4.5) * 0.05 * t;
   return strand.origin + strand.up * (t * strand.height) +
          (strand.side * cos(angle) + strand.forward * sin(angle)) *
              (radius + sway);
@@ -113,7 +114,17 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   uint segment_index = instance_index % segment_count;
 
   Emitter emitter = push_constant.emitter_buffer[emitter_index];
-  float seed = hash(frac(emitter.spawn_time * 7.13) * 1.618 + float(strand_index) * 7.77 + 0.37);
+  float seed = hash(frac(emitter.spawn_time) + float(strand_index));
+  float height_random = hash(seed);
+  float radius_random = hash(height_random);
+  float turn_random = hash(radius_random);
+  float direction_random = hash(turn_random);
+  float speed_random = hash(direction_random);
+  float jitter_angle_random = hash(speed_random);
+  float jitter_radius_random = hash(jitter_angle_random);
+  float lift_random = hash(jitter_radius_random);
+  float width_random = hash(lift_random);
+  float alpha_random = hash(width_random);
 
   Strand strand;
   strand.up = normalize(emitter.origin);
@@ -121,19 +132,19 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
       normalize(cross(strand.up, float3(0.0, 0.0, 1.0) + strand.up * 0.5));
   strand.forward = cross(strand.up, strand.side);
   strand.seed = seed;
-  strand.height = column_height * (0.7 + hash(seed * 3.1) * 0.7);
-  strand.radius = column_radius * (0.6 + hash(seed * 7.3) * 0.8);
-  strand.turn = turns * (0.6 + hash(seed * 11.7) * 0.9);
-  strand.spin = spin_speed * (hash(seed * 5.9) < 0.5 ? -1.0 : 1.0) *
-                (0.6 + hash(seed * 19.3) * 0.8);
+  strand.height = column_height * (0.7 + height_random * 0.7);
+  strand.radius = column_radius * (0.6 + radius_random * 0.8);
+  strand.turn = turns * (0.6 + turn_random * 0.9);
+  strand.spin = spin_speed * (direction_random < 0.5 ? -1.0 : 1.0) *
+                (0.6 + speed_random * 0.8);
 
-  float jitter_angle = hash(seed * 23.3) * 6.2831853;
-  float jitter_radius = hash(seed * 29.1) * 0.13;
+  float jitter_angle = jitter_angle_random * 6.2831853;
+  float jitter_radius = jitter_radius_random * 0.13;
   strand.origin =
       emitter.origin +
       (strand.side * cos(jitter_angle) + strand.forward * sin(jitter_angle)) *
           jitter_radius +
-      strand.up * (hash(seed * 31.7) * 0.1);
+      strand.up * (lift_random * 0.1);
 
   float t0 = float(segment_index) / float(segment_count);
   float t1 = float(segment_index + 1) / float(segment_count);
@@ -147,7 +158,7 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   float3 view = normalize(scene_data.camera_position.xyz - center);
   float3 across = cross(end - start, view);
   float width = ribbon_width * sin(t * 3.1415926) * 1.7 *
-                (0.65 + hash(seed * 13.1) * 0.8);
+                (0.65 + width_random * 0.8);
 
   VertexOutput output;
   output.position = mul(
@@ -156,7 +167,7 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
              1.0));
   output.uv = float2(corner.y + 0.5, t);
   output.strand_seed = seed;
-  output.strand_alpha = 0.4 + hash(seed * 17.9) * 0.6;
+  output.strand_alpha = 0.4 + alpha_random * 0.6;
   return output;
 }
 
