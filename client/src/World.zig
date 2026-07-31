@@ -71,6 +71,7 @@ pub const Entity = struct {
 
     pub const Flags = packed struct {
         is_dying: bool = false,
+        is_teleporter_boss: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -179,6 +180,7 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             .teleporter => self.teleporter_id = entity.id,
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
+                    entity.flags.is_teleporter_boss = true;
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },

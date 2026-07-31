@@ -346,16 +346,21 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
     const bar_width: f32 = 46;
     const bar_heigth: f32 = 4;
     const bar_reference_distance: f32 = 20;
-    const bar_min_scale: f32 = 0.35;
-    const bar_max_scale: f32 = 1;
     const camera_position = world.camera.transform.position;
     const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_heigth);
     for (world.entities.values()) |*entity| {
+        var bar_min_scale: f32 = 0.35;
+        var bar_max_scale: f32 = 1;
         if (!entity.kind.hasHealth()) continue;
         if (entity.id == world.player_id) continue;
         const health_current = entity.stats.current.get(.health);
         const health_max = entity.stats.max.get(.health);
-        if (health_max <= 0 or health_current <= 0 or health_current >= health_max) continue;
+        if (!entity.flags.is_teleporter_boss) {
+            if ((health_max <= 0 or health_current <= 0 or health_current >= health_max)) continue;
+        } else {
+            bar_min_scale = 2.5;
+            bar_max_scale = 4;
+        }
 
         const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);

@@ -30,6 +30,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             .f1 => {
                 // _ = world.giveItem(player, .hearth, 1);
                 _ = world.giveItem(player, .icicle, 1);
+                _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
                 // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {

@@ -32,13 +32,11 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            // 0...40 => .tubloid,
-            // 41...60 => .tubloida,
-            // 61...75 => .hunkloid,
-            // 76...90 => .blooploid,
+            0...40 => .tubloid,
+            41...60 => .tubloida,
+            61...75 => .hunkloid,
+            76...90 => .blooploid,
             else => .bloorp_lord,
-            // 0...50 => .hunkloid,
-            // else => .blooploid,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -165,6 +163,13 @@ pub fn updateEnemies(world: *World) !void {
             .hunkloid => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(body_id, planet_up, chase_dir, speed, 0);
+                if (distance < range * 4 and distance > range * 3 and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+                    enemy.last_attack = world.elapsed_time;
+                    std.log.debug("happend", .{});
+                    Physics.c.b3Body_ApplyLinearImpulseToCenter(body_id, Physics.toB3(nz.vec.scale(nz.vec.normalize(to_player + planet_up), 3000)), true);
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .secondary } } });
+                }
+
                 if (attackLands(world, enemy, distance, range, windup)) {
                     if (distance < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
