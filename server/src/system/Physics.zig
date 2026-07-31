@@ -323,7 +323,7 @@ pub fn floatOnPlanet(
 ) void {
     moveOnPlanet(body_id, planet_up, dir, speed, 0);
     const ground_distance = shared.planet.sdf.sampled(toVec(c.b3Body_GetPosition(body_id)), planet_radius);
-    const lift = 10 * c.b3Body_GetMass(body_id);
+    const lift = 2 * gravity_accel * c.b3Body_GetMass(body_id);
     if (ground_distance < hover_height) c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(planet_up, lift)), true);
     const velocity = toVec(c.b3Body_GetLinearVelocity(body_id));
     const radial = nz.vec.scale(planet_up, nz.vec.dot(velocity, planet_up));
