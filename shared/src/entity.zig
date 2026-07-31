@@ -202,8 +202,8 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 30,
             },
             .bloorp_lord => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/BloorpLord.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/BloorpLord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walking",
                     .attack = "Spawn_Enemy",

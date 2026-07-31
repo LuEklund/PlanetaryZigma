@@ -179,7 +179,6 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             .teleporter => self.teleporter_id = entity.id,
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
-                    entity.transform.scale = @splat(5);
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },

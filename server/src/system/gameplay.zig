@@ -32,10 +32,10 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...40 => .tubloid,
-            41...60 => .tubloida,
-            61...75 => .hunkloid,
-            76...90 => .blooploid,
+            // 0...40 => .tubloid,
+            // 41...60 => .tubloida,
+            // 61...75 => .hunkloid,
+            // 76...90 => .blooploid,
             else => .bloorp_lord,
             // 0...50 => .hunkloid,
             // else => .blooploid,
@@ -153,7 +153,7 @@ pub fn updateEnemies(world: *World) !void {
             },
             .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(body_id, planet_up, chase_dir, speed, world.planet_radius, 7);
+                Physics.floatOnPlanet(body_id, planet_up, chase_dir, speed, world.planet_radius, 14);
                 if (attackLands(world, enemy, distance, range, windup)) {
                     _ = world.spawn(.{
                         .kind = .{ .enemy = .tubloid },
