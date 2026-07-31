@@ -57,7 +57,7 @@ pub const Entity = struct {
     interacting: shared.entity.Id = .none,
     motion: Motion = .{},
     override_animation_state: ?shared.entity.State = null,
-    model_handle: Model.Handle = .{ .generated = .default },
+    model_handle: ?Model.Handle = null,
     flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},

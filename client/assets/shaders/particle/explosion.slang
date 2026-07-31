@@ -18,7 +18,7 @@ struct Emitter {
 
 struct Particle {
   float3 position;
-  float3 velocity;
+  float3 travel;
   float scale;
   float lifetime;
 };
@@ -52,10 +52,10 @@ static const float3 puff_offset[puff_count] = {
   float3(0.45, 0.1, 0),   float3(-0.35, -0.2, 0.1), float3(0.05, 0.35, -0.15),
   float3(0.3, -0.4, 0.2), float3(-0.45, 0.25, -0.1)
 };
-static const float3 puff_velocity[puff_count] = {
-  float3(0, 0, 0),        float3(-0.5, 0.7, 0.6),  float3(0.7, -0.4, -0.8),
-  float3(1.8, 0.4, 0),    float3(-1.2, -0.7, 0.4), float3(0.2, 1.1, -0.5),
-  float3(0.9, -1.1, 0.5), float3(-1.0, 0.8, -0.3)
+static const float3 puff_travel[puff_count] = {
+  float3(0, 0, 0),          float3(-0.2, 0.28, 0.24),  float3(0.28, -0.16, -0.32),
+  float3(0.71, 0.16, 0),    float3(-0.48, -0.28, 0.16), float3(0.08, 0.44, -0.2),
+  float3(0.36, -0.44, 0.2), float3(-0.4, 0.32, -0.12)
 };
 static const float puff_scale[puff_count] = { 2.2,  1.95, 1.75, 1.55,
                                               1.35, 1.2,  1.1,  1.0 };
@@ -63,7 +63,6 @@ static const float puff_lifetime[puff_count] = { 0.425, 0.475, 0.5,  0.525,
                                                  0.575, 0.625, 0.55, 0.9 };
 
 static const float drag = 0.08;
-static const float drag_falloff = 2.5257286;
 
 float hash(float n) { return frac(sin(n) * 43758.5453123); }
 
@@ -77,7 +76,7 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
     float3 offset = puff_offset[particle_index];
     particle.position =
         emitter_origin + (offset - surface_up * dot(offset, surface_up));
-    particle.velocity = puff_velocity[particle_index] + surface_up * 1.4;
+    particle.travel = puff_travel[particle_index] + surface_up * 0.55;
     particle.scale = puff_scale[particle_index];
     particle.lifetime = puff_lifetime[particle_index] * push_constant.duration;
   } else {
@@ -97,7 +96,7 @@ Particle spawnParticle(Emitter emitter, uint particle_index) {
 
     particle.lifetime =
         (0.525 + r2 * 0.35 + burst * 0.075) * push_constant.duration;
-    particle.velocity = direction * (12.0 + r1 * 7.0 + burst * 4.0);
+    particle.travel = direction * (4.75 + r1 * 2.8 + burst * 1.6);
     particle.scale = (0.3 + r0 * 0.22) * (1.0 - burst * 0.15);
     particle.position =
         emitter_origin + direction * (burst * 0.35 + spark * 0.01);
@@ -114,8 +113,7 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   Particle particle = spawnParticle(emitter, particle_index);
 
   float age = push_constant.elapsed_time - emitter.spawn_time;
-  float3 position = particle.position +
-                    particle.velocity * (1.0 - pow(drag, age)) / drag_falloff;
+  float3 position = particle.position + particle.travel * (1.0 - pow(drag, age));
   float life = clamp(1.0 - age / particle.lifetime, 0.0, 1.0);
 
   float2 corner = corners[vertex_index];

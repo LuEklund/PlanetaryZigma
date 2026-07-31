@@ -43,7 +43,7 @@ model_loader: *ModelLoader,
 texture_loader: *TextureLoader,
 shader_loader: *ShaderLoader,
 font_loader: *FontLoader,
-generated: std.EnumArray(Model.Generated, ?Mesh),
+generated: std.EnumArray(Model.Generated, Mesh),
 
 descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
@@ -230,7 +230,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         .shadow_cascade_offset = shadow_cascade_offset,
         .vma = vma,
         .device = device,
-        .generated = .initFill(null),
+        .generated = undefined,
     };
     self.texture_table = try .init(
         gpa,
@@ -270,9 +270,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.shader_loader.deinit();
     gpa.destroy(self.shader_loader);
     self.texture_table.deinit(gpa);
-    for (&self.generated.values) |*generated_mesh| {
-        if (generated_mesh.*) |*mesh| mesh.deinit(gpa, self.vma);
-    }
+    for (&self.generated.values) |*mesh| mesh.deinit(gpa, self.vma);
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);
     }

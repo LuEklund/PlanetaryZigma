@@ -9,7 +9,7 @@ const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
-pub const Generated = enum { default, cube_projectile, planet };
+pub const Generated = enum { default, cube_projectile };
 
 pub const Handle = union(enum) {
     file: u32,
@@ -24,7 +24,7 @@ clips: []AnimationClip,
 skins: []Skin,
 look_nodes: []usize,
 overlay_mask: ?[]bool,
-state_clips: std.EnumArray(shared.entity.State, usize),
+state_clips: std.EnumArray(shared.entity.State, ?usize),
 
 pub const empty: Model = .{
     .surfaces = .empty,
@@ -35,7 +35,7 @@ pub const empty: Model = .{
     .skins = &.{},
     .look_nodes = &.{},
     .overlay_mask = null,
-    .state_clips = .initFill(0),
+    .state_clips = .initFill(null),
 };
 
 const Surface = struct {
@@ -78,14 +78,13 @@ pub fn parseGlb(
     io: std.Io,
     file: std.Io.File,
     kind_spec: shared.entity.Spec,
+    spec: Spec,
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
     var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
-
-    const spec = kind_spec.model;
-    const upload_data = if (spec.skinned) skinned: {
+    const upload_data = if (spec.clip_names != null) skinned: {
         var look_node_name_buffer: [3][]const u8 = undefined;
         var look_node_count: usize = 0;
         if (spec.look_node_names) |look_node_names| {
@@ -114,19 +113,12 @@ pub fn parseGlb(
     self.spawn_duration = kind_spec.spawn_duration;
     self.death_duration = kind_spec.death_duration;
 
-    if (spec.skinned) {
-        if (spec.clip_names) |clip_names| {
-            const walk_index = try self.createClipIndex(clip_names.walk, spec);
-            const idle_index = if (clip_names.idle) |idle_name| try self.createClipIndex(idle_name, spec) else walk_index;
-            const attack_index = try self.createClipIndex(clip_names.attack, spec);
-            const death_index = if (clip_names.death) |death_name| try self.createClipIndex(death_name, spec) else walk_index;
-            self.state_clips = .init(.{
-                .idle = idle_index,
-                .walk = walk_index,
-                .attack = attack_index,
-                .death = death_index,
-            });
-            const death_clip = self.clips[death_index];
+    if (spec.clip_names) |clip_names| {
+        for (clip_names.values, &self.state_clips.values) |maybe_name, *state_clip| {
+            state_clip.* = if (maybe_name) |clip_name| try self.createClipIndex(clip_name, spec) else null;
+        }
+        if (self.state_clips.get(.death)) |index| {
+            const death_clip = self.clips[index];
             self.death_duration = death_clip.end - death_clip.start;
         }
     } else {
