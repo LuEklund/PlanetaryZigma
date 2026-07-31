@@ -248,7 +248,11 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
         if (random.float(f32) < block_chance) new_amount = 0;
 
         const icicles = (source_entity.inventory.get(.icicle));
-        if (random.float(f32) < icicles * @as(f32, 0.05)) entity.un_stun_at = self.elapsed_time + 2;
+        if (random.float(f32) < icicles * @as(f32, 0.05)) {
+            const stun_duration: f32 = 2;
+            entity.un_stun_at = self.elapsed_time + stun_duration;
+            self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
+        }
     }
     return self.addHealth(entity, -new_amount, source);
 }

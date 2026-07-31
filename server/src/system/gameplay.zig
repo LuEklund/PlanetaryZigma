@@ -127,7 +127,7 @@ pub fn updateEnemies(world: *World) !void {
                         .lifetime = 2,
                     });
                     bullet.stats.current.set(.damage, damage);
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
                 }
             },
             .tubloid => {
@@ -136,7 +136,7 @@ pub fn updateEnemies(world: *World) !void {
                 if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = world.elapsed_time;
                     if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
                 }
             },
             .bloorp_lord => {
@@ -149,7 +149,7 @@ pub fn updateEnemies(world: *World) !void {
                         .transform = .{ .position = enemy.transform.position },
                         .last_attack = world.elapsed_time,
                     }) catch {};
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
                 }
             },
             .hunkloid => {
@@ -158,7 +158,7 @@ pub fn updateEnemies(world: *World) !void {
                 if (distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
                     enemy.last_attack = world.elapsed_time;
                     if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
                 }
             },
             .blooploid => {
@@ -183,7 +183,7 @@ pub fn updateEnemies(world: *World) !void {
                         .lifetime = 2,
                     });
                     bullet.stats.current.set(.damage, damage);
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = enemy.id } });
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
                 }
                 const vel = Physics.toVec(Physics.c.b3Body_GetLinearVelocity(body_id));
                 Physics.c.b3Body_SetLinearVelocity(body_id, Physics.toB3(nz.vec.scale(vel, 0.5)));

@@ -215,6 +215,16 @@ pub const Event = union(enum) {
         interacted: entity.Id,
     };
 
+    pub const Trigger = struct {
+        id: entity.Id,
+        state: entity.State,
+    };
+
+    pub const Stun = struct {
+        id: entity.Id,
+        duration: f32,
+    };
+
     pub const Effect = union(enum) {
         pub const Lightning = struct {
             pub const max_targets = 4;
@@ -230,7 +240,8 @@ pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
-    attack: entity.Id,
+    trigger: Trigger,
+    stun: Stun,
     interact: Interact,
     effect: Effect,
 };

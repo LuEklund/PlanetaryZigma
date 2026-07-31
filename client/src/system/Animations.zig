@@ -32,15 +32,16 @@ pub fn init(gpa: std.mem.Allocator) Animations {
 
 pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     _ = self;
-    for (world.attack_events.items) |id| {
-        const instance = instances.getPtr(id) orelse continue;
+    for (world.trigger_events.items) |trigger| {
+        const instance = instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = instance.model.?;
-        const attack_index = model.state_clips.get(.attack) orelse continue;
-        skeleton.playOverlay(model, attack_index);
+        const model = instance.model orelse continue;
+        const clip_index = model.state_clips.get(trigger.state) orelse continue;
+        skeleton.playOverlay(model, clip_index);
     }
-    world.attack_events.clearRetainingCapacity();
+    world.trigger_events.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
+        entity.stun_time = @max(0, entity.stun_time - world.delta_time);
         const instance = instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton == null) continue;
 
@@ -48,6 +49,7 @@ pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMa
             const speed = if (entity.motion.update) |update_motion| nz.vec.length(update_motion.velocity) else 0;
             break :state if (speed > 0.5) .walk else .idle;
         };
+        state = if (entity.stun_time > 0) .stun else state;
         state = if (entity.flags.is_dying) .death else state;
         if (entity.override_animation_state) |override| state = override;
         instance.state = state;

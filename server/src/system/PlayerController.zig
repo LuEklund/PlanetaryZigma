@@ -214,7 +214,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
             });
             projectile.stats.current.set(.damage, player.stats.current.get(.damage));
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .attack = player_id } });
+            world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = player_id, .state = .attack } } });
         }
     }
 }

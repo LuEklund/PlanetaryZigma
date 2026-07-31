@@ -287,4 +287,5 @@ pub const State = enum(u16) {
     attack = 2,
     death = 3,
     secondary = 4,
+    stun = 5,
 };
