@@ -26,7 +26,6 @@ struct PushConstant {
 
 struct VertexOutput {
     float4 position : SV_Position;
-    float4 color : COLOR0;
     float2 uv : TEXCOORD0;
 };
 
@@ -45,8 +44,8 @@ float hash(float n) { return frac(sin(n) * 43758.5453123); }
 static const float thickness = 0.55;
 
 float3 nodePosition(float node, float3 origin, float3 segment, float3 direction, float3 planet_up, float arch_height, float seed) {
-    float t = node / jitter_nodes;
-    float3 on_arc = origin + segment * t + planet_up * (arch_height * 4.0 * t * (1.0 - t));
+    float fraction = node / jitter_nodes;
+    float3 on_arc = origin + segment * fraction + planet_up * (arch_height * 4.0 * fraction * (1.0 - fraction));
     if (node <= 0.0 || node >= jitter_nodes) return on_arc;
 
     float r0 = hash(node + seed);
@@ -56,8 +55,8 @@ float3 nodePosition(float node, float3 origin, float3 segment, float3 direction,
     return on_arc + (raw - direction * dot(raw, direction)) * 0.6;
 }
 
-float3 boltPoint(float t, float3 origin, float3 segment, float3 direction, float3 planet_up, float arch_height, float seed) {
-    float node_position = t * jitter_nodes;
+float3 boltPoint(float fraction, float3 origin, float3 segment, float3 direction, float3 planet_up, float arch_height, float seed) {
+    float node_position = fraction * jitter_nodes;
     float node = floor(node_position);
     return lerp(
         nodePosition(node, origin, segment, direction, planet_up, arch_height, seed),
@@ -89,14 +88,13 @@ VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_Inst
     float life = clamp(1.0 - age / lifetime, 0.0, 1.0);
 
     float2 corner = corners[vertex_index];
-    float3 center = lerp(start, end, corner.x + 0.5);
-    float3 forward = normalize(scene_data.camera_position.xyz - center);
+    float3 anchor = corner.x < 0.0 ? start : end;
+    float3 forward = normalize(scene_data.camera_position.xyz - anchor);
     float3 across = cross(end - start, forward);
-    float3 world_position = center + across / max(length(across), 0.0001) * corner.y * thickness * life;
+    float3 world_position = anchor + across / max(length(across), 0.0001) * corner.y * thickness * life;
 
     VertexOutput output;
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
-    output.color = float4(1.0, 1.0, 1.0, 1.0);
     output.uv = float2(0.5, corner.y + 0.5);
     return output;
 }
@@ -104,6 +102,5 @@ VertexOutput vertex(uint vertex_index: SV_VertexID, uint instance_index: SV_Inst
 [shader("fragment")]
 float4 fragment(VertexOutput input) : SV_Target {
     float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
-    float4 texel = float4(lerp(edge_color, center_color, sqrt(core)), core * core) * input.color;
-    return float4(texel.rgb, texel.a * 0.45);
+    return float4(lerp(edge_color, center_color, sqrt(core)), core * core * 0.45);
 }

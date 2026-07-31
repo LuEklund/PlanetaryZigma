@@ -414,8 +414,11 @@ fn handleCommand(
                     world.teleporter_id = .none;
                     world.stage = new_stage;
                 },
-                .attack => |id| {
-                    world.attack_events.appendAssumeCapacity(id);
+                .trigger => |trigger| {
+                    world.trigger_events.appendAssumeCapacity(trigger);
+                },
+                .stun => |stun| if (world.getPtr(stun.id)) |entity| {
+                    entity.stun_time = stun.duration;
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {

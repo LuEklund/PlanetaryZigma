@@ -534,19 +534,23 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, world: *World, instan
 
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_static));
         for (world.entities.values()) |*entity| {
+            const model_handle = entity.model_handle orelse continue;
+            const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
             if (!matrix.cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const offset = shared.entity.spec(entity.kind).model.offset;
+            const offset = model_spec.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
-            drawStatic(self, cmd, entity.model_handle, base_matrix);
+            drawStatic(self, cmd, model_handle, base_matrix);
         }
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_skinned));
         for (world.entities.values()) |*entity| {
             const instance = instances.getPtr(entity.id) orelse continue;
             const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-            const entry = fileEntry(self, entity.model_handle) orelse continue;
+            const model_handle = entity.model_handle orelse continue;
+            const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
+            const entry = fileEntry(self, model_handle) orelse continue;
             const joint_buffers = self.joint_buffers.getPtr(entity.id) orelse continue;
             if (!matrix.cascadeContains(&cascade_vp, entity.transform.position)) continue;
-            const offset = shared.entity.spec(entity.kind).model.offset;
+            const offset = model_spec.offset;
             const base_matrix = cascade_vp.mul(entity.transform.toMat4x4().mul(offset.toMat4x4()));
             drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
         }
@@ -586,9 +590,11 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.static));
     bindFragmentShader(cmd, self.resources.shader_loader.frag(.mesh));
     for (world.entities.values()) |*entity| {
-        const offset = shared.entity.spec(entity.kind).model.offset;
+        const model_handle = entity.model_handle orelse continue;
+        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
+        const offset = model_spec.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
-        drawStatic(self, cmd, entity.model_handle, base_matrix);
+        drawStatic(self, cmd, model_handle, base_matrix);
     }
 
     if (world.getPtr(self.planet.planet_id)) |planet| {
@@ -600,9 +606,11 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const entry = fileEntry(self, entity.model_handle) orelse continue;
+        const model_handle = entity.model_handle orelse continue;
+        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
+        const entry = fileEntry(self, model_handle) orelse continue;
         const joint_buffers = self.joint_buffers.getPtr(entity.id) orelse continue;
-        const offset = shared.entity.spec(entity.kind).model.offset;
+        const offset = model_spec.offset;
         const base_matrix = entity.transform.toMat4x4().mul(offset.toMat4x4());
         drawSkinned(self, cmd, skeleton, entry.meshes, joint_buffers.*, base_matrix);
     }
@@ -850,16 +858,14 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
 fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle, top_matrix: nz.Mat4x4(f32)) void {
     switch (model_handle) {
         .generated => |generated_kind| {
-            const generated_slot = self.resources.generated.getPtr(generated_kind);
-            if (generated_slot.*) |*mesh| {
-                var push: Shader.WorldPushConstant = .{
-                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-                    .model_matrix = top_matrix.d,
-                    .joint_matrices_address = 0,
-                    .texture_index = 0,
-                };
-                emitNode(self, cmd, mesh, &push);
-            }
+            const mesh = self.resources.generated.getPtr(generated_kind);
+            var push: Shader.WorldPushConstant = .{
+                .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
+                .model_matrix = top_matrix.d,
+                .joint_matrices_address = 0,
+                .texture_index = 0,
+            };
+            emitNode(self, cmd, mesh, &push);
         },
         .file => |file_index| {
             const entry = &self.resources.model_loader.entries[file_index];
@@ -963,12 +969,13 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
                 continue;
             }
             const entity = world.getPtr(spawned.id) orelse continue;
-            const path = shared.entity.modelSpec(spawned.kind).path;
-            entity.model_handle = if (std.mem.endsWith(u8, path, ".glb"))
-                .{ .file = self.resources.model_loader.indices_by_path.get(path) orelse std.debug.panic("no glb on disk for {s}", .{path}) }
+            const path = (shared.entity.modelSpec(spawned.kind) orelse continue).path;
+            const model_handle: Model.Handle = if (std.mem.endsWith(u8, path, ".glb"))
+                .{ .file = self.resources.model_loader.indices_by_path.get(path).? }
             else
                 .{ .generated = std.meta.stringToEnum(Model.Generated, path).? };
-            try self.ensureInstance(gpa, instances, entity, entity.model_handle);
+            entity.model_handle = model_handle;
+            try self.ensureInstance(gpa, instances, entity, model_handle);
         },
         .entity_despawned => |id| {
             if (instances.fetchRemove(id)) |removed| {
@@ -1007,8 +1014,8 @@ fn ensureInstance(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHas
         try instances.put(entity.id, try .init(gpa, null));
         return;
     };
-    if (entry.model.isEmpty() and entity.kind.expectsModel()) {
-        std.debug.panic("no model registered for {s}", .{@tagName(entity.kind)});
+    if (entry.model.isEmpty()) {
+        std.log.err("model not loaded for {s}", .{@tagName(entity.kind)});
     }
     try instances.put(entity.id, try .init(gpa, &entry.model));
     if (entry.model.isSkinned() and !self.joint_buffers.contains(entity.id)) {

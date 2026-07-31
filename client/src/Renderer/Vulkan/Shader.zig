@@ -30,7 +30,7 @@ pub const Kind = enum {
     debug,
     explosion,
     lightning,
-    smoke,
+    item_effect,
     pub const count: usize = @typeInfo(Kind).@"enum".fields.len;
 };
 
@@ -78,14 +78,14 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
             .topology = .ribbon,
         },
     },
-    .smoke = .{
-        .path = "particle/smoke.spv",
+    .item_effect = .{
+        .path = "particle/item_effect.spv",
         .vert = "vertex",
         .frag = "fragment",
         .descriptors = &.{ .scene, .textures, .shadow },
         .push_constant_size = @sizeOf(ParticlePushConstant),
         .particle = .{
-            .particle_count = 98,
+            .particle_count = 154,
             .strands = 7,
             .duration = null,
             .topology = .ribbon,

@@ -5,6 +5,7 @@ const World = @import("../World.zig");
 const Shader = @import("../Renderer/Vulkan/Shader.zig");
 const Emitter = @import("Emitter.zig");
 
+const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
 const ribbon_target: nz.Vec3(f32) = .{ 3, 20, 3 };
 const camera_position: nz.Vec3(f32) = .{ 0, 21, 8 };
@@ -15,16 +16,16 @@ pub fn populate(world: *World) void {
 }
 
 pub fn update(world: *World) void {
-    const particle_info = Shader.particleInfo(.explosion);
+    const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        Emitter.keepAlive(world, .explosion, .none, surface_point);
+        Emitter.keepAlive(world, particle_kind, .none, surface_point);
         return;
     }
     for (&world.emitters) |emitter| {
-        if (emitter.effect == .explosion and emitter.alive(world.elapsed_time)) return;
+        if (emitter.effect == particle_kind and emitter.alive(world.elapsed_time)) return;
     }
     switch (particle_info.topology) {
-        .quad => Emitter.spawnQuad(world, .explosion, surface_point),
-        .ribbon => Emitter.spawnRibbon(world, .explosion, surface_point, ribbon_target),
+        .quad => Emitter.spawnQuad(world, particle_kind, surface_point),
+        .ribbon => Emitter.spawnRibbon(world, particle_kind, surface_point, ribbon_target),
     }
 }

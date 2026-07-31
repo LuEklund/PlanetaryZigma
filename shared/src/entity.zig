@@ -59,13 +59,7 @@ pub fn collider(kind: Kind) ?Collider {
     return spec(kind).collider;
 }
 
-pub const ModelClipNames = struct {
-    idle: ?[]const u8,
-    walk: []const u8,
-    attack: []const u8,
-    death: ?[]const u8,
-    secondary: ?[]const u8 = null,
-};
+const no_clip: ?[]const u8 = null;
 
 pub const ModelLookNodeNames = struct {
     spine: ?[]const u8,
@@ -76,8 +70,7 @@ pub const ModelLookNodeNames = struct {
 pub const ModelSpec = struct {
     path: []const u8,
     offset: nz.Transform3D(f32) = .{},
-    skinned: bool,
-    clip_names: ?ModelClipNames,
+    clip_names: ?std.EnumArray(State, ?[]const u8),
     look_node_names: ?ModelLookNodeNames = null,
     overlay_root_name: ?[]const u8 = null,
 };
@@ -86,169 +79,153 @@ const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
 const player_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 
-pub fn modelSpec(kind: Kind) ModelSpec {
+pub fn modelSpec(kind: Kind) ?ModelSpec {
     return spec(kind).model;
 }
 
 pub const Spec = struct {
     collider: ?Collider,
-    model: ModelSpec,
+    model: ?ModelSpec,
     icon: ?[]const u8 = null,
     has_health: bool,
-    expects_model: bool,
     stats: ?Stats.Values = null,
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
+    windup: f32 = 0,
 };
 
 pub fn spec(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,
-            .model = .{ .path = "default", .skinned = false, .clip_names = null },
+            .model = .{ .path = "default", .clip_names = null },
             .has_health = false,
-            .expects_model = false,
         },
         .player => .{
             .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
                 .path = "objects/BenBozo.glb",
                 .offset = player_model_offset,
-                .skinned = true,
-                .clip_names = .{
+                .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Run",
                     .attack = "Run",
                     .death = "Death",
-                },
+                }),
                 .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .has_health = true,
-            .expects_model = true,
             .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
             .currency = 100,
         },
         .planet => .{
             .collider = null,
-            .model = .{ .path = "planet", .skinned = false, .clip_names = null },
+            .model = null,
             .has_health = false,
-            .expects_model = false,
         },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "objects/pillar.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/pillar.glb", .clip_names = null },
             .has_health = false,
-            .expects_model = false,
         },
         .lootbox => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .static, .layer = .moving },
-            .model = .{ .path = "objects/lootbox.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/lootbox.glb", .clip_names = null },
             .has_health = false,
-            .expects_model = true,
             .death_duration = 0.35,
             .currency = 10,
         },
         .platform => .{
             .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "default", .skinned = false, .clip_names = null },
+            .model = .{ .path = "default", .clip_names = null },
             .has_health = false,
-            .expects_model = false,
         },
         .target_dummy => .{
             .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+            .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                 .idle = "idle",
                 .walk = "walk",
                 .attack = "attack",
                 .death = "Death",
-            } },
+            }) },
             .has_health = true,
-            .expects_model = true,
             .stats = .initDefault(0, .{ .health = 1000 }),
         },
         .projectile_cube => .{
             .collider = null,
-            .model = .{ .path = "cube_projectile", .skinned = false, .clip_names = null },
+            .model = .{ .path = "cube_projectile", .clip_names = null },
             .has_health = false,
-            .expects_model = true,
         },
         .projectile_rocket => .{
             .collider = null,
-            .model = .{ .path = "objects/rocket.glb", .skinned = false, .clip_names = null },
+            .model = .{ .path = "objects/rocket.glb", .clip_names = null },
             .has_health = false,
-            .expects_model = true,
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
                     .attack = "attack",
                     .death = "Death",
-                } },
+                }) },
                 .has_health = true,
-                .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .attack_speed = 1, .range = 2 }),
                 .currency = 5,
             },
             .tubloida => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/Tubloida.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
                     .attack = "attack_range",
                     .death = "Death",
-                } },
+                }) },
                 .has_health = true,
-                .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
                 .currency = 7,
             },
             .hunkloid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = face_camera }, .skinned = true, .clip_names = .{
+                .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walk",
                     .attack = "Attack",
                     .death = "Death",
-                    .secondary = "secondary",
-                } },
+                    .secondary = "Secondary",
+                }) },
                 .has_health = true,
-                .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .attack_speed = 0.2, .range = 3 }),
                 .currency = 30,
             },
             .bloorp_lord => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/BloorpLord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walking",
                     .attack = "Spawn_Enemy",
                     .death = "Death",
-                } },
+                }) },
                 .has_health = true,
-                .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
                 .currency = 100,
             },
             .blooploid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .skinned = false, .clip_names = null },
+                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .clip_names = null },
                 .has_health = true,
-                .expects_model = true,
                 .stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .attack_speed = 0.2, .range = 15 }),
                 .currency = 7,
             },
         },
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
-            .model = .{ .path = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
+            .model = .{ .path = Item.spec(item_kind).model, .clip_names = null },
             .icon = Item.spec(item_kind).icon,
             .has_health = false,
-            .expects_model = true,
             .spawn_duration = 0.35,
         },
     };
@@ -303,10 +280,6 @@ pub const Kind = union(enum) {
             else => null,
         };
     }
-
-    pub fn expectsModel(kind: Kind) bool {
-        return spec(kind).expects_model;
-    }
 };
 
 pub const State = enum(u16) {
@@ -314,4 +287,6 @@ pub const State = enum(u16) {
     walk = 1,
     attack = 2,
     death = 3,
+    secondary = 4,
+    stun = 5,
 };

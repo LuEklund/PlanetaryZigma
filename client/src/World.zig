@@ -30,7 +30,7 @@ pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
-attack_events: std.ArrayList(shared.entity.Id) = .empty,
+trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
 emitters: Emitter.List,
 damage_events: std.ArrayList(DamageEvent) = .empty,
@@ -57,7 +57,8 @@ pub const Entity = struct {
     interacting: shared.entity.Id = .none,
     motion: Motion = .{},
     override_animation_state: ?shared.entity.State = null,
-    model_handle: Model.Handle = .{ .generated = .default },
+    stun_time: f32 = 0,
+    model_handle: ?Model.Handle = null,
     flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
@@ -70,6 +71,7 @@ pub const Entity = struct {
 
     pub const Flags = packed struct {
         is_dying: bool = false,
+        is_teleporter_boss: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -88,7 +90,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_stats = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
-        .attack_events = try .initCapacity(gpa, shared.max_entities),
+        .trigger_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
@@ -106,7 +108,7 @@ pub fn deinit(self: *World) void {
     self.pending_despawn.deinit(self.gpa);
     self.pending_stats.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
-    self.attack_events.deinit(self.gpa);
+    self.trigger_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
@@ -123,7 +125,7 @@ pub fn clearSession(self: *World) void {
     self.pending_despawn.clearRetainingCapacity();
     self.pending_stats.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
-    self.attack_events.clearRetainingCapacity();
+    self.trigger_events.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
@@ -178,7 +180,7 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             .teleporter => self.teleporter_id = entity.id,
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
-                    entity.transform.scale = @splat(5);
+                    entity.flags.is_teleporter_boss = true;
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },

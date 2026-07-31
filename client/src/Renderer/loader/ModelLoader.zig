@@ -21,7 +21,7 @@ reloaded: std.ArrayList(u32),
 interface: Loader,
 
 pub const Entry = struct {
-    kind_spec: entity.Spec,
+    kind: entity.Kind,
     model: Model,
     meshes: []Mesh,
     image_slots: []Image.Handle,
@@ -33,13 +33,13 @@ pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServ
     var indices_by_path: std.StringHashMapUnmanaged(u32) = .empty;
     var count: u32 = 0;
     for (entity.all_kinds) |kind| {
-        const kind_spec = entity.spec(kind);
-        const path = kind_spec.model.path;
+        const model_spec = entity.spec(kind).model orelse continue;
+        const path = model_spec.path;
         if (!std.mem.endsWith(u8, path, ".glb")) continue;
         if (indices_by_path.contains(path)) continue;
         try indices_by_path.put(gpa, path, count);
         entries_storage[count] = .{
-            .kind_spec = kind_spec,
+            .kind = kind,
             .model = .empty,
             .meshes = &.{},
             .image_slots = &.{},
@@ -82,12 +82,14 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     unload(loader, index);
 
     const entry = &self.entries[index];
-    if (entry.kind_spec.model.skinned) {
-        var upload_data = try entry.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, entry.kind_spec);
+    const kind_spec = entity.spec(entry.kind);
+    const model_spec = kind_spec.model orelse return;
+    if (model_spec.clip_names != null) {
+        var upload_data = try entry.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec, model_spec);
         defer upload_data.deinit(gpa);
         try self.uploadToGpu(Mesh.SkinnedVertex, gpa, entry, upload_data);
     } else {
-        var upload_data = try entry.model.parseGlb(Mesh.StaticVertex, gpa, io, file, entry.kind_spec);
+        var upload_data = try entry.model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec, model_spec);
         defer upload_data.deinit(gpa);
         try self.uploadToGpu(Mesh.StaticVertex, gpa, entry, upload_data);
     }

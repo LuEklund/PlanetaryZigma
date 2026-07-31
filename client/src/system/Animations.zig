@@ -32,14 +32,16 @@ pub fn init(gpa: std.mem.Allocator) Animations {
 
 pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     _ = self;
-    for (world.attack_events.items) |id| {
-        const instance = instances.getPtr(id) orelse continue;
+    for (world.trigger_events.items) |trigger| {
+        const instance = instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = instance.model.?;
-        skeleton.playOverlay(model, model.state_clips.get(.attack));
+        const model = instance.model orelse continue;
+        const clip_index = model.state_clips.get(trigger.state) orelse continue;
+        skeleton.playOverlay(model, clip_index);
     }
-    world.attack_events.clearRetainingCapacity();
+    world.trigger_events.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
+        entity.stun_time = @max(0, entity.stun_time - world.delta_time);
         const instance = instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton == null) continue;
 
@@ -47,6 +49,7 @@ pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMa
             const speed = if (entity.motion.update) |update_motion| nz.vec.length(update_motion.velocity) else 0;
             break :state if (speed > 0.5) .walk else .idle;
         };
+        state = if (entity.stun_time > 0) .stun else state;
         state = if (entity.flags.is_dying) .death else state;
         if (entity.override_animation_state) |override| state = override;
         instance.state = state;
@@ -62,9 +65,7 @@ pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shar
         const instance = instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton) |*skeleton| {
             const model = instance.model.?;
-            if (model.clips.len == 0) continue;
-            const clip_index = model.state_clips.get(instance.state);
-            playAnimation(world, entity, skeleton, model, clip_index);
+            playAnimation(world, entity, skeleton, model, model.state_clips.get(instance.state));
         }
     }
 
@@ -93,9 +94,11 @@ pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shar
     }
 }
 
-fn playAnimation(world: *World, entity: *system.Entity, skeleton: *AnimationInstance.Skeleton, model: *Model, clip_index: usize) void {
-    if (clip_index != skeleton.player.active) {
-        skeleton.playClip(model, clip_index);
+fn playAnimation(world: *World, entity: *system.Entity, skeleton: *AnimationInstance.Skeleton, model: *Model, clip_index: ?usize) void {
+    if (clip_index) |index| {
+        if (index != skeleton.player.active) {
+            skeleton.playClip(model, index);
+        }
     }
 
     if (skeleton.overlay) |*overlay| {
@@ -106,13 +109,21 @@ fn playAnimation(world: *World, entity: *system.Entity, skeleton: *AnimationInst
         }
     }
 
-    const animation = model.clips[skeleton.player.active];
-    skeleton.player.current_time += world.delta_time;
+    if (clip_index != null) {
+        const animation = model.clips[skeleton.player.active];
+        skeleton.player.current_time += world.delta_time;
 
-    if (skeleton.player.current_time > animation.end) {
-        skeleton.player.current_time -= animation.end - animation.start;
+        if (skeleton.player.current_time > animation.end) {
+            skeleton.player.current_time -= animation.end - animation.start;
+        }
+        sampleClip(skeleton.nodes, animation, skeleton.player.current_time, null);
+    } else {
+        for (skeleton.nodes, model.nodes.items) |*node, bind_node| {
+            node.translation = bind_node.translation;
+            node.rotation = bind_node.rotation;
+            node.scale = bind_node.scale;
+        }
     }
-    sampleClip(skeleton.nodes, animation, skeleton.player.current_time, null);
     if (skeleton.overlay) |overlay| {
         sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
     }
