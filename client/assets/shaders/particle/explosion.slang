@@ -35,7 +35,6 @@ PushConstant push_constant;
 
 struct VertexOutput {
   float4 position : SV_Position;
-  float4 color : COLOR0;
   float2 uv : TEXCOORD0;
 };
 
@@ -52,11 +51,14 @@ static const float3 puff_offset[puff_count] = {
   float3(0.45, 0.1, 0),   float3(-0.35, -0.2, 0.1), float3(0.05, 0.35, -0.15),
   float3(0.3, -0.4, 0.2), float3(-0.45, 0.25, -0.1)
 };
-static const float3 puff_travel[puff_count] = {
-  float3(0, 0, 0),          float3(-0.2, 0.28, 0.24),  float3(0.28, -0.16, -0.32),
-  float3(0.71, 0.16, 0),    float3(-0.48, -0.28, 0.16), float3(0.08, 0.44, -0.2),
-  float3(0.36, -0.44, 0.2), float3(-0.4, 0.32, -0.12)
-};
+static const float3 puff_travel[puff_count] = { float3(0, 0, 0),
+                                                float3(-0.2, 0.28, 0.24),
+                                                float3(0.28, -0.16, -0.32),
+                                                float3(0.71, 0.16, 0),
+                                                float3(-0.48, -0.28, 0.16),
+                                                float3(0.08, 0.44, -0.2),
+                                                float3(0.36, -0.44, 0.2),
+                                                float3(-0.4, 0.32, -0.12) };
 static const float puff_scale[puff_count] = { 2.2,  1.95, 1.75, 1.55,
                                               1.35, 1.2,  1.1,  1.0 };
 static const float puff_lifetime[puff_count] = { 0.425, 0.475, 0.5,  0.525,
@@ -113,7 +115,8 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   Particle particle = spawnParticle(emitter, particle_index);
 
   float age = push_constant.elapsed_time - emitter.spawn_time;
-  float3 position = particle.position + particle.travel * (1.0 - pow(drag, age));
+  float3 position =
+      particle.position + particle.travel * (1.0 - pow(drag, age));
   float life = clamp(1.0 - age / particle.lifetime, 0.0, 1.0);
 
   float2 corner = corners[vertex_index];
@@ -125,14 +128,12 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
 
   VertexOutput output;
   output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
-  output.color = float4(1.0, 1.0, 1.0, 1.0);
   output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
   return output;
 }
 
 [shader("fragment")]
-float4 fragment(VertexOutput input) : SV_Target {
+float4 fragment(VertexOutput input) {
   float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
-  return float4(lerp(edge_color, center_color, sqrt(core)), core * core) *
-         input.color;
+  return float4(lerp(edge_color, center_color, sqrt(core)), core * core);
 }

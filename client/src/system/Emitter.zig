@@ -94,6 +94,6 @@ pub fn update(world: *World) void {
     for (world.entities.values()) |*entity| {
         if (entity.kind != .item) continue;
         const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-        keepAlive(world, .smoke, entity.id, entity.transform.position - offset);
+        keepAlive(world, .item_effect, entity.id, entity.transform.position - offset);
     }
 }

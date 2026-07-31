@@ -62,7 +62,7 @@ static const float spin_speed = 0.55;
 static const float ribbon_width = 0.13;
 static const float scroll_speed = 0.4;
 static const float base_alpha = 0.8;
-static const uint strand_count = 7; // must match ParticleInfo.strands for .smoke
+static const uint strand_count = 7; // must match ParticleInfo.strands for .item_effect
 
 float hash(float n) { return frac(sin(n) * 43758.5453123); }
 
@@ -156,7 +156,9 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   float t = lerp(t0, t1, along);
   float3 center = lerp(start, end, along);
   float3 view = normalize(scene_data.camera_position.xyz - center);
-  float3 across = cross(end - start, view);
+  float3 tangent =
+      strandPoint(strand, t + 0.01) - strandPoint(strand, t - 0.01);
+  float3 across = cross(tangent, view);
   float width = ribbon_width * sin(t * 3.1415926) * 1.7 *
                 (0.65 + width_random * 0.8);
 
