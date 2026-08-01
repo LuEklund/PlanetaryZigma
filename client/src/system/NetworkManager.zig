@@ -395,12 +395,12 @@ fn handleCommand(
         .server_tick => |tick| {
             self.server_tick_latest = @max(self.server_tick_latest, tick);
         },
-        .update_stat => |update_stat_command| {
-            const entity = world.getPtr(update_stat_command.id) orelse {
-                world.pending_stats.appendAssumeCapacity(update_stat_command);
+        .update_health => |update_health_command| {
+            const entity = world.getPtr(update_health_command.id) orelse {
+                world.pending_healths.appendAssumeCapacity(update_health_command);
                 return;
             };
-            world.applyStat(entity, update_stat_command);
+            world.applyHealth(entity, update_health_command);
         },
         .update_event => |event| {
             switch (event) {

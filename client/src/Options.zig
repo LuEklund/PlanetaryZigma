@@ -1,6 +1,5 @@
 const Options = @This();
 
-show_hud_stats: bool = true,
 show_crosshair: bool = true,
 mouse_sensitivity: f32 = 1.0,
 invert_y: bool = false,

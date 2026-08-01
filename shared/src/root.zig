@@ -11,9 +11,9 @@ pub const Watcher = @import("Watcher.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
-const inventory = @import("inventory.zig");
-pub const Item = inventory.Item;
-pub const Inventory = inventory.Inventory;
+const item = @import("item.zig");
+pub const Item = item.Item;
+pub const Inventory = item.Inventory;
 
 pub const entity = @import("entity.zig");
 
@@ -79,4 +79,4 @@ pub const teleporter = struct {
     };
 };
 
-pub const Stats = @import("Stats.zig");
+pub const Stat = item.Stat;

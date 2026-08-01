@@ -36,7 +36,7 @@ pub const ServerPacket = union(enum) {
     despawn_entity: DespawnEntity,
     update_motion: UpdateMotion,
     server_tick: u32,
-    update_stat: UpdateStat,
+    update_health: UpdateHealth,
     update_event: Event,
     update_inventory: UpdateInventory,
     set_currency: SetCurrency,
@@ -186,14 +186,13 @@ pub const UpdateTransform = struct {
     rotation: @Vector(4, f16),
 };
 
-pub const UpdateStat = struct {
+pub const UpdateHealth = struct {
     id: entity.Id,
-    stat_kind: root.Stats.Kind,
     source: entity.Id,
-    amount: UpdateStatAmount,
+    amount: UpdateHealthAmount,
 };
 
-pub const UpdateStatAmount = union(enum) {
+pub const UpdateHealthAmount = union(enum) {
     set_current: f16,
     set_max: f16,
 };

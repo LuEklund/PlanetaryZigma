@@ -58,7 +58,7 @@ pub fn updateDirector(world: *World) !void {
 }
 
 fn attackLands(world: *World, enemy: *system.Entity, distance: f32, range: f32, windup: f32) bool {
-    if (enemy.attack_lands_at == 0 and distance < range and world.elapsed_time - enemy.last_attack >= enemy.stats.attackSpeed()) {
+    if (enemy.attack_lands_at == 0 and distance < range and world.elapsed_time - enemy.last_attack >= enemy.stat(.primary_cooldown)) {
         enemy.last_attack = world.elapsed_time;
         enemy.attack_lands_at = world.elapsed_time + windup;
         world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
@@ -114,9 +114,9 @@ pub fn updateEnemies(world: *World) !void {
         }
 
         const forward_dir = enemy.transform.forward();
-        const speed = enemy.stats.current.get(.speed);
-        const damage = enemy.stats.current.get(.damage);
-        const range = enemy.stats.current.get(.range);
+        const speed = enemy.stat(.speed);
+        const damage = enemy.stat(.damage);
+        const range = shared.entity.spec(enemy.kind).primary_range;
         const windup = shared.entity.spec(enemy.kind).windup;
         switch (enemy.kind.enemy) {
             .tubloida => {
@@ -127,7 +127,7 @@ pub fn updateEnemies(world: *World) !void {
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
                     const muzzle_velocity = nz.vec.scale(aim_dir, 50);
-                    const bullet = try world.spawn(.{
+                    _ = try world.spawn(.{
                         .kind = .projectile_cube,
                         .owner_id = enemy.id,
                         .transform = .{
@@ -136,8 +136,8 @@ pub fn updateEnemies(world: *World) !void {
                         },
                         .replicated_velocity = muzzle_velocity,
                         .lifetime = 2,
+                        .damage = damage,
                     });
-                    bullet.stats.current.set(.damage, damage);
                 }
             },
             .tubloid => {
@@ -163,7 +163,8 @@ pub fn updateEnemies(world: *World) !void {
             .hunkloid => {
                 const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
-                if (distance < range * 4 and distance > range * 3 and world.elapsed_time - enemy.last_utility >= shared.entity.spec(enemy.kind).utility_cooldown) {
+                const utility_range = shared.entity.spec(enemy.kind).utility_range;
+                if (distance < utility_range and distance > utility_range * 0.75 and world.elapsed_time - enemy.last_utility >= enemy.stat(.utility_cooldown)) {
                     enemy.last_utility = world.elapsed_time;
                     Physics.arcJumpTo(enemy, player.transform.position);
                     world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .utility } } });
@@ -183,7 +184,7 @@ pub fn updateEnemies(world: *World) !void {
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
                     const muzzle_velocity = nz.vec.scale(aim_dir, 50);
-                    const bullet = try world.spawn(.{
+                    _ = try world.spawn(.{
                         .kind = .projectile_cube,
                         .owner_id = enemy.id,
                         .transform = .{
@@ -192,8 +193,8 @@ pub fn updateEnemies(world: *World) !void {
                         },
                         .replicated_velocity = muzzle_velocity,
                         .lifetime = 2,
+                        .damage = damage,
                     });
-                    bullet.stats.current.set(.damage, damage);
                 }
             },
         }
@@ -241,7 +242,7 @@ pub fn updateProjectiles(world: *World, physics: *Physics) void {
 
         switch (projectile_kind) {
             .cube => {
-                if (world.removeHealth(hit_entity, entity.stats.current.get(.damage), owner_entity) != .ignored) {
+                if (world.removeHealth(hit_entity, entity.damage, owner_entity) != .ignored) {
                     tryProcLightning(world, owner_entity, hit_entity.transform.position, hit_entity);
                 }
             },
@@ -257,8 +258,8 @@ pub fn updateProjectiles(world: *World, physics: *Physics) void {
 fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
     const lightning_count = owner_entity.inventory.get(.lightning);
     var lightning_jumps = lightning_count;
-    const damage = owner_entity.stats.current.get(.damage) * lightning_count * 0.1;
-    const lightning_chance = shared.Item.lightning.attributes().get(.lightning_chance);
+    const damage = owner_entity.stat(.damage) * lightning_count * 0.1;
+    const lightning_chance = owner_entity.stat(.lightning_chance);
     if (!(owner_entity.kind == .player or lightning_jumps > 0 and world.prng.random().float(f32) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;
@@ -319,7 +320,7 @@ fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: n
 }
 
 fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32)) void {
-    const base_damage = owner_entity.stats.current.get(.damage);
+    const base_damage = owner_entity.stat(.damage);
     const blast_radius: f32 = @as(f32, owner_entity.inventory.get(.rocket)) * 0.5 + 2;
     for (world.entities.values()) |*candidate| {
         if (!candidate.kind.hasHealth()) continue;
@@ -385,7 +386,7 @@ pub fn updateLifetimes(world: *World) void {
 pub fn playerRegen(world: *World) void {
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
-        player.regen_carry += world.delta_time * player.stats.current.get(.regen);
+        player.regen_carry += world.delta_time * player.stat(.regen);
         if (player.regen_carry < 1) continue;
         const whole_points = @floor(player.regen_carry);
         player.regen_carry -= whole_points;

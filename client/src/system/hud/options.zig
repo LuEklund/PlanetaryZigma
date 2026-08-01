@@ -70,11 +70,7 @@ pub fn update(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) vo
 
 fn optionsGameplay(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
-    const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(options.show_hud_stats), left, top, width, row_height)) {
-        options.show_hud_stats = !options.show_hud_stats;
-    }
-    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
+    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top, width, row_height)) {
         options.show_crosshair = !options.show_crosshair;
     }
 }

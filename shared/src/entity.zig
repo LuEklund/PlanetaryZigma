@@ -1,7 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
-const Item = @import("inventory.zig").Item;
-const Stats = @import("Stats.zig");
+const Item = @import("item.zig").Item;
+const Stat = @import("item.zig").Stat;
 
 pub const Id = enum(u32) {
     none = 0,
@@ -88,12 +88,13 @@ pub const Spec = struct {
     model: ?ModelSpec,
     icon: ?[]const u8 = null,
     has_health: bool,
-    stats: ?Stats.Values = null,
+    base_stats: ?std.EnumArray(Stat, f32) = null,
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
     windup: f32 = 0,
-    utility_cooldown: f32 = 0,
+    primary_range: f32 = 0,
+    utility_range: f32 = 0,
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -118,7 +119,8 @@ pub fn spec(kind: Kind) Spec {
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .has_health = true,
-            .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
+            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1 }),
+            .primary_range = 10,
             .currency = 100,
         },
         .planet => .{
@@ -152,7 +154,7 @@ pub fn spec(kind: Kind) Spec {
                 .death = "Death",
             }) },
             .has_health = true,
-            .stats = .initDefault(0, .{ .health = 1000 }),
+            .base_stats = .initDefault(0, .{ .health = 1000 }),
         },
         .projectile_cube => .{
             .collider = null,
@@ -174,7 +176,8 @@ pub fn spec(kind: Kind) Spec {
                     .death = "Death",
                 }) },
                 .has_health = true,
-                .stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .attack_speed = 1, .range = 2 }),
+                .base_stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .primary_cooldown = 1 }),
+                .primary_range = 2,
                 .currency = 5,
             },
             .tubloida => .{
@@ -186,7 +189,8 @@ pub fn spec(kind: Kind) Spec {
                     .death = "Death",
                 }) },
                 .has_health = true,
-                .stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .attack_speed = 0.2, .range = 10 }),
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .primary_cooldown = 5 }),
+                .primary_range = 10,
                 .currency = 7,
             },
             .hunkloid => .{
@@ -199,9 +203,10 @@ pub fn spec(kind: Kind) Spec {
                     .utility = "Secondary",
                 }) },
                 .has_health = true,
-                .stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .attack_speed = 0.2, .range = 3 }),
+                .base_stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .primary_cooldown = 5, .utility_cooldown = 5 }),
+                .primary_range = 3,
+                .utility_range = 12,
                 .currency = 30,
-                .utility_cooldown = 5,
             },
             .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
@@ -212,14 +217,16 @@ pub fn spec(kind: Kind) Spec {
                     .death = "Death",
                 }) },
                 .has_health = true,
-                .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
+                .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 4 }),
+                .primary_range = 40,
                 .currency = 100,
             },
             .blooploid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .clip_names = null },
                 .has_health = true,
-                .stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .attack_speed = 0.2, .range = 15 }),
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
+                .primary_range = 15,
                 .currency = 7,
             },
         },
