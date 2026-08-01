@@ -93,6 +93,7 @@ pub const Spec = struct {
     death_duration: f32 = 0,
     currency: u32 = 0,
     windup: f32 = 0,
+    utility_cooldown: f32 = 0,
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -195,11 +196,12 @@ pub fn spec(kind: Kind) Spec {
                     .walk = "Walk",
                     .attack = "Attack",
                     .death = "Death",
-                    .secondary = "Secondary",
+                    .utility = "Secondary",
                 }) },
                 .has_health = true,
                 .stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .attack_speed = 0.2, .range = 3 }),
                 .currency = 30,
+                .utility_cooldown = 5,
             },
             .bloorp_lord => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
@@ -287,6 +289,6 @@ pub const State = enum(u16) {
     walk = 1,
     attack = 2,
     death = 3,
-    secondary = 4,
+    utility = 4,
     stun = 5,
 };

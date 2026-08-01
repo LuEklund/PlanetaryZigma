@@ -101,12 +101,18 @@ pub const Entity = struct {
 
     last_attack: f32 = 0,
     attack_lands_at: f32 = 0,
+    last_utility: f32 = 0,
+    mode: Mode = .falling,
+
+    pub const Mode = enum {
+        walking,
+        falling,
+    };
 
     pub const Flags = packed struct {
         invinsible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
-        is_grounded: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {

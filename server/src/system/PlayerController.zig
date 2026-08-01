@@ -174,10 +174,9 @@ pub fn update(world: *World, physics: *Physics) !void {
 
             const speed = player.stats.current.get(.speed);
 
-            var vertical: f32 = 0;
-            if (input.keys.space and player.flags.is_grounded) vertical += 20;
+            if (input.keys.space and player.mode == .walking) Physics.jump(player, 20);
 
-            Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
+            Physics.moveOnPlanet(player, dir, speed, world.delta_time);
 
             Physics.setRotation(id, camera.yaw_rotation);
             transform.rotation = camera.yaw_rotation;
