@@ -102,36 +102,19 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
             if (amount == 0) continue;
             if (!ui.isHot(ui.print("{t}", .{item_kind}))) continue;
             const item_spec = shared.Item.spec(item_kind);
-            const stack_count: f32 = @floatFromInt(amount);
             const line_size: f32 = 18;
-            var line_count: f32 = 1;
-            for (std.enums.values(shared.Stat)) |stat_kind| {
-                if (item_spec.flat.get(stat_kind) != 0 or item_spec.percent.get(stat_kind) != 0) line_count += 1;
-            }
+            const text_size = ui.textSize(item_spec.description, line_size);
             ui.add(null, .{
                 .name = "item_tooltip",
                 .offset = .{ .left = ui.mouse_state.position.left + 16, .top = ui.mouse_state.position.top + 16 },
-                .size = .{ .fixed = .{ .width = 320, .heigth = line_count * (line_size + 4) + 8 } },
+                .size = .{ .fixed = .{ .width = text_size.width + 16, .heigth = text_size.heigth + 16 } },
                 .color = .new(0.1, 0.1, 0.1, 0.85),
-                .axis_align = .vertical,
-                .gap = 4,
+                .child_anchor = .{ .x = .center, .y = .center },
+                .children = &.{.{
+                    .size = .{ .fixed = text_size },
+                    .text = .{ .data = item_spec.description, .size = line_size },
+                }},
             });
-            ui.add("item_tooltip", .{
-                .size = .{ .fixed = ui.textSize(item_spec.description, line_size) },
-                .text = .{ .data = item_spec.description, .size = line_size },
-            });
-            for (std.enums.values(shared.Stat)) |stat_kind| {
-                const flat = item_spec.flat.get(stat_kind) * stack_count;
-                const percent = item_spec.percent.get(stat_kind) * stack_count;
-                if (flat == 0 and percent == 0) continue;
-                var line: []const u8 = ui.print("{t}:", .{stat_kind});
-                if (flat != 0) line = ui.print("{s} +{d:.0}", .{ line, flat });
-                if (percent != 0) line = ui.print("{s} {d:.0}%", .{ line, percent * 100 });
-                ui.add("item_tooltip", .{
-                    .size = .{ .fixed = ui.textSize(line, line_size) },
-                    .text = .{ .data = line, .size = line_size },
-                });
-            }
         }
         if (show_stats) {
             const line_size: f32 = 18;
