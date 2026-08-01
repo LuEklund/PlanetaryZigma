@@ -278,7 +278,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                 if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendStats(client, writer, entity);
+                try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
                 if (tracksMotion(entity)) {
                     try client.sendCommand(writer, .{ .update_motion = motionPacket(world, entity) }, .reliable);
@@ -296,14 +296,14 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendStats(client, writer, entity);
+                try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
             },
-            .stat => |update_stat| {
-                try client.sendCommand(writer, .{ .update_stat = update_stat }, .reliable);
+            .health => |update_health| {
+                try client.sendCommand(writer, .{ .update_health = update_health }, .reliable);
             },
             .inventory => |update_inventory| {
                 try client.sendCommand(writer, .{ .update_inventory = update_inventory }, .reliable);
@@ -327,40 +327,10 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
     return .running;
 }
 
-fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (!entity.kind.hasHealth()) return;
-    if (entity.kind == .player) {
-        for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-            try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(entity.stats.max.get(stat_kind)) } } }, .reliable);
-            try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(entity.stats.current.get(stat_kind)) } } }, .reliable);
-        }
-    } else {
-        try client.sendCommand(
-            writer,
-            .{ .update_stat = .{
-                .id = entity.id,
-                .stat_kind = .health,
-                .source = .none,
-                .amount = .{
-                    .set_max = @floatCast(entity.stats.max.get(.health)),
-                },
-            } },
-            .reliable,
-        );
-
-        try client.sendCommand(
-            writer,
-            .{ .update_stat = .{
-                .id = entity.id,
-                .stat_kind = .health,
-                .source = .none,
-                .amount = .{
-                    .set_current = @floatCast(entity.stats.current.get(.health)),
-                },
-            } },
-            .reliable,
-        );
-    }
+    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
+    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
 }
 
 fn tracksMotion(entity: *const system.Entity) bool {

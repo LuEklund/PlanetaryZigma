@@ -53,13 +53,17 @@ pub const Director = struct {
 pub const ClientUpdate = union(enum) {
     spawned: shared.entity.Id,
     despawned: shared.entity.Id,
-    stat: shared.net.UpdateStat,
+    health: shared.net.UpdateHealth,
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
     currency: shared.net.SetCurrency,
 };
 
 pub const Camera = struct {
+    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
+        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    }
+
     pub const Mode = enum { follow, free };
 
     mode: Mode = .follow,
@@ -94,19 +98,31 @@ pub const Entity = struct {
     currency: u32 = 0,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
-    stats: shared.Stats = .init(.initFill(0)),
+    health: f32 = 0,
+    max_health: f32 = 0,
+    damage: f32 = 0,
     regen_carry: f32 = 0,
 
     un_stun_at: f32 = 0,
 
     last_attack: f32 = 0,
     attack_lands_at: f32 = 0,
+    last_utility: f32 = 0,
+    mode: Mode = .falling,
+
+    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
+        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    }
+
+    pub const Mode = enum {
+        walking,
+        falling,
+    };
 
     pub const Flags = packed struct {
         invinsible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
-        is_grounded: bool = false,
     };
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
@@ -183,12 +199,12 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
     const kind_spec = shared.entity.spec(entity.kind);
-    if (kind_spec.stats) |stats_spec| {
-        var values = stats_spec;
+    if (kind_spec.base_stats != null) {
+        entity.max_health = entity.stat(.health);
         if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
-            values.set(.health, values.get(.health) * @as(f32, @floatFromInt(self.stage)));
+            entity.max_health *= @as(f32, @floatFromInt(self.stage));
         }
-        entity.stats = .init(values);
+        entity.health = entity.max_health;
     }
     entity.currency = kind_spec.currency;
     self.new_spawns.appendAssumeCapacity(id);
@@ -218,18 +234,16 @@ pub fn queueRemove(self: *World, id: shared.entity.Id) void {
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {
     if (player.inventory.get(item) >= 255) return null;
     const item_count = player.inventory.add(item, count);
-    player.stats.gain(item, @floatFromInt(count));
-    player.stats.refresh(player.inventory);
+    const old_max_health = player.max_health;
+    player.max_health = player.stat(.health);
+    player.health = @min(player.max_health, player.health + @max(0, player.max_health - old_max_health));
     self.client_updates.appendAssumeCapacity(.{ .inventory = .{
         .id = player.id,
         .item_kind = item,
         .set = item_count,
     } });
-    for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-        if (item.attributes().get(stat_kind) == 0) continue;
-        self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(player.stats.max.get(stat_kind)) } } });
-        self.client_updates.appendAssumeCapacity(.{ .stat = .{ .id = player.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(player.stats.current.get(stat_kind)) } } });
-    }
+    self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_max = @floatCast(player.max_health) } } });
+    self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.health) } } });
     return item_count;
 }
 
@@ -241,15 +255,11 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
     var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
     new_amount = @min(new_amount, amount);
     if (source) |source_entity| {
-        if (source_entity.inventory.get(.crit) >= random.float(f32) * 10) new_amount *= 2;
+        if (random.float(f32) < source_entity.stat(.critical_chance)) new_amount *= 2;
 
-        const tougherer_times = entity.inventory.get(.tougherer_times);
-        const block_chance = 1 - (1 / (1 + tougherer_times * shared.Item.attributes(.tougherer_times).get(.block_chance)));
+        if (random.float(f32) < entity.stat(.block_chance)) new_amount = 0;
 
-        if (random.float(f32) < block_chance) new_amount = 0;
-
-        const icicles = (source_entity.inventory.get(.icicle));
-        if (random.float(f32) < icicles * @as(f32, 0.05)) {
+        if (random.float(f32) < source_entity.stat(.stun_chance)) {
             const stun_duration: f32 = 2;
             entity.un_stun_at = self.elapsed_time + stun_duration;
             entity.attack_lands_at = 0;
@@ -261,25 +271,24 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
 
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
     if (!entity.kind.hasHealth()) return .ignored;
-    const before = entity.stats.current.get(.health);
+    const before = entity.health;
     if (before <= 0) return .ignored;
-    var current = entity.stats.addCurrent(.health, amount);
+    var current = @min(entity.max_health, entity.health + amount);
+    entity.health = current;
     if (current == before) return .ignored;
     if (current <= 0 and entity.kind == .target_dummy) {
-        current = entity.stats.max.get(.health);
-        entity.stats.current.set(.health, current);
-        self.client_updates.appendAssumeCapacity(.{ .stat = .{
+        current = entity.max_health;
+        entity.health = current;
+        self.client_updates.appendAssumeCapacity(.{ .health = .{
             .id = entity.id,
-            .stat_kind = .health,
             .source = if (source) |source_entity| source_entity.id else .none,
             .amount = .{ .set_current = @floatCast(current) },
         } });
         return .changed;
     }
     if (current <= 0) self.queueDespawn(entity.id);
-    self.client_updates.appendAssumeCapacity(.{ .stat = .{
+    self.client_updates.appendAssumeCapacity(.{ .health = .{
         .id = entity.id,
-        .stat_kind = .health,
         .source = if (source) |source_entity| source_entity.id else .none,
         .amount = .{ .set_current = @floatCast(current) },
     } });
@@ -407,7 +416,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
         player.replicated_velocity = .{ 0, 0, 0 };
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
-            player.stats.current.set(.health, player.stats.max.get(.health));
+            player.health = player.max_health;
             try physics.createBody(player);
             self.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
         } else if (player.collider.body_id) |body_id| {

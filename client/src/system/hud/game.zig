@@ -13,7 +13,7 @@ const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List) !void {
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -38,8 +38,8 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
         addWorldHealthBars(world, ui);
         addDamagePopups(world, ui, damage_popups);
 
-        const health_current = player.stats.current.get(.health);
-        const health_max = player.stats.max.get(.health);
+        const health_current = player.health;
+        const health_max = player.max_health;
         const healthbar_heigth: f32 = 50;
         addHealthBar(ui, .{
             .left = 10,
@@ -100,23 +100,44 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
         for (std.enums.values(shared.Item)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
-            if (ui.isHot(ui.print("{t}", .{item_kind}))) {
-                const attributes = item_kind.attributes();
-                var tool_tip_text: []const u8 = "";
-                for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-                    const value = attributes.get(stat_kind);
-                    if (value != 0) {
-                        tool_tip_text = ui.print("{s}{t}: {d}", .{ tool_tip_text, stat_kind, value });
-                    }
-                }
-                ui.add(
-                    null,
-                    .{
-                        .offset = .{ .left = ui.mouse_state.position.left, .top = ui.mouse_state.position.top },
-                        .size = .{ .fixed = ui.textSize(tool_tip_text, 32) },
-                        .text = .{ .data = ui.print("{s}", .{tool_tip_text}) },
-                    },
-                );
+            if (!ui.isHot(ui.print("{t}", .{item_kind}))) continue;
+            const item_spec = shared.Item.spec(item_kind);
+            const line_size: f32 = 18;
+            const text_size = ui.textSize(item_spec.description, line_size);
+            ui.add(null, .{
+                .name = "item_tooltip",
+                .offset = .{ .left = ui.mouse_state.position.left + 16, .top = ui.mouse_state.position.top + 16 },
+                .size = .{ .fixed = .{ .width = text_size.width + 16, .heigth = text_size.heigth + 16 } },
+                .color = .new(0.1, 0.1, 0.1, 0.85),
+                .child_anchor = .{ .x = .center, .y = .center },
+                .children = &.{.{
+                    .size = .{ .fixed = text_size },
+                    .text = .{ .data = item_spec.description, .size = line_size },
+                }},
+            });
+        }
+        if (show_stats) {
+            const line_size: f32 = 18;
+            const line_count: f32 = @floatFromInt(std.enums.values(shared.Stat).len);
+            const stats_box_width: f32 = 300;
+            const stats_box_heigth: f32 = line_count * (line_size + 4) + 8;
+            ui.add(null, .{
+                .name = "stats",
+                .offset = .{ .left = ui.screen_width / 2 - stats_box_width / 2, .top = ui.screen_heigth / 2 - stats_box_heigth / 2 },
+                .size = .{ .fixed = .{ .width = stats_box_width, .heigth = stats_box_heigth } },
+                .color = .new(0.1, 0.1, 0.1, 0.85),
+                .axis_align = .vertical,
+                .gap = 4,
+            });
+            for (std.enums.values(shared.Stat)) |stat_kind| {
+                const line = if (stat_kind == .health)
+                    ui.print("health: {d:.0}/{d:.0}", .{ player.health, player.max_health })
+                else
+                    ui.print("{t}: {d:.2}", .{ stat_kind, player.stat(stat_kind) });
+                ui.add("stats", .{
+                    .size = .{ .fixed = ui.textSize(line, line_size) },
+                    .text = .{ .data = line, .size = line_size },
+                });
             }
         }
         ui.add(
@@ -176,30 +197,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                 },
             });
         }
-        if (options.show_hud_stats) {
-            const stats_box_width: u32 = 200;
-            const stats_box_heigth: u32 = 200;
-            ui.add(null, .{
-                .name = "stats",
-                .offset = .{ .top = ui.screen_heigth - stats_box_heigth, .left = ui.screen_width - stats_box_width },
-                .size = .{ .fixed = .{ .width = stats_box_width, .heigth = stats_box_heigth } },
-                .color = .new(0.5, 0.5, 0.5, 0.7),
-                .axis_align = .vertical,
-                // .child_anchor = .{ .x = .end, .y = .start },
-                .gap = 10,
-            });
-            for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-                ui.add("stats", .{
-                    .text = .{ .data = ui.print("{t} : {d:.2}", .{ stat_kind, player.stats.current.get(stat_kind) }) },
-                    .color = .grey,
-                    .size = .{ .percent = .{
-                        .heigth = 0.2,
-                        .width = 1,
-                    } },
-                });
-            }
-        }
-
         if (player.interacting != .none) {
             if (world.getPtr(player.interacting)) |entity| {
                 ui.add(
@@ -240,8 +237,8 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
             var total_boss_max_health: f32 = 0;
             for (world.teleporter_bosses.items) |boss_id| {
                 const boss = world.getPtr(boss_id) orelse continue;
-                total_boss_health += boss.stats.current.get(.health);
-                total_boss_max_health += boss.stats.max.get(.health);
+                total_boss_health += boss.health;
+                total_boss_max_health += boss.max_health;
             }
             const boss_healthbar_width: f32 = (ui.screen_width * 0.9);
             addHealthBar(ui, .{
@@ -353,8 +350,8 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
         var bar_max_scale: f32 = 1;
         if (!entity.kind.hasHealth()) continue;
         if (entity.id == world.player_id) continue;
-        const health_current = entity.stats.current.get(.health);
-        const health_max = entity.stats.max.get(.health);
+        const health_current = entity.health;
+        const health_max = entity.max_health;
         if (!entity.flags.is_teleporter_boss) {
             if ((health_max <= 0 or health_current <= 0 or health_current >= health_max)) continue;
         } else {

@@ -28,8 +28,8 @@ pub fn update(world: *World, physics: *Physics) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                // _ = world.giveItem(player, .hearth, 1);
-                _ = world.giveItem(player, .icicle, 1);
+                // _ = world.giveItem(player, .pickaxe, 1);
+                // _ = world.giveItem(player, .icicle, 1);
                 _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
                 // _ = world.giveItem(player, .tougherer_times, 1);
             },
@@ -172,12 +172,11 @@ pub fn update(world: *World, physics: *Physics) !void {
             if (input.keys.d) dir += move_right;
             if (input.keys.a) dir -= move_right;
 
-            const speed = player.stats.current.get(.speed);
+            const speed = player.stat(.speed);
 
-            var vertical: f32 = 0;
-            if (input.keys.space and player.flags.is_grounded) vertical += 20;
+            if (input.keys.space and player.mode == .walking) Physics.jump(player, 20);
 
-            Physics.moveOnPlanet(id, planet_up, dir, speed, vertical);
+            Physics.moveOnPlanet(player, dir, speed, world.delta_time);
 
             Physics.setRotation(id, camera.yaw_rotation);
             transform.rotation = camera.yaw_rotation;
@@ -191,17 +190,17 @@ pub fn update(world: *World, physics: *Physics) !void {
             }
         }
 
-        if (input.keys.mouse_button_left and world.elapsed_time - player.last_attack >= player.stats.attackSpeed()) {
+        if (input.keys.mouse_button_left and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
             player.last_attack = world.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(physics, world.planet_radius, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
-            const rocket_chance = @min(player.stats.max.get(.rocket_chance), 1.0);
+            const rocket_chance = player.stat(.rocket_chance);
             const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
             const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
             const projectile_velocity = nz.vec.scale(start_direction, if (fires_rocket) rocket_speed else bullet_speed);
-            const projectile = try world.spawn(.{
+            _ = try world.spawn(.{
                 .kind = switch (projectile_kind) {
                     .cube => .projectile_cube,
                     .rocket => .projectile_rocket,
@@ -213,8 +212,8 @@ pub fn update(world: *World, physics: *Physics) !void {
                 },
                 .replicated_velocity = projectile_velocity,
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
+                .damage = player.stat(.damage),
             });
-            projectile.stats.current.set(.damage, player.stats.current.get(.damage));
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = player_id, .state = .attack } } });
         }
     }

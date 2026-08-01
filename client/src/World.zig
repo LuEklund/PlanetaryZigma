@@ -28,7 +28,7 @@ entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
+pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 render_outbox: std.ArrayList(RenderCommand) = .empty,
@@ -52,7 +52,8 @@ pub const Entity = struct {
     player_name: []const u8 = "",
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
-    stats: shared.Stats = .init(.initFill(0)),
+    health: f32 = 0,
+    max_health: f32 = 0,
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
     motion: Motion = .{},
@@ -74,6 +75,10 @@ pub const Entity = struct {
         is_teleporter_boss: bool = false,
     };
 
+    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
+        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    }
+
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
         if (self.player_name.len != 0) {
             gpa.free(self.player_name);
@@ -88,7 +93,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
-        .pending_stats = try .initCapacity(gpa, shared.max_entities),
+        .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
@@ -106,7 +111,7 @@ pub fn deinit(self: *World) void {
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
-    self.pending_stats.deinit(self.gpa);
+    self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
     self.trigger_events.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
@@ -123,7 +128,7 @@ pub fn clearSession(self: *World) void {
     self.pending_spawn.clearRetainingCapacity();
 
     self.pending_despawn.clearRetainingCapacity();
-    self.pending_stats.clearRetainingCapacity();
+    self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
     self.trigger_events.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
@@ -189,10 +194,10 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
         self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }
 
-    for (self.pending_stats.items) |command| {
-        if (self.getPtr(command.id)) |entity| self.applyStat(entity, command);
+    for (self.pending_healths.items) |command| {
+        if (self.getPtr(command.id)) |entity| self.applyHealth(entity, command);
     }
-    self.pending_stats.clearRetainingCapacity();
+    self.pending_healths.clearRetainingCapacity();
 
     for (self.pending_inventory.items) |command| {
         if (self.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
@@ -226,9 +231,9 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
     }
 }
 
-pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) void {
-    if (command.stat_kind == .health and command.source != .none and command.amount == .set_current) {
-        const delta = entity.stats.current.get(.health) - command.amount.set_current;
+pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {
+    if (command.source != .none and command.amount == .set_current) {
+        const delta = entity.health - command.amount.set_current;
         if (delta != 0 and self.damage_events.items.len < self.damage_events.capacity) {
             self.damage_events.appendAssumeCapacity(.{
                 .target = entity.id,
@@ -239,8 +244,8 @@ pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) 
         }
     }
     switch (command.amount) {
-        .set_current => |value| entity.stats.current.set(command.stat_kind, value),
-        .set_max => |value| entity.stats.max.set(command.stat_kind, value),
+        .set_current => |value| entity.health = value,
+        .set_max => |value| entity.max_health = value,
     }
 }
 

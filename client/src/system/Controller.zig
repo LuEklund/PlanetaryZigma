@@ -116,6 +116,7 @@ rebinding_action: ?Action = null,
 suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
+show_stats: bool = false,
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};
@@ -148,6 +149,7 @@ pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
                     return;
                 }
             }
+            if (key.sym == .tab) self.show_stats = pressed;
             if (pressed) switch (key.sym) {
                 .f1 => self.input_map.dev_command = .f1,
                 .f2 => self.input_map.dev_command = .f2,

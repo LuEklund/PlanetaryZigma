@@ -80,7 +80,7 @@ pub fn update(
                 .{ 0.3, 0.95, 0.35 }
             else if (damage_event.target == world.player_id)
                 .{ 0.95, 0.25, 0.2 }
-            else if (damage_event.delta > player.stats.max.get(.damage))
+            else if (damage_event.delta > player.stat(.damage))
                 .{ 1, 0, 0 }
             else
                 .{ 1, 1, 1 };
@@ -94,7 +94,7 @@ pub fn update(
         request = try main_menu.update(world, network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(world, network_manager, ui, texture_table, options, &hud.damage_popups);
+        try game_hud.update(world, network_manager, ui, texture_table, options, &hud.damage_popups, controller.show_stats);
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pause_menu.update(ui, hud),
