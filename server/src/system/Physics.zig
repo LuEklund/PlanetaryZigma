@@ -11,7 +11,6 @@ pub const c = @import("box3d");
 
 pub const gravity_accel: f32 = 50;
 const move_accel: f32 = 400;
-const arc_jump_speed: f32 = 10;
 const ground_friction: f32 = 10;
 const ground_check_skin: f32 = 0.2;
 
@@ -340,13 +339,14 @@ pub fn launch(entity: *system.Entity, direction: nz.Vec3(f32), force: f32) void 
     entity.mode = .falling;
 }
 
+const arc_jump_speed: f32 = 10;
 pub fn arcJumpTo(entity: *system.Entity, target: nz.Vec3(f32)) void {
     const body_id = entity.collider.body_id orelse return;
     const to_target = target - entity.transform.position;
     const flight_time = nz.vec.length(to_target) / arc_jump_speed;
     if (flight_time < 0.0001) return;
     const planet_up = nz.vec.normalize(entity.transform.position);
-    const velocity = nz.vec.scale(to_target, 1.0 / flight_time) + nz.vec.scale(planet_up, gravity_accel * flight_time / 2);
+    const velocity = nz.vec.scale(nz.vec.normalize(to_target), arc_jump_speed) + nz.vec.scale(planet_up, gravity_accel * flight_time / 2);
     c.b3Body_SetLinearVelocity(body_id, toB3(velocity));
     entity.mode = .falling;
 }

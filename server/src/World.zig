@@ -60,10 +60,6 @@ pub const ClientUpdate = union(enum) {
 };
 
 pub const Camera = struct {
-    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
-        return shared.Stat.value(stat_kind, self.kind, self.inventory);
-    }
-
     pub const Mode = enum { follow, free };
 
     mode: Mode = .follow,

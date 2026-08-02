@@ -154,13 +154,12 @@ VertexOutput vertex(uint vertex_index: SV_VertexID,
   float3 end = strandPoint(strand, t1);
 
   float2 corner = corners[vertex_index];
-  float along = corner.x + 0.5;
-  float t = lerp(t0, t1, along);
-  float3 center = lerp(start, end, along);
-  float3 view = normalize(scene_data.camera_position.xyz - center);
+  float t = corner.x < 0.0 ? t0 : t1;
+  float3 center = corner.x < 0.0 ? start : end;
+  float3 view_direction = normalize(scene_data.camera_position.xyz - center);
   float3 tangent =
       strandPoint(strand, t + 0.01) - strandPoint(strand, t - 0.01);
-  float3 across = cross(tangent, view);
+  float3 across = cross(tangent, view_direction);
   float width =
       ribbon_width * sin(t * 3.1415926) * 1.7 * (0.65 + width_random * 0.8);
 
