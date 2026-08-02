@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const shared = @import("shared");
 const system = @import("system");
 const World = system.World;
-const yes = @import("yes");
+const Window = @import("Window.zig");
 const tracy = @import("ztracy");
 
 pub fn main(init: std.process.Init) !void {
@@ -28,24 +28,18 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var cross_desktop: yes.Desktop.Cross = try .init(gpa, io, init.minimal);
-    defer cross_desktop.deinit();
-    const desktop = cross_desktop.desktop();
-
-    var cross_window: yes.Desktop.Cross.Window = .empty(desktop);
-    const window = cross_window.interface(desktop);
-    const window_size: yes.Window.Size = .{ .width = 854, .height = 480 };
+    var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
-    try window.open(desktop, .{
+    try window.open(gpa, init.minimal, .{
         .title = "PlanetaryZigma",
-        .size = window_size,
+        .size = .{ .width = 854, .height = 480 },
         .resize_policy = .{ .specified = .{
             .min_size = .{ .width = 300, .height = 200 },
         } },
         .surface_type = .vulkan,
     });
     window_zone.end();
-    defer window.close(desktop);
+    defer window.close();
 
     var asset_server = try shared.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
@@ -64,7 +58,6 @@ pub fn main(init: std.process.Init) !void {
     system_table.systemContextInit(&system_context, &system.Context.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
-        .desktop = desktop,
         .window = window,
         .io = io,
         .world = &world,
@@ -77,7 +70,7 @@ pub fn main(init: std.process.Init) !void {
     var accumlated_time: f32 = 0;
     const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
-    main_loop: while (true) {
+    while (!window.should_close) {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
@@ -87,36 +80,28 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
         accumlated_time -= time_step;
-        while (try window.poll(desktop)) |event| {
-            const options_was_open = system_context.hud.overlay == .options;
-            system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &event);
-            switch (event) {
-                .close => break :main_loop,
-                .resize => {
-                    try system_context.renderer.resize(gpa, window);
-                },
-                .key => |key| {
-                    if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;
-                    if (key.state == .released) {
-                        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-                        const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
-                        const sym = @intFromEnum(key.sym);
-                        if (sym >= np0 and sym < np0 + 10) {
-                            if (watcher.version(sym - np0)) |lib| {
-                                system_table.systemContextReload(&system_context, true);
-                                system_table = try .load(lib);
-                                system_table.systemContextReload(&system_context, false);
-                                std.log.err("switched to version slot {d}", .{sym - np0});
-                            }
-                        }
-                    }
-                },
-                else => {},
-            }
-            if (system_context.request_exit) break :main_loop;
-        }
+
+        const options_was_open = system_context.hud.overlay == .options;
+        _ = options_was_open;
+        system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &undefined); // TODO PLEASE
+
+        try system_context.renderer.resize(gpa, window);
+        // if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;
+        // if (key.state == .released) {
+        //     // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
+        //     const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
+        //     const sym = @intFromEnum(key.sym);
+        //     if (sym >= np0 and sym < np0 + 10) {
+        //         if (watcher.version(sym - np0)) |lib| {
+        //             system_table.systemContextReload(&system_context, true);
+        //             system_table = try .load(lib);
+        //             system_table.systemContextReload(&system_context, false);
+        //             std.log.err("switched to version slot {d}", .{sym - np0});
+        //         }
+        //     }
+        // }
         system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null);
-        if (system_context.request_exit) break :main_loop;
+        if (system_context.request_exit) break;
 
         if (try watcher.reload(io)) {
             std.log.err("system table updated", .{});

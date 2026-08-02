@@ -3,8 +3,7 @@ const Controller = @This();
 const shared = @import("shared");
 const yes = @import("yes");
 
-const KeySym = yes.Window.Event.Key.Sym;
-const MouseButton = yes.Window.Event.MouseButton.Button;
+const Window = @import("../Window.zig");
 
 pub const Action = enum {
     move_forward,
@@ -38,8 +37,8 @@ pub const bindable_actions = [_]Action{
 
 pub const Binding = union(enum) {
     none,
-    key: KeySym,
-    mouse: MouseButton,
+    key: Window.Keyboard.Key,
+    mouse: Window.Pointer.Buttons,
 
     pub fn eql(self: Binding, other: Binding) bool {
         return switch (self) {
@@ -131,7 +130,7 @@ pub fn resetMouseDelta(self: *Controller) void {
     self.mouse_delta = .{ 0, 0 };
 }
 
-pub fn eventUpdate(self: *Controller, event: *const yes.Window.Event) void {
+pub fn eventUpdate(self: *Controller, window: *const Window) void {
     switch (event.*) {
         .key => |key| {
             const pressed = key.state == .pressed;

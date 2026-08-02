@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const yes = @import("yes");
+const Window = @import("Window.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
@@ -34,8 +34,7 @@ pub const Entity = World.Entity;
 pub const Context = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    desktop: yes.Desktop,
-    window: *yes.Window,
+    window: *Window,
     steam_client: *shared.SteamNet.Client,
     asset_server: *AssetServer,
     renderer: Renderer,
@@ -46,13 +45,12 @@ pub const Context = struct {
     options: Options,
     request_exit: bool = false,
     fullscreen_applied: bool = false,
-    cursor_mode_applied: yes.Window.Property.CursorMode = .normal,
+    captured: bool = false,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
         io: std.Io,
-        desktop: yes.Desktop,
-        window: *yes.Window,
+        window: *Window,
         asset_server: *AssetServer,
         world: *World,
         steam_client: *shared.SteamNet.Client,
@@ -61,7 +59,6 @@ pub const Context = struct {
     pub fn init(self: *Context, data: Data) !void {
         self.gpa = data.gpa;
         self.io = data.io;
-        self.desktop = data.desktop;
         self.window = data.window;
         self.steam_client = data.steam_client;
         self.asset_server = data.asset_server;
@@ -126,47 +123,47 @@ pub const Context = struct {
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
 
-    pub fn eventUpdate(self: *Context, info: *const Info, event: *const yes.Window.Event) !void {
+    pub fn eventUpdate(self: *Context, info: *const Info, window: *const Window) !void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        if (info.world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
-            info.world.controller.eventUpdate(event);
+        if (info.world.controller.rebinding_action != null) {
+            info.world.controller.eventUpdate(window);
             return;
         }
-        if (event.* == .key) {
-            const key = event.key;
-            if (key.state == .released and key.sym == .escape and info.world.controller.suppress_escape_release) {
-                info.world.controller.suppress_escape_release = false;
-                return;
-            }
-            if (key.state == .released and key.sym == .escape and self.hud.overlay == .options) {
-                self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
-                info.world.controller.clearInput();
-                info.world.controller.resetMouseDelta();
-                return;
-            }
-            if (key.state == .released and key.sym == .escape and self.scene == .game) {
-                self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
-                info.world.controller.clearInput();
-                info.world.controller.resetMouseDelta();
-                return;
-            }
+
+        const keyboard = window.keyboard;
+
+        if (keyboard.isUp(.escape) and info.world.controller.suppress_escape_release) {
+            info.world.controller.suppress_escape_release = false;
+            return;
         }
-        info.world.controller.eventUpdate(event);
+        if (keyboard.isUp(.escape) and self.hud.overlay == .options) {
+            self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
+            info.world.controller.clearInput();
+            info.world.controller.resetMouseDelta();
+            return;
+        }
+        if (keyboard.isUp(.escape) and self.scene == .game) {
+            self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
+            info.world.controller.clearInput();
+            info.world.controller.resetMouseDelta();
+            return;
+        }
+
+        info.world.controller.eventUpdate(window);
     }
 
     fn applyOptions(self: *Context, info: *const Info) !void {
         if (self.scene == .game) info.world.camera.fov_rad = self.options.fov_rad;
         if (self.fullscreen_applied != self.options.fullscreen) {
-            const mode: yes.Window.Mode = if (self.options.fullscreen) .fullscreen else .windowed;
-            try self.window.setMode(self.desktop, mode);
+            try self.window.setFullscreen(self.options.fullscreen);
             self.fullscreen_applied = self.options.fullscreen;
         }
         const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
-        const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .captured else .normal;
-        if (self.cursor_mode_applied != cursor_mode) {
-            try self.window.setCursorMode(self.desktop, cursor_mode);
-            self.cursor_mode_applied = cursor_mode;
+        if (wants_cursor_lock) {
+            try self.window.setPointerVisible(false);
+            try self.window.setPointerConstraint(.locked);
+            try self.window.setPointerRelative(true);
             info.world.controller.resetMouseDelta();
         }
     }
