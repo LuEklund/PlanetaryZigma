@@ -92,7 +92,6 @@ pub const Spec = struct {
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
-    windup: f32 = 0,
     primary_range: f32 = 0,
     utility_range: f32 = 0,
 };
