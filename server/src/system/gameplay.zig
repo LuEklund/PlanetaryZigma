@@ -57,14 +57,16 @@ pub fn updateDirector(world: *World) !void {
     }
 }
 
-fn attackLands(world: *World, enemy: *system.Entity, distance: f32, range: f32, windup: f32) bool {
-    if (enemy.attack_lands_at == 0 and distance < range and world.elapsed_time - enemy.last_attack >= enemy.stat(.primary_cooldown)) {
-        enemy.last_attack = world.elapsed_time;
-        enemy.attack_lands_at = world.elapsed_time + windup;
-        world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .attack } } });
-    }
-    if (enemy.attack_lands_at != 0 and world.elapsed_time >= enemy.attack_lands_at) {
-        enemy.attack_lands_at = 0;
+fn attackLands(world: *World, attacker: *system.Entity, target: *const system.Entity, attack: shared.entity.State) bool {
+    const last_used, const range, const cooldown = switch (attack) {
+        .attack => .{ &attacker.last_attack, shared.entity.spec(attacker.kind).primary_range, attacker.stat(.primary_cooldown) },
+        .utility => .{ &attacker.last_utility, shared.entity.spec(attacker.kind).utility_range, attacker.stat(.utility_cooldown) },
+        else => unreachable,
+    };
+    const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
+    if (distance < range and world.elapsed_time - last_used.* >= cooldown) {
+        last_used.* = world.elapsed_time;
+        world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
         return true;
     }
     return false;
@@ -94,9 +96,9 @@ pub fn updateEnemies(world: *World) !void {
         }
         const player = closest_player orelse return;
         const to_player = player.transform.position - enemy.transform.position;
-        const distance = nz.vec.length(to_player);
+        const distance_to_player = nz.vec.length(to_player);
 
-        if (distance > enemy_max_spawn_distance * 1.7) {
+        if (distance_to_player > enemy_max_spawn_distance * 1.7) {
             const surface = shared.planet.surfacePointNear(player.transform.position, world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
@@ -117,12 +119,11 @@ pub fn updateEnemies(world: *World) !void {
         const speed = enemy.stat(.speed);
         const damage = enemy.stat(.damage);
         const range = shared.entity.spec(enemy.kind).primary_range;
-        const windup = shared.entity.spec(enemy.kind).windup;
         switch (enemy.kind.enemy) {
             .tubloida => {
-                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
-                if (attackLands(world, enemy, distance, range, windup)) {
+                if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
@@ -141,18 +142,18 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .tubloid => {
-                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
-                if (attackLands(world, enemy, distance, range, windup)) {
-                    if (distance < range) {
+                if (attackLands(world, enemy, player, .attack)) {
+                    if (distance_to_player < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
                     }
                 }
             },
             .bloorp_lord => {
-                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, world.planet_radius, 14, world.delta_time);
-                if (attackLands(world, enemy, distance, range, windup)) {
+                if (attackLands(world, enemy, player, .attack)) {
                     _ = world.spawn(.{
                         .kind = .{ .enemy = .tubloid },
                         .transform = .{ .position = enemy.transform.position },
@@ -161,25 +162,23 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .hunkloid => {
-                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 const utility_range = shared.entity.spec(enemy.kind).utility_range;
-                if (distance < utility_range and distance > utility_range * 0.75 and world.elapsed_time - enemy.last_utility >= enemy.stat(.utility_cooldown)) {
-                    enemy.last_utility = world.elapsed_time;
+                if (distance_to_player > utility_range * 0.75 and attackLands(world, enemy, player, .utility)) {
                     Physics.arcJumpTo(enemy, player.transform.position);
-                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .utility } } });
                 }
 
-                if (attackLands(world, enemy, distance, range, windup)) {
-                    if (distance < range) {
+                if (attackLands(world, enemy, player, .attack)) {
+                    if (distance_to_player < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
                     }
                 }
             },
             .blooploid => {
-                const chase_dir: nz.Vec3(f32) = if (distance >= range) forward_dir else .{ 0, 0, 0 };
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, world.planet_radius, 7, world.delta_time);
-                if (attackLands(world, enemy, distance, range, windup)) {
+                if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
