@@ -133,7 +133,7 @@ pub fn spec(kind: Kind) Spec {
             .has_health = false,
         },
         .lootbox => .{
-            .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .static, .layer = .moving },
+            .collider = .{ .shape = .{ .box = .{ .x = 0.6, .y = 0.6, .z = 0.6 } }, .motion = .static, .layer = .moving },
             .model = .{ .path = "objects/lootbox.glb", .clip_names = null },
             .has_health = false,
             .death_duration = 0.35,

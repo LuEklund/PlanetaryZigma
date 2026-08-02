@@ -44,6 +44,7 @@ pub fn UploadData(comptime VertexType: type) type {
             index_start: u32,
             index_count: u32,
             image_index: ?usize,
+            material_missing: bool,
         };
 
         pub const MeshData = struct {
@@ -221,7 +222,7 @@ pub fn parseScene(
                     bin[pos_offset .. pos_offset + pos_accessor.count * @sizeOf([3]f32)],
                 );
 
-                var base_color: [4]f32 = .{ 1, 0, 0, 1 };
+                var base_color: [4]f32 = .{ 1, 1, 1, 1 };
                 if (primitive.material) |material_index| {
                     if (gltf.materials) |materials| {
                         if (materials[material_index].pbrMetallicRoughness) |metallic_roughness| {
@@ -234,6 +235,7 @@ pub fn parseScene(
                     .index_count = indices_count,
                     .index_start = indices_start,
                     .image_index = if (primitive.material) |material_index| material_images[material_index] else null,
+                    .material_missing = primitive.material == null,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {

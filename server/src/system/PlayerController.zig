@@ -46,8 +46,9 @@ pub fn update(world: *World, physics: *Physics) !void {
             },
             .f4 => if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                const random = world.prng.random();
                 _ = world.spawn(.{
-                    .kind = .{ .item = .lightning },
+                    .kind = .{ .item = random.enumValue(shared.Item) },
                     .transform = .{
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
                         .rotation = teleporter.transform.rotation,
