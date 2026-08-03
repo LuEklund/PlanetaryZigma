@@ -30,8 +30,8 @@ pub fn update(world: *World, physics: *Physics) !void {
         switch (input.dev_command) {
             .f1 => {
                 // _ = world.giveItem(player, .pickaxe, 1);
-                // _ = world.giveItem(player, .icicle, 1);
-                _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
+                _ = world.giveItem(player, .freezer, 1);
+                // _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
                 // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {

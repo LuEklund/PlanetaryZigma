@@ -1,7 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
-const Item = @import("item.zig").Item;
-const Stat = @import("item.zig").Stat;
+const Item = @import("Item.zig");
+const Stat = Item.Stat;
 
 pub const Id = enum(u32) {
     none = 0,
@@ -232,7 +232,7 @@ pub fn spec(kind: Kind) Spec {
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
             .model = .{ .path = Item.spec(item_kind).model, .clip_names = null },
-            .icon = Item.spec(item_kind).icon,
+            .icon = Item.getIcon(item_kind),
             .has_health = false,
             .spawn_duration = 0.35,
         },
