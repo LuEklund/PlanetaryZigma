@@ -237,7 +237,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
                 },
             },
         });
-        if (ui.isActive(id) and !bad_version) {
+        if (ui.isActive(id) and !bad_version and network_manager.steam_client.server_conn == 0) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.info("connect to {d}", .{server.steam_id});
         }

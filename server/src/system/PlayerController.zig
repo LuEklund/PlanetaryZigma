@@ -18,6 +18,7 @@ pub fn update(world: *World, physics: *Physics) !void {
 
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id).?;
+        if (player.flags.is_dead) continue;
         const camera = &player.camera;
         const transform = &player.transform;
         const controller = &player.controller;
@@ -65,7 +66,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 world.next_stage_requested = true;
             },
             .f6 => {
-                world.queueDespawn(player_id);
+                _ = world.addHealth(player, -player.health, null);
             },
             .f7 => {
                 player.flags.invinsible = !player.flags.invinsible;

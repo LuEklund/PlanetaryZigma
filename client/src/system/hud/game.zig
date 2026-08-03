@@ -276,6 +276,62 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
     }
 }
 
+pub fn wipeMenu(world: *World, network_manager: *NetworkManager, ui: *Ui) Request {
+    const is_host = network_manager.host_state == .hosting;
+    const button_count: f32 = if (is_host) 3 else 2;
+    const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
+    const button_height = std.math.clamp(ui.screen_heigth * 0.058, @as(f32, 40), @as(f32, 52));
+    const row_gap: f32 = 10;
+    const title_height: f32 = 56;
+    const panel_padding = std.math.clamp(ui.screen_heigth * 0.018, @as(f32, 14), @as(f32, 22));
+    const panel_height = title_height + button_height * button_count + row_gap * button_count + panel_padding * 2;
+
+    ui.add(null, .{
+        .name = "wipe_panel",
+        .size = .{ .fixed = .{ .width = panel_width, .heigth = panel_height } },
+        .offset = .{ .left = (ui.screen_width - panel_width) * 0.5, .top = (ui.screen_heigth - panel_height) * 0.5 },
+        .color = .new(0.02, 0.025, 0.025, 0.92),
+        .axis_align = .vertical,
+        .child_anchor = .{ .x = .center, .y = .center },
+        .gap = row_gap,
+    });
+    ui.add("wipe_panel", .{
+        .size = .{ .fixed = .{ .width = panel_width, .heigth = title_height } },
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{ .data = "Wiped", .size = 34, .color = .new(0.94, 0.96, 0.9, 1) },
+    });
+
+    if (is_host) addWipeButton(ui, "wipe_go_again", "Go Again", panel_width * 0.82, button_height);
+    addWipeButton(ui, "wipe_main_menu", "Exit to Menu", panel_width * 0.82, button_height);
+    addWipeButton(ui, "wipe_quit", "Exit to Desktop", panel_width * 0.82, button_height);
+
+    if (is_host and ui.isActive("wipe_go_again")) {
+        world.go_again_pending = true;
+    }
+    if (ui.isActive("wipe_main_menu")) {
+        return .main_menu;
+    }
+    if (ui.isActive("wipe_quit")) {
+        return .quit;
+    }
+    return .none;
+}
+
+fn addWipeButton(ui: *Ui, name: []const u8, text: []const u8, width: f32, height: f32) void {
+    const hot = ui.isHot(name);
+    ui.add("wipe_panel", .{
+        .name = name,
+        .size = .{ .fixed = .{ .width = width, .heigth = height } },
+        .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = text,
+            .size = std.math.clamp(height * 0.52, @as(f32, 21), @as(f32, 27)),
+            .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+        },
+    });
+}
+
 fn addChat(world: *World, ui: *Ui) void {
     const chat = &world.chat;
     const text_size: f32 = 18;

@@ -69,6 +69,7 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
     return switch (packet) {
         .connect => |connect| .{ .connect = connect },
         .disconnect => .disconnect,
+        .go_again => .go_again,
         .input => |input| .{ .input = input },
         .chat => |chat| chat: {
             const text = try gpa.dupe(u8, chat.text);
@@ -83,7 +84,7 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
         .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
-        .connect, .disconnect, .input => {},
+        .connect, .disconnect, .input, .go_again => {},
     }
 }
 
@@ -204,6 +205,10 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         entity.controller.input = command.input;
                     }
                 },
+                .go_again => {
+                    if (client.conn != self.steam_server.host_conn) continue;
+                    world.go_again_requested = true;
+                },
                 .chat => |chat| {
                     if (client.entity_id == .none) continue;
                     var text_buf: [shared.max_chat_len]u8 = undefined;
@@ -275,7 +280,6 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
-                if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendHealth(client, writer, entity);

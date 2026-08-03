@@ -158,6 +158,8 @@ pub fn recreate(
     try check(c.vkGetSwapchainImagesKHR(device.handle, swapchain, &image_count, &vk_images[0]));
     self.images = vk_images;
 
+    self.image_count = image_count;
+
     self.draw_image.deinit(vma, device);
     self.draw_image = try .init(
         vma,

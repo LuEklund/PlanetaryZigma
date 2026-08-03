@@ -339,6 +339,10 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         world.controller.input_map.dev_command = .none;
         // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
+    if (world.go_again_pending) {
+        try self.sendCommand(.go_again, .reliable);
+        world.go_again_pending = false;
+    }
     if (world.chat.pending) {
         const chat_text = world.chat.text();
         try self.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);

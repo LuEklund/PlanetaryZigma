@@ -33,6 +33,7 @@ pub const OptionsTab = enum {
 pub const Overlay = union(enum) {
     none,
     pause,
+    wipe,
     options: struct { return_to_pause: bool },
 };
 
@@ -95,9 +96,21 @@ pub fn update(
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
         try game_hud.update(world, network_manager, ui, texture_table, options, &hud.damage_popups, controller.show_stats);
+        var all_players_dead = world.getPtr(world.player_id) != null;
+        for (world.entities.values()) |*entity| {
+            if (entity.kind != .player) continue;
+            if (!entity.flags.is_dying) all_players_dead = false;
+        }
+        const wipe_delay = ui.animate("wipe_menu_delay", if (all_players_dead) 1 else 0, 1.0);
+        if (all_players_dead and hud.overlay == .none and wipe_delay > 0.85) {
+            hud.overlay = .wipe;
+        } else if (!all_players_dead and hud.overlay == .wipe) {
+            hud.overlay = .none;
+        }
         switch (hud.overlay) {
             .none => {},
             .pause => request = try pause_menu.update(ui, hud),
+            .wipe => request = game_hud.wipeMenu(world, network_manager, ui),
             .options => options_menu.update(ui, hud, options, controller),
         }
     }

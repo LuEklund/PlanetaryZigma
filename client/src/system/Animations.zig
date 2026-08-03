@@ -63,6 +63,11 @@ pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shar
 
     for (world.entities.values()) |*entity| {
         const instance = instances.getPtr(entity.id) orelse continue;
+        if (entity.flags.is_dying) {
+            instance.death_time += world.delta_time;
+        } else if (instance.death_time > 0) {
+            instance.death_time = 0;
+        }
         if (instance.skeleton) |*skeleton| {
             const model = instance.model.?;
             playAnimation(world, entity, skeleton, model, model.state_clips.get(instance.state));
@@ -114,7 +119,10 @@ fn playAnimation(world: *World, entity: *system.Entity, skeleton: *AnimationInst
         skeleton.player.current_time += world.delta_time;
 
         if (skeleton.player.current_time > animation.end) {
-            skeleton.player.current_time -= animation.end - animation.start;
+            if (entity.flags.is_dying)
+                skeleton.player.current_time = animation.end
+            else
+                skeleton.player.current_time -= animation.end - animation.start;
         }
         sampleClip(skeleton.nodes, animation, skeleton.player.current_time, null);
     } else {

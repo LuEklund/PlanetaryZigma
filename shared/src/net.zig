@@ -27,6 +27,7 @@ pub const ClientPacket = union(enum) {
     disconnect: void,
     input: Input,
     chat: ChatSend,
+    go_again: void,
 };
 
 /// server → client
