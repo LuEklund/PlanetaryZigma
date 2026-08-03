@@ -5,6 +5,8 @@ const std = @import("std");
 const Window = @import("../Window.zig");
 
 display: *xlib.Display,
+procs: xlib.ProcTable,
+xi_procs: xi.ProcTable,
 xi_extension: ?xlib.ExtensionQuery,
 window: xlib.Window,
 
@@ -36,17 +38,17 @@ pub const Atoms = struct {
 };
 
 pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
-    try xlib.ProcTable.load();
-    try xi.ProcTable.load();
+    const procs: xlib.ProcTable = try .load();
+    const xi_procs: xi.ProcTable = try .load();
 
-    const display = xlib.procs.XOpenDisplay.?(null) orelse return error.OpenDisplay;
-    errdefer _ = xlib.procs.XCloseDisplay.?(display);
+    const display = procs.XOpenDisplay.?(null) orelse return error.OpenDisplay;
+    errdefer _ = procs.XCloseDisplay.?(display);
 
-    const screen = xlib.procs.XDefaultScreen.?(display);
-    const root = xlib.procs.XRootWindow.?(display, screen);
+    const screen = procs.XDefaultScreen.?(display);
+    const root = procs.XRootWindow.?(display, screen);
 
     var xi_extension: ?xlib.ExtensionQuery = .{};
-    if (xlib.procs.XQueryExtension.?(
+    if (procs.XQueryExtension.?(
         display,
         xi.extension_name,
         &xi_extension.?.opcode,
@@ -56,7 +58,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
 
     if (xi_extension != null) {
         var xi_version: xi.VersionQuery = .{ .major = 2, .minor = 0 };
-        const xi_enabled = if (xi.procs.XIQueryVersion) |XIQueryVersion|
+        const xi_enabled = if (xi_procs.XIQueryVersion) |XIQueryVersion|
             XIQueryVersion(display, &xi_version.major, &xi_version.minor) == 0
         else
             false;
@@ -64,7 +66,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         if (!xi_enabled) xi_extension = null;
     }
 
-    const window_handle = xlib.procs.XCreateSimpleWindow.?(
+    const window_handle = procs.XCreateSimpleWindow.?(
         display,
         root,
         if (options.position) |position| position.x else 0,
@@ -90,7 +92,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         .key_release = true,
     };
 
-    _ = xlib.procs.XSelectInput.?(
+    _ = procs.XSelectInput.?(
         display,
         window_handle,
         event_mask,
@@ -109,21 +111,21 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
             },
         };
 
-        const result = xi.procs.XISelectEvents.?(display, window_handle, &event_masks, @intCast(event_masks.len));
+        const result = xi_procs.XISelectEvents.?(display, window_handle, &event_masks, @intCast(event_masks.len));
         if (result != 0) return error.XInputSelectEvents;
     }
 
-    _ = xlib.procs.XMapWindow.?(display, window_handle);
+    _ = procs.XMapWindow.?(display, window_handle);
 
-    const xim = xlib.procs.XOpenIM.?(
+    const xim = procs.XOpenIM.?(
         display,
         null,
         null,
         null,
     ) orelse return error.OpenInputMethod;
-    errdefer _ = xlib.procs.XCloseIM.?(xim);
+    errdefer _ = procs.XCloseIM.?(xim);
 
-    const xic = xlib.procs.XCreateIC.?(
+    const xic = procs.XCreateIC.?(
         xim,
         xlib.XN.InputStyle,
         @as(c_ulong, xlib.XIM.PreeditNothing | xlib.XIM.StatusNothing),
@@ -136,14 +138,14 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
 
         @as(?*anyopaque, null),
     ) orelse return error.CreateInputContext;
-    errdefer _ = xlib.procs.XDestroyIC.?(self.xic);
+    errdefer _ = procs.XDestroyIC.?(self.xic);
 
     var atoms: Atoms = undefined;
     inline for (std.meta.fields(Atoms)) |field| {
-        @field(atoms, field.name) = xlib.procs.XInternAtom.?(display, field.name.ptr, xlib.FALSE);
+        @field(atoms, field.name) = procs.XInternAtom.?(display, field.name.ptr, xlib.FALSE);
     }
 
-    _ = xlib.procs.XSetWMProtocols.?(
+    _ = procs.XSetWMProtocols.?(
         display,
         window_handle,
         &atoms.WM_DELETE_WINDOW,
@@ -151,18 +153,18 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     );
 
     const data = [_]u8{0};
-    const empty_bitmap = xlib.procs.XCreateBitmapFromData.?(
+    const empty_bitmap = procs.XCreateBitmapFromData.?(
         display,
         root,
         @ptrCast(&data),
         1,
         1,
     );
-    defer _ = xlib.procs.XFreePixmap.?(display, empty_bitmap);
+    defer _ = procs.XFreePixmap.?(display, empty_bitmap);
 
     var color = std.mem.zeroes(xlib.Color);
 
-    const invisible_cursor = xlib.procs.XCreatePixmapCursor.?(
+    const invisible_cursor = procs.XCreatePixmapCursor.?(
         display,
         empty_bitmap,
         empty_bitmap,
@@ -171,10 +173,12 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         0,
         0,
     );
-    errdefer xlib.procs.XFreeCursor.?(display, invisible_cursor);
+    errdefer procs.XFreeCursor.?(display, invisible_cursor);
 
     self.* = .{
         .display = display,
+        .procs = procs,
+        .xi_procs = xi_procs,
         .xi_extension = xi_extension,
         .window = window_handle,
         .xim = xim,
@@ -189,14 +193,14 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
 pub fn close(self: *Xlib, _: *Window) void {
     const display = self.display;
 
-    _ = xlib.procs.XFreeCursor.?(display, self.invisible_cursor);
-    _ = xlib.procs.XDestroyIC.?(self.xic);
-    _ = xlib.procs.XCloseIM.?(self.xim);
-    _ = xlib.procs.XDestroyWindow.?(display, self.window);
-    _ = xlib.procs.XCloseDisplay.?(display);
+    _ = self.procs.XFreeCursor.?(display, self.invisible_cursor);
+    _ = self.procs.XDestroyIC.?(self.xic);
+    _ = self.procs.XCloseIM.?(self.xim);
+    _ = self.procs.XDestroyWindow.?(display, self.window);
+    _ = self.procs.XCloseDisplay.?(display);
 
-    xi.ProcTable.unload();
-    xlib.ProcTable.unload();
+    self.xi_procs.unload();
+    self.procs.unload();
 }
 
 pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
@@ -208,9 +212,9 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
 
     self.pointer.previous_position = self.pointer.position;
 
-    while (xlib.procs.XPending.?(display) > 0) {
+    while (self.procs.XPending.?(display) > 0) {
         var event: xlib.Event = undefined;
-        if (xlib.procs.XNextEvent.?(display, &event) != 0) return error.NextEvent;
+        if (self.procs.XNextEvent.?(display, &event) != 0) return error.NextEvent;
 
         switch (event.type) {
             .client_message => {
@@ -233,11 +237,11 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             },
 
             .focus_in => {
-                xlib.procs.XSetICFocus.?(self.xic);
+                self.procs.XSetICFocus.?(self.xic);
                 window.focused = true;
             },
             .focus_out => {
-                xlib.procs.XUnsetICFocus.?(self.xic);
+                self.procs.XUnsetICFocus.?(self.xic);
                 window.focused = false;
             },
 
@@ -278,7 +282,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 }
             },
             .key_press => {
-                var keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
+                var keysym = self.procs.XLookupKeysym.?(&event.key, 0);
                 if (Window.Keyboard.fromXkb(@enumFromInt(keysym))) |key| {
                     keyboard.press(key);
                 }
@@ -288,7 +292,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 var buffer: [128]u8 = undefined;
                 var lookup: xlib.Lookup = .none;
 
-                const len = xlib.procs.Xutf8LookupString.?(
+                const len = self.procs.Xutf8LookupString.?(
                     self.xic,
                     &event.key,
                     &buffer,
@@ -311,12 +315,12 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 };
             },
             .key_release => {
-                const keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
+                const keysym = self.procs.XLookupKeysym.?(&event.key, 0);
                 const key = Window.Keyboard.fromXkb(@enumFromInt(keysym)) orelse continue;
                 keyboard.release(key);
             },
             .generic_event => if (event.generic.extension == xi_opcode) {
-                if (xlib.procs.XGetEventData.?(display, &event.generic) == 0) continue;
+                if (self.procs.XGetEventData.?(display, &event.generic) == 0) continue;
                 const xi_event: *xi.Event = @ptrCast(@alignCast(event.generic.data.?));
 
                 switch (@as(xi.Event.Type, @enumFromInt(event.generic.evtype))) {
@@ -351,7 +355,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             .y = @intCast(@divTrunc(window.size.height, 2)),
         };
 
-        _ = xlib.procs.XWarpPointer.?(
+        _ = self.procs.XWarpPointer.?(
             display,
             .none,
             self.window,
@@ -363,7 +367,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             @truncate(center.y),
         );
 
-        _ = xlib.procs.XFlush.?(display);
+        _ = self.procs.XFlush.?(display);
 
         self.pointer.position = .{
             .x = @floatFromInt(center.x),
@@ -376,7 +380,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     const display = self.display;
 
     // Modern UTF-8 window title (_NET_WM_NAME)
-    _ = xlib.procs.XChangeProperty.?(
+    _ = self.procs.XChangeProperty.?(
         display,
         self.window,
         self.atoms._NET_WM_NAME,
@@ -388,7 +392,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     );
 
     // Legacy ICCCM fallback (WM_NAME / XA_STRING)
-    _ = xlib.procs.XChangeProperty.?(
+    _ = self.procs.XChangeProperty.?(
         display,
         self.window,
         .WM_NAME,
@@ -399,7 +403,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
         @intCast(title.len),
     );
 
-    _ = xlib.procs.XFlush.?(display);
+    _ = self.procs.XFlush.?(display);
 }
 
 pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
@@ -417,7 +421,7 @@ pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
         hints.min_height = @intCast(size.height);
     }
 
-    xlib.procs.XSetWMNormalHints.?(
+    self.procs.XSetWMNormalHints.?(
         self.display,
         self.window,
         &hints,
@@ -429,11 +433,11 @@ pub fn setMinSize(self: *Xlib, window: *Window, size: ?Window.Size) !void {
 }
 
 pub fn minimize(self: *Xlib, _: *Window) !void {
-    const screen = xlib.procs.XDefaultScreen.?(self.display);
+    const screen = self.procs.XDefaultScreen.?(self.display);
 
-    if (xlib.procs.XIconifyWindow.?(self.display, self.window, screen) == 0) return error.IconifyWindow;
+    if (self.procs.XIconifyWindow.?(self.display, self.window, screen) == 0) return error.IconifyWindow;
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn maximize(self: *Xlib, _: *Window) !void {
@@ -443,7 +447,7 @@ pub fn maximize(self: *Xlib, _: *Window) !void {
         1,
     );
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn restore(self: *Xlib, _: *Window) !void {
@@ -453,38 +457,38 @@ pub fn restore(self: *Xlib, _: *Window) !void {
         0,
     );
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn setFullscreen(self: *Xlib, _: *Window, enabled: bool) !void {
     self.setWmState(self.atoms._NET_WM_STATE_FULLSCREEN, .NONE, @intFromBool(enabled));
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn setPointerVisible(self: *Xlib, _: *Window, visible: bool) !void {
     if (visible)
-        _ = xlib.procs.XUndefineCursor.?(
+        _ = self.procs.XUndefineCursor.?(
             self.display,
             self.window,
         )
     else
-        _ = xlib.procs.XDefineCursor.?(
+        _ = self.procs.XDefineCursor.?(
             self.display,
             self.window,
             self.invisible_cursor,
         );
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.Constraint) !void {
     switch (constraint) {
         .none => {
-            _ = xlib.procs.XUngrabPointer.?(self.display, .current);
+            _ = self.procs.XUngrabPointer.?(self.display, .current);
         },
         .confined, .locked => {
-            _ = xlib.procs.XGrabPointer.?(
+            _ = self.procs.XGrabPointer.?(
                 self.display,
                 self.window,
                 xlib.TRUE,
@@ -502,7 +506,7 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
         },
     }
 
-    _ = xlib.procs.XFlush.?(self.display);
+    _ = self.procs.XFlush.?(self.display);
 }
 
 pub fn setPointerRelative(_: *Xlib, _: *Window, _: bool) !void {}
@@ -529,12 +533,12 @@ fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long)
         },
     };
 
-    const root = xlib.procs.XRootWindow.?(
+    const root = self.procs.XRootWindow.?(
         self.display,
-        xlib.procs.XDefaultScreen.?(self.display),
+        self.procs.XDefaultScreen.?(self.display),
     );
 
-    _ = xlib.procs.XSendEvent.?(
+    _ = self.procs.XSendEvent.?(
         self.display,
         root,
         xlib.FALSE,
@@ -1006,7 +1010,6 @@ const xlib = struct {
         };
     };
 
-    pub var procs: ProcTable = undefined;
     const ProcTable = struct {
         lib: std.DynLib = undefined,
 
@@ -1169,8 +1172,9 @@ const xlib = struct {
         ) callconv(.c) GrabStatus,
         XUngrabPointer: ?*const fn (*Display, time: Time) callconv(.c) c_int,
 
-        fn load() !void {
-            procs.lib = std.DynLib.openZ("libX11.so") catch |err| return switch (err) {
+        fn load() !ProcTable {
+            var table: ProcTable = undefined;
+            table.lib = std.DynLib.openZ("libX11.so") catch |err| return switch (err) {
                 error.FileNotFound => error.LibX11NotInstalled,
                 else => err,
             };
@@ -1178,12 +1182,14 @@ const xlib = struct {
             inline for (std.meta.fields(ProcTable)) |field| {
                 if (field.type == @FieldType(ProcTable, "lib")) continue;
 
-                @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
+                @field(table, field.name) = table.lib.lookup(std.meta.Child(field.type), field.name);
             }
+
+            return table;
         }
 
-        fn unload() void {
-            procs.lib.close();
+        fn unload(self: *ProcTable) void {
+            self.lib.close();
         }
     };
 };
@@ -1448,7 +1454,6 @@ const xi = struct {
         }
     };
 
-    pub var procs: ProcTable = undefined;
     const ProcTable = struct {
         lib: ?std.DynLib = undefined,
 
@@ -1457,24 +1462,24 @@ const xi = struct {
         XIFreeDeviceInfo: ?*const fn (devices: *DeviceInfo) callconv(.c) void,
         XISelectEvents: ?*const fn (*xlib.Display, window: xlib.Window, masks: [*]Event.Mask, num_masks: c_int) callconv(.c) c_int,
 
-        fn load() std.DynLib.Error!void {
-            procs.lib = std.DynLib.open("libXi.so.6") catch |err| switch (err) {
-                error.FileNotFound => {
-                    procs = std.mem.zeroes(ProcTable);
-                    return;
-                },
+        fn load() std.DynLib.Error!ProcTable {
+            var table: ProcTable = undefined;
+            table.lib = std.DynLib.open("libXi.so.6") catch |err| switch (err) {
+                error.FileNotFound => return std.mem.zeroes(ProcTable),
                 else => return err,
             };
 
             inline for (std.meta.fields(ProcTable)) |field| {
                 if (field.type == @FieldType(ProcTable, "lib")) continue;
 
-                @field(procs, field.name) = procs.lib.?.lookup(std.meta.Child(field.type), field.name);
+                @field(table, field.name) = table.lib.?.lookup(std.meta.Child(field.type), field.name);
             }
+
+            return table;
         }
 
-        fn unload() void {
-            if (procs.lib) |*lib| lib.close();
+        fn unload(self: *ProcTable) void {
+            if (self.lib) |*lib| lib.close();
         }
     };
 };

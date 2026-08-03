@@ -22,7 +22,7 @@ pub fn getFormat(self: Surface, gpa: std.mem.Allocator, physical_device: device.
 
     var chosen_format: c.VkSurfaceFormatKHR = formats[0];
     for (0..format_count) |i| {
-        if (formats[i].format == c.VK_FORMAT_R8G8B8A8_UNORM) {
+        if (formats[i].format == c.VK_FORMAT_R8G8B8A8_UNORM or formats[i].format == c.VK_FORMAT_B8G8R8A8_UNORM) {
             chosen_format = formats[i];
             break;
         }
