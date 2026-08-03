@@ -613,6 +613,10 @@ fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePoin
     }
 }
 
+comptime {
+    _ = Loader.exports;
+}
+
 var loader: Loader = .{};
 /// Loads the wayland-client at runtime
 const Loader = struct {
@@ -653,44 +657,50 @@ const Loader = struct {
 
     const exports = struct {
         // zig fmt: off
-        export fn wl_display_cancel_read(display: *wl.Display) void { loader.wl_display_cancel_read.?(display); }
-        export fn wl_display_connect_to_fd(fd: c_int) ?*wl.Display { return loader.wl_display_connect_to_fd.?(fd); }
-        export fn wl_display_connect(name: ?[*:0]const u8) ?*wl.Display { return loader.wl_display_connect.?(name); }
-        export fn wl_display_create_queue(display: *wl.Display) ?*wl.EventQueue { return loader.wl_display_create_queue.?(display); }
-        export fn wl_display_disconnect(display: *wl.Display) void { loader.wl_display_disconnect.?(display); }
-        export fn wl_display_dispatch_pending(display: *wl.Display) c_int { return loader.wl_display_dispatch_pending.?(display); }
-        export fn wl_display_dispatch_queue_pending(display: *wl.Display, queue: *wl.EventQueue) c_int { return loader.wl_display_dispatch_queue_pending.?(display, queue); }
-        export fn wl_display_dispatch_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return loader.wl_display_dispatch_queue.?(display, queue); }
-        export fn wl_display_dispatch(display: *wl.Display) c_int { return loader.wl_display_dispatch.?(display); }
-        export fn wl_display_flush(display: *wl.Display) c_int { return loader.wl_display_flush.?(display); }
-        export fn wl_display_get_error(display: *wl.Display) c_int { return loader.wl_display_get_error.?(display); }
-        export fn wl_display_get_fd(display: *wl.Display) c_int { return loader.wl_display_get_fd.?(display); }
-        export fn wl_display_prepare_read_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return loader.wl_display_prepare_read_queue.?(display, queue); }
-        export fn wl_display_prepare_read(display: *wl.Display) c_int { return loader.wl_display_prepare_read.?(display); }
-        export fn wl_display_read_events(display: *wl.Display) c_int { return loader.wl_display_read_events.?(display); }
-        export fn wl_display_roundtrip_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return loader.wl_display_roundtrip_queue.?(display, queue); }
-        export fn wl_display_roundtrip(display: *wl.Display) c_int { return loader.wl_display_roundtrip.?(display); }
-        export fn wl_event_queue_destroy(queue: *wl.EventQueue) void { loader.wl_event_queue_destroy.?(queue); }
-        export fn wl_proxy_add_dispatcher(proxy: *wl.Proxy, dispatcher: *const wl.Proxy.DispatcherFn, implementation: ?*const anyopaque, data: ?*anyopaque) c_int { return loader.wl_proxy_add_dispatcher.?(proxy, dispatcher, implementation, data); }
-        export fn wl_proxy_create(factory: *wl.Proxy, interface: *const wl.Interface) ?*wl.Proxy { return loader.wl_proxy_create.?(factory, interface); }
-        export fn wl_proxy_destroy(proxy: *wl.Proxy) void { loader.wl_proxy_destroy.?(proxy); }
-        export fn wl_proxy_get_id(proxy: *wl.Proxy) u32 { return loader.wl_proxy_get_id.?(proxy); }
-        export fn wl_proxy_get_user_data(proxy: *wl.Proxy) ?*anyopaque { return loader.wl_proxy_get_user_data.?(proxy); }
-        export fn wl_proxy_get_version(proxy: *wl.Proxy) u32 { return loader.wl_proxy_get_version.?(proxy); }
-        export fn wl_proxy_marshal_array_constructor_versioned(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) ?*wl.Proxy { return loader.wl_proxy_marshal_array_constructor_versioned.?(proxy, opcode, args, interface, version); }
-        export fn wl_proxy_marshal_array_constructor(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) ?*wl.Proxy { return loader.wl_proxy_marshal_array_constructor.?(proxy, opcode, args, interface); }
-        export fn wl_proxy_marshal_array(proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) void { loader.wl_proxy_marshal_array.?(proxy, opcode, args); }
-        export fn wl_proxy_set_queue(proxy: *wl.Proxy, queue: *wl.EventQueue) void { loader.wl_proxy_set_queue.?(proxy, queue); }
+        export fn wl_display_cancel_read(display: *wl.Display) void { proc("wl_display_cancel_read")(display); }
+        export fn wl_display_connect_to_fd(fd: c_int) ?*wl.Display { return proc("wl_display_connect_to_fd")(fd); }
+        export fn wl_display_connect(name: ?[*:0]const u8) ?*wl.Display { return proc("wl_display_connect")(name); }
+        export fn wl_display_create_queue(display: *wl.Display) ?*wl.EventQueue { return proc("wl_display_create_queue")(display); }
+        export fn wl_display_disconnect(display: *wl.Display) void { proc("wl_display_disconnect")(display); }
+        export fn wl_display_dispatch_pending(display: *wl.Display) c_int { return proc("wl_display_dispatch_pending")(display); }
+        export fn wl_display_dispatch_queue_pending(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_dispatch_queue_pending")(display, queue); }
+        export fn wl_display_dispatch_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_dispatch_queue")(display, queue); }
+        export fn wl_display_dispatch(display: *wl.Display) c_int { return proc("wl_display_dispatch")(display); }
+        export fn wl_display_flush(display: *wl.Display) c_int { return proc("wl_display_flush")(display); }
+        export fn wl_display_get_error(display: *wl.Display) c_int { return proc("wl_display_get_error")(display); }
+        export fn wl_display_get_fd(display: *wl.Display) c_int { return proc("wl_display_get_fd")(display); }
+        export fn wl_display_prepare_read_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_prepare_read_queue")(display, queue); }
+        export fn wl_display_prepare_read(display: *wl.Display) c_int { return proc("wl_display_prepare_read")(display); }
+        export fn wl_display_read_events(display: *wl.Display) c_int { return proc("wl_display_read_events")(display); }
+        export fn wl_display_roundtrip_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_roundtrip_queue")(display, queue); }
+        export fn wl_display_roundtrip(display: *wl.Display) c_int { return proc("wl_display_roundtrip")(display); }
+        export fn wl_event_queue_destroy(queue: *wl.EventQueue) void { proc("wl_event_queue_destroy")(queue); }
+        export fn wl_proxy_add_dispatcher(proxy: *wl.Proxy, dispatcher: *const wl.Proxy.DispatcherFn, implementation: ?*const anyopaque, data: ?*anyopaque) c_int { return proc("wl_proxy_add_dispatcher")(proxy, dispatcher, implementation, data); }
+        export fn wl_proxy_create(factory: *wl.Proxy, interface: *const wl.Interface) ?*wl.Proxy { return proc("wl_proxy_create")(factory, interface); }
+        export fn wl_proxy_destroy(proxy: *wl.Proxy) void { proc("wl_proxy_destroy")(proxy); }
+        export fn wl_proxy_get_id(proxy: *wl.Proxy) u32 { return proc("wl_proxy_get_id")(proxy); }
+        export fn wl_proxy_get_user_data(proxy: *wl.Proxy) ?*anyopaque { return proc("wl_proxy_get_user_data")(proxy); }
+        export fn wl_proxy_get_version(proxy: *wl.Proxy) u32 { return proc("wl_proxy_get_version")(proxy); }
+        export fn wl_proxy_marshal_array_constructor_versioned(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor_versioned")(proxy, opcode, args, interface, version); }
+        export fn wl_proxy_marshal_array_constructor(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor")(proxy, opcode, args, interface); }
+        export fn wl_proxy_marshal_array(proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) void { proc("wl_proxy_marshal_array")(proxy, opcode, args); }
+        export fn wl_proxy_set_queue(proxy: *wl.Proxy, queue: *wl.EventQueue) void { proc("wl_proxy_set_queue")(proxy, queue); }
         // zig fmt: on
     };
 
     fn load() !void {
+        if (loader.wl_display_connect != null) return;
         loader.lib = try .openZ("libwayland-client.so.0");
         inline for (std.meta.fields(@This())) |field| {
             if (field.type != std.DynLib) {
                 @field(loader, field.name) = loader.lib.lookup(field.type, field.name) orelse @panic(field.name);
             }
         }
+    }
+
+    fn proc(comptime name: [:0]const u8) @typeInfo(@FieldType(Loader, name)).optional.child {
+        if (@field(loader, name) == null) Loader.load() catch @panic("libwayland-client.so.0 not found");
+        return @field(loader, name).?;
     }
 
     fn unload() void {
