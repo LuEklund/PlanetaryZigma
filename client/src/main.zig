@@ -91,6 +91,7 @@ pub fn main(init: std.process.Init) !void {
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         accumlated_time += delta_time;
+        world.real_time += delta_time;
         if (accumlated_time < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
             continue;

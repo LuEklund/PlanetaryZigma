@@ -39,6 +39,7 @@ left_click_prev: bool = false,
 pressed: bool = false,
 released: bool = false,
 delta_time: f32 = 0,
+previous_real_time: f32 = 0,
 frame_index: u64 = 0,
 
 pub fn key(name: []const u8) u64 {
@@ -165,6 +166,12 @@ pub fn end(self: *Ui) void {
             self.animations.swapRemoveAt(index);
         }
     }
+}
+
+pub fn frameSeconds(self: *Ui, real_time: f32) f32 {
+    const frame_seconds = real_time - self.previous_real_time;
+    self.previous_real_time = real_time;
+    return frame_seconds;
 }
 
 pub fn animate(self: *Ui, name: []const u8, target: f32, seconds: f32) f32 {
