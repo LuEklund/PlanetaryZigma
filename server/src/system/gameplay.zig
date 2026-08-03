@@ -78,6 +78,8 @@ pub fn updateEnemies(world: *World) !void {
 
     if (world.players.items.len == 0) return;
 
+    world.navmesh.deleteUnused(world.gpa, world.elapsed_time);
+
     for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy) continue;
         // std.log.debug("elapsed_time = {d}, un_stun_at {d}", .{ world.elapsed_time, enemy.un_stun_at });
@@ -95,6 +97,8 @@ pub fn updateEnemies(world: *World) !void {
             closest_player = current_player;
         }
         const player = closest_player orelse return;
+        try world.navmesh.ensure(world.gpa, enemy.transform.position, world.planet_radius, world.elapsed_time);
+        try world.navmesh.ensure(world.gpa, player.transform.position, world.planet_radius, world.elapsed_time);
         const to_player = player.transform.position - enemy.transform.position;
         const distance_to_player = nz.vec.length(to_player);
 
@@ -146,7 +150,7 @@ pub fn updateEnemies(world: *World) !void {
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     if (distance_to_player < range) {
-                        if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
+                        _ = world.removeHealth(player, damage, enemy);
                     }
                 }
             },
@@ -171,7 +175,7 @@ pub fn updateEnemies(world: *World) !void {
 
                 if (attackLands(world, enemy, player, .attack)) {
                     if (distance_to_player < range) {
-                        if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
+                        _ = world.removeHealth(player, damage, enemy);
                     }
                 }
             },
