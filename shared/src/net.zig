@@ -115,7 +115,6 @@ pub const PlayerName = struct {
     }
 };
 
-
 pub const ChatSend = struct {
     text_len: u16,
     text: []const u8,
@@ -164,9 +163,10 @@ pub const Input = struct {
         l_shift: bool = false,
         r: bool = false,
         e: bool = false,
+        q: bool = false,
         mouse_button_left: bool = false,
         mouse_button_right: bool = false,
-        _padding: u6 = 0,
+        _padding: u5 = 0,
     } = .{},
     dev_command: DevCommand = .none,
     camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
@@ -200,7 +200,7 @@ pub const UpdateHealthAmount = union(enum) {
 
 pub const UpdateInventory = struct {
     id: entity.Id,
-    item_kind: root.Item,
+    item_kind: root.Item.Kind,
     set: u8,
 };
 

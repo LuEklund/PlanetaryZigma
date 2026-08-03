@@ -65,7 +65,7 @@ const Position2D = struct {
     top: f32,
 };
 
-const Size2D = struct {
+pub const Size2D = struct {
     width: f32,
     heigth: f32,
 };
@@ -402,4 +402,3 @@ fn hotUpdate(self: *Ui) void {
 //     if (self.hot_item)
 //     if (self.left_click_prev) return;
 // }
-

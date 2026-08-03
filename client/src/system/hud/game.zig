@@ -81,51 +81,76 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
             .axis_align = .horizontal,
             .gap = 10,
         });
-        for (std.enums.values(shared.Item)) |item_kind| {
+        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+            const quipment_size: Ui.Size2D = .{ .heigth = 100, .width = 100 };
             const amount = player.inventory.get(item_kind);
-            if (amount == 0) continue;
-            const amount_text = ui.print("{d}", .{amount});
-            ui.add("inventory", .{
-                .size = .{ .fixed = .{
-                    .heigth = inventory_heigth,
-                    .width = inventory_heigth,
-                } },
+            if (amount > 0) {
+                const amount_text = ui.print("{d}", .{amount});
+                if (shared.Item.get(item_kind).is_equipment) {
+                    ui.add(null, .{
+                        .size = .{ .fixed = .{
+                            .heigth = quipment_size.heigth,
+                            .width = quipment_size.width,
+                        } },
 
-                .color = .new(1, 1, 1, 1),
-                .name = @tagName(item_kind),
-                .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
-                .child_anchor = .{ .x = .end, .y = .end },
-                .children = &.{.{
-                    .size = .{ .fixed = ui.textSize(amount_text, 32) },
-                    .text = .{
-                        .data = amount_text,
-                        .color = .new(0, 0, 0, 1),
-                    },
-                }},
-            });
+                        .offset = .{ .left = ui.screen_width - quipment_size.width, .top = ui.screen_heigth - quipment_size.heigth },
+                        .color = .new(1, 1, 1, 1),
+                        .name = @tagName(item_kind),
+                        .texture = texture_table.handle(shared.Item.getIcon(item_kind)),
+                        .child_anchor = .{ .x = .start, .y = .end },
+                        .children = &.{.{
+                            .size = .{ .fixed = ui.textSize(amount_text, 48) },
+                            .text = .{
+                                .data = amount_text,
+                                .color = .new(0, 0, 0, 1),
+                                .size = 48,
+                            },
+                        }},
+                    });
+                } else {
+                    ui.add("inventory", .{
+                        .size = .{ .fixed = .{
+                            .heigth = inventory_heigth,
+                            .width = inventory_heigth,
+                        } },
+
+                        .color = .new(1, 1, 1, 1),
+                        .name = @tagName(item_kind),
+                        .texture = texture_table.handle(shared.Item.getIcon(item_kind)),
+                        .child_anchor = .{ .x = .end, .y = .end },
+                        .children = &.{.{
+                            .size = .{ .fixed = ui.textSize(amount_text, 32) },
+                            .text = .{
+                                .data = amount_text,
+                                .color = .new(0, 0, 0, 1),
+                            },
+                        }},
+                    });
+                }
+            }
         }
-        for (std.enums.values(shared.Item)) |item_kind| {
+        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
-            if (amount == 0) continue;
-            if (!ui.isHot(ui.print("{t}", .{item_kind}))) continue;
-            const item_spec = shared.Item.spec(item_kind);
-            const line_size: f32 = 18;
-            const text_size = ui.textSize(item_spec.description, line_size);
-            ui.add(null, .{
-                .name = "item_tooltip",
-                .offset = .{ .left = ui.mouse_state.position.left + 16, .top = ui.mouse_state.position.top + 16 },
-                .size = .{ .fixed = .{ .width = text_size.width + 16, .heigth = text_size.heigth + 16 } },
-                .color = .new(0.1, 0.1, 0.1, 0.85),
-                .child_anchor = .{ .x = .center, .y = .center },
-                .children = &.{.{
-                    .size = .{ .fixed = text_size },
-                    .text = .{ .data = item_spec.description, .size = line_size },
-                }},
-            });
+            if (amount > 0 and ui.isHot(ui.print("{t}", .{item_kind}))) {
+                const item = shared.Item.get(item_kind);
+                const line_size: f32 = 18;
+                const text_size = ui.textSize(item.description, line_size);
+                ui.add(null, .{
+                    .name = "item_tooltip",
+                    .offset = .{ .left = ui.mouse_state.position.left + 16, .top = ui.mouse_state.position.top + 16 },
+                    .size = .{ .fixed = .{ .width = text_size.width + 16, .heigth = text_size.heigth + 16 } },
+                    .color = .new(0.1, 0.1, 0.1, 0.85),
+                    .child_anchor = .{ .x = .center, .y = .center },
+                    .children = &.{.{
+                        .size = .{ .fixed = text_size },
+                        .text = .{ .data = item.description, .size = line_size },
+                    }},
+                });
+            }
         }
         if (show_stats) {
             const line_size: f32 = 18;
-            const line_count: f32 = @floatFromInt(std.enums.values(shared.Stat).len);
+            const line_count: f32 = @floatFromInt(std.enums.values(shared.Item.Stat).len);
             const stats_box_width: f32 = 300;
             const stats_box_heigth: f32 = line_count * (line_size + 4) + 8;
             ui.add(null, .{
@@ -136,7 +161,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                 .axis_align = .vertical,
                 .gap = 4,
             });
-            for (std.enums.values(shared.Stat)) |stat_kind| {
+            for (std.enums.values(shared.Item.Stat)) |stat_kind| {
                 const line = if (stat_kind == .health)
                     ui.print("health: {d:.0}/{d:.0}", .{ player.health, player.max_health })
                 else
@@ -199,7 +224,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_path),
+                        .texture = texture_table.handle("textures/crosshair.png"),
                     },
                 },
             });

@@ -90,6 +90,7 @@ fn loadFile(self: *AssetServer, loader_index: usize, file_index: usize) !void {
     const loader = self.loaders.items[loader_index];
     const loader_root = try self.dir.openDir(io, loader.root_path, .{});
     defer loader_root.close(io);
+    std.log.debug("loading {s}", .{loader.files[file_index]});
     const file = loader_root.openFile(io, loader.files[file_index], .{});
     defer if (file) |open_file| open_file.close(io) else |_| {};
     try loader.vtable.load(loader, file, file_index);

@@ -10,7 +10,7 @@ const Buffer = @import("../Vulkan/Buffer.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 pub const max_textures = 256;
-pub const crosshair_texture_path = "textures/crosshair.png";
+pub const crosshair_texture_path = "crosshair.png";
 
 vma: Vma,
 device: Device,
