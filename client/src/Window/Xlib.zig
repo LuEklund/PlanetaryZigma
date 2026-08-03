@@ -425,7 +425,7 @@ pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
 }
 
 pub fn setMinSize(self: *Xlib, window: *Window, size: ?Window.Size) !void {
-    self.setMaxSize(window, size);
+    try self.setMaxSize(window, size);
 }
 
 pub fn minimize(self: *Xlib, _: *Window) !void {

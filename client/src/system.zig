@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const Window = @import("Window.zig");
+const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 const AssetServer = @import("shared").AssetServer;
 const Animation = @import("system/Animations.zig");
@@ -45,7 +45,6 @@ pub const Context = struct {
     options: Options,
     request_exit: bool = false,
     fullscreen_applied: bool = false,
-    captured: bool = false,
 
     pub const Data = struct {
         gpa: std.mem.Allocator,
@@ -62,18 +61,16 @@ pub const Context = struct {
         self.window = data.window;
         self.steam_client = data.steam_client;
         self.asset_server = data.asset_server;
-        self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
+        self.renderer = try .init(data.gpa, data.asset_server, data.window);
         try self.network_manager.init(data.gpa, data.io, data.steam_client);
         self.animation = .init(data.gpa);
         self.options = .{};
         try self.enterScene(data.world, .menu);
         self.request_exit = false;
         self.fullscreen_applied = false;
-        self.cursor_mode_applied = .normal;
     }
 
     pub fn deinit(self: *Context) void {
-        self.window.setCursorMode(self.desktop, .normal) catch {};
         self.renderer.deinit(self.gpa);
         self.network_manager.deinit();
     }
@@ -92,6 +89,7 @@ pub const Context = struct {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         // tracy.frameMark();
+        self.handleInput(info);
         const paused_before_hud = self.hud.overlay != .none;
         Emitter.update(&info.world.emitters, info.elapsed_time);
         DamagePopup.update(&info.world.damage_popups, info.delta_time);
@@ -123,34 +121,35 @@ pub const Context = struct {
         // std.log.debug("time : {d}", .{info.elapsed_time});
     }
 
-    pub fn eventUpdate(self: *Context, info: *const Info, window: *const Window) !void {
+    fn handleInput(self: *Context, info: *const Info) void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
+        const window = self.window;
         if (info.world.controller.rebinding_action != null) {
-            info.world.controller.eventUpdate(window);
+            info.world.controller.update(window);
             return;
         }
 
-        const keyboard = window.keyboard;
+        const escape_released = window.keyboard.get(.escape) == .release;
 
-        if (keyboard.isUp(.escape) and info.world.controller.suppress_escape_release) {
+        if (escape_released and info.world.controller.suppress_escape_release) {
             info.world.controller.suppress_escape_release = false;
             return;
         }
-        if (keyboard.isUp(.escape) and self.hud.overlay == .options) {
+        if (escape_released and self.hud.overlay == .options) {
             self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
             info.world.controller.clearInput();
             info.world.controller.resetMouseDelta();
             return;
         }
-        if (keyboard.isUp(.escape) and self.scene == .game) {
+        if (escape_released and self.scene == .game) {
             self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
             info.world.controller.clearInput();
             info.world.controller.resetMouseDelta();
             return;
         }
 
-        info.world.controller.eventUpdate(window);
+        info.world.controller.update(window);
     }
 
     fn applyOptions(self: *Context, info: *const Info) !void {
@@ -160,11 +159,16 @@ pub const Context = struct {
             self.fullscreen_applied = self.options.fullscreen;
         }
         const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
+        const was_locked = self.window.pointer.constraint == .locked;
         if (wants_cursor_lock) {
             try self.window.setPointerVisible(false);
             try self.window.setPointerConstraint(.locked);
             try self.window.setPointerRelative(true);
-            info.world.controller.resetMouseDelta();
+            if (!was_locked) info.world.controller.resetMouseDelta();
+        } else {
+            try self.window.setPointerRelative(false);
+            try self.window.setPointerConstraint(.none);
+            try self.window.setPointerVisible(true);
         }
     }
 
@@ -186,7 +190,7 @@ pub const ffi = struct {
     pub const Table = struct {
         systemContextInit: *const fn (*Context, data: *const Context.Data) callconv(.c) void,
         systemContextDeinit: *const fn (*Context) callconv(.c) void,
-        systemContextUpdate: *const fn (*Context, data: *const Info, event: ?*const yes.Window.Event) callconv(.c) void,
+        systemContextUpdate: *const fn (*Context, data: *const Info) callconv(.c) void,
         systemContextReload: *const fn (*Context, pre_reload: bool) callconv(.c) void,
 
         pub fn load(dynlib: *shared.DynLib) !Table {
@@ -217,11 +221,10 @@ pub const ffi = struct {
         context.* = undefined;
     }
 
-    pub export fn systemContextUpdate(context: *Context, info: *const Info, event: ?*const yes.Window.Event) void {
+    pub export fn systemContextUpdate(context: *Context, info: *const Info) void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        const result = if (event != null) context.eventUpdate(info, event.?) else context.update(info);
-        result catch |err| {
+        context.update(info) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.debug.panic("context update: {s}", .{@errorName(err)});
         };

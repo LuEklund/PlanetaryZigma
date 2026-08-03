@@ -1,9 +1,11 @@
 const Controller = @This();
 
+const std = @import("std");
 const shared = @import("shared");
-const yes = @import("yes");
 
-const Window = @import("../Window.zig");
+const Window = @import("Window");
+
+pub const MouseButton = std.meta.FieldEnum(Window.Pointer.Buttons);
 
 pub const Action = enum {
     move_forward,
@@ -38,7 +40,7 @@ pub const bindable_actions = [_]Action{
 pub const Binding = union(enum) {
     none,
     key: Window.Keyboard.Key,
-    mouse: Window.Pointer.Buttons,
+    mouse: MouseButton,
 
     pub fn eql(self: Binding, other: Binding) bool {
         return switch (self) {
@@ -109,6 +111,7 @@ mouse_delta: [2]f64 = .{ 0, 0 },
 mouse_wheel: f64 = 0,
 mouse_button_left: bool = false,
 mouse_button_right: bool = false,
+previous_buttons: Window.Pointer.Buttons = .{},
 input_map: shared.net.Input = .{},
 bindings: Bindings = .{},
 rebinding_action: ?Action = null,
@@ -130,86 +133,88 @@ pub fn resetMouseDelta(self: *Controller) void {
     self.mouse_delta = .{ 0, 0 };
 }
 
-pub fn eventUpdate(self: *Controller, window: *const Window) void {
-    switch (event.*) {
-        .key => |key| {
-            const pressed = key.state == .pressed;
-            if (pressed) {
-                if (self.rebinding_action) |action| {
-                    if (key.sym == .escape) {
-                        self.bindings.set(action, .none);
-                        self.suppress_escape_release = true;
-                    } else {
-                        self.bindings.set(action, .{ .key = key.sym });
-                    }
-                    self.rebinding_action = null;
-                    self.clearInput();
-                    return;
-                }
-            }
-            if (pressed) switch (key.sym) {
-                .f1 => self.input_map.dev_command = .f1,
-                .f2 => self.input_map.dev_command = .f2,
-                .f3 => self.input_map.dev_command = .f3,
-                .f4 => self.input_map.dev_command = .f4,
-                .f5 => self.input_map.dev_command = .f5,
-                .f6 => self.input_map.dev_command = .f6,
-                .f7 => self.input_map.dev_command = .f7,
-                .f8 => self.input_map.dev_command = .f8,
-                .f9 => self.input_map.dev_command = .f9,
-                .f10 => self.input_map.dev_command = .f10,
-                .f11 => self.input_map.dev_command = .f11,
-                .f12 => self.input_map.dev_command = .f12,
-                else => {},
-            };
-            for (bindable_actions) |action| {
-                if (self.bindings.get(action).eql(.{ .key = key.sym })) {
-                    self.applyAction(action, pressed);
-                }
-            }
-        },
-        .mouse_scroll => switch (event.mouse_scroll) {
-            .vertical => |scroll| self.mouse_wheel = scroll,
-            .horizontal => {},
-        },
-        .focus => |focused| {
-            if (!focused) {
-                self.clearInput();
-                self.releaseMouseButtons();
-                self.resetMouseDelta();
-                self.rebinding_action = null;
-            }
-        },
-        .mouse_motion => |motion| {
-            self.mouse_pos[0] = motion.x;
-            self.mouse_pos[1] = motion.y;
-            self.mouse_delta[0] += motion.dx;
-            self.mouse_delta[1] += motion.dy;
-        },
-        .mouse_button => |button| {
-            const pressed = button.state == .pressed;
-            switch (button.button) {
-                .left => self.mouse_button_left = pressed,
-                .right => self.mouse_button_right = pressed,
-                else => {},
-            }
-            if (pressed) {
-                if (self.rebinding_action) |action| {
-                    self.bindings.set(action, .{ .mouse = button.button });
-                    self.rebinding_action = null;
-                    self.clearInput();
-                    return;
-                }
-            }
-            for (bindable_actions) |action| {
-                if (self.bindings.get(action).eql(.{ .mouse = button.button })) {
-                    self.applyAction(action, pressed);
-                }
-            }
-        },
+fn buttonDown(buttons: Window.Pointer.Buttons, button: MouseButton) bool {
+    return switch (button) {
+        inline else => |b| @field(buttons, @tagName(b)),
+    };
+}
 
-        else => {},
+pub fn update(self: *Controller, window: *const Window) void {
+    if (!window.focused) {
+        self.clearInput();
+        self.releaseMouseButtons();
+        self.resetMouseDelta();
+        self.rebinding_action = null;
+        self.previous_buttons = .{};
+        return;
     }
+
+    const keyboard = window.keyboard;
+    const buttons = window.pointer.buttons;
+    defer self.previous_buttons = buttons;
+
+    if (self.rebinding_action) |action| {
+        for (std.enums.values(Window.Keyboard.Key)) |key| {
+            if (keyboard.get(key) != .press) continue;
+            if (key == .escape) {
+                self.bindings.set(action, .none);
+                self.suppress_escape_release = true;
+            } else {
+                self.bindings.set(action, .{ .key = key });
+            }
+            self.rebinding_action = null;
+            self.clearInput();
+            return;
+        }
+        for (std.enums.values(MouseButton)) |button| {
+            if (!buttonDown(buttons, button) or buttonDown(self.previous_buttons, button)) continue;
+            self.bindings.set(action, .{ .mouse = button });
+            self.rebinding_action = null;
+            self.clearInput();
+            return;
+        }
+        return;
+    }
+
+    if (keyboard.get(.f1) == .press) self.input_map.dev_command = .f1;
+    if (keyboard.get(.f2) == .press) self.input_map.dev_command = .f2;
+    if (keyboard.get(.f3) == .press) self.input_map.dev_command = .f3;
+    if (keyboard.get(.f4) == .press) self.input_map.dev_command = .f4;
+    if (keyboard.get(.f5) == .press) self.input_map.dev_command = .f5;
+    if (keyboard.get(.f6) == .press) self.input_map.dev_command = .f6;
+    if (keyboard.get(.f7) == .press) self.input_map.dev_command = .f7;
+    if (keyboard.get(.f8) == .press) self.input_map.dev_command = .f8;
+    if (keyboard.get(.f9) == .press) self.input_map.dev_command = .f9;
+    if (keyboard.get(.f10) == .press) self.input_map.dev_command = .f10;
+    if (keyboard.get(.f11) == .press) self.input_map.dev_command = .f11;
+    if (keyboard.get(.f12) == .press) self.input_map.dev_command = .f12;
+
+    for (bindable_actions) |action| {
+        switch (self.bindings.get(action)) {
+            .none => {},
+            .key => |key| switch (keyboard.get(key)) {
+                .press => self.applyAction(action, true),
+                .release => self.applyAction(action, false),
+                .none, .repeat => {},
+            },
+            .mouse => |button| {
+                const down = buttonDown(buttons, button);
+                if (down != buttonDown(self.previous_buttons, button)) self.applyAction(action, down);
+            },
+        }
+    }
+
+    self.mouse_button_left = buttons.left;
+    self.mouse_button_right = buttons.right;
+
+    switch (window.pointer.movement) {
+        .position => |position| self.mouse_pos = .{ position.x, position.y },
+        .relative => |relative| {
+            self.mouse_delta[0] += relative.dx;
+            self.mouse_delta[1] += relative.dy;
+        },
+    }
+    self.mouse_wheel = window.pointer.axis.vertical;
 }
 
 fn applyAction(self: *Controller, action: Action, pressed: bool) void {
@@ -258,7 +263,7 @@ pub fn bindingLabel(binding: Binding) []const u8 {
     };
 }
 
-fn keyLabel(key: KeySym) []const u8 {
+fn keyLabel(key: Window.Keyboard.Key) []const u8 {
     return switch (key) {
         .w => "W",
         .s => "S",
@@ -270,8 +275,8 @@ fn keyLabel(key: KeySym) []const u8 {
         .space => "Space",
         .left_shift => "Left Shift",
         .right_shift => "Right Shift",
-        .left_ctrl => "Left Ctrl",
-        .right_ctrl => "Right Ctrl",
+        .left_control => "Left Ctrl",
+        .right_control => "Right Ctrl",
         .left_alt => "Left Alt",
         .right_alt => "Right Alt",
         .enter => "Enter",
@@ -299,6 +304,7 @@ fn mouseLabel(button: MouseButton) []const u8 {
         .right => "Mouse Right",
         .middle => "Mouse Middle",
         .forward => "Mouse Forward",
-        .backward => "Mouse Back",
+        .back => "Mouse Back",
+        else => @tagName(button),
     };
 }

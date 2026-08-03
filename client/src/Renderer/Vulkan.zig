@@ -7,7 +7,6 @@ const nz = shared.numz;
 const AssetServer = shared.AssetServer;
 const system = @import("../system.zig");
 const World = system.World;
-const shaderc = @import("shaderc");
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;

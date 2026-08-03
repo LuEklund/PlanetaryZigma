@@ -52,6 +52,24 @@ pub fn build(b: *std.Build) void {
 
     xkbcommon.linkLibrary(libxkbcommon);
 
+    const window = b.createModule(.{
+        .root_source_file = b.path("src/Window.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wayland", .module = wayland },
+            .{ .name = "win32", .module = win32 },
+        },
+        .link_libc = true,
+    });
+    switch (target.result.os.tag) {
+        .linux, .freebsd, .netbsd, .openbsd => {
+            window.addImport("xkbcommon", xkbcommon);
+            window.linkSystemLibrary("wayland-client", .{});
+        },
+        else => {},
+    }
+
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
 
@@ -80,8 +98,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "wayland", .module = wayland },
-                .{ .name = "win32", .module = win32 },
+                .{ .name = "Window", .module = window },
                 .{ .name = "zgltf", .module = zgltf },
                 .{ .name = "stb_image", .module = stb_image.createModule() },
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
@@ -113,9 +130,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
-                .{ .name = "wayland", .module = wayland },
-                .{ .name = "win32", .module = win32 },
-                .{ .name = "wayland", .module = wayland },
+                .{ .name = "Window", .module = window },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
             },
@@ -124,11 +139,6 @@ pub fn build(b: *std.Build) void {
         .use_lld = true,
         .use_llvm = true,
     });
-
-    switch (target.result.os.tag) {
-        .linux, .freebsd, .netbsd, .openbsd => exe.root_module.addImport("xkbcommon", xkbcommon),
-        else => {},
-    }
 
     const vulkandeps = b.dependency("vulkan_headers", .{});
     const vmadep = b.dependency("vma", .{});

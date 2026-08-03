@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const shared = @import("shared");
 const system = @import("system");
 const World = system.World;
-const Window = @import("Window.zig");
+const Window = @import("Window");
 const tracy = @import("ztracy");
 
 pub fn main(init: std.process.Init) !void {
@@ -28,16 +28,18 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
+    var watcher: shared.Watcher = try .init("system_client", io);
+    defer watcher.deinit(io);
+    try watcher.load(io);
+
     var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
     try window.open(gpa, init.minimal, .{
+        .app_id = "planetary_zigma",
         .title = "PlanetaryZigma",
         .size = .{ .width = 854, .height = 480 },
-        .resize_policy = .{ .specified = .{
-            .min_size = .{ .width = 300, .height = 200 },
-        } },
-        .surface_type = .vulkan,
     });
+    try window.setMinSize(.{ .width = 300, .height = 200 });
     window_zone.end();
     defer window.close();
 
@@ -47,10 +49,6 @@ pub fn main(init: std.process.Init) !void {
     var world: World = try .init(gpa);
     defer world.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
-
     var system_context: system.Context = undefined;
     var system_table: system.ffi.Table = try .load(&watcher.dynlib.?);
 
@@ -58,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     system_table.systemContextInit(&system_context, &system.Context.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
-        .window = window,
+        .window = &window,
         .io = io,
         .world = &world,
         .steam_client = &steam_client,
@@ -68,6 +66,7 @@ pub fn main(init: std.process.Init) !void {
 
     var elapsed_time: f32 = 0;
     var accumlated_time: f32 = 0;
+    var window_size: Window.Size = window.size;
     const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
     while (!window.should_close) {
@@ -81,26 +80,12 @@ pub fn main(init: std.process.Init) !void {
         }
         accumlated_time -= time_step;
 
-        const options_was_open = system_context.hud.overlay == .options;
-        _ = options_was_open;
-        system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, &undefined); // TODO PLEASE
-
-        try system_context.renderer.resize(gpa, window);
-        // if (key.state == .released and key.sym == .escape and system_context.scene != .game and !options_was_open) break :main_loop;
-        // if (key.state == .released) {
-        //     // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-        //     const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
-        //     const sym = @intFromEnum(key.sym);
-        //     if (sym >= np0 and sym < np0 + 10) {
-        //         if (watcher.version(sym - np0)) |lib| {
-        //             system_table.systemContextReload(&system_context, true);
-        //             system_table = try .load(lib);
-        //             system_table.systemContextReload(&system_context, false);
-        //             std.log.err("switched to version slot {d}", .{sym - np0});
-        //         }
-        //     }
-        // }
-        system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world }, null);
+        try window.poll(.{});
+        if (!window.size.eql(window_size)) {
+            try system_context.renderer.resize(gpa, &window);
+            window_size = window.size;
+        }
+        system_table.systemContextUpdate(&system_context, &.{ .delta_time = time_step, .elapsed_time = elapsed_time, .world = &world });
         if (system_context.request_exit) break;
 
         if (try watcher.reload(io)) {
