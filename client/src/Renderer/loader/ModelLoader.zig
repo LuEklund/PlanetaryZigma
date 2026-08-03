@@ -141,7 +141,7 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
         for (mesh_data.surfaces, surfaces) |surface_data, *surface| surface.* = .{
             .index_start = surface_data.index_start,
             .index_count = surface_data.index_count,
-            .texture = if (surface_data.image_index) |image_index| image_slots[image_index] else .blank,
+            .texture = if (surface_data.material_missing) .material_not_found else if (surface_data.image_index) |image_index| image_slots[image_index] else .blank,
         };
         mesh.* = try .init(gpa, vma, mesh_data.name, device, VertexType, mesh_data.vertices, mesh_data.indices, surfaces);
     }

@@ -9,9 +9,9 @@ pub const Item = enum(u16) {
     rocket,
     lightning,
     crit,
-    tougherer_times,
+    rabbits_foot,
     icicle,
-    hearth,
+    heart,
 
     pub const count: usize = @typeInfo(Item).@"enum".fields.len;
 
@@ -64,26 +64,26 @@ pub const Item = enum(u16) {
             .crit => .{
                 .flat = .initDefault(0, .{ .critical_chance = 0.1 }),
                 .description = "10% chance to deal double damage",
-                .model = "objects/item.glb",
-                .icon = "textures/item.png",
+                .model = "objects/Scope.glb",
+                .icon = "textures/Scope.png",
             },
-            .tougherer_times => .{
+            .rabbits_foot => .{
                 .flat = .initDefault(0, .{ .block_chance = 0.15 }),
                 .description = "15% chance to block damage, diminishing",
-                .model = "objects/item.glb",
-                .icon = "textures/item.png",
+                .model = "objects/RabbitsFoot.glb",
+                .icon = "textures/RabbitsFoot.png",
             },
             .icicle => .{
                 .flat = .initDefault(0, .{ .stun_chance = 0.05 }),
                 .description = "5% chance to stun on hit",
-                .model = "objects/item.glb",
-                .icon = "textures/item.png",
+                .model = "objects/Icicle.glb",
+                .icon = "textures/Icicle.png",
             },
-            .hearth => .{
+            .heart => .{
                 .flat = .initDefault(0, .{ .regen = 1 }),
                 .description = "+1 health regen",
-                .model = "objects/item.glb",
-                .icon = "textures/item.png",
+                .model = "objects/Heart.glb",
+                .icon = "textures/Heart.png",
             },
         };
     }

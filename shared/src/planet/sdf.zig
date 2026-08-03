@@ -11,6 +11,15 @@ pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
     return nz.vec.length(position) - radius + noise;
 }
 
+pub fn gradient(position: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
+    const epsilon: f32 = 0.05;
+    return .{
+        (sdf(position + nz.Vec3(f32){ epsilon, 0, 0 }, radius) - sdf(position - nz.Vec3(f32){ epsilon, 0, 0 }, radius)) / (2 * epsilon),
+        (sdf(position + nz.Vec3(f32){ 0, epsilon, 0 }, radius) - sdf(position - nz.Vec3(f32){ 0, epsilon, 0 }, radius)) / (2 * epsilon),
+        (sdf(position + nz.Vec3(f32){ 0, 0, epsilon }, radius) - sdf(position - nz.Vec3(f32){ 0, 0, epsilon }, radius)) / (2 * epsilon),
+    };
+}
+
 pub fn sampled(position: nz.Vec3(f32), radius: f32) f32 {
     const base = @floor(position);
     const fraction = position - base;

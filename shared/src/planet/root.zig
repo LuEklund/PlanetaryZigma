@@ -145,7 +145,7 @@ pub fn Planet(kind: PlanetKind) type {
                     const color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
                     break :blk .{
                         .position = position,
-                        .normal = nz.vec.normalize(position),
+                        .normal = nz.vec.normalize(sdf.gradient(position, radius)),
                         .color = .{ color[0], color[1], color[2], 1 },
                         .uv_x = uv[0],
                         .uv_y = uv[1],

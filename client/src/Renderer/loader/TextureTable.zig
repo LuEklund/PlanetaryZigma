@@ -82,6 +82,26 @@ pub fn init(
     var white: [4]u8 = .{ 255, 255, 255, 255 };
     try blank.uploadDataToImage(vma, device, &white, 4, 0);
 
+    var material_not_found: Image = try .init(
+        vma,
+        device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 8, .height = 8, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    var checkerboard: [8 * 8 * 4]u8 = undefined;
+    for (0..8) |y| for (0..8) |x| {
+        const magenta: bool = (x + y) % 2 == 0;
+        checkerboard[(y * 8 + x) * 4 + 0] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 1] = 0;
+        checkerboard[(y * 8 + x) * 4 + 2] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 3] = 255;
+    };
+    try material_not_found.uploadDataToImage(vma, device, &checkerboard, checkerboard.len, 0);
+
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -100,7 +120,9 @@ pub fn init(
     try check(c.vkCreateSampler(device.handle, &sampler_info, null, &default_sampler));
     try self.samplers.append(gpa, default_sampler);
     try self.images.append(gpa, blank);
+    try self.images.append(gpa, material_not_found);
     for (0..max_textures) |slot| self.writeDescriptor(slot, blank.vk_imageview, default_sampler);
+    self.writeDescriptor(Image.Handle.material_not_found.index(), material_not_found.vk_imageview, default_sampler);
 
     return self;
 }
