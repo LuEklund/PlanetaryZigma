@@ -402,6 +402,32 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     _ = xlib.procs.XFlush.?(display);
 }
 
+pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
+    var hints = std.mem.zeroes(xlib.SizeHints);
+
+    if (window.max_size) |size| {
+        hints.flags.max_size = true;
+        hints.max_width = @intCast(size.width);
+        hints.max_height = @intCast(size.height);
+    }
+
+    if (window.min_size) |size| {
+        hints.flags.min_size = true;
+        hints.min_width = @intCast(size.width);
+        hints.min_height = @intCast(size.height);
+    }
+
+    xlib.procs.XSetWMNormalHints.?(
+        self.display,
+        self.window,
+        &hints,
+    );
+}
+
+pub fn setMinSize(self: *Xlib, window: *Window, size: ?Window.Size) !void {
+    self.setMaxSize(window, size);
+}
+
 pub fn minimize(self: *Xlib, _: *Window) !void {
     const screen = xlib.procs.XDefaultScreen.?(self.display);
 
@@ -681,6 +707,45 @@ const xlib = struct {
     pub const ComposeStatus = extern struct {
         compose_ptr: ?*anyopaque,
         chars_matched: c_int,
+    };
+
+    pub const SizeHints = extern struct {
+        flags: Flags,
+        x: c_int,
+        y: c_int,
+        width: c_int,
+        height: c_int,
+        min_width: c_int,
+        min_height: c_int,
+        max_width: c_int,
+        max_height: c_int,
+        width_inc: c_int,
+        height_inc: c_int,
+        min_aspect: Aspect,
+        max_aspect: Aspect,
+        base_width: c_int,
+        base_height: c_int,
+        win_gravity: c_int,
+
+        pub const Flags = packed struct(c_long) {
+            pad0: u4 = 0,
+
+            position: bool = false,
+            size: bool = false,
+            min_size: bool = false,
+            max_size: bool = false,
+            resize_inc: bool = false,
+            aspect: bool = false,
+            base_size: bool = false,
+            win_gravity: bool = false,
+
+            pad1: @Int(.unsigned, @bitSizeOf(c_long) - 12) = 0,
+        };
+
+        pub const Aspect = extern struct {
+            x: c_int,
+            y: c_int,
+        };
     };
 
     pub const Event = extern union {
@@ -988,6 +1053,8 @@ const xlib = struct {
             data: [*]const u8,
             nelements: c_int,
         ) callconv(.c) c_int,
+
+        XSetWMNormalHints: ?*const fn (*Display, window: xlib.Window, hints: *SizeHints) callconv(.c) void,
 
         XIconifyWindow: ?*const fn (*Display, window: xlib.Window, screen_number: c_int) callconv(.c) c_int,
 

@@ -25,6 +25,18 @@ pub fn setTitle(self: *Cocoa, window: *Window, title: [:0]const u8) !void {
     _ = title;
 }
 
+pub fn setMaxSize(self: *Cocoa, window: *Window, size: ?Window.Size) !void {
+    _ = self;
+    _ = window;
+    _ = size;
+}
+
+pub fn setMinSize(self: *Cocoa, window: *Window, size: ?Window.Size) !void {
+    _ = self;
+    _ = window;
+    _ = size;
+}
+
 pub fn minimize(self: *Cocoa, window: *Window) !void {
     _ = self;
     _ = window;

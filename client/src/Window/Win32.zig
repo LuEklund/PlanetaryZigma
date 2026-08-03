@@ -97,6 +97,19 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 .width = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam) orelse continue))),
                 .height = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
             },
+            win32.WM_USER + win32.WM_GETMINMAXINFO => {
+                const info: *win32.MINMAXINFO = @ptrFromInt(@as(usize, @intCast(msg.lParam)));
+
+                if (window.max_size) |size| {
+                    info.ptMaxTrackSize.x = @intCast(size.width);
+                    info.ptMaxTrackSize.y = @intCast(size.height);
+                }
+
+                if (window.min_size) |size| {
+                    info.ptMinTrackSize.x = @intCast(size.width);
+                    info.ptMinTrackSize.y = @intCast(size.height);
+                }
+            },
             win32.WM_USER + win32.WM_MOVE => window.position = .{
                 .x = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam) orelse continue))),
                 .y = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
@@ -211,12 +224,15 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
     }
 }
 
-pub fn setTitle(self: *Win32, window: *Window, title: [:0]const u8) !void {
-    _ = window;
+pub fn setTitle(self: *Win32, _: *Window, title: [:0]const u8) !void {
     const title_utf16 = try std.unicode.utf8ToUtf16LeAllocZ(self.gpa, title);
     defer self.gpa.free(title_utf16);
     _ = win32.SetWindowTextW(@ptrCast(self.hwnd), @ptrCast(title_utf16));
 }
+
+pub fn setMaxSize(_: *Win32, _: *Window, _: ?Window.Size) !void {}
+
+pub fn setMinSize(_: *Win32, _: *Window, _: ?Window.Size) !void {}
 
 pub fn minimize(self: *Win32, _: *Window) !void {
     _ = win32.ShowWindow(@ptrCast(self.hwnd), win32.SW_MINIMIZE);
@@ -335,7 +351,7 @@ pub fn setPointerRelative(_: *Win32, _: *Window, _: bool) !void {}
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {
     return switch (msg) {
-        win32.WM_GETMINMAXINFO, win32.WM_SIZE, win32.WM_MOVE, win32.WM_SETFOCUS, win32.WM_KILLFOCUS, win32.WM_CLOSE => |wm| {
+        win32.WM_KILLFOCUS, win32.WM_CLOSE, win32.WM_SIZE, win32.WM_GETMINMAXINFO, win32.WM_MOVE, win32.WM_SETFOCUS => |wm| {
             check(win32.PostMessageW(hwnd, win32.WM_USER + wm, w_param, l_param)) catch {};
             return 0;
         },

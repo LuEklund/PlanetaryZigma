@@ -239,21 +239,30 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
     self.repeat_key.next_time_ms += @as(u64, count) * interval_ms;
 }
 
-pub fn setTitle(self: *Wayland, window: *Window, title: [:0]const u8) !void {
-    _ = window;
+pub fn setTitle(self: *Wayland, _: *Window, title: [:0]const u8) !void {
     self.toplevel.setTitle(title);
 }
 
+pub fn setMaxSize(self: *Wayland, _: *Window, size: ?Window.Size) !void {
+    const max_size: Window.Size = size orelse .{};
+    self.toplevel.setMaxSize(@intCast(max_size.width), @intCast(max_size.height));
+}
+
+pub fn setMinSize(self: *Wayland, _: *Window, size: ?Window.Size) !void {
+    const min_size: Window.Size = size orelse .{};
+    self.toplevel.setMinSize(@intCast(min_size.width), @intCast(min_size.height));
+}
+
 pub fn minimize(self: *Wayland, _: *Window) !void {
-    self.toplevel.setMinimized();
+    self.toplevel.setMinSizeimized();
 }
 
 pub fn maximize(self: *Wayland, _: *Window) !void {
-    self.toplevel.setMaximized();
+    self.toplevel.setMaxSizeimized();
 }
 
 pub fn restore(self: *Wayland, _: *Window) !void {
-    self.toplevel.unsetMaximized();
+    self.toplevel.unsetMaxSizeimized();
 }
 
 pub fn setFullscreen(self: *Wayland, _: *Window, enabled: bool) !void {

@@ -8,6 +8,8 @@ inner: Inner,
 
 should_close: bool = false,
 size: Size,
+max_size: ?Window.Size = null,
+min_size: ?Window.Size = null,
 position: Position,
 focused: bool = true,
 pointer: Pointer = .{},
@@ -25,6 +27,8 @@ pub const Inner = switch (native_os) {
         const close = @compileError("unsupported platform");
         const poll = @compileError("unsupported platform");
         const setTitle = @compileError("unsupported platform");
+        const setMaxSize = @compileError("unsupported platform");
+        const setMinSize = @compileError("unsupported platform");
         const minimize = @compileError("unsupported platform");
         const maximize = @compileError("unsupported platform");
         const restore = @compileError("unsupported platform");
@@ -202,6 +206,16 @@ pub fn poll(self: *Window, options: PollOptions) !void {
 
 pub fn setTitle(self: *Window, title: [:0]const u8) !void {
     try self.call(.setTitle, .{title});
+}
+
+pub fn setMaxSize(self: *Window, size: ?Window.Size) !void {
+    self.max_size = size;
+    try self.call(.setMaxSize, .{size});
+}
+
+pub fn setMinSize(self: *Window, size: ?Window.Size) !void {
+    self.min_size = size;
+    try self.call(.setMinSize, .{size});
 }
 
 pub fn minimize(self: *Window) !void {
