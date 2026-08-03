@@ -10,16 +10,24 @@ const Backend = switch (builtin.os.tag) {
 pub const DynLib = struct {
     backend: Backend,
 
-    pub fn open(path: []const u8) !@This() {
-        return .{ .backend = try Backend.open(path) };
+    pub fn open(path: []const u8) !DynLib {
+        return .{ .backend = Backend.open(path) catch |err| {
+            std.log.err("dlopen \"{s}\" failed: {t}: {s}", .{ path, err, lastError() });
+            return err;
+        } };
     }
 
-    pub fn close(self: *@This()) void {
+    fn lastError() []const u8 {
+        if (builtin.os.tag == .windows) return "use GetLastError";
+        return std.mem.span(std.c.dlerror() orelse return "(no dlerror)");
+    }
+
+    pub fn close(self: *DynLib) void {
         if (tracy.enabled) return;
         self.backend.close();
     }
 
-    pub fn lookup(self: *@This(), comptime T: type, name: [:0]const u8) ?T {
+    pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) ?T {
         return self.backend.lookup(T, name);
     }
 };
@@ -35,7 +43,10 @@ const WindowsDynLib = struct {
         var buf: [std.fs.max_path_bytes]u16 = undefined;
         const len = try std.unicode.utf8ToUtf16Le(buf[0 .. buf.len - 1], path);
         buf[len] = 0;
-        const handle = LoadLibraryW(buf[0..len :0].ptr) orelse return error.FileNotFound;
+        const handle = LoadLibraryW(buf[0..len :0].ptr) orelse {
+            std.log.err("LoadLibraryW \"{s}\": {t}", .{ path, std.os.windows.GetLastError() });
+            return error.FileNotFound;
+        };
         return .{ .handle = handle };
     }
 

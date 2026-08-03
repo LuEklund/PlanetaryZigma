@@ -1,3 +1,5 @@
+const Image = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
@@ -19,6 +21,16 @@ const Kind = enum(u8) {
     cube_map = 2,
 };
 
+pub const Handle = enum(u32) {
+    blank = 0,
+    material_not_found = 1,
+    _,
+
+    pub fn index(self: Handle) usize {
+        return @intFromEnum(self);
+    }
+};
+
 pub fn init(
     vma: Vma,
     device: Device,
@@ -28,7 +40,7 @@ pub fn init(
     usages_flags: c.VkImageUsageFlags,
     view_mask: c.VkImageAspectFlags,
     mip_mapped: bool,
-) !@This() {
+) !Image {
     var image_info: c.VkImageCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = null,
@@ -99,12 +111,12 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *@This(), vulkan_mem_alloc: Vma, device: Device) void {
+pub fn deinit(self: *Image, vulkan_mem_alloc: Vma, device: Device) void {
     c.vkDestroyImageView(device.handle, self.vk_imageview, null);
     Vma.c.vmaDestroyImage(vulkan_mem_alloc.handle, @ptrCast(self.vk_image), self.vma_allocation);
 }
 
-pub fn uploadDataToImage(self: *@This(), vma: Vma, device: Device, data: anytype, bytes_per_pixel: u32, layer: u32) !void {
+pub fn uploadDataToImage(self: *Image, vma: Vma, device: Device, data: anytype, bytes_per_pixel: u32, layer: u32) !void {
     var upload_buffers: std.ArrayList(Buffer) = .empty;
     defer {
         for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
@@ -126,7 +138,7 @@ pub fn uploadDataToImage(self: *@This(), vma: Vma, device: Device, data: anytype
 }
 
 pub fn recordUploadDataToImage(
-    self: *@This(),
+    self: *Image,
     gpa: std.mem.Allocator,
     vma: Vma,
     device: Device,
@@ -199,7 +211,7 @@ pub fn recordUploadDataToImage(
     try upload_buffers.append(gpa, upload_buffer);
 }
 
-fn generateMipmaps(self: *@This(), cmd_buffer: c.VkCommandBuffer, image_size: c.VkExtent3D) void {
+fn generateMipmaps(self: *Image, cmd_buffer: c.VkCommandBuffer, image_size: c.VkExtent3D) void {
     var size = image_size;
     const mip_levels: usize = @as(usize, @intFromFloat(@floor(@log2(@as(f32, @floatFromInt(@max(size.width, size.height))))))) + 1;
 
@@ -288,11 +300,7 @@ fn generateMipmaps(self: *@This(), cmd_buffer: c.VkCommandBuffer, image_size: c.
     );
 }
 
-pub fn copyOntoImage(
-    self: @This(),
-    cmd: c.VkCommandBuffer,
-    dest_image: @This(),
-) void {
+pub fn copyOntoImage(self: Image, cmd: c.VkCommandBuffer, dest_image: Image) void {
     var blit_region: c.VkImageBlit2 = .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
         .pNext = null,
@@ -346,11 +354,7 @@ pub const Barrier = struct {
 
     base_array_layer: u32 = 0,
 
-    pub fn init(
-        cmd: c.VkCommandBuffer,
-        image: c.VkImage,
-        aspect_mask: c.VkImageAspectFlags,
-    ) @This() {
+    pub fn init(cmd: c.VkCommandBuffer, image: c.VkImage, aspect_mask: c.VkImageAspectFlags) Barrier {
         return .{
             .cmd = cmd,
             .image = image,
@@ -358,7 +362,7 @@ pub const Barrier = struct {
         };
     }
 
-    pub fn transition(self: *@This(), layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
+    pub fn transition(self: *Barrier, layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
         var new: c.VkImageMemoryBarrier = .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             // .srcStageMask = src_stage,
@@ -385,7 +389,7 @@ pub const Barrier = struct {
     }
 
     pub fn transitionMipLevel(
-        self: *@This(),
+        self: *Barrier,
         new_layout: c.VkImageLayout,
         dst_stage: c.VkPipelineStageFlags,
         dst_access: c.VkAccessFlags,
@@ -426,84 +430,7 @@ pub const Barrier = struct {
     }
 };
 
-const DecodeError = error{
-    DataNotSupported,
-    FailedToLoadGLTFImage,
-    LoadingStbi,
-    MissingBufferViews,
-};
-
-pub const Decoded = struct {
-    pixels: [*c]stb_image.stbi_uc = null,
-    width: i32 = 0,
-    height: i32 = 0,
-    nr_channel: i32 = 0,
-    err: ?DecodeError = null,
-
-    pub fn deinit(self: *@This()) void {
-        if (self.pixels != null) stb_image.stbi_image_free(self.pixels);
-        self.* = .{};
-    }
-};
-
-pub const DecodeTask = struct {
-    bytes: ?[]const u8 = null,
-    uri: ?[:0]const u8 = null,
-    result: *Decoded,
-};
-
-pub fn decodeImages(gpa: std.mem.Allocator, tasks: []DecodeTask) !void {
-    if (tasks.len == 0) return;
-
-    const cpu_count = std.Thread.getCpuCount() catch 1;
-    const worker_count = @min(tasks.len, @max(@as(usize, 1), cpu_count));
-    if (worker_count == 1) {
-        decodeImageWorker(tasks, 0, 1);
-        return;
-    }
-
-    // TODO: Replace per-model thread spawning with a persistent asset thread pool.
-    var threads = try gpa.alloc(std.Thread, worker_count);
-    defer gpa.free(threads);
-
-    var spawned: usize = 0;
-    errdefer {
-        for (threads[0..spawned]) |thread| thread.join();
-    }
-
-    while (spawned < worker_count) : (spawned += 1) {
-        threads[spawned] = try std.Thread.spawn(.{}, decodeImageWorker, .{ tasks, spawned, worker_count });
-    }
-    for (threads) |thread| thread.join();
-}
-
-fn decodeImageWorker(tasks: []DecodeTask, worker_index: usize, worker_count: usize) void {
-    var image_index = worker_index;
-    while (image_index < tasks.len) : (image_index += worker_count) {
-        decodeImageTask(&tasks[image_index]);
-    }
-}
-
-fn decodeImageTask(task: *DecodeTask) void {
-    var width: i32 = 0;
-    var height: i32 = 0;
-    var nr_channel: i32 = 0;
-
-    if (task.uri) |uri| {
-        task.result.pixels = stb_image.stbi_load(uri, &width, &height, &nr_channel, 4);
-    } else if (task.bytes) |bytes| {
-        task.result.pixels = stb_image.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &width, &height, &nr_channel, 4);
-    } else {
-        task.result.err = error.FailedToLoadGLTFImage;
-        return;
-    }
-
-    if (task.result.pixels == null) {
-        task.result.err = error.LoadingStbi;
-        return;
-    }
-
-    task.result.width = width;
-    task.result.height = height;
-    task.result.nr_channel = nr_channel;
-}
+pub const Decoded = @import("../../asset/Bitmap.zig");
+pub const DecodeError = Decoded.Error;
+pub const DecodeTask = Decoded.Task;
+pub const decodeImages = Decoded.decodeAll;

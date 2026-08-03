@@ -7,8 +7,9 @@ pub const Physical = struct {
     handle: c.VkPhysicalDevice,
     max_anisotropy: f32,
     graphics_queue_family_index: u32,
+    combined_image_sampler_descriptor_size: usize,
 
-    pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !@This() {
+    pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !Physical {
         var device_count: u32 = 0;
         try check(c.vkEnumeratePhysicalDevices(instance.handle, &device_count, null));
         if (device_count == 0) return error.NoPhysicalDevices;
@@ -33,12 +34,23 @@ pub const Physical = struct {
                 try check(c.vkGetPhysicalDeviceSurfaceSupportKHR(device, @intCast(i), surface, &present_supported));
 
                 if (supports_graphics and present_supported != 0) {
-                    std.log.info("found physical device: {s}, queue family: {d}", .{ properties.deviceName, i });
+                    const device_name = std.mem.sliceTo(&properties.deviceName, 0);
+                    std.log.info("found physical device: {s}, queue family: {d}", .{ device_name, i });
+
+                    var device_desc_buffer_properties: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,
+                    };
+                    var device_properties: c.VkPhysicalDeviceProperties2 = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                        .pNext = &device_desc_buffer_properties,
+                    };
+                    c.vkGetPhysicalDeviceProperties2(device, &device_properties);
 
                     return .{
                         .handle = device,
                         .max_anisotropy = properties.limits.maxSamplerAnisotropy,
                         .graphics_queue_family_index = @intCast(i),
+                        .combined_image_sampler_descriptor_size = device_desc_buffer_properties.combinedImageSamplerDescriptorSize,
                     };
                 }
             }
@@ -55,7 +67,8 @@ pub const Logical = struct {
 
     pub const CommandPool = struct {
         handle: c.VkCommandPool,
-        pub fn init(device: c.VkDevice, queue_family_index: u32) !@This() {
+
+        pub fn init(device: c.VkDevice, queue_family_index: u32) !CommandPool {
             const command_pool_info: c.VkCommandPoolCreateInfo = .{
                 .sType = c.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                 .pNext = null,
@@ -67,12 +80,13 @@ pub const Logical = struct {
             try check(c.vkCreateCommandPool(device, &command_pool_info, null, &command_pool));
             return .{ .handle = command_pool };
         }
-        pub fn deinit(self: @This(), device: Logical) void {
+
+        pub fn deinit(self: CommandPool, device: Logical) void {
             c.vkDestroyCommandPool(device.handle, self.handle, null);
         }
     };
 
-    pub fn init(physical_device: Physical, extensions: []const [*:0]const u8) !@This() {
+    pub fn init(physical_device: Physical, extensions: []const [*:0]const u8) !Logical {
         var extension_count: u32 = undefined;
         try check(c.vkEnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
         var extension_properties: [516]c.VkExtensionProperties = undefined;
@@ -80,7 +94,7 @@ pub const Logical = struct {
         check_ext: for (extensions) |extension| {
             for (extension_properties[0..extension_count]) |cmp_ext|
                 if (std.mem.eql(u8, std.mem.span(extension), std.mem.sliceTo(&cmp_ext.extensionName, 0))) continue :check_ext;
-            std.log.err("Missing Device extention: {s}", .{extension});
+            std.log.err("your GPU/driver does not support the required Vulkan feature {s} — please update your graphics drivers; if that does not help, your GPU may be too old for this game", .{extension});
             return error.MissingDeviceExtension;
         }
 
@@ -139,9 +153,15 @@ pub const Logical = struct {
             .shaderSampledImageArrayNonUniformIndexing = c.VK_TRUE,
         };
 
+        var shader_draw_parameters_features: c.VkPhysicalDeviceShaderDrawParametersFeatures = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+            .pNext = &descriptor_indexing_feature,
+            .shaderDrawParameters = c.VK_TRUE,
+        };
+
         const device_info = c.VkDeviceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &descriptor_indexing_feature,
+            .pNext = &shader_draw_parameters_features,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queue_info,
             .pEnabledFeatures = &features,
@@ -169,14 +189,14 @@ pub const Logical = struct {
         };
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: Logical) void {
         self.command_pool.deinit(self);
         c.vkDestroyFence(self.handle, self.immidiate_fence, null);
         c.vkDestroyDevice(self.handle, null);
     }
 
     pub fn beginImmediateCommand(
-        device: @This(),
+        device: Logical,
     ) !c.VkCommandBuffer {
         var alloc_info: c.VkCommandBufferAllocateInfo = .{
             .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -201,7 +221,7 @@ pub const Logical = struct {
     }
 
     pub fn endImmediateCommand(
-        device: @This(),
+        device: Logical,
         command_buffer: c.VkCommandBuffer,
     ) !void {
         try check(c.vkEndCommandBuffer(command_buffer));

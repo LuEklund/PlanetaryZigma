@@ -1,8 +1,18 @@
 .zig-cache
 zig-out
 zig-pkg
+server_id
 
 scrapDir
 
+steam/
+client.log
+server/server.log
+STEAM_LINUX_HANDOFF.md
+
 implementation_ideas/
 Videos/
+illustration/
+CLAUDE.md
+.claude
+*.spv

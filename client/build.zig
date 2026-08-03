@@ -2,14 +2,70 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
 
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const ztracy = ztracy_dep.module("ztracy");
 
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
-    const yes = b.dependency("yes", .{ .target = target, .optimize = optimize, .x_backend = .xlib }).module("yes");
+
+    const scanner = @import("wayland").Scanner.create(b, .{});
+    const wayland_protocols = b.dependency("wayland_protocols", .{});
+
+    const wayland = b.createModule(.{
+        .root_source_file = scanner.result,
+        .target = target,
+        .optimize = optimize,
+    });
+
+    scanner.addCustomProtocol(wayland_protocols.path("stable/xdg-shell/xdg-shell.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/relative-pointer/relative-pointer-unstable-v1.xml"));
+
+    scanner.generate("wl_compositor", 1);
+    scanner.generate("wl_output", 4);
+    scanner.generate("wl_shm", 1);
+    scanner.generate("wl_seat", 4);
+    scanner.generate("wl_data_device_manager", 3);
+    scanner.generate("xdg_wm_base", 3);
+    scanner.generate("wp_cursor_shape_manager_v1", 2);
+    scanner.generate("zxdg_decoration_manager_v1", 1);
+    scanner.generate("zwp_tablet_manager_v2", 1);
+    scanner.generate("zwp_pointer_constraints_v1", 1);
+    scanner.generate("zwp_relative_pointer_manager_v1", 1);
+
+    const win32 = b.dependency("win32", .{}).module("win32");
+
+    const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
+
+    const libxkbcommon = b.dependency("libxkbcommon", .{
+        .target = target,
+        .optimize = optimize,
+        .@"xkb-config-root" = "/usr/share/X11/xkb",
+        .@"x-locale-root" = "/usr/share/X11/locale",
+    }).artifact("xkbcommon");
+
+    xkbcommon.linkLibrary(libxkbcommon);
+
+    const window = b.createModule(.{
+        .root_source_file = b.path("src/Window.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wayland", .module = wayland },
+            .{ .name = "win32", .module = win32 },
+        },
+        .link_libc = true,
+    });
+    switch (target.result.os.tag) {
+        .linux, .freebsd, .netbsd, .openbsd => window.addImport("xkbcommon", xkbcommon),
+        else => {},
+    }
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
@@ -31,15 +87,24 @@ pub fn build(b: *std.Build) void {
     });
     stb_truetype.addIncludePath(b.dependency("stb", .{}).path("."));
 
+    const miniaudio_dep = b.dependency("miniaudio", .{});
+    const miniaudio_translate_c = b.addTranslateC(.{
+        .root_source_file = miniaudio_dep.path("miniaudio.h"),
+        .optimize = optimize,
+        .target = target,
+    });
+    const miniaudio = miniaudio_translate_c.createModule();
+    miniaudio.addCSourceFile(.{ .file = miniaudio_dep.path("miniaudio.c") });
+
     const system = b.addLibrary(.{
         .name = "system_client",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/system.zig"),
+            .root_source_file = b.path("src/System.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "yes", .module = yes },
+                .{ .name = "Window", .module = window },
                 .{ .name = "zgltf", .module = zgltf },
                 .{ .name = "stb_image", .module = stb_image.createModule() },
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
@@ -71,9 +136,10 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
-                .{ .name = "yes", .module = yes },
+                .{ .name = "Window", .module = window },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "miniaudio", .module = miniaudio },
             },
             .link_libc = true,
         }),
@@ -124,7 +190,9 @@ pub fn build(b: *std.Build) void {
         system.root_module.linkSystemLibrary("vulkan-1", .{});
         exe.root_module.linkSystemLibrary("vulkan-1", .{});
     } else {
+        system.root_module.linkSystemLibrary("vulkan", .{});
         exe.root_module.linkSystemLibrary("vulkan", .{});
+        system.link_z_defs = true;
     }
     exe.root_module.link_libcpp = true;
 
@@ -145,7 +213,6 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
-    // Hot-reload dev loop: rebuild only the .so, skip the 7s exe. Pair with `zig build lib --watch`.
     const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
     lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
 }
@@ -155,15 +222,17 @@ fn compileShaders(b: *std.Build) void {
     var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
     defer dir.close(io);
     const usf = b.addUpdateSourceFiles();
-    var it = dir.iterate();
-    while (it.next(io) catch @panic("iterate assets/shaders")) |entry| {
+    var walker = dir.walk(b.allocator) catch @panic("walk assets/shaders");
+    defer walker.deinit();
+    while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
-        if (std.mem.endsWith(u8, entry.name, ".spv")) continue;
-        const cmd = b.addSystemCommand(&.{"glslc"});
-        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.name})));
+        if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
+        const cmd = b.addSystemCommand(&.{"slangc"});
+        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
+        cmd.addArgs(&.{ "-target", "spirv" });
         cmd.addArg("-o");
-        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.name}));
-        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.name}));
+        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
+        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
 }

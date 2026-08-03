@@ -1,0 +1,27 @@
+const std = @import("std");
+const shared = @import("shared");
+const system = @import("../System.zig");
+const World = system.World;
+const nz = shared.numz;
+
+pub fn evaluate(world: *World, server_time: f32) void {
+    for (world.entities.values()) |*entity| {
+        const motion = entity.motion.update orelse continue;
+        const motion_time = @as(f32, @floatFromInt(motion.tick)) * shared.tick_seconds;
+        const age = server_time - motion_time;
+        const target = motion.position + nz.vec.scale(motion.velocity, age);
+
+        if (motion.tick != entity.motion.smoothed_tick) {
+            entity.motion.position_error = entity.transform.position - target;
+            entity.motion.smoothed_tick = motion.tick;
+        }
+
+        const error_decay = std.math.pow(f32, 1e-5, world.delta_time);
+        entity.motion.position_error = nz.vec.scale(entity.motion.position_error, error_decay);
+        entity.transform.position = target + entity.motion.position_error;
+
+        const target_rotation = nz.Quat(f32).fromVec(motion.rotation);
+        const rotation_decay = std.math.pow(f32, 1e-5, world.delta_time);
+        entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
+    }
+}

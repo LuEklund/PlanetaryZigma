@@ -1,10 +1,13 @@
+const FrameData = @This();
+
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
 const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const Ui = @import("Ui.zig");
+const Ui = @import("../../Ui.zig");
+const Emitter = @import("../../system/Emitter.zig");
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,
@@ -13,8 +16,16 @@ command_buffer: c.VkCommandBuffer,
 gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
+emitter_buffer: Buffer,
 
+pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
+
+pub const GPUEmitter = extern struct {
+    origin: [3]f32,
+    spawn_time: f32,
+    target: [3]f32,
+};
 
 pub const DebugVertex = extern struct {
     position: [4]f32,
@@ -23,15 +34,16 @@ pub const DebugVertex = extern struct {
 
 pub const GPUScene = extern struct {
     view_proj: [16]f32,
-    inverse_view_proj: [16]f32,
+    inverse_proj_rotation: [16]f32,
     global_light_direction: [3]f32,
     time: f32,
     camera_position: [3]f32,
     _: f32 = 0,
     light_color: [4]f32,
+    camera_up: [4]f32,
 };
 
-pub fn init(vma: Vma, device: Device) !@This() {
+pub fn init(vma: Vma, device: Device) !FrameData {
     var alloc_info: c.VkCommandBufferAllocateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = device.command_pool.handle,
@@ -93,14 +105,26 @@ pub fn init(vma: Vma, device: Device) !@This() {
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
             },
         ),
+        .emitter_buffer = try .init(
+            device,
+            vma,
+            GPUEmitter,
+            Emitter.max_emitters,
+            c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            .{
+                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            },
+        ),
     };
 }
 
-pub fn deinit(self: *@This(), vma: Vma, device: Device) void {
+pub fn deinit(self: *FrameData, vma: Vma, device: Device) void {
     c.vkDestroySemaphore(device.handle, self.swapchain_semaphore, null);
     c.vkDestroyFence(device.handle, self.render_fence, null);
     c.vkFreeCommandBuffers(device.handle, device.command_pool.handle, 1, &self.command_buffer);
     self.gpu_scene.deinit(vma);
     self.ui_vertex_buffer.deinit(vma);
     self.debug_vertex_buffer.deinit(vma);
+    self.emitter_buffer.deinit(vma);
 }

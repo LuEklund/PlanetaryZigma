@@ -7,8 +7,9 @@ pub const Client = @import("steamNet/Client.zig");
 /// Mirrors steam.HSteamNetConnection (u32). Defined locally so the dynlib
 /// doesn't need to import the steamworks package.
 pub const max_msg_bytes: usize = 1024;
+pub const local_server_port: u16 = 27018;
 
-pub const Conn = u32;
+pub const Connection = u32;
 
 pub const SendFlags = enum(i32) {
     unreliable = steam.k_nSteamNetworkingSend_Unreliable,
@@ -18,8 +19,14 @@ pub const SendFlags = enum(i32) {
     reliable_no_nagle = steam.k_nSteamNetworkingSend_ReliableNoNagle,
 };
 
+pub fn allowIpWithoutAuthOption() steam.SteamNetworkingConfigValue_t {
+    var option: steam.SteamNetworkingConfigValue_t = undefined;
+    option.SetInt32(.k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1);
+    return option;
+}
+
 pub const Message = struct {
-    conn: Conn,
+    conn: Connection,
     flags: SendFlags = .reliable,
     len: u32,
     bytes: [max_msg_bytes]u8 = undefined,
@@ -30,36 +37,55 @@ pub const Message = struct {
 };
 
 pub const Event = union(enum) {
-    connected: Conn,
-    disconnected: Conn,
+    connected: Connection,
+    disconnected: Connection,
 };
+
+pub var log_connection_status: bool = false;
+
+pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.HSteamNetConnection) void {
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
+    if (sockets.GetConnectionRealTimeStatus(conn, &status, &.{}) != .k_EResultOK) return;
+    std.log.info("conn={d} ping={d}ms qual={d:.2}/{d:.2} out={d:.0}pps in={d:.0}pps rate={d}Bps pending={d}u/{d}r unacked={d}", .{
+        conn,
+        status.m_nPing,
+        status.m_flConnectionQualityLocal,
+        status.m_flConnectionQualityRemote,
+        status.m_flOutPacketsPerSec,
+        status.m_flInPacketsPerSec,
+        status.m_nSendRateBytesPerSecond,
+        status.m_cbPendingUnreliable,
+        status.m_cbPendingReliable,
+        status.m_cbSentUnackedReliable,
+    });
+}
 
 pub const Packets = struct {
     incoming: std.ArrayListUnmanaged(Message) = .empty,
     outgoing: std.ArrayListUnmanaged(Message) = .empty,
     events: std.ArrayListUnmanaged(Event) = .empty,
 
-    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+    pub fn deinit(self: *Packets, gpa: std.mem.Allocator) void {
         self.incoming.deinit(gpa);
         self.outgoing.deinit(gpa);
         self.events.deinit(gpa);
     }
 
-    pub fn pushIncoming(self: *@This(), gpa: std.mem.Allocator, conn: Conn, bytes: []const u8) !void {
+    pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.incoming.append(gpa, msg);
     }
 
-    pub fn pushOutgoing(self: *@This(), gpa: std.mem.Allocator, conn: Conn, bytes: []const u8, flags: SendFlags) !void {
+    pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8, flags: SendFlags) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .flags = flags, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.outgoing.append(gpa, msg);
     }
 
-    pub fn pushEvent(self: *@This(), gpa: std.mem.Allocator, event: Event) !void {
+    pub fn pushEvent(self: *Packets, gpa: std.mem.Allocator, event: Event) !void {
         try self.events.append(gpa, event);
     }
 };
