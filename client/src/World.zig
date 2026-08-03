@@ -24,6 +24,7 @@ pub const RenderCommand = union(enum) {
 
 mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
+io: std.Io,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
@@ -42,6 +43,8 @@ player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
+fps: f32 = 0,
+go_again_pending: bool = false,
 stage: u32 = 0,
 chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
@@ -87,9 +90,10 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !World {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
     return .{
         .gpa = gpa,
+        .io = io,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
@@ -144,7 +148,7 @@ pub fn clearSession(self: *World) void {
     self.stage = 0;
 }
 
-pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
         if (self.getPtr(entity_info.id) != null) continue;
@@ -211,12 +215,9 @@ pub fn flush(self: *World, delta_time: f32, instances: *std.AutoHashMap(shared.e
             entity.motion.update = null;
             entity.flags.is_dying = true;
             if (instances.getPtr(id)) |instance| {
-                if (instance.deathDuration() > 0) {
-                    instance.death_time += delta_time;
-                    if (!instance.deathDone()) {
-                        despawn_index += 1;
-                        continue;
-                    }
+                if (instance.deathDuration() > 0 and !instance.deathDone()) {
+                    despawn_index += 1;
+                    continue;
                 }
             }
         }
@@ -246,6 +247,19 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
     switch (command.amount) {
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
+    }
+    if (entity.kind == .player) {
+        if (entity.health <= 0 and !entity.flags.is_dying) {
+            entity.flags.is_dying = true;
+            entity.motion.update = null;
+            if (entity.id == self.player_id) self.controller.free_camera = true;
+        } else if (entity.health > 0 and entity.flags.is_dying) {
+            entity.flags.is_dying = false;
+            if (entity.id == self.player_id) {
+                self.controller.free_camera = false;
+                self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+            }
+        }
     }
 }
 

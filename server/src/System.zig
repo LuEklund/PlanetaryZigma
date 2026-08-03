@@ -66,8 +66,6 @@ pub fn update(self: *System, world: *World) !void {
             self.request_exit = true;
         },
     }
-    try PlayerController.update(world, &self.physics);
-    if (self.world.place == .planet) try gameplay.updateEnemies(world);
     if (self.world.next_stage_requested) {
         self.world.next_stage_requested = false;
         try self.world.loadPlace(.planet, &self.physics);
@@ -76,6 +74,13 @@ pub fn update(self: *System, world: *World) !void {
         self.world.start_round_requested = false;
         try self.world.loadPlace(.planet, &self.physics);
     }
+    if (self.world.go_again_requested) {
+        self.world.go_again_requested = false;
+        try gameplay.updateWipe(world, &self.physics);
+    }
+
+    try PlayerController.update(world, &self.physics);
+    if (self.world.place == .planet) try gameplay.updateEnemies(world);
     if (self.world.place == .planet) try gameplay.updateDirector(world);
     try self.physics.update(world);
     gameplay.updateProjectiles(world, &self.physics);

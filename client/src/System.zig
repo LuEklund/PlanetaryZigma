@@ -126,7 +126,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
-    try world.flush(world.delta_time, &self.animation_instances);
+    try world.flush(&self.animation_instances);
     try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, world);
     try self.animation.updateStates(world, &self.animation_instances);
     try self.animation.update(world, &self.animation_instances);

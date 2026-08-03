@@ -61,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
     var asset_server = try System.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
-    var world: World = try .init(gpa);
+    var world: World = try .init(gpa, io);
     defer world.deinit();
 
     var watcher: shared.Watcher = try .init("system_client", io);
@@ -84,6 +84,8 @@ pub fn main(init: std.process.Init) !void {
     defer system_table.systemDeinit(system);
 
     var accumlated_time: f32 = 0;
+    var fps_window_seconds: f32 = 0;
+    var fps_window_frames: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
     main_loop: while (true) {
@@ -91,6 +93,7 @@ pub fn main(init: std.process.Init) !void {
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         accumlated_time += delta_time;
+        fps_window_seconds += delta_time;
         if (accumlated_time < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
             continue;
@@ -98,6 +101,12 @@ pub fn main(init: std.process.Init) !void {
         accumlated_time -= time_step;
         world.elapsed_time += time_step;
         world.delta_time = time_step;
+        fps_window_frames += 1;
+        if (fps_window_seconds >= 0.5) {
+            world.fps = @as(f32, @floatFromInt(fps_window_frames)) / fps_window_seconds;
+            fps_window_frames = 0;
+            fps_window_seconds = 0;
+        }
         while (try window.poll(desktop)) |event| {
             if (system_table.systemUpdate(system, &world, &event)) break :main_loop;
             switch (event) {

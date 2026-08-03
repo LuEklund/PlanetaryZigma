@@ -51,9 +51,15 @@ vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
 joint_buffers: std.AutoHashMap(shared.entity.Id, []Buffer),
+retired_joint_buffers: std.ArrayList(RetiredJointBuffers),
 planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
+
+const RetiredJointBuffers = struct {
+    buffers: []Buffer,
+    frame: u32,
+};
 
 pub const InitOptions = struct {
     instance: struct {
@@ -77,6 +83,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, options: InitOpt
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.joint_buffers = .init(gpa);
+    self.retired_joint_buffers = .empty;
     self.planet = .init();
     self.current_frame_inflight = 0;
 
@@ -121,6 +128,11 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
 
     self.clearSkeletons(gpa);
     self.joint_buffers.deinit();
+    for (self.retired_joint_buffers.items) |retired| {
+        for (retired.buffers) |*joint_buffer| joint_buffer.deinit(self.vma);
+        gpa.free(retired.buffers);
+    }
+    self.retired_joint_buffers.deinit(gpa);
     self.planet.deinit(gpa, self.vma);
 
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
@@ -599,7 +611,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     if (world.getPtr(self.planet.planet_id)) |planet| {
         const transform = planet.transform.toMat4x4();
-        for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
+        for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
@@ -943,6 +955,16 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
 
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), world: *World) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
+    var retired_index: usize = self.retired_joint_buffers.items.len;
+    while (retired_index > 0) {
+        retired_index -= 1;
+        const retired = self.retired_joint_buffers.items[retired_index];
+        if (self.current_frame_inflight >= retired.frame + FrameData.max_frames_inflight) {
+            for (retired.buffers) |*joint_buffer| joint_buffer.deinit(self.vma);
+            gpa.free(retired.buffers);
+            _ = self.retired_joint_buffers.swapRemove(retired_index);
+        }
+    }
     try self.planet.collect(gpa, self.vma, self.device, world, self.current_frame_inflight);
     if (self.resources.model_loader.reloaded.items.len != 0) {
         for (self.resources.model_loader.reloaded.items) |file_index| {
@@ -954,8 +976,7 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
                 if (instance.skeleton) |*skeleton| skeleton.deinit(gpa);
                 instance.skeleton = if (loader_entry.model.isSkinned()) try .init(gpa, &loader_entry.model) else null;
                 if (self.joint_buffers.getPtr(entry.key_ptr.*)) |joint_buffers| {
-                    for (joint_buffers.*) |*joint_buffer| joint_buffer.deinit(self.vma);
-                    gpa.free(joint_buffers.*);
+                    try self.retired_joint_buffers.append(gpa, .{ .buffers = joint_buffers.*, .frame = self.current_frame_inflight });
                     joint_buffers.* = try self.createJointBuffers(gpa, &loader_entry.model);
                 }
             }
@@ -982,7 +1003,7 @@ pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, instances: *st
                 var instance = removed.value;
                 instance.deinit(gpa);
             }
-            self.removeSkeleton(gpa, id);
+            try self.removeSkeleton(gpa, id);
             try self.planet.remove(gpa, id, self.current_frame_inflight);
         },
     };
@@ -1023,13 +1044,9 @@ fn ensureInstance(self: *Vulkan, gpa: std.mem.Allocator, instances: *std.AutoHas
     }
 }
 
-fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id) void {
+fn removeSkeleton(self: *Vulkan, gpa: std.mem.Allocator, entity_id: shared.entity.Id) !void {
     if (self.joint_buffers.fetchRemove(entity_id)) |kv| {
-        for (kv.value) |*joint_buffer| {
-            var joint_buffer_copy = joint_buffer.*;
-            joint_buffer_copy.deinit(self.vma);
-        }
-        gpa.free(kv.value);
+        try self.retired_joint_buffers.append(gpa, .{ .buffers = kv.value, .frame = self.current_frame_inflight });
     }
 }
 

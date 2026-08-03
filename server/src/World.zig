@@ -17,6 +17,7 @@ place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
 next_stage_requested: bool,
+go_again_requested: bool,
 start_round_requested: bool,
 toggle_spawning_requested: bool,
 dev_mode: bool,
@@ -146,6 +147,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
         .next_stage_requested = false,
+        .go_again_requested = false,
         .start_round_requested = false,
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
@@ -308,12 +310,14 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     try self.flush(physics);
     const random = self.prng.random();
     self.teleporter_id = .none;
+    if (place == .planet) {
+        self.stage += 1;
+        self.planet_radius = @floatFromInt(if (self.dev_mode)
+            random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
+        else
+            shared.planet.radius_min + (self.stage - 1) * 9);
+    }
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
-    self.stage += 1;
-    self.planet_radius = @floatFromInt(if (self.dev_mode)
-        random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
-    else
-        (shared.planet.radius_min + (self.stage - 1) * 9) - 9);
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
     _ = try self.spawn(.{
         .kind = .planet,
@@ -412,7 +416,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
             player.flags.is_dead = false;
             player.health = player.max_health;
             try physics.createBody(player);
-            self.client_updates.appendAssumeCapacity(.{ .spawned = player.id });
+            self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.max_health) } } });
         } else if (player.collider.body_id) |body_id| {
             Physics.setPosition(body_id, player_spawn_position);
             Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
@@ -448,6 +452,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
         if (entity.kind == .player and !despawn.remove) {
             entity.flags.is_dead = true;
             entity.replicated_velocity = .{ 0, 0, 0 };
+            continue;
         } else {
             if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
                 _ = self.players.swapRemove(player_index);

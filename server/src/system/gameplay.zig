@@ -18,6 +18,8 @@ pub fn updateDirector(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
+    if (world.players.items.len == 0) return;
+
     const director = &world.director;
     if (world.toggle_spawning_requested) {
         world.toggle_spawning_requested = false;
@@ -336,18 +338,32 @@ fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_
     tryProcLightning(world, owner_entity, impact_position, null);
 }
 
+pub fn updateWipe(world: *World, physics: *Physics) !void {
+    if (world.players.items.len == 0) return;
+    for (world.players.items) |player_id| {
+        const player = world.getPtr(player_id) orelse continue;
+        if (!player.flags.is_dead) return;
+    }
+    std.log.info("wipe: go again -> ship", .{});
+    world.stage = 0;
+    world.director.spawning = false;
+    try world.loadPlace(.ship, physics);
+}
+
 pub fn updateItems(world: *World) !void {
     for (world.entities.values()) |*entity| {
         if (entity.kind != .item) continue;
         const item_kind = entity.kind.item;
         for (world.players.items) |player_id| {
             const player = world.getPtr(player_id) orelse return error.PlayerNotFound;
+            if (player.flags.is_dead) continue;
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
             const item_count = world.giveItem(player, item_kind, 1) orelse continue;
             world.queueDespawn(entity.id);
             std.log.debug("item {t}, count: {d}", .{ item_kind, item_count });
+            break;
         }
     }
 }
@@ -363,6 +379,7 @@ pub fn updateTeleporter(world: *World) void {
     const old_teleporter_charge = teleporter.charged;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
+        if (player.flags.is_dead) continue;
         if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
             teleporter.charged += world.delta_time * 10;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
