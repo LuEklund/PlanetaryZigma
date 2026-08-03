@@ -599,7 +599,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     if (world.getPtr(self.planet.planet_id)) |planet| {
         const transform = planet.transform.toMat4x4();
-        for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
+        for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));

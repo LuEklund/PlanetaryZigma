@@ -13,7 +13,7 @@ const FrameData = @import("Vulkan/FrameData.zig");
 
 planet_id: shared.entity.Id,
 radius: u32,
-meshes: std.AutoArrayHashMapUnmanaged(shared.planet.Chunk.Coord, Mesh),
+meshes: std.AutoArrayHashMapUnmanaged(shared.planet.Chunk.Coord, ?Mesh),
 job: ?RunningJob,
 retired: std.ArrayList(RetiredChunk),
 
@@ -40,7 +40,7 @@ pub fn init() Planet {
 }
 
 pub fn deinit(self: *Planet, gpa: std.mem.Allocator, vma: Vma) void {
-    for (self.meshes.values()) |*mesh| mesh.deinit(gpa, vma);
+    for (self.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| mesh.deinit(gpa, vma);
     self.meshes.deinit(gpa);
     for (self.retired.items) |*retired_chunk| retired_chunk.mesh.deinit(gpa, vma);
     self.retired.deinit(gpa);
@@ -55,7 +55,8 @@ pub fn build(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, radius
 
 pub fn remove(self: *Planet, gpa: std.mem.Allocator, id: shared.entity.Id, frame: u32) !void {
     if (self.planet_id == .none or self.planet_id != id) return;
-    for (self.meshes.values()) |mesh| {
+    for (self.meshes.values()) |maybe_mesh| {
+        const mesh = maybe_mesh orelse continue;
         try self.retired.append(gpa, .{ .mesh = mesh, .frame = frame });
     }
     self.meshes.clearRetainingCapacity();
@@ -141,14 +142,19 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
             mesh_index -= 1;
             const coord = self.meshes.keys()[mesh_index];
             if (!coord.within(live_player_chunk, live_chunk_view_distance)) {
-                try self.retired.append(gpa, .{ .mesh = self.meshes.values()[mesh_index], .frame = frame });
+                if (self.meshes.values()[mesh_index]) |mesh| {
+                    try self.retired.append(gpa, .{ .mesh = mesh, .frame = frame });
+                }
                 self.meshes.swapRemoveAt(mesh_index);
                 evicted += 1;
             }
         }
     }
     for (results.items) |*cpu_chunk| {
-        if (cpu_chunk.indices.len == 0) continue;
+        if (cpu_chunk.indices.len == 0) {
+            try self.meshes.put(gpa, cpu_chunk.coord, null);
+            continue;
+        }
         var name_buffer: [64]u8 = undefined;
         const name = try std.fmt.bufPrint(&name_buffer, "planet-{d}-{d}-{d}-{d}", .{ @intFromEnum(running.planet_id), cpu_chunk.coord.position[0], cpu_chunk.coord.position[1], cpu_chunk.coord.position[2] });
         const mesh = try Mesh.init(gpa, vma, name, device, Mesh.StaticVertex, cpu_chunk.vertices, cpu_chunk.indices, &.{.{ .index_start = 0, .index_count = @intCast(cpu_chunk.indices.len), .texture = .blank }});
