@@ -63,10 +63,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     switch (target.result.os.tag) {
-        .linux, .freebsd, .netbsd, .openbsd => {
-            window.addImport("xkbcommon", xkbcommon);
-            window.linkSystemLibrary("wayland-client", .{});
-        },
+        .linux, .freebsd, .netbsd, .openbsd => window.addImport("xkbcommon", xkbcommon),
         else => {},
     }
 
