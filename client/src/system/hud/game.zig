@@ -82,9 +82,33 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
             .gap = 10,
         });
         for (std.enums.values(shared.Item)) |item_kind| {
+            const quipment_size: Ui.Size2D = .{ .heigth = 100, .width = 100 };
             const amount = player.inventory.get(item_kind);
             if (amount == 0) continue;
             const amount_text = ui.print("{d}", .{amount});
+            if (shared.Item.spec(item_kind).is_quipment) {
+                ui.add(null, .{
+                    .size = .{ .fixed = .{
+                        .heigth = quipment_size.heigth,
+                        .width = quipment_size.width,
+                    } },
+
+                    .offset = .{ .left = ui.screen_width - quipment_size.width, .top = ui.screen_heigth - quipment_size.heigth },
+                    .color = .new(1, 1, 1, 1),
+                    .name = @tagName(item_kind),
+                    .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
+                    .child_anchor = .{ .x = .start, .y = .end },
+                    .children = &.{.{
+                        .size = .{ .fixed = ui.textSize(amount_text, 48) },
+                        .text = .{
+                            .data = amount_text,
+                            .color = .new(0, 0, 0, 1),
+                            .size = 48,
+                        },
+                    }},
+                });
+                continue;
+            }
             ui.add("inventory", .{
                 .size = .{ .fixed = .{
                     .heigth = inventory_heigth,
