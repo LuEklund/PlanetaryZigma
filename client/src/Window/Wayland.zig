@@ -48,6 +48,7 @@ relative_pointer: ?*zwp.RelativePointerV1 = null,
 
 decoration_mode: zxdg.ToplevelDecorationV1.Mode = .client_side,
 pointer_visible: bool = true,
+pointer_enter_serial: u32 = 0,
 
 poll_options: *const Window.PollOptions = &.{},
 
@@ -266,10 +267,23 @@ pub fn setPointerVisible(self: *Wayland, _: *Window, visible: bool) !void {
     const pointer = self.pointer orelse return;
 
     self.pointer_visible = visible;
-    const cursor_shape_manager = self.cursor_shape_manager orelse return;
 
-    if (visible and self.cursor_shape_device == null) {
-        self.cursor_shape_device = try cursor_shape_manager.getPointer(pointer);
+    if (visible) {
+        const cursor_shape_manager = self.cursor_shape_manager orelse return;
+
+        if (self.cursor_shape_device == null) self.cursor_shape_device = try cursor_shape_manager.getPointer(pointer);
+
+        if (self.pointer_enter_serial != 0) self.cursor_shape_device.?.setShape(
+            self.pointer_enter_serial,
+            .default,
+        );
+    } else if (self.pointer_enter_serial != 0) {
+        pointer.setCursor(
+            self.pointer_enter_serial,
+            null,
+            0,
+            0,
+        );
     }
 }
 
@@ -314,8 +328,14 @@ pub fn setPointerRelative(self: *Wayland, window: *Window, enabled: bool) !void 
     const pointer = self.pointer orelse return;
     const relative_pointer_manager = self.relative_pointer_manager orelse return;
 
-    if (self.relative_pointer) |relative| if (enabled) relative.destroy();
-    if (!enabled) return;
+    if (!enabled) {
+        if (self.relative_pointer) |relative| {
+            relative.destroy();
+            self.relative_pointer = null;
+        }
+        return;
+    }
+    if (self.relative_pointer != null) return;
 
     const relative_pointer = try relative_pointer_manager.getRelativePointer(pointer);
     relative_pointer.setListener(*Window, zwpRelativePointerListener, window);
@@ -376,17 +396,19 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland
     const window = self.window;
     switch (event) {
         .enter => |enter| {
+            self.pointer_enter_serial = enter.serial;
+
             if (self.pointer_visible) {
-                const cursor_shape_device = self.cursor_shape_device orelse return;
-                cursor_shape_device.setShape(enter.serial, .default);
-            } else {
-                pointer.setCursor(
+                if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.setShape(
                     enter.serial,
-                    null,
-                    0,
-                    0,
+                    .default,
                 );
-            }
+            } else pointer.setCursor(
+                enter.serial,
+                null,
+                0,
+                0,
+            );
         },
         .leave => {},
         .motion => |motion| {
@@ -576,10 +598,11 @@ fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.Top
 
 fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePointerV1.Event, window: *Window) void {
     switch (event) {
-        .relative_motion => |motion| window.pointer.movement = .{ .relative = .{
-            .dx = motion.dx_unaccel.toDouble(),
-            .dy = motion.dy_unaccel.toDouble(),
-        } },
+        .relative_motion => |motion| {
+            if (window.pointer.movement == .position) window.pointer.movement = .{ .relative = .{} };
+            window.pointer.movement.relative.dx += motion.dx_unaccel.toDouble();
+            window.pointer.movement.relative.dy += motion.dy_unaccel.toDouble();
+        },
     }
 }
 
