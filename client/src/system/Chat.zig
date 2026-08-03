@@ -2,13 +2,12 @@ const Chat = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const yes = @import("yes");
 
-const KeySym = yes.Window.Event.Key.Sym;
+const Window = @import("Window");
 
 pub const max_lines = 8;
 pub const visible_seconds: f32 = 12;
-pub const open_key: KeySym = .t;
+pub const open_key: Window.Keyboard.Key = .t;
 
 pub const Line = struct {
     buffer: [shared.max_player_name_len + shared.max_chat_len + 2]u8 = undefined,
@@ -48,22 +47,22 @@ pub fn text(self: *const Chat) []const u8 {
     return self.input[0..self.input_len];
 }
 
-pub fn handleKey(self: *Chat, key: yes.Window.Event.Key) void {
-    if (key.state != .pressed) return;
-    switch (key.sym) {
-        .escape => {
-            self.input_len = 0;
-            self.open = false;
-        },
-        .enter => {
-            self.open = false;
-            self.pending = self.input_len != 0;
-        },
-        .backspace => while (self.input_len > 0) {
+pub fn handleKeyboard(self: *Chat, keyboard: Window.Keyboard) void {
+    if (keyboard.get(.escape) == .press) {
+        self.input_len = 0;
+        self.open = false;
+        return;
+    }
+    if (keyboard.get(.enter) == .press) {
+        self.open = false;
+        self.pending = self.input_len != 0;
+        return;
+    }
+    if (keyboard.get(.backspace) == .press) {
+        while (self.input_len > 0) {
             self.input_len -= 1;
             if (self.input[self.input_len] & 0xC0 != 0x80) break;
-        },
-        else => {},
+        }
     }
 }
 

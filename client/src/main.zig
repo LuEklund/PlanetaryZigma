@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const shared = @import("shared");
 const System = @import("system");
 const World = System.World;
-const yes = @import("yes");
+const Window = @import("Window");
 const tracy = @import("ztracy");
 const miniaudio = @import("miniaudio");
 
@@ -39,24 +39,20 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var cross_desktop: yes.Desktop.Cross = try .init(gpa, io, init.minimal);
-    defer cross_desktop.deinit();
-    const desktop = cross_desktop.desktop();
+    var watcher: shared.Watcher = try .init("system_client", io);
+    defer watcher.deinit(io);
+    try watcher.load(io);
 
-    var cross_window: yes.Desktop.Cross.Window = .empty(desktop);
-    const window = cross_window.interface(desktop);
-    const window_size: yes.Window.Size = .{ .width = 854, .height = 480 };
+    var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
-    try window.open(desktop, .{
+    try window.open(gpa, init.minimal, .{
+        .app_id = "planetary_zigma",
         .title = "PlanetaryZigma",
-        .size = window_size,
-        .resize_policy = .{ .specified = .{
-            .min_size = .{ .width = 300, .height = 200 },
-        } },
-        .surface_type = .vulkan,
+        .size = .{ .width = 854, .height = 480 },
     });
+    try window.setMinSize(.{ .width = 300, .height = 200 });
     window_zone.end();
-    defer window.close(desktop);
+    defer window.close();
 
     var asset_server = try System.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
@@ -64,18 +60,13 @@ pub fn main(init: std.process.Init) !void {
     var world: World = try .init(gpa, io);
     defer world.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
-
     var system_table: System.Table = try .load(&watcher.dynlib.?);
 
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
     const system: *anyopaque = system_table.systemInit(&System.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
-        .desktop = desktop,
-        .window = window,
+        .window = &window,
         .io = io,
         .world = &world,
         .steam_client = &steam_client,
@@ -88,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
     var fps_window_frames: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
-    main_loop: while (true) {
+    while (!window.should_close) {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
@@ -107,29 +98,20 @@ pub fn main(init: std.process.Init) !void {
             fps_window_frames = 0;
             fps_window_seconds = 0;
         }
-        while (try window.poll(desktop)) |event| {
-            if (system_table.systemUpdate(system, &world, &event)) break :main_loop;
-            switch (event) {
-                .close => break :main_loop,
-                .key => |key| {
-                    if (key.state == .released) {
-                        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-                        const np0 = @intFromEnum(yes.Window.Event.Key.Sym.numpad_0);
-                        const sym = @intFromEnum(key.sym);
-                        if (sym >= np0 and sym < np0 + 10) {
-                            if (watcher.version(sym - np0)) |lib| {
-                                system_table.systemReload(system, true);
-                                system_table = try .load(lib);
-                                system_table.systemReload(system, false);
-                                std.log.err("switched to version slot {d}", .{sym - np0});
-                            }
-                        }
-                    }
-                },
-                else => {},
+
+        if (system_table.systemUpdate(system, &world)) break;
+
+        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
+        const np0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
+        for (0..10) |n| {
+            if (window.keyboard.get(@enumFromInt(np0 + n)) != .release) continue;
+            if (watcher.version(n)) |lib| {
+                system_table.systemReload(system, true);
+                system_table = try .load(lib);
+                system_table.systemReload(system, false);
+                std.log.err("switched to version slot {d}", .{n});
             }
         }
-        if (system_table.systemUpdate(system, &world, null)) break :main_loop;
 
         if (try watcher.reload(io)) {
             std.log.err("system table updated", .{});
@@ -137,7 +119,6 @@ pub fn main(init: std.process.Init) !void {
             system_table = try .load(&watcher.dynlib.?);
             system_table.systemReload(system, false);
         }
-
     }
 }
 

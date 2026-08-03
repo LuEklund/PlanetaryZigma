@@ -7,10 +7,28 @@
         .shared = .{
             .path = "../shared/",
         },
-        .yes = .{
-            .url = "git+https://github.com/HaraldWik/yes#9895b17a690a96f5d1ee353a1aa93ded2daa3e32",
-            .hash = "yes-3.0.0-pN7MXajfAwBWi3iqMSvFRwP9Et_Kr1T7SrpmxCsILT5x",
+        .wayland = .{
+            .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
+            .hash = "wayland-0.5.0-dev-lQa1kon9AQAqOJxIINbYDrDekiRI5p9bnvtFoi6Pic34",
         },
+        .wayland_protocols = .{
+            .url = "git+https://gitlab.freedesktop.org/wayland/wayland-protocols#02e63e74a807afed95bc25a386173110afef24e3",
+            .hash = "N-V-__8AAMCWEADA0AS-1LfBEtixZLJAb_XQKQpgSmR2uxAO",
+        },
+        .win32 = .{
+            .url = "git+https://github.com/SquareMan/zigwin32#01df0ea99ae90afc3f46117055ab788646872eba",
+            .hash = "zigwin32-25.0.28-preview-qYSj4tyL5APmYxQI4_nKfd431j6VtaZnQkOb9IY6o5TR",
+        },
+
+        .xkbcommon = .{
+            .url = "git+https://github.com/ifreund/zig-xkbcommon/#6c2f41e269adde0d2cd58d20c02c4f8803d83eb1",
+            .hash = "xkbcommon-0.5.0-dev-VDqIe0y2AgA1RzA2ICMdGhaAgSXdhtRTbYybQQu7WfOa",
+        },
+        .libxkbcommon = .{
+            .url = "git+https://github.com/HaraldWik/libxkbcommon#5caf185f3c1981cc56869c690361902e5612047e",
+            .hash = "libxkbcommon-1.11.0-93LaF31wAgDBmMuuxfPTZ2xJiOc3ZOb5OwOVi4FlD5iy",
+        },
+
         .vulkan_headers = .{ // TODO: Update to v1.4.354
             .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#33d7f512583b8de44d1b6384aa1cf482f92e53e9",
             .hash = "N-V-__8AABoW_QEK-3TzuDEzM4iIfxXkfm2qHw0hBj0rutkl",
@@ -19,10 +37,12 @@
             .url = "git+https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator#v3.3.0",
             .hash = "N-V-__8AAIutPgABk6NlXZhlJ5P8qVECvakZIKoO94h7xUOw",
         },
+
         .zig_steamworks = .{
             .url = "git+https://github.com/menduz/zig-steamworks.git#7ef8943e7aa9e47abc057e32bc1e1ad63b8ca86d",
             .hash = "zig_steamworks-0.0.0-QF-Y-5rWxgB893nUytb-BxR5B8XE8FS4CUA2YoaolUSB",
         },
+
         .zgltf = .{
             .url = "git+https://github.com/LuEklund/zgltf.git#82765fa577fece6febcc5ce2b0e83864ca6ea5fe",
             .hash = "zgltf-0.6.0-i6Tcb00kAQAGE6vERq4z6PxP4hdlKR6kb-TFhAO-6_ad",
@@ -31,6 +51,7 @@
             .url = "git+https://github.com/nothings/stb#fede005abaf93d9d7f3a679d1999b2db341b360f",
             .hash = "N-V-__8AACIvTgCTqOj6KM32YnqNx1bcsaMuGAeKQEIWZ8Ph",
         },
+
         .ztracy = .{
             .url = "git+https://github.com/HTRMC/ztracy?ref=v0.2.1#822b2eb73d18995fbc8d9c52fc9edf8d0e84fff2",
             .hash = "ztracy-0.2.0-q8LWRV4dAACRTyehcC2WT4l1rGZvx3vppsbwDr8GoWlv",

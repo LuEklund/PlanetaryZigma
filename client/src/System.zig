@@ -4,7 +4,7 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const yes = @import("yes");
+const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("AssetServer.zig");
 const Animation = @import("system/Animations.zig");
@@ -36,8 +36,7 @@ pub const Entity = World.Entity;
 
 gpa: std.mem.Allocator,
 io: std.Io,
-desktop: yes.Desktop,
-window: *yes.Window,
+window: *Window,
 steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
 renderer: Renderer,
@@ -50,13 +49,12 @@ hud: Hud,
 options: Options,
 request_exit: bool = false,
 fullscreen_applied: bool = false,
-cursor_mode_applied: yes.Window.Property.CursorMode = .normal,
+window_size_applied: Window.Size = .{},
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    desktop: yes.Desktop,
-    window: *yes.Window,
+    window: *Window,
     asset_server: *AssetServer,
     world: *World,
     steam_client: *shared.SteamNet.Client,
@@ -66,11 +64,10 @@ pub fn init(self: *System, data: Data) !void {
     shared.log_io = data.io;
     self.gpa = data.gpa;
     self.io = data.io;
-    self.desktop = data.desktop;
     self.window = data.window;
     self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
-    self.renderer = try .init(data.gpa, data.asset_server, data.desktop, data.window);
+    self.renderer = try .init(data.gpa, data.asset_server, data.window);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     self.animation = .init(data.gpa);
     self.animation_instances = .init(data.gpa);
@@ -80,11 +77,10 @@ pub fn init(self: *System, data: Data) !void {
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
     self.fullscreen_applied = false;
-    self.cursor_mode_applied = .normal;
+    self.window_size_applied = data.window.size;
 }
 
 pub fn deinit(self: *System) void {
-    self.window.setCursorMode(self.desktop, .normal) catch {};
     var instance_iterator = self.animation_instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
     self.animation_instances.deinit();
@@ -108,6 +104,10 @@ pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     // tracy.frameMark();
+    var text_buffer: [64]u8 = undefined;
+    var text_writer: std.Io.Writer = .fixed(&text_buffer);
+    try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
+    try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
     if (self.scene == .particle_lab) particle_lab.update(world);
@@ -140,84 +140,83 @@ pub fn update(self: *System, world: *World) !void {
     // std.log.debug("time : {d}", .{world.elapsed_time});
 }
 
-pub fn eventUpdate(self: *System, world: *World, event: *const yes.Window.Event) !void {
+fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    if (event.* == .resize) {
-        try self.renderer.resize(self.gpa, self.window);
-        self.ui.screen_width = @floatFromInt(self.window.size.width);
-        self.ui.screen_heigth = @floatFromInt(self.window.size.height);
+    const window = self.window;
+    if (!window.size.eql(self.window_size_applied)) {
+        try self.renderer.resize(self.gpa, window);
+        self.ui.screen_width = @floatFromInt(window.size.width);
+        self.ui.screen_heigth = @floatFromInt(window.size.height);
+        self.window_size_applied = window.size;
     }
-    if (world.controller.rebinding_action != null and (event.* == .key or event.* == .mouse_button)) {
-        world.controller.eventUpdate(event);
+    const keyboard = window.keyboard;
+    if (world.controller.rebinding_action != null) {
+        world.controller.update(window);
         return;
     }
     if (self.scene == .game and self.hud.overlay == .none) {
-        if (world.chat.open) switch (event.*) {
-            .key => |key| {
-                world.chat.handleKey(key);
-                if (key.sym == .escape and key.state == .pressed) world.controller.suppress_escape_release = true;
-                return;
-            },
-            .text => |typed| {
-                world.chat.handleText(typed.slice());
-                return;
-            },
-            else => {},
-        } else if (event.* == .key and event.key.state == .released and event.key.sym == Chat.open_key) {
+        if (world.chat.open) {
+            world.chat.handleText(typed);
+            if (keyboard.get(.escape) == .press) world.controller.suppress_escape_release = true;
+            world.chat.handleKeyboard(keyboard);
+            return;
+        } else if (keyboard.get(Chat.open_key) == .release) {
             world.chat.open = true;
             world.controller.clearInput();
             return;
         }
     }
-    if (event.* == .key) {
-        const key = event.key;
-        if (key.state == .released and key.sym == .escape and world.controller.suppress_escape_release) {
-            world.controller.suppress_escape_release = false;
-            return;
-        }
-        if (key.state == .released and key.sym == .escape and self.hud.overlay == .options) {
-            self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
-            world.controller.clearInput();
-            world.controller.resetMouseDelta();
-            return;
-        }
-        if (key.state == .released and key.sym == .escape and self.scene == .game) {
-            self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
-            world.controller.clearInput();
-            world.controller.resetMouseDelta();
-            return;
-        }
-        if (key.state == .released and key.sym == .escape and self.scene == .particle_lab) {
-            try self.enterScene(world, .menu);
-            return;
-        }
-        if (key.state == .released and key.sym == .escape) {
-            self.request_exit = true;
-            return;
-        }
-        if (key.state == .released and key.sym == .f4 and self.scene == .menu) {
-            try self.enterScene(world, .particle_lab);
-            return;
-        }
+    const escape_released = keyboard.get(.escape) == .release;
+    if (escape_released and world.controller.suppress_escape_release) {
+        world.controller.suppress_escape_release = false;
+        return;
     }
-    world.controller.eventUpdate(event);
+    if (escape_released and self.hud.overlay == .options) {
+        self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
+        world.controller.clearInput();
+        world.controller.resetMouseDelta();
+        return;
+    }
+    if (escape_released and self.scene == .game) {
+        self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
+        world.controller.clearInput();
+        world.controller.resetMouseDelta();
+        return;
+    }
+    if (escape_released and self.scene == .particle_lab) {
+        try self.enterScene(world, .menu);
+        return;
+    }
+    if (escape_released) {
+        self.request_exit = true;
+        return;
+    }
+    if (keyboard.get(.f4) == .release and self.scene == .menu) {
+        try self.enterScene(world, .particle_lab);
+        return;
+    }
+    world.controller.update(window);
 }
 
 fn applyOptions(self: *System, world: *World) !void {
     if (self.scene == .game) world.camera.fov_rad = self.options.fov_rad;
     world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
     if (self.fullscreen_applied != self.options.fullscreen) {
-        const mode: yes.Window.Mode = if (self.options.fullscreen) .fullscreen else .windowed;
-        try self.window.setMode(self.desktop, mode);
+        try self.window.setFullscreen(self.options.fullscreen);
         self.fullscreen_applied = self.options.fullscreen;
     }
     const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
-    const cursor_mode: yes.Window.Property.CursorMode = if (wants_cursor_lock) .captured else .normal;
-    if (self.cursor_mode_applied != cursor_mode) {
-        try self.window.setCursorMode(self.desktop, cursor_mode);
-        self.cursor_mode_applied = cursor_mode;
-        world.controller.resetMouseDelta();
+    const was_locked = self.window.pointer.constraint == .locked;
+    if (wants_cursor_lock) {
+        try self.window.setPointerVisible(false);
+        try self.window.setPointerConstraint(.locked);
+        try self.window.setPointerRelative(true);
+        if (!was_locked) world.controller.resetMouseDelta();
+    } else {
+        try self.window.setPointerRelative(false);
+        try self.window.setPointerConstraint(.none);
+        try self.window.setPointerVisible(true);
     }
 }
 
@@ -237,7 +236,7 @@ comptime {
 pub const Table = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
-    systemUpdate: *const fn (*anyopaque, world: *World, event: ?*const yes.Window.Event) callconv(.c) bool,
+    systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
     systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 
     pub fn load(dynlib: *shared.DynLib) !Table {
@@ -275,12 +274,11 @@ pub const ffi = struct {
         gpa.destroy(context);
     }
 
-    pub export fn systemUpdate(handle: *anyopaque, world: *World, event: ?*const yes.Window.Event) bool {
+    pub export fn systemUpdate(handle: *anyopaque, world: *World) bool {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const context: *System = @ptrCast(@alignCast(handle));
-        const result = if (event != null) context.eventUpdate(world, event.?) else context.update(world);
-        result catch |err| {
+        context.update(world) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system update: {s}", .{@errorName(err)});
         };
