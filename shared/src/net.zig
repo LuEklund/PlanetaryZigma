@@ -343,7 +343,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     const element_len: usize = @field(out, element_len_name);
                     if (ptr.child == u8) {
                         const slice = try reader.take(element_len);
-                        reader.toss((4 - (slice.len % 4)) % 4);
+                        try reader.discardAll((4 - (slice.len % 4)) % 4);
                         break :slice if (opt_allocator) |allocator| try allocator.dupe(u8, slice) else slice;
                     } else {
                         if (opt_allocator) |allocator| {
