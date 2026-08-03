@@ -31,9 +31,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
         .text = .{ .data = ping_text, .size = 24, .color = ping_color },
     });
 
-    const frame_seconds = ui.frameSeconds(world.real_time);
-    const fps = ui.animate("fps", if (frame_seconds > 0) 1.0 / frame_seconds else 0, 0.5);
-    const fps_text = ui.print("{d:.0} fps", .{fps});
+    const fps_text = ui.print("{d:.0} fps", .{world.fps});
     ui.add(null, .{
         .size = .{ .fixed = ui.textSize(fps_text, 24) },
         .offset = .{ .left = 12, .top = 10 },

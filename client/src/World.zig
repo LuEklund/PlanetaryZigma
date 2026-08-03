@@ -24,6 +24,7 @@ pub const RenderCommand = union(enum) {
 
 mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
+io: std.Io,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
@@ -42,7 +43,7 @@ player_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
-real_time: f32 = 0,
+fps: f32 = 0,
 stage: u32 = 0,
 chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
@@ -88,9 +89,10 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator) !World {
+pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
     return .{
         .gpa = gpa,
+        .io = io,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
