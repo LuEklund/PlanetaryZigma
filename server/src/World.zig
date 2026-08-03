@@ -106,8 +106,8 @@ pub const Entity = struct {
     last_utility: f32 = 0,
     mode: Mode = .falling,
 
-    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
-        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
+        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
 
     pub const Mode = enum {
@@ -228,7 +228,7 @@ pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
-pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {
+pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8) ?u8 {
     if (player.inventory.get(item) >= 255) return null;
     const item_count = player.inventory.add(item, count);
     const old_max_health = player.max_health;

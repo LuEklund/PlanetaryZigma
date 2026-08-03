@@ -7,8 +7,9 @@ id: @EnumLiteral(),
 flat: std.EnumArray(Stat, f32) = .initFill(0),
 percent: std.EnumArray(Stat, f32) = .initFill(0),
 description: []const u8,
+is_equipment: bool = false,
 
-pub const items: []Item = &.{
+pub const items: []const Item = &.{
     .{
         .id = .oxygen_tank,
         .flat = .initDefault(0, .{ .health = 10 }),
@@ -59,20 +60,25 @@ pub const items: []Item = &.{
         .flat = .initDefault(0, .{ .regen = 1 }),
         .description = "+1 health regen",
     },
+    .{
+        .id = .freezer,
+        .flat = .initDefault(0, .{}),
+        .description = "freeze time for 10s",
+    },
 };
 
-pub const model_paths: []const []const u8 = paths: {
+pub const model_paths: [items.len][]const u8 = paths: {
     var paths: [items.len][]const u8 = undefined;
     for (items, &paths) |item, *path| {
-        path = "objects/" ++ @tagName(item.id);
+        path.* = "objects/" ++ @tagName(item.id);
     }
     break :paths paths;
 };
 
-pub const icon_paths: []const []const u8 = paths: {
+pub const icon_paths: [items.len][]const u8 = paths: {
     var paths: [items.len][]const u8 = undefined;
     for (items, &paths) |item, *path| {
-        path = "textures/" ++ @tagName(item.id);
+        path.* = "textures/" ++ @tagName(item.id);
     }
     break :paths paths;
 };
@@ -85,7 +91,7 @@ pub const Kind = kind: {
         name.* = @tagName(spec.id);
         value.* = i;
     }
-    break :kind @Enum(TagInt, .exhaustive, field_names, field_values);
+    break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
 };
 
 // same as spec alright Lucas
@@ -102,17 +108,17 @@ pub fn getIcon(kind: Kind) []const u8 {
 }
 
 pub const Inventory = struct {
-    counts: std.EnumMap(Item, u8) = .initFull(0),
+    counts: std.EnumMap(Item.Kind, u8) = .initFull(0),
 
-    pub fn get(self: Inventory, item: Item) u8 {
+    pub fn get(self: Inventory, item: Item.Kind) u8 {
         return self.counts.get(item).?;
     }
 
-    pub fn set(self: *Inventory, item: Item, count: u8) void {
+    pub fn set(self: *Inventory, item: Item.Kind, count: u8) void {
         self.counts.getPtr(item).?.* = count;
     }
 
-    pub fn add(self: *Inventory, item: Item, delta: u8) u8 {
+    pub fn add(self: *Inventory, item: Item.Kind, delta: u8) u8 {
         const count = self.counts.getPtr(item).?;
         count.* += delta;
         return count.*;
@@ -136,10 +142,10 @@ pub const Stat = enum(u16) {
         const base_base: std.EnumArray(Stat, f32) = entity.spec(entity_kind).base_stats orelse .initFill(0);
         var flat: f32 = 0;
         var percent: f32 = 0;
-        for (std.enums.values(Item)) |item_kind| {
+        inline for (std.enums.values(Item.Kind)) |item_kind| {
             const count: f32 = @floatFromInt(inv.get(item_kind));
-            flat += item_kind.spec().flat.get(stat) * count;
-            percent += item_kind.spec().percent.get(stat) * count;
+            flat += get(item_kind).flat.get(stat) * count;
+            percent += get(item_kind).percent.get(stat) * count;
         }
         const linear = (base_base.get(stat) + flat) * (1 + percent);
         return switch (stat) {

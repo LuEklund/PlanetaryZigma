@@ -115,7 +115,6 @@ pub const PlayerName = struct {
     }
 };
 
-
 pub const ChatSend = struct {
     text_len: u16,
     text: []const u8,
@@ -200,7 +199,7 @@ pub const UpdateHealthAmount = union(enum) {
 
 pub const UpdateInventory = struct {
     id: entity.Id,
-    item_kind: root.Item,
+    item_kind: root.Item.Kind,
     set: u8,
 };
 

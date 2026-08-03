@@ -11,7 +11,7 @@ pub const Watcher = @import("Watcher.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
-const Item = @import("Item.zig");
+pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
 
 pub const entity = @import("entity.zig");
@@ -77,5 +77,3 @@ pub const teleporter = struct {
         max_charge: f32 = 100,
     };
 };
-
-pub const Stat = Item.Stat;

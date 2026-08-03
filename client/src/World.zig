@@ -78,8 +78,8 @@ pub const Entity = struct {
         is_teleporter_boss: bool = false,
     };
 
-    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
-        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
+        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
 
     pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
