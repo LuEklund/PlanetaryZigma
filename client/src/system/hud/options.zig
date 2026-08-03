@@ -119,8 +119,12 @@ fn optionsVideo(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) voi
 
 fn optionsGraphics(ui: *Ui, controller: *Controller, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
-    if (addOptionToggle(ui, "options_debug_colliders", "Debug Colliders", boolText(controller.debug_draw_colliders), left, top, width, row_height)) {
-        controller.debug_draw_colliders = !controller.debug_draw_colliders;
+    const row_gap: f32 = 10;
+    if (addOptionToggle(ui, "options_debug_colliders", "Debug Colliders", boolText(controller.debug.colliders), left, top, width, row_height)) {
+        controller.debug.colliders = !controller.debug.colliders;
+    }
+    if (addOptionToggle(ui, "options_debug_flow_field", "Debug Flow Field", boolText(controller.debug.flow_field), left, top + (row_height + row_gap), width, row_height)) {
+        controller.debug.flow_field = !controller.debug.flow_field;
     }
 }
 

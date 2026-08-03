@@ -318,6 +318,9 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
             .currency => |currency| {
                 try client.sendCommand(writer, .{ .set_currency = .{ .amount = currency.amount, .id = currency.id } }, .reliable);
             },
+            .debug_lines => |lines| {
+                try client.sendCommand(writer, .{ .debug_lines = lines }, .reliable);
+            },
         };
     }
     for (world.client_updates.items) |client_update| switch (client_update) {

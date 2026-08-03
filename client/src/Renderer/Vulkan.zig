@@ -290,7 +290,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     renderWorldPass(self, cmd, current_frame, world, instances);
     if (draw_sky) renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, world, particle_batches);
-    if (world.controller.debug_draw_colliders) renderDebugPass(self, cmd, current_frame, world);
+    if (world.controller.debug.colliders or (world.controller.debug.flow_field and world.debug_line_count > 0)) renderDebugPass(self, cmd, current_frame, world);
     renderUiPass(self, cmd, current_frame, ui);
     ext.vkCmdEndRendering(cmd);
 
@@ -752,6 +752,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
     var debug_vertex_count: u32 = 0;
     for (world.entities.values()) |*entity| {
+        if (!world.controller.debug.colliders) break;
         const collider_shape = (shared.entity.collider(entity.kind) orelse continue).shape;
         const first_vertex = debug_vertex_count;
         switch (collider_shape) {
@@ -768,6 +769,22 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
             .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress() +
                 first_vertex * @sizeOf(FrameData.DebugVertex),
             .model_matrix = collider_transform.toMat4x4().d,
+            .joint_matrices_address = 0,
+            .texture_index = 0,
+        };
+        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
+        c.vkCmdDraw(cmd, debug_vertex_count - first_vertex, 1, 0, 0);
+    }
+
+    if (world.controller.debug.flow_field and world.debug_line_count > 0) {
+        const first_vertex = debug_vertex_count;
+        for (world.debug_lines[0..world.debug_line_count]) |line| {
+            debug.appendLine(debug_vertices, &debug_vertex_count, line.from, line.to);
+        }
+        var push: Shader.WorldPushConstant = .{
+            .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress() +
+                first_vertex * @sizeOf(FrameData.DebugVertex),
+            .model_matrix = (nz.Transform3D(f32){}).toMat4x4().d,
             .joint_matrices_address = 0,
             .texture_index = 0,
         };

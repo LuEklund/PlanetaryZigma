@@ -114,9 +114,14 @@ input_map: shared.net.Input = .{},
 bindings: Bindings = .{},
 rebinding_action: ?Action = null,
 suppress_escape_release: bool = false,
-debug_draw_colliders: bool = false,
+debug: Debug = .{},
 free_camera: bool = false,
 show_stats: bool = false,
+
+pub const Debug = struct {
+    colliders: bool = false,
+    flow_field: bool = true,
+};
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};
@@ -231,7 +236,7 @@ fn applyAction(self: *Controller, action: Action, pressed: bool) void {
             if (pressed) self.free_camera = !self.free_camera;
         },
         .debug_colliders => {
-            if (pressed) self.debug_draw_colliders = !self.debug_draw_colliders;
+            if (pressed) self.debug.colliders = !self.debug.colliders;
         },
     }
 }

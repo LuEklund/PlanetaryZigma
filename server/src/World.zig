@@ -22,6 +22,7 @@ next_stage_requested: bool,
 go_again_requested: bool,
 start_round_requested: bool,
 toggle_spawning_requested: bool,
+debug_draw: bool,
 dev_mode: bool,
 teleporter_id: shared.entity.Id,
 next_entity_id: u32,
@@ -35,6 +36,7 @@ pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
 
 pub const spawn_hover: f32 = 1.5;
+pub const lootbox_sink: f32 = -0.2;
 pub const item_throw_speed: f32 = 18;
 
 pub const item_launch_angle: f32 = std.math.pi / 4.0;
@@ -60,6 +62,7 @@ pub const ClientUpdate = union(enum) {
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
     currency: shared.net.SetCurrency,
+    debug_lines: shared.net.DebugLines,
 };
 
 pub const Camera = struct {
@@ -152,6 +155,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .go_again_requested = false,
         .start_round_requested = false,
         .toggle_spawning_requested = false,
+        .debug_draw = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
@@ -387,7 +391,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                     nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
                 else
                     nz.vec.randomUnitVector(nz.Vec3(f32), random);
-                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
+                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, lootbox_sink);
                 _ = try self.spawn(.{
                     .kind = .lootbox,
                     .transform = transform,

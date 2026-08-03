@@ -42,6 +42,7 @@ pub const ServerPacket = union(enum) {
     update_inventory: UpdateInventory,
     set_currency: SetCurrency,
     chat_message: ChatMessage,
+    debug_lines: DebugLines,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -152,6 +153,17 @@ pub const SpawnEntityData = union(enum) {
 
 pub const DespawnEntity = struct {
     id: entity.Id,
+};
+
+pub const DebugLine = struct {
+    from: @Vector(3, f32),
+    to: @Vector(3, f32),
+};
+
+pub const DebugLines = struct {
+    first: bool,
+    count: u8,
+    lines: [36]DebugLine,
 };
 
 pub const Input = struct {
@@ -287,7 +299,9 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
         .array => |array| {
             if (array.child == u8) {
                 try writer.writeAll(&value);
-            } else try writer.writeSliceEndian(array.child, &value, endian);
+            } else for (value) |item| {
+                try marshal(writer, item);
+            }
         },
         .vector => |vector| inline for (0..vector.len) |i| {
             try marshal(writer, value[i]);

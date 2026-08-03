@@ -392,6 +392,14 @@ fn handleCommand(
         .despawn_entity => |despawn_entity| {
             world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
+        .debug_lines => |debug_lines| {
+            if (debug_lines.first) world.debug_line_count = 0;
+            for (debug_lines.lines[0..debug_lines.count]) |line| {
+                if (world.debug_line_count == world.debug_lines.len) break;
+                world.debug_lines[world.debug_line_count] = line;
+                world.debug_line_count += 1;
+            }
+        },
         .update_motion => |update_motion_command| {
             const entity = world.getPtr(update_motion_command.id) orelse return;
             entity.motion.update = update_motion_command;

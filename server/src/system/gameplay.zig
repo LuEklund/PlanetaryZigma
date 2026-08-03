@@ -4,6 +4,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../System.zig");
 const Physics = @import("Physics.zig");
+const Navmesh = @import("Navmesh.zig");
 const World = system.World;
 
 const rocket_damage_multiplier: f32 = 1.5;
@@ -82,6 +83,41 @@ pub fn updateEnemies(world: *World) !void {
 
     world.navmesh.deleteUnused(world.gpa, world.elapsed_time);
 
+    if (world.tick % Navmesh.flow_rebuild_ticks == 0) {
+        var player_positions: [shared.max_players]nz.Vec3(f32) = undefined;
+        var player_count: usize = 0;
+        for (world.players.items) |player_id| {
+            const current_player = world.getPtr(player_id) orelse continue;
+            if (current_player.flags.is_dead) continue;
+            player_positions[player_count] = current_player.transform.position;
+            player_count += 1;
+        }
+        world.navmesh.buildFlow(player_positions[0..player_count]);
+
+        if (world.debug_draw and player_count > 0) {
+            var packet: shared.net.DebugLines = .{ .first = true, .count = 0, .lines = undefined };
+            var emitted: u16 = 0;
+            for (world.navmesh.flow.keys(), world.navmesh.flow.values()) |cell, flow_node| {
+                if (@rem(cell[0] + cell[1] + cell[2], 2) != 0) continue;
+                if (nz.vec.distance(flow_node.centroid, player_positions[0]) > 18) continue;
+                const target = world.navmesh.flowAt(flow_node.centroid) orelse continue;
+                const node_up = shared.planet.up(flow_node.centroid) orelse continue;
+                const lift = nz.vec.scale(node_up, 0.2);
+                packet.lines[packet.count] = .{ .from = flow_node.centroid + lift, .to = target + lift };
+                packet.count += 1;
+                emitted += 1;
+                if (packet.count == packet.lines.len) {
+                    world.client_updates.appendAssumeCapacity(.{ .debug_lines = packet });
+                    packet = .{ .first = false, .count = 0, .lines = undefined };
+                }
+                if (emitted == 504) break;
+            }
+            if (packet.count > 0 or packet.first) {
+                world.client_updates.appendAssumeCapacity(.{ .debug_lines = packet });
+            }
+        }
+    }
+
     for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy) continue;
         // std.log.debug("elapsed_time = {d}, un_stun_at {d}", .{ world.elapsed_time, enemy.un_stun_at });
@@ -114,9 +150,14 @@ pub fn updateEnemies(world: *World) !void {
 
         const planet_up = shared.planet.up(enemy.transform.position) orelse continue;
 
-        const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
-        if (nz.vec.length(fwd_proj) > 0.0001) {
-            const forward = nz.vec.normalize(fwd_proj);
+        const steer_target: nz.Vec3(f32) = switch (enemy.kind.enemy) {
+            .tubloid, .tubloida, .hunkloid => world.navmesh.flowAt(enemy.transform.position) orelse player.transform.position,
+            .bloorp_lord, .blooploid => player.transform.position,
+        };
+        const to_steer = steer_target - enemy.transform.position;
+        const forward_projection = to_steer - nz.vec.scale(planet_up, nz.vec.dot(to_steer, planet_up));
+        if (nz.vec.length(forward_projection) > 0.0001) {
+            const forward = nz.vec.normalize(forward_projection);
             const rot = nz.quat.Hamiltonian(f32).lookAt(forward, planet_up).normalize();
             Physics.setRotation(body_id, rot);
         }

@@ -31,7 +31,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             .f1 => {
                 // _ = world.giveItem(player, .pickaxe, 1);
                 // _ = world.giveItem(player, .icicle, 1);
-                _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
+                _ = try world.spawn(.{ .kind = .{ .enemy = .tubloid }, .transform = player.transform });
                 // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
@@ -76,6 +76,10 @@ pub fn update(world: *World, physics: *Physics) !void {
                 Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
             },
             .f9 => world.start_round_requested = true,
+            .f10 => {
+                world.debug_draw = !world.debug_draw;
+                std.log.info("dev: debug draw {s}", .{if (world.debug_draw) "on" else "off"});
+            },
 
             else => {},
         }
