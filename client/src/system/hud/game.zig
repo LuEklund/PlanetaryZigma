@@ -96,7 +96,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                         .offset = .{ .left = ui.screen_width - quipment_size.width, .top = ui.screen_heigth - quipment_size.heigth },
                         .color = .new(1, 1, 1, 1),
                         .name = @tagName(item_kind),
-                        .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
+                        .texture = texture_table.handle(shared.Item.getIcon(item_kind)),
                         .child_anchor = .{ .x = .start, .y = .end },
                         .children = &.{.{
                             .size = .{ .fixed = ui.textSize(amount_text, 48) },
@@ -107,26 +107,26 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                             },
                         }},
                     });
-                    continue;
-                }
-                ui.add("inventory", .{
-                    .size = .{ .fixed = .{
-                        .heigth = inventory_heigth,
-                        .width = inventory_heigth,
-                    } },
+                } else {
+                    ui.add("inventory", .{
+                        .size = .{ .fixed = .{
+                            .heigth = inventory_heigth,
+                            .width = inventory_heigth,
+                        } },
 
-                    .color = .new(1, 1, 1, 1),
-                    .name = @tagName(item_kind),
-                    .texture = texture_table.handle(shared.Item.getIcon(item_kind)),
-                    .child_anchor = .{ .x = .end, .y = .end },
-                    .children = &.{.{
-                        .size = .{ .fixed = ui.textSize(amount_text, 32) },
-                        .text = .{
-                            .data = amount_text,
-                            .color = .new(0, 0, 0, 1),
-                        },
-                    }},
-                });
+                        .color = .new(1, 1, 1, 1),
+                        .name = @tagName(item_kind),
+                        .texture = texture_table.handle(shared.Item.getIcon(item_kind)),
+                        .child_anchor = .{ .x = .end, .y = .end },
+                        .children = &.{.{
+                            .size = .{ .fixed = ui.textSize(amount_text, 32) },
+                            .text = .{
+                                .data = amount_text,
+                                .color = .new(0, 0, 0, 1),
+                            },
+                        }},
+                    });
+                }
             }
         }
         inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
@@ -224,7 +224,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_path),
+                        .texture = texture_table.handle("textures/crosshair.png"),
                     },
                 },
             });

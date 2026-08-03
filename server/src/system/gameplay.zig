@@ -96,6 +96,10 @@ pub fn updateEnemies(world: *World) !void {
             closest_distance = player_distance;
             closest_player = current_player;
         }
+        if (world.world_unstun_at > world.elapsed_time and closest_distance < 10) {
+            continue;
+        }
+
         const player = closest_player orelse return;
         const to_player = player.transform.position - enemy.transform.position;
         const distance_to_player = nz.vec.length(to_player);

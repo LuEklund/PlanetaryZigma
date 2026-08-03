@@ -187,6 +187,9 @@ pub fn update(world: *World, physics: *Physics) !void {
                 Physics.setRotation(id, transform.rotation);
             }
         }
+        if (input.keys.q and player.inventory.get(.freezer) > 0) {
+            world.world_unstun_at = world.elapsed_time + 10;
+        }
 
         if (input.keys.mouse_button_left and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
             player.last_attack = world.elapsed_time;

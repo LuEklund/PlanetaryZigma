@@ -29,6 +29,8 @@ elapsed_time: f32,
 delta_time: f32,
 tick: u32,
 
+world_unstun_at: f32 = 0,
+
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
 

@@ -11,6 +11,7 @@ const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
 
 const skybox_file = "skybox_cubemap.png";
+const crosshair_texture_path = "crosshair.png";
 
 table: *TextureTable,
 items: []?Image.Handle,
@@ -20,7 +21,7 @@ pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetSe
     const spec_capacity = entity.all_kinds.len + 2;
     const files = try gpa.alloc([]const u8, spec_capacity);
     files[0] = skybox_file;
-    files[1] = TextureTable.crosshair_texture_path["textures/".len..];
+    files[1] = crosshair_texture_path;
     var count: usize = 2;
     for (entity.all_kinds) |kind| {
         const icon = entity.spec(kind).icon orelse continue;
@@ -77,6 +78,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
     const table = self.table;
+
     const file = try err_file;
     unload(&self.interface, index);
 

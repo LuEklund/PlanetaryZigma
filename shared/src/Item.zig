@@ -41,7 +41,7 @@ pub const items: []const Item = &.{
         .description = "5% chance to chain lightning, stacks add jumps",
     },
     .{
-        .id = .crit,
+        .id = .scope,
         .flat = .initDefault(0, .{ .critical_chance = 0.1 }),
         .description = "10% chance to deal double damage",
     },
@@ -62,15 +62,15 @@ pub const items: []const Item = &.{
     },
     .{
         .id = .freezer,
-        .flat = .initDefault(0, .{}),
-        .description = "freeze time for 10s",
+        .description = "freeze time for 20s",
+        .is_equipment = true,
     },
 };
 
 pub const model_paths: [items.len][]const u8 = paths: {
     var paths: [items.len][]const u8 = undefined;
     for (items, &paths) |item, *path| {
-        path.* = "objects/" ++ @tagName(item.id);
+        path.* = "objects/" ++ @tagName(item.id) ++ ".glb";
     }
     break :paths paths;
 };
@@ -78,7 +78,7 @@ pub const model_paths: [items.len][]const u8 = paths: {
 pub const icon_paths: [items.len][]const u8 = paths: {
     var paths: [items.len][]const u8 = undefined;
     for (items, &paths) |item, *path| {
-        path.* = "textures/" ++ @tagName(item.id);
+        path.* = "textures/" ++ @tagName(item.id) ++ ".png";
     }
     break :paths paths;
 };
