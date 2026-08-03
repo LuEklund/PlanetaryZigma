@@ -1,9 +1,9 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const system = @import("../../system.zig");
-const Info = system.Info;
-const Ui = @import("../../Renderer/Vulkan/Ui.zig");
+const system = @import("../../System.zig");
+const World = system.World;
+const Ui = @import("../../Ui.zig");
 const Resources = @import("../../Renderer/Vulkan/Resources.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
@@ -70,11 +70,7 @@ pub fn update(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) vo
 
 fn optionsGameplay(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
-    const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(options.show_hud_stats), left, top, width, row_height)) {
-        options.show_hud_stats = !options.show_hud_stats;
-    }
-    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
+    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top, width, row_height)) {
         options.show_crosshair = !options.show_crosshair;
     }
 }
@@ -115,6 +111,9 @@ fn optionsVideo(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) voi
     const fov_degrees = options.fov_rad * 180.0 / std.math.pi;
     if (addOptionSlider(ui, "options_fov", "Field of View", fov_degrees, 65, 115, left, top + (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{fov_degrees}))) |value| {
         options.fov_rad = value * std.math.pi / 180.0;
+    }
+    if (addOptionSlider(ui, "options_chunk_view_distance", "Chunk View Distance", options.chunk_view_distance, 1, 8, left, top + 2 * (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{options.chunk_view_distance}))) |value| {
+        options.chunk_view_distance = @round(value);
     }
 }
 

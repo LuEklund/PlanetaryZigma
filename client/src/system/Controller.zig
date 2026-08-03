@@ -118,6 +118,7 @@ rebinding_action: ?Action = null,
 suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
+show_stats: bool = false,
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};
@@ -175,6 +176,8 @@ pub fn update(self: *Controller, window: *const Window) void {
         }
         return;
     }
+
+    self.show_stats = keyboard.isDown(.tab);
 
     if (keyboard.get(.f1) == .press) self.input_map.dev_command = .f1;
     if (keyboard.get(.f2) == .press) self.input_map.dev_command = .f2;

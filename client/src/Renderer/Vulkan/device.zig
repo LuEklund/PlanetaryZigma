@@ -7,6 +7,7 @@ pub const Physical = struct {
     handle: c.VkPhysicalDevice,
     max_anisotropy: f32,
     graphics_queue_family_index: u32,
+    combined_image_sampler_descriptor_size: usize,
 
     pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !Physical {
         var device_count: u32 = 0;
@@ -33,12 +34,23 @@ pub const Physical = struct {
                 try check(c.vkGetPhysicalDeviceSurfaceSupportKHR(device, @intCast(i), surface, &present_supported));
 
                 if (supports_graphics and present_supported != 0) {
-                    std.log.info("found physical device: {s}, queue family: {d}", .{ properties.deviceName, i });
+                    const device_name = std.mem.sliceTo(&properties.deviceName, 0);
+                    std.log.info("found physical device: {s}, queue family: {d}", .{ device_name, i });
+
+                    var device_desc_buffer_properties: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,
+                    };
+                    var device_properties: c.VkPhysicalDeviceProperties2 = .{
+                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                        .pNext = &device_desc_buffer_properties,
+                    };
+                    c.vkGetPhysicalDeviceProperties2(device, &device_properties);
 
                     return .{
                         .handle = device,
                         .max_anisotropy = properties.limits.maxSamplerAnisotropy,
                         .graphics_queue_family_index = @intCast(i),
+                        .combined_image_sampler_descriptor_size = device_desc_buffer_properties.combinedImageSamplerDescriptorSize,
                     };
                 }
             }
@@ -141,9 +153,15 @@ pub const Logical = struct {
             .shaderSampledImageArrayNonUniformIndexing = c.VK_TRUE,
         };
 
+        var shader_draw_parameters_features: c.VkPhysicalDeviceShaderDrawParametersFeatures = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+            .pNext = &descriptor_indexing_feature,
+            .shaderDrawParameters = c.VK_TRUE,
+        };
+
         const device_info = c.VkDeviceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &descriptor_indexing_feature,
+            .pNext = &shader_draw_parameters_features,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queue_info,
             .pEnabledFeatures = &features,

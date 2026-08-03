@@ -3,16 +3,20 @@ const Renderer = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
-const Info = @import("system.zig").Info;
 const Window = @import("Window");
+const World = @import("System.zig").World;
+const AssetServer = @import("AssetServer.zig");
+const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Ui = @import("Ui.zig");
 const tracy = @import("ztracy");
-const AssetServer = shared.AssetServer;
 
 inner: Inner,
 
 const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Inner = *Vulkan;
+
+pub const TextureTable = @import("Renderer/loader/TextureTable.zig");
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, window: *Window) !Renderer {
     return switch (builtin.os.tag) {
@@ -30,10 +34,10 @@ pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     }
 }
 
-pub fn update(self: *Renderer, info: *const Info) !void {
+pub fn update(self: *Renderer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui, draw_sky: bool) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    try self.inner.update(info);
+    try self.inner.update(world, instances, ui, draw_sky);
 }
 
 const debug_instance_extensions = if (builtin.mode == .Debug)
@@ -91,9 +95,10 @@ pub fn initVulkan(gpa: std.mem.Allocator, asset_server: *AssetServer, window: *W
         },
         .instance = .{
             .extensions = extensions,
-            .layers = if (builtin.mode == .Debug) &.{
-                "VK_LAYER_KHRONOS_validation",
-            } else &.{},
+            .layers = if (builtin.mode == .Debug)
+                &.{ "VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_shader_object" }
+            else
+                &.{"VK_LAYER_KHRONOS_shader_object"},
         },
         .device = .{
             .extensions = &.{

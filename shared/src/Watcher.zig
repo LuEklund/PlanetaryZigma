@@ -77,13 +77,15 @@ pub fn load(self: *Watcher, io: std.Io) !void {
         return err;
     };
 
-    if (dynlib.lookup(*const fn () void, "systemContextInit") == null) {
+    if (dynlib.lookup(*const fn () void, "systemInit") == null) {
         dynlib.close();
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
-        return error.SystemContextInitSymbolNotFound;
+        return error.SystemInitSymbolNotFound;
     }
 
-    std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
+    // Debug keeps the copy on disk: an unlinked file has no DWARF for the panic
+    // unwinder, which is why in-lib frames print as "??? in ???".
+    if (builtin.mode != .Debug) std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
 
     self.dynlib = dynlib;
     self.mtime = stat.mtime;
@@ -113,7 +115,7 @@ pub fn reload(self: *Watcher, io: std.Io) !bool {
     };
     self.old_dynlib = null; // ring retains the old lib; never close it mid-run
 
-    std.log.debug("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
+    std.log.info("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
     return true;
 }
 

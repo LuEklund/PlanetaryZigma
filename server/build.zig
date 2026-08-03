@@ -82,7 +82,7 @@ fn addServerArtifacts(
     const system = b.addLibrary(.{
         .name = "system_server",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/system.zig"),
+            .root_source_file = b.path("src/System.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -98,6 +98,7 @@ fn addServerArtifacts(
     });
 
     system.root_module.linkLibrary(box3d_lib);
+    if (target.result.os.tag != .windows) system.link_z_defs = true;
 
     const exe = b.addExecutable(.{
         .name = "server",

@@ -26,6 +26,8 @@ pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
     input: Input,
+    chat: ChatSend,
+    go_again: void,
 };
 
 /// server → client
@@ -35,11 +37,11 @@ pub const ServerPacket = union(enum) {
     despawn_entity: DespawnEntity,
     update_motion: UpdateMotion,
     server_tick: u32,
-    update_stat: UpdateStat,
+    update_health: UpdateHealth,
     update_event: Event,
     update_inventory: UpdateInventory,
-    update_player_name: PlayerNameUpdate,
     set_currency: SetCurrency,
+    chat_message: ChatMessage,
 };
 
 // ── Payloads ────────────────────────────────────────────────────────────────
@@ -62,15 +64,16 @@ pub const DevCommand = enum(u8) {
 
 pub const Connect = struct {
     protocol_version: u32,
-    name_len: u16,
-    name: []const u8,
+    player_name: PlayerName,
 };
 
 // Comptime fingerprint of the entire wire format. Changes if and only if the
-// structural layout reachable from ClientPacket/ServerPacket changes;
+// structural layout reachable from ClientPacket/ServerPacket changes, or
+// version is bumped (the manual lever for behavior changes that keep
+// the wire layout identical — terrain math, gameplay rules).
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
-    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);
 };
 
 fn protocolDescription(comptime T: type) []const u8 {
@@ -98,14 +101,30 @@ fn protocolDescription(comptime T: type) []const u8 {
 }
 
 pub const PlayerName = struct {
-    name_len: u16,
-    name: []const u8,
+    name: [root.max_player_name_len]u8,
+
+    pub fn copy(text: []const u8) PlayerName {
+        var self: PlayerName = .{ .name = @splat(0) };
+        const length = @min(text.len, root.max_player_name_len);
+        @memcpy(self.name[0..length], text[0..length]);
+        return self;
+    }
+
+    pub fn slice(self: *const PlayerName) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
 };
 
-pub const PlayerNameUpdate = struct {
+
+pub const ChatSend = struct {
+    text_len: u16,
+    text: []const u8,
+};
+
+pub const ChatMessage = struct {
     id: entity.Id,
-    name_len: u16,
-    name: []const u8,
+    text_len: u16,
+    text: []const u8,
 };
 
 pub const Acknowledge = struct {
@@ -168,14 +187,13 @@ pub const UpdateTransform = struct {
     rotation: @Vector(4, f16),
 };
 
-pub const UpdateStat = struct {
+pub const UpdateHealth = struct {
     id: entity.Id,
-    stat_kind: root.Stats.Kind,
     source: entity.Id,
-    amount: UpdateStatAmount,
+    amount: UpdateHealthAmount,
 };
 
-pub const UpdateStatAmount = union(enum) {
+pub const UpdateHealthAmount = union(enum) {
     set_current: f16,
     set_max: f16,
 };
@@ -197,6 +215,16 @@ pub const Event = union(enum) {
         interacted: entity.Id,
     };
 
+    pub const Trigger = struct {
+        id: entity.Id,
+        state: entity.State,
+    };
+
+    pub const Stun = struct {
+        id: entity.Id,
+        duration: f32,
+    };
+
     pub const Effect = union(enum) {
         pub const Lightning = struct {
             pub const max_targets = 4;
@@ -212,7 +240,8 @@ pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
-    attack: entity.Id,
+    trigger: Trigger,
+    stun: Stun,
     interact: Interact,
     effect: Effect,
 };
@@ -315,7 +344,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     const element_len: usize = @field(out, element_len_name);
                     if (ptr.child == u8) {
                         const slice = try reader.take(element_len);
-                        reader.toss((4 - (slice.len % 4)) % 4);
+                        try reader.discardAll((4 - (slice.len % 4)) % 4);
                         break :slice if (opt_allocator) |allocator| try allocator.dupe(u8, slice) else slice;
                     } else {
                         if (opt_allocator) |allocator| {

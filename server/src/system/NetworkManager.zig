@@ -2,9 +2,9 @@ const NetworkManager = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const system = @import("../system.zig");
+const system = @import("../System.zig");
 const tracy = @import("ztracy");
-const Info = system.Info;
+const World = system.World;
 const nz = shared.numz;
 
 gpa: std.mem.Allocator,
@@ -67,23 +67,24 @@ pub fn deinit(self: *NetworkManager) !void {
 
 fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
     return switch (packet) {
-        .connect => |connect| connect: {
-            const name = try gpa.dupe(u8, connect.name);
-            break :connect .{ .connect = .{
-                .protocol_version = connect.protocol_version,
-                .name_len = @intCast(name.len),
-                .name = name,
+        .connect => |connect| .{ .connect = connect },
+        .disconnect => .disconnect,
+        .go_again => .go_again,
+        .input => |input| .{ .input = input },
+        .chat => |chat| chat: {
+            const text = try gpa.dupe(u8, chat.text);
+            break :chat .{ .chat = .{
+                .text_len = @intCast(text.len),
+                .text = text,
             } };
         },
-        .disconnect => .disconnect,
-        .input => |input| .{ .input = input },
     };
 }
 
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
-        .connect => |connect| if (connect.name.len != 0) gpa.free(connect.name),
-        .disconnect, .input => {},
+        .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
+        .connect, .disconnect, .input, .go_again => {},
     }
 }
 
@@ -94,10 +95,9 @@ fn clearClientCommands(gpa: std.mem.Allocator, client: *Client) void {
     client.command_queue.commands.clearRetainingCapacity();
 }
 
-pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
+pub fn update(self: *NetworkManager, world: *World) !WireStatus {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const world = info.world;
 
     try self.steam_server.packet_mutex.lock(self.io);
     defer self.steam_server.packet_mutex.unlock(self.io);
@@ -112,7 +112,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                     .steam_server = self.steam_server,
                     .conn = conn,
                 };
-                std.log.debug("client connected: conn={d}", .{conn});
+                std.log.info("client connected: conn={d}", .{conn});
             }
         },
         .disconnected => |conn| {
@@ -121,7 +121,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                 try client.deinit();
                 _ = self.clients.remove(conn);
                 self.session_metadata_dirty = true;
-                std.log.debug("client disconnected: conn={d}", .{conn});
+                std.log.info("client disconnected: conn={d}", .{conn});
             }
         },
     };
@@ -146,8 +146,6 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
     const writer = &fix_writer;
 
     var sync_all_clients = false;
-    var player_name_update_ids: [shared.max_players]shared.entity.Id = undefined;
-    var player_name_update_count: usize = 0;
     var it = self.clients.iterator();
     while (it.next()) |pair| {
         const client = pair.value_ptr;
@@ -159,60 +157,65 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                         _ = self.steam_server.socket.CloseConnection(client.conn, 0, "protocol version mismatch", false);
                         continue;
                     }
-                    var player_name_changed = false;
                     var name_buf: [shared.max_player_name_len]u8 = undefined;
-                    const name = sanitizePlayerName(&name_buf, connect.name);
+                    const name = sanitizeText(&name_buf, connect.player_name.slice());
                     const display_name = if (name.len == 0) shared.default_player_name else name;
                     if (!std.mem.eql(u8, client.name, display_name)) {
                         if (client.name.len != 0) self.gpa.free(client.name);
                         client.name = try self.gpa.dupe(u8, display_name);
                         self.session_metadata_dirty = true;
                         sync_all_clients = true;
-                        player_name_changed = true;
                     }
 
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = .{ 0, info.world.planet_radius + 10, 0 } },
+                            .transform = .{ .position = world.playerSpawnPosition() },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 
                         client.entity_id = new_player_entity.id;
-                        info.world.players.appendAssumeCapacity(client.entity_id);
+                        world.players.appendAssumeCapacity(client.entity_id);
                         self.session_metadata_dirty = true;
                         sync_all_clients = true;
-                        player_name_changed = true;
 
                         try client.sendCommand(
                             writer,
-                            .{ .acknowledge = .{ .id = client.entity_id, .tick = info.tick } },
+                            .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
                             .reliable,
                         );
-                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = info.world.next_stage } }, .reliable);
-                        if (info.world.getPtr(info.world.teleporter_id)) |entity| {
+                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = world.stage } }, .reliable);
+                        if (world.getPtr(world.teleporter_id)) |entity| {
                             if (entity.teleporter.state == .active) {
                                 try client.sendCommand(writer, .{
                                     .update_event = .teleport_start,
                                 }, .reliable);
                             }
                         }
-                        std.log.debug("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
-                    }
-                    if (player_name_changed and client.entity_id != .none and player_name_update_count < player_name_update_ids.len) {
-                        player_name_update_ids[player_name_update_count] = client.entity_id;
-                        player_name_update_count += 1;
+                        std.log.info("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
                     }
                 },
                 .disconnect => {
                     if (client.entity_id == .none) continue;
                     world.queueRemove(client.entity_id);
-                    std.log.debug("player disconnect", .{});
+                    std.log.info("player disconnect", .{});
                 },
                 .input => {
                     if (world.getPtr(client.entity_id)) |entity| {
                         entity.controller.input = command.input;
                     }
+                },
+                .go_again => {
+                    if (client.conn != self.steam_server.host_conn) continue;
+                    world.go_again_requested = true;
+                },
+                .chat => |chat| {
+                    if (client.entity_id == .none) continue;
+                    var text_buf: [shared.max_chat_len]u8 = undefined;
+                    const text = sanitizeText(&text_buf, chat.text);
+                    if (text.len == 0) continue;
+                    std.log.debug("chat {s}: {s}", .{ client.name, text });
+                    try self.broadcastChat(writer, client.entity_id, text);
                 },
             }
         }
@@ -239,13 +242,13 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                 .position = position,
                 .velocity = entity.replicated_velocity,
                 .rotation = rotation,
-                .tick = info.tick,
+                .tick = world.tick,
             };
             continue;
         }
 
         const last_motion = entry.value_ptr;
-        const elapsed = @as(f32, @floatFromInt(info.tick - last_motion.tick)) * shared.tick_seconds;
+        const elapsed = @as(f32, @floatFromInt(world.tick - last_motion.tick)) * shared.tick_seconds;
         const predicted = last_motion.position + nz.vec.scale(last_motion.velocity, elapsed);
         const position_drift = nz.vec.length(position - predicted);
         const rotation_drift = 1.0 - @abs(nz.vec.dot(rotation, last_motion.rotation));
@@ -257,7 +260,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
                 .position = position,
                 .velocity = entity.replicated_velocity,
                 .rotation = rotation,
-                .tick = info.tick,
+                .tick = world.tick,
             };
             try self.pending_motions.append(self.gpa, last_motion.*);
         }
@@ -267,7 +270,7 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
         const client = pair.value_ptr;
         if (client.entity_id == .none) continue;
 
-        try client.sendCommand(writer, .{ .server_tick = info.tick }, .unreliable_no_delay);
+        try client.sendCommand(writer, .{ .server_tick = world.tick }, .unreliable_no_delay);
 
         if (world.getPtr(client.entity_id)) |player_entity| {
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.r;
@@ -277,13 +280,12 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             for (world.entities.values()) |*entity| {
-                if (entity.flags.is_dead) continue;
                 std.log.debug("sent id {d}", .{entity.id});
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendStats(client, writer, entity);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
                 if (tracksMotion(entity)) {
-                    try client.sendCommand(writer, .{ .update_motion = motionPacket(info, entity) }, .reliable);
+                    try client.sendCommand(writer, .{ .update_motion = motionPacket(world, entity) }, .reliable);
                 }
             }
             client.needs_full_sync = false;
@@ -297,15 +299,15 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
             .spawned => |id| {
                 if (did_full_sync) continue;
                 const entity = world.getPtr(id) orelse continue;
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(info, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendStats(client, writer, entity);
+                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
             },
-            .stat => |update_stat| {
-                try client.sendCommand(writer, .{ .update_stat = update_stat }, .reliable);
+            .health => |update_health| {
+                try client.sendCommand(writer, .{ .update_health = update_health }, .reliable);
             },
             .inventory => |update_inventory| {
                 try client.sendCommand(writer, .{ .update_inventory = update_inventory }, .reliable);
@@ -322,22 +324,17 @@ pub fn update(self: *NetworkManager, info: *const Info) !WireStatus {
         .despawned => |id| _ = self.last_motions.remove(id),
         else => {},
     };
-    for (player_name_update_ids[0..player_name_update_count]) |id| {
-        try self.broadcastPlayerName(writer, id, self.nameForEntity(id));
-    }
     world.client_updates.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
-    if (self.steam_server.host_state == .waiting and info.elapsed_time > 60) return .host_timeout;
+    if (self.steam_server.host_state == .waiting and world.elapsed_time > 60) return .host_timeout;
     return .running;
 }
 
-fn sendStats(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (!entity.kind.hasHealth()) return;
-    for (std.enums.values(shared.Stats.Kind)) |stat_kind| {
-        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_max = @floatCast(entity.stats.max.get(stat_kind)) } } }, .reliable);
-        try client.sendCommand(writer, .{ .update_stat = .{ .id = entity.id, .stat_kind = stat_kind, .source = .none, .amount = .{ .set_current = @floatCast(entity.stats.current.get(stat_kind)) } } }, .reliable);
-    }
+    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
+    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
 }
 
 fn tracksMotion(entity: *const system.Entity) bool {
@@ -345,13 +342,13 @@ fn tracksMotion(entity: *const system.Entity) bool {
     return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
 }
 
-fn motionPacket(info: *const Info, entity: *const system.Entity) shared.net.UpdateMotion {
+fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMotion {
     return .{
         .id = entity.id,
         .position = entity.transform.position,
         .velocity = entity.replicated_velocity,
         .rotation = entity.transform.rotation.toVec(),
-        .tick = info.tick,
+        .tick = world.tick,
     };
 }
 
@@ -364,21 +361,21 @@ fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.
     }
 }
 
-fn spawnPacket(info: *const Info, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
-    if (entity.kind == .planet) std.log.debug("send planet {d}", .{info.world.planet_radius});
+fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
+    if (entity.kind == .planet) std.log.debug("send planet {d}", .{world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,
         .position = entity.transform.position,
         .rotation = entity.transform.rotation.toVec(),
         .velocity = entity.replicated_velocity,
-        .tick = info.tick,
+        .tick = world.tick,
         .currency = entity.currency,
         .data = switch (entity.kind) {
-            .planet => .{ .planet_radius = @intFromFloat(info.world.planet_radius) },
+            .planet => .{ .planet_radius = @intFromFloat(world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
-            .player => .{ .player_name = .{ .name_len = @intCast(player_name.len), .name = player_name } },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox => .none,
+            .player => .{ .player_name = .copy(player_name) },
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform, .target_dummy => .none,
         },
     };
 }
@@ -398,14 +395,14 @@ fn markAllClientsForFullSync(self: *NetworkManager) void {
     }
 }
 
-fn broadcastPlayerName(self: *NetworkManager, writer: *std.Io.Writer, entity_id: shared.entity.Id, name: []const u8) !void {
+fn broadcastChat(self: *NetworkManager, writer: *std.Io.Writer, sender_id: shared.entity.Id, text: []const u8) !void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == .none) continue;
-        try client.sendCommand(writer, .{ .update_player_name = .{
-            .id = entity_id,
-            .name_len = @intCast(name.len),
-            .name = name,
+        try client.sendCommand(writer, .{ .chat_message = .{
+            .id = sender_id,
+            .text_len = @intCast(text.len),
+            .text = text,
         } }, .reliable);
     }
 }
@@ -430,7 +427,7 @@ fn updateAdvertisedSession(self: *NetworkManager) void {
     self.session_metadata_dirty = false;
 }
 
-fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
+fn sanitizeText(buffer: []u8, raw: []const u8) []const u8 {
     var len: usize = 0;
     for (std.mem.trim(u8, raw, " \t\r\n")) |char| {
         if (len >= buffer.len) break;

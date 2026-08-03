@@ -1,12 +1,12 @@
 const Options = @This();
 
-show_hud_stats: bool = true,
 show_crosshair: bool = true,
 mouse_sensitivity: f32 = 1.0,
 invert_y: bool = false,
 fullscreen: bool = false,
 dev_planet: bool = false,
 fov_rad: f32 = 1.5,
+chunk_view_distance: f32 = 2,
 
 pub fn cycleMouseSensitivity(options: *Options) void {
     const values = [_]f32{ 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };

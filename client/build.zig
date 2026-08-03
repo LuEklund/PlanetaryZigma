@@ -90,10 +90,19 @@ pub fn build(b: *std.Build) void {
     });
     stb_truetype.addIncludePath(b.dependency("stb", .{}).path("."));
 
+    const miniaudio_dep = b.dependency("miniaudio", .{});
+    const miniaudio_translate_c = b.addTranslateC(.{
+        .root_source_file = miniaudio_dep.path("miniaudio.h"),
+        .optimize = optimize,
+        .target = target,
+    });
+    const miniaudio = miniaudio_translate_c.createModule();
+    miniaudio.addCSourceFile(.{ .file = miniaudio_dep.path("miniaudio.c") });
+
     const system = b.addLibrary(.{
         .name = "system_client",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/system.zig"),
+            .root_source_file = b.path("src/System.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -133,6 +142,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "Window", .module = window },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "miniaudio", .module = miniaudio },
             },
             .link_libc = true,
         }),
@@ -183,7 +193,9 @@ pub fn build(b: *std.Build) void {
         system.root_module.linkSystemLibrary("vulkan-1", .{});
         exe.root_module.linkSystemLibrary("vulkan-1", .{});
     } else {
+        system.root_module.linkSystemLibrary("vulkan", .{});
         exe.root_module.linkSystemLibrary("vulkan", .{});
+        system.link_z_defs = true;
     }
     exe.root_module.link_libcpp = true;
 
@@ -217,12 +229,13 @@ fn compileShaders(b: *std.Build) void {
     defer walker.deinit();
     while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
-        if (std.mem.endsWith(u8, entry.basename, ".spv")) continue;
-        const cmd = b.addSystemCommand(&.{"glslc"});
+        if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
+        const cmd = b.addSystemCommand(&.{"slangc"});
         cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
+        cmd.addArgs(&.{ "-target", "spirv" });
         cmd.addArg("-o");
-        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename}));
-        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path}));
+        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
+        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
 }

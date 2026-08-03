@@ -1,9 +1,9 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const system = @import("../../system.zig");
-const Info = system.Info;
-const Ui = @import("../../Renderer/Vulkan/Ui.zig");
+const system = @import("../../System.zig");
+const World = system.World;
+const Ui = @import("../../Ui.zig");
 const Resources = @import("../../Renderer/Vulkan/Resources.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
@@ -12,7 +12,10 @@ const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
+const hot_seconds: f32 = 0.08;
+
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
+    _ = world;
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
@@ -61,6 +64,15 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
         return .quit;
     }
 
+    ui.add(null, .{
+        .name = "menu_version",
+        .size = .{ .fixed = .{ .heigth = 22, .width = 140 } },
+        .offset = .{ .left = 10, .top = ui.screen_heigth - 28 },
+        .color = .new(0, 0, 0, 0),
+        .child_anchor = .{ .x = .start, .y = .center },
+        .text = .{ .data = "v" ++ shared.version, .size = 18, .color = .new(0.55, 0.58, 0.54, 1) },
+    });
+
     switch (hud.screen) {
         .main => {},
         .multiplayer => try multiplayerPanel(network_manager, ui, options, panel_left, panel_top, panel_width),
@@ -90,19 +102,26 @@ fn addDevPlanetButton(ui: *Ui, dev_mode: bool, left: f32, top: f32, width: f32, 
 }
 
 fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool, enabled: bool) void {
-    const hot = enabled and ui.isHot(name);
+    const hot = enabled and (selected or ui.isHot(name));
+    const hot_time = ui.animate(name, if (hot) 1 else 0, hot_seconds);
     const bg = if (!enabled)
         nz.color.Rgba(f32).new(0.045, 0.048, 0.045, 1)
-    else if (selected or hot)
-        nz.color.Rgba(f32).new(0.88, 0.55, 0.08, 1)
     else
-        nz.color.Rgba(f32).new(0.02, 0.025, 0.025, 1);
+        nz.color.Rgba(f32).new(
+            std.math.lerp(0.02, 0.88, hot_time),
+            std.math.lerp(0.025, 0.55, hot_time),
+            std.math.lerp(0.025, 0.08, hot_time),
+            1,
+        );
     const fg = if (!enabled)
         nz.color.Rgba(f32).new(0.44, 0.46, 0.42, 1)
-    else if (selected or hot)
-        nz.color.Rgba(f32).new(0.02, 0.02, 0.015, 1)
     else
-        nz.color.Rgba(f32).new(0.94, 0.96, 0.9, 1);
+        nz.color.Rgba(f32).new(
+            std.math.lerp(0.94, 0.02, hot_time),
+            std.math.lerp(0.96, 0.02, hot_time),
+            std.math.lerp(0.9, 0.015, hot_time),
+            1,
+        );
 
     ui.add(null, .{
         .name = name,
@@ -218,9 +237,9 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
                 },
             },
         });
-        if (ui.isActive(id) and !bad_version) {
+        if (ui.isActive(id) and !bad_version and network_manager.steam_client.server_conn == 0) {
             try network_manager.steam_client.connectToServer(server.steam_id);
-            std.log.debug("connect to {d}", .{server.steam_id});
+            std.log.info("connect to {d}", .{server.steam_id});
         }
     }
 }

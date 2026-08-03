@@ -7,7 +7,6 @@
         .shared = .{
             .path = "../shared/",
         },
-
         .wayland = .{
             .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
             .hash = "wayland-0.5.0-dev-lQa1kon9AQAqOJxIINbYDrDekiRI5p9bnvtFoi6Pic34",
@@ -56,6 +55,10 @@
         .ztracy = .{
             .url = "git+https://github.com/HTRMC/ztracy?ref=v0.2.1#822b2eb73d18995fbc8d9c52fc9edf8d0e84fff2",
             .hash = "ztracy-0.2.0-q8LWRV4dAACRTyehcC2WT4l1rGZvx3vppsbwDr8GoWlv",
+        },
+        .miniaudio = .{
+            .url = "git+https://github.com/mackron/miniaudio.git#9634bedb5b5a2ca38c1ee7108a9358a4e233f14d",
+            .hash = "N-V-__8AAHNWwAASlNuYbrP1-3UqXdwbYvZ_6nIJhpAcRMfi",
         },
     },
     .paths = .{
