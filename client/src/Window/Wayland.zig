@@ -89,8 +89,8 @@ const RepeatKey = struct {
 
 const PointerConstraint = union(enum) {
     none: void,
-    locked: ?*zwp.LockedPointerV1,
     confined: ?*zwp.ConfinedPointerV1,
+    locked: ?*zwp.LockedPointerV1,
 };
 
 pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void {
@@ -268,23 +268,21 @@ pub fn setPointerVisible(self: *Wayland, _: *Window, visible: bool) !void {
 
     self.pointer_visible = visible;
 
-    if (visible) {
-        const cursor_shape_manager = self.cursor_shape_manager orelse return;
+    const serial = self.pointer_enter_serial;
+    if (serial == 0) return;
 
-        if (self.cursor_shape_device == null) self.cursor_shape_device = try cursor_shape_manager.getPointer(pointer);
-
-        if (self.pointer_enter_serial != 0) self.cursor_shape_device.?.setShape(
-            self.pointer_enter_serial,
-            .default,
-        );
-    } else if (self.pointer_enter_serial != 0) {
-        pointer.setCursor(
-            self.pointer_enter_serial,
-            null,
-            0,
-            0,
-        );
+    if (!visible) {
+        pointer.setCursor(serial, null, 0, 0);
+        return;
     }
+
+    const manager = self.cursor_shape_manager orelse return;
+
+    if (self.cursor_shape_device == null) {
+        self.cursor_shape_device = try manager.getPointer(pointer);
+    }
+
+    self.cursor_shape_device.?.setShape(serial, .default);
 }
 
 pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.Pointer.Constraint) !void {
@@ -295,22 +293,12 @@ pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.
 
     switch (self.pointer_constraint) {
         .none => {},
-        .locked => |locked| if (locked) |p| p.destroy(),
         .confined => |confined| if (confined) |p| p.destroy(),
+        .locked => |locked| if (locked) |p| p.destroy(),
     }
 
     switch (constraint) {
         .none => self.pointer_constraint = .none,
-        .locked => {
-            const locked = try pointer_constraints.lockPointer(
-                self.surface,
-                pointer,
-                null,
-                .persistent,
-            );
-
-            self.pointer_constraint = .{ .locked = locked };
-        },
         .confined => {
             const confined = try pointer_constraints.confinePointer(
                 self.surface,
@@ -320,6 +308,16 @@ pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.
             );
 
             self.pointer_constraint = .{ .confined = confined };
+        },
+        .locked => {
+            const locked = try pointer_constraints.lockPointer(
+                self.surface,
+                pointer,
+                null,
+                .persistent,
+            );
+
+            self.pointer_constraint = .{ .locked = locked };
         },
     }
 }

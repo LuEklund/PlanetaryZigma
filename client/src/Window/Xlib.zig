@@ -6,7 +6,7 @@ const Window = @import("../Window.zig");
 
 display: *xlib.Display,
 xi_extension: ?xlib.ExtensionQuery,
-handle: xlib.Window,
+window: xlib.Window,
 
 /// X Input Method,
 xim: *xlib.XIM,
@@ -17,7 +17,6 @@ atoms: Atoms,
 
 invisible_cursor: xlib.Cursor,
 pointer: struct {
-    is_relative: bool = false,
     position: Position = .{},
     previous_position: ?Position = null,
 
@@ -177,7 +176,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     self.* = .{
         .display = display,
         .xi_extension = xi_extension,
-        .handle = window_handle,
+        .window = window_handle,
         .xim = xim,
         .xic = xic,
         .atoms = atoms,
@@ -193,7 +192,7 @@ pub fn close(self: *Xlib, _: *Window) void {
     _ = xlib.procs.XFreeCursor.?(display, self.invisible_cursor);
     _ = xlib.procs.XDestroyIC.?(self.xic);
     _ = xlib.procs.XCloseIM.?(self.xim);
-    _ = xlib.procs.XDestroyWindow.?(display, self.handle);
+    _ = xlib.procs.XDestroyWindow.?(display, self.window);
     _ = xlib.procs.XCloseDisplay.?(display);
 
     xi.ProcTable.unload();
@@ -208,14 +207,6 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
     const keyboard = &window.keyboard;
 
     self.pointer.previous_position = self.pointer.position;
-    defer pointer.movement = if (self.pointer.is_relative) .{
-        .relative = .{
-            .dx = if (self.pointer.previous_position) |previous| self.pointer.position.x - previous.x else 0,
-            .dy = if (self.pointer.previous_position) |previous| self.pointer.position.y - previous.y else 0,
-        },
-    } else .{
-        .position = self.pointer.position,
-    };
 
     while (xlib.procs.XPending.?(display) > 0) {
         var event: xlib.Event = undefined;
@@ -331,6 +322,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 switch (@as(xi.Event.Type, @enumFromInt(event.generic.evtype))) {
                     .motion => {
                         const motion = xi_event.motion;
+
                         self.pointer.position = .{
                             .x = motion.event_x,
                             .y = motion.event_y,
@@ -342,6 +334,42 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             else => {}, // std.log.info("{t}", .{event.type}),
         }
     }
+
+    if (pointer.is_relative) {
+        pointer.movement = .{ .relative = .{
+            .dx = if (self.pointer.previous_position) |previous| self.pointer.position.x - previous.x else 0,
+            .dy = if (self.pointer.previous_position) |previous| self.pointer.position.y - previous.y else 0,
+        } };
+    } else {
+        self.pointer.previous_position = null;
+        pointer.movement = .{ .position = self.pointer.position };
+    }
+
+    if (pointer.constraint == .locked) {
+        const center: Window.Position = .{
+            .x = @intCast(@divTrunc(window.size.width, 2)),
+            .y = @intCast(@divTrunc(window.size.height, 2)),
+        };
+
+        _ = xlib.procs.XWarpPointer.?(
+            display,
+            .none,
+            self.window,
+            0,
+            0,
+            0,
+            0,
+            @truncate(center.x),
+            @truncate(center.y),
+        );
+
+        _ = xlib.procs.XFlush.?(display);
+
+        self.pointer.position = .{
+            .x = @floatFromInt(center.x),
+            .y = @floatFromInt(center.y),
+        };
+    }
 }
 
 pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
@@ -350,7 +378,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     // Modern UTF-8 window title (_NET_WM_NAME)
     _ = xlib.procs.XChangeProperty.?(
         display,
-        self.handle,
+        self.window,
         self.atoms._NET_WM_NAME,
         self.atoms.UTF8_STRING,
         .@"8",
@@ -362,7 +390,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     // Legacy ICCCM fallback (WM_NAME / XA_STRING)
     _ = xlib.procs.XChangeProperty.?(
         display,
-        self.handle,
+        self.window,
         .WM_NAME,
         .STRING,
         .@"8",
@@ -377,7 +405,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
 pub fn minimize(self: *Xlib, _: *Window) !void {
     const screen = xlib.procs.XDefaultScreen.?(self.display);
 
-    if (xlib.procs.XIconifyWindow.?(self.display, self.handle, screen) == 0) return error.IconifyWindow;
+    if (xlib.procs.XIconifyWindow.?(self.display, self.window, screen) == 0) return error.IconifyWindow;
 
     _ = xlib.procs.XFlush.?(self.display);
 }
@@ -412,12 +440,12 @@ pub fn setPointerVisible(self: *Xlib, _: *Window, visible: bool) !void {
     if (visible)
         _ = xlib.procs.XUndefineCursor.?(
             self.display,
-            self.handle,
+            self.window,
         )
     else
         _ = xlib.procs.XDefineCursor.?(
             self.display,
-            self.handle,
+            self.window,
             self.invisible_cursor,
         );
 
@@ -429,10 +457,10 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
         .none => {
             _ = xlib.procs.XUngrabPointer.?(self.display, .current);
         },
-        .locked, .confined => {
+        .confined, .locked => {
             _ = xlib.procs.XGrabPointer.?(
                 self.display,
-                self.handle,
+                self.window,
                 xlib.TRUE,
                 .{
                     .pointer_motion = true,
@@ -441,7 +469,7 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
                 },
                 .async,
                 .async,
-                self.handle,
+                self.window,
                 .none, // cursor
                 .current,
             );
@@ -451,9 +479,7 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
     _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn setPointerRelative(self: *Xlib, _: *Window, enabled: bool) !void {
-    self.pointer.is_relative = enabled;
-}
+pub fn setPointerRelative(_: *Xlib, _: *Window, _: bool) !void {}
 
 fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
     var event: xlib.Event = .{
@@ -462,7 +488,7 @@ fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long)
             .serial = 0,
             .send_event = xlib.TRUE,
             .display = self.display,
-            .window = self.handle,
+            .window = self.window,
             .message_type = self.atoms._NET_WM_STATE,
             .format = 32,
             .data = .{

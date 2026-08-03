@@ -13,8 +13,6 @@ focused: bool = true,
 pointer: Pointer = .{},
 keyboard: Keyboard = .{},
 
-pub const empty: Window = undefined;
-
 pub const Inner = switch (native_os) {
     .linux, .freebsd, .netbsd, .openbsd => union(XdgSessionType) {
         wayland: @import("Window/Wayland.zig"),
@@ -106,6 +104,10 @@ pub const Pointer = struct {
     buttons: Buttons = .{},
     axis: Axis = .{},
 
+    visible: bool = true,
+    constraint: Window.Pointer.Constraint = .none,
+    is_relative: bool = false,
+
     pub const Movement = union(enum) {
         position: struct {
             x: f64 = 0,
@@ -137,8 +139,8 @@ pub const Pointer = struct {
 
     pub const Constraint = enum {
         none,
-        locked,
         confined,
+        locked,
     };
 };
 
@@ -217,14 +219,20 @@ pub fn setFullscreen(self: *Window, enabled: bool) !void {
 }
 
 pub fn setPointerVisible(self: *Window, visible: bool) !void {
+    if (self.pointer.visible == visible) return;
+    self.pointer.visible = visible;
     try self.call(.setPointerVisible, .{visible});
 }
 
 pub fn setPointerConstraint(self: *Window, constraint: Pointer.Constraint) !void {
+    if (self.pointer.constraint == constraint) return;
+    self.pointer.constraint = constraint;
     try self.call(.setPointerConstraint, .{constraint});
 }
 
 pub fn setPointerRelative(self: *Window, enabled: bool) !void {
+    if (self.pointer.is_relative == enabled) return;
+    self.pointer.is_relative = enabled;
     self.pointer.movement = if (enabled) .{ .relative = .{} } else .{ .position = .{} };
     try self.call(.setPointerRelative, .{enabled});
 }
