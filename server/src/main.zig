@@ -51,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
-    var watcher: shared.Watcher = try .init("system_server", io);
+    var watcher: shared.Watcher = try .init("system_server", "systemInit", io);
     defer watcher.deinit(io);
     try watcher.load(io);
 

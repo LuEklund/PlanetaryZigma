@@ -1,3 +1,4 @@
+pub const Backend = @import("Backend.zig");
 pub const Vulkan = @import("Renderer/Vulkan.zig");
 pub const Resources = @import("Renderer/Vulkan/Resources.zig");
 pub const Shader = @import("Renderer/Vulkan/Shader.zig");

@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", io);
+    var watcher: shared.Watcher = try .init("system_client", "systemInit", io);
     defer watcher.deinit(io);
     try watcher.load(io);
 

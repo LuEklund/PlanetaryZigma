@@ -56,7 +56,6 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
-                .{ .name = "render", .module = render },
                 .{ .name = "Window", .module = window },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
@@ -68,7 +67,7 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
     });
 
-    compileShaders(b);
+    const shaders = compileShaders(b);
 
     render_build.linkVulkan(b, system, target);
     render_build.linkVulkan(b, exe, target);
@@ -76,6 +75,8 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(system);
     b.installArtifact(exe);
+    const install_render = b.addInstallArtifact(render_dep.artifact("render"), .{});
+    b.getInstallStep().dependOn(&install_render.step);
 
     // Shared Tracy client dll must sit next to the binaries that link it.
     if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
@@ -93,9 +94,16 @@ pub fn build(b: *std.Build) void {
 
     const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
     lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
+
+    const render_step = b.step("render", "Build only the hot-reload renderer (.so) and shaders");
+    render_step.dependOn(&install_render.step);
+    render_step.dependOn(shaders);
+
+    const shader_step = b.step("shaders", "Compile shaders only");
+    shader_step.dependOn(shaders);
 }
 
-fn compileShaders(b: *std.Build) void {
+fn compileShaders(b: *std.Build) *std.Build.Step {
     const io = b.graph.io;
     var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
     defer dir.close(io);
@@ -113,4 +121,5 @@ fn compileShaders(b: *std.Build) void {
         usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
+    return &usf.step;
 }

@@ -133,8 +133,49 @@ pub fn build(b: *std.Build) void {
             \\#define STB_TRUETYPE_IMPLEMENTATION
             \\#include "stb_truetype.h"
         ),
+        // Hidden, not exported: both .so roots compile these sources, so without this
+        // 102 stb symbols are global in both and ELF interposition picks by dlopen order.
+        .flags = &.{"-fvisibility=hidden"},
     });
     render.addIncludePath(stb_dep.path("."));
+
+    // The hot-reloadable backend: same static module, compiled as its own .so so a
+    // renderer edit does not rebuild the game systems.
+    const backend = b.addLibrary(.{
+        .name = "render",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/Backend.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "shared", .module = shared },
+                .{ .name = "Window", .module = window },
+                .{ .name = "zgltf", .module = zgltf },
+                .{ .name = "stb_image", .module = stb_image.createModule() },
+                .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+                .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "vulkan", .module = vulkan },
+            },
+            .link_libc = true,
+        }),
+        .use_lld = true,
+        .use_llvm = true,
+        .linkage = .dynamic,
+    });
+    backend.root_module.addCSourceFile(.{
+        .file = b.addWriteFiles().add("stbi_impl.c",
+            \\#define STB_IMAGE_IMPLEMENTATION
+            \\#include "stb_image.h"
+            \\#define STB_TRUETYPE_IMPLEMENTATION
+            \\#include "stb_truetype.h"
+        ),
+        // Hidden, not exported: both .so roots compile these sources, so without this
+        // 102 stb symbols are global in both and ELF interposition picks by dlopen order.
+        .flags = &.{"-fvisibility=hidden"},
+    });
+    backend.root_module.addIncludePath(stb_dep.path("."));
+    linkVulkan(b, backend, target);
+    b.installArtifact(backend);
 }
 
 // The release-only trap: --as-needed drops libvulkan when nothing references it at

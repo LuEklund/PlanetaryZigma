@@ -10,13 +10,14 @@ dynlib: ?DynLib = null,
 old_dynlib: ?DynLib = null,
 dir_path: []const u8,
 source_name: []const u8,
+probe_symbol: [:0]const u8,
 mtime: std.Io.Timestamp,
 process_id: u32,
 copy_id: u64,
 versions: [25]?DynLib,
 version_count: u64,
 
-pub fn init(comptime library_name: []const u8, io: std.Io) !Watcher {
+pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const u8, io: std.Io) !Watcher {
     const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
     const search_paths: []const [:0]const u8 = &.{
         "../lib/",
@@ -44,6 +45,7 @@ pub fn init(comptime library_name: []const u8, io: std.Io) !Watcher {
     return .{
         .dir_path = found_path,
         .source_name = source_name,
+        .probe_symbol = probe_symbol,
         .mtime = .zero,
         .process_id = if (is_windows) std.os.windows.GetCurrentProcessId() else 0,
         .copy_id = 0,
@@ -77,10 +79,11 @@ pub fn load(self: *Watcher, io: std.Io) !void {
         return err;
     };
 
-    if (dynlib.lookup(*const fn () void, "systemInit") == null) {
+    if (dynlib.lookup(*const fn () void, self.probe_symbol) == null) {
         dynlib.close();
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
-        return error.SystemInitSymbolNotFound;
+        std.log.err("{s}: probe symbol {s} missing", .{ self.source_name, self.probe_symbol });
+        return error.ProbeSymbolNotFound;
     }
 
     // Debug keeps the copy on disk: an unlinked file has no DWARF for the panic
