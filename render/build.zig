@@ -107,7 +107,11 @@ pub fn build(b: *std.Build) void {
             \\#define VMA_IMPLEMENTATION
             \\#include <vk_mem_alloc.h>
         ),
-        .flags = &.{"-std=c++17"},
+        // Hidden like stb: with default visibility VMA's symbols are GC roots, so they
+        // survive at full size in libsystem_client.so — which never calls one — and drag
+        // libvulkan in with them. Both .so files also exported them, so which copy won
+        // depended on dlopen order.
+        .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
     });
 
     const render = b.addModule("render", .{

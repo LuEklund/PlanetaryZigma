@@ -39,9 +39,8 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", "systemInit", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
+    var system_lib: shared.HotLib(System.Table, *anyopaque, "systemInit", "systemReload") = try .init("system_client", io);
+    defer system_lib.deinit(io);
 
     var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
@@ -60,10 +59,8 @@ pub fn main(init: std.process.Init) !void {
     var world: World = try .init(gpa, io);
     defer world.deinit();
 
-    var system_table: System.Table = try .load(&watcher.dynlib.?);
-
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
-    const system: *anyopaque = system_table.systemInit(&System.Data{
+    const system: *anyopaque = system_lib.symbols.systemInit(&System.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
         .window = &window,
@@ -72,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
         .steam_client = &steam_client,
     }) orelse return error.SystemInit;
     ctx_zone.end();
-    defer system_table.systemDeinit(system);
+    defer system_lib.symbols.systemDeinit(system);
 
     var accumlated_time: f32 = 0;
     var fps_window_seconds: f32 = 0;
@@ -99,26 +96,19 @@ pub fn main(init: std.process.Init) !void {
             fps_window_seconds = 0;
         }
 
-        if (system_table.systemUpdate(system, &world)) break;
+        if (system_lib.symbols.systemUpdate(system, &world)) break;
 
-        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-        const np0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
-        for (0..10) |n| {
-            if (window.keyboard.get(@enumFromInt(np0 + n)) != .release) continue;
-            if (watcher.version(n)) |lib| {
-                system_table.systemReload(system, true);
-                system_table = try .load(lib);
-                system_table.systemReload(system, false);
-                std.log.err("switched to version slot {d}", .{n});
+        // numpad 0-9 picks a generation to run: 0 is newest, 1 the previous build.
+        // A new build on disk is the same thing with generation 0, so both go through
+        // one swap — the reload hooks only have to be written once.
+        const keypad_0_code = @intFromEnum(Window.Keyboard.Key.keypad_0);
+        const requested_generation: ?usize = requested: {
+            for (0..10) |n| {
+                if (window.keyboard.get(@enumFromInt(keypad_0_code + n)) == .release) break :requested n;
             }
-        }
-
-        if (try watcher.reload(io)) {
-            std.log.err("system table updated", .{});
-            system_table.systemReload(system, true);
-            system_table = try .load(&watcher.dynlib.?);
-            system_table.systemReload(system, false);
-        }
+            break :requested null;
+        };
+        try system_lib.swap(io, requested_generation, system);
     }
 }
 

@@ -105,21 +105,6 @@ pub const ffi = struct {
         systemDeinit: *const fn (*System) callconv(.c) void,
         systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
         systemReload: *const fn (*System, pre_reload: bool) callconv(.c) void,
-
-        pub fn load(dynlib: *shared.DynLib) !Table {
-            var self: Table = undefined;
-            inline for (std.meta.fields(Table)) |field| {
-                std.log.debug("Looking up symbol: {s}", .{field.name});
-                const ptr = dynlib.lookup(field.type, field.name);
-                if (ptr) |p| {
-                    @field(self, field.name) = p;
-                } else {
-                    std.log.err("Failed to lookup symbol: {s}", .{field.name});
-                    return error.DynlibLookup;
-                }
-            }
-            return self;
-        }
     };
 
     pub export fn systemInit(system: *System, data: *const Data) void {

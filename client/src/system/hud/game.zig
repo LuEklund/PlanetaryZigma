@@ -54,7 +54,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
             .width = 200,
             .heigth = healthbar_heigth,
             .fraction = health_current / health_max,
-            .fill_color = .new(0, 1, 0, 1),
+            .fill_color = .new(1, 1, 0, 1),
             .text = .{ .data = ui.print("{d:.0} / {d}", .{ health_current, health_max }), .size = 40 },
         });
 

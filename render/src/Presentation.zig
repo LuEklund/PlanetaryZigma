@@ -39,7 +39,7 @@ pub fn init(gpa: std.mem.Allocator) !Presentation {
     return .{
         .gpa = gpa,
         .instances = .init(gpa),
-        .retiring = try .initCapacity(gpa, shared.max_entities),
+        .retiring = try .initCapacity(gpa, shared.max_entities * 2),
         .emitters = @splat(Emitter.free),
         .frame = .{ .delta_time = 0, .elapsed_time = 0, .local_entity = .none, .camera_pitch = 0, .camera_yaw_rotation = .identity },
     };
@@ -132,6 +132,8 @@ fn applyReloads(self: *Presentation, loader: *ModelLoader) !void {
             if (handle != .file or handle.file != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
+            instance.spawn_duration = reloaded_model.spawn_duration;
+            instance.death_duration = reloaded_model.death_duration;
         }
     }
     loader.reloaded.clearRetainingCapacity();
@@ -141,6 +143,7 @@ pub fn clear(self: *Presentation) void {
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
     self.instances.clearRetainingCapacity();
+    self.emitters = @splat(Emitter.free);
 }
 
 fn retire(self: *Presentation) void {

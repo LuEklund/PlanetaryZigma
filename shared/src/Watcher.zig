@@ -96,18 +96,26 @@ pub fn load(self: *Watcher, io: std.Io) !void {
     self.version_count += 1;
 }
 
+/// n = generations back from the newest load: 0 is current, 1 the previous build, and
+/// so on. Indexing the raw slot instead made numpad-0 mean "generation 25" once the
+/// ring wrapped, silently adopting live state into a 25-build-old library.
 pub fn version(self: *Watcher, n: usize) ?*DynLib {
-    if (n >= self.versions.len) return null;
-    if (self.versions[n]) |*lib| return lib;
+    if (n >= self.versions.len or n >= self.version_count) return null;
+    const slot = (self.version_count - 1 - n) % self.versions.len;
+    if (self.versions[slot]) |*lib| return lib;
     return null;
 }
 
-pub fn reload(self: *Watcher, io: std.Io) !bool {
+/// Mtime check only — no load. Lets a caller run a pre-reload hook before `reload`.
+pub fn changed(self: *Watcher, io: std.Io) bool {
     var source_buf: [std.fs.max_path_bytes]u8 = undefined;
     const source_path = std.fmt.bufPrint(&source_buf, "{s}{s}", .{ self.dir_path, self.source_name }) catch return false;
-
     const stat = std.Io.Dir.cwd().statFile(io, source_path, .{}) catch return false;
-    if (stat.mtime.nanoseconds <= self.mtime.nanoseconds) return false;
+    return stat.mtime.nanoseconds > self.mtime.nanoseconds;
+}
+
+pub fn reload(self: *Watcher, io: std.Io) !bool {
+    if (!self.changed(io)) return false;
 
     self.old_dynlib = self.dynlib;
     self.dynlib = null;
@@ -118,7 +126,7 @@ pub fn reload(self: *Watcher, io: std.Io) !bool {
     };
     self.old_dynlib = null; // ring retains the old lib; never close it mid-run
 
-    std.log.info("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
+    std.log.info("reloaded {s} (build {d})", .{ self.source_name, self.version_count });
     return true;
 }
 

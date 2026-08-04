@@ -51,24 +51,22 @@ pub fn main(init: std.process.Init) !void {
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
-    var watcher: shared.Watcher = try .init("system_server", "systemInit", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
+    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemInit", "systemReload") = try .init("system_server", io);
+    defer system_lib.deinit(io);
 
     var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
     var system_instance: System = undefined;
-    var system_table: System.ffi.Table = try .load(&watcher.dynlib.?);
 
-    system_table.systemInit(&system_instance, &System.Data{
+    system_lib.symbols.systemInit(&system_instance, &System.Data{
         .io = io,
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
     });
 
-    defer system_table.systemDeinit(&system_instance);
+    defer system_lib.symbols.systemDeinit(&system_instance);
 
     var loop_time_tracker: f32 = 0;
     const time_step: f32 = shared.tick_seconds;
@@ -86,14 +84,9 @@ pub fn main(init: std.process.Init) !void {
         world.delta_time = time_step;
         loop_time_tracker -= time_step;
 
-        system_table.systemUpdate(&system_instance, &world);
+        system_lib.symbols.systemUpdate(&system_instance, &world);
 
-        if (try watcher.reload(io)) {
-            system_table.systemReload(&system_instance, true);
-            std.log.info("system table updated", .{});
-            system_table = try .load(&watcher.dynlib.?);
-            system_table.systemReload(&system_instance, false);
-        }
+        try system_lib.swap(io, null, &system_instance);
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {
         std.log.err("packet pump exit: {s}", .{@errorName(err)});

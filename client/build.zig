@@ -73,7 +73,10 @@ pub fn build(b: *std.Build) void {
     render_build.linkVulkan(b, exe, target);
     exe.root_module.link_libcpp = true;
 
-    b.installArtifact(system);
+    // One install step, reused: two of them write the same path, so a single rebuild
+    // landed twice and the running client hot-reloaded twice per build.
+    const install_system = b.addInstallArtifact(system, .{});
+    b.getInstallStep().dependOn(&install_system.step);
     b.installArtifact(exe);
     const install_render = b.addInstallArtifact(render_dep.artifact("render"), .{});
     b.getInstallStep().dependOn(&install_render.step);
@@ -93,7 +96,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
 
     const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
-    lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
+    lib_step.dependOn(&install_system.step);
 
     const render_step = b.step("render", "Build only the hot-reload renderer (.so) and shaders");
     render_step.dependOn(&install_render.step);

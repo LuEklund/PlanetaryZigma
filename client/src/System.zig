@@ -39,10 +39,8 @@ io: std.Io,
 window: *Window,
 steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
-render: Backend.Table,
+render: shared.HotLib(Backend.Table, *anyopaque, "renderInit", "renderReload"),
 render_handle: *anyopaque,
-render_watcher: shared.Watcher,
-resources: *@import("render").Resources,
 network_manager: NetworkManager,
 presentation: Presentation,
 frame_packet: FramePacket,
@@ -70,21 +68,26 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
-    self.render_watcher = try .init("render", "renderInit", data.io);
-    try self.render_watcher.load(data.io);
-    self.render = try .load(&self.render_watcher.dynlib.?);
-    self.render_handle = self.render.renderInit(&Backend.Data{
+    // Hot-reloadable, but only function bodies survive: adding a field to
+    // Vulkan/Resources/Swapchain reinterprets live GPU state, so those edits need a restart.
+    self.render = try .init("render", data.io);
+    errdefer self.render.deinit(data.io);
+    self.render_handle = self.render.symbols.renderInit(&Backend.Data{
         .gpa = data.gpa,
         .io = data.io,
         .asset_server = data.asset_server,
         .window = data.window,
     }) orelse return error.RenderInit;
-    self.resources = self.render.renderResources(self.render_handle);
+    errdefer self.render.symbols.renderDeinit(self.render_handle);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
+    errdefer self.network_manager.deinit();
     self.presentation = try .init(data.gpa);
+    errdefer self.presentation.deinit();
     self.frame_packet = try .init(data.gpa);
+    errdefer self.frame_packet.deinit(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
-    self.ui.default_font = &self.resources.font_loader.items[0];
+    errdefer self.ui.deinit(data.gpa);
+    self.ui.default_font = &self.resources().font_loader.items[0];
     self.options = .{};
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
@@ -92,13 +95,19 @@ pub fn init(self: *System, data: Data) !void {
     self.window_size_applied = data.window.size;
 }
 
+/// Fetched per use, never cached: it points into render.so, so a cached copy would
+/// have to be refreshed on every swap — one more thing to forget.
+fn resources(self: *System) *@import("render").Resources {
+    return self.render.symbols.renderResources(self.render_handle);
+}
+
 pub fn deinit(self: *System) void {
-    self.presentation.deinit();
-    self.frame_packet.deinit(self.gpa);
-    self.ui.deinit(self.gpa);
-    self.render.renderDeinit(self.render_handle);
-    self.render_watcher.deinit(self.io);
     self.network_manager.deinit();
+    self.ui.deinit(self.gpa);
+    self.frame_packet.deinit(self.gpa);
+    self.presentation.deinit();
+    self.render.symbols.renderDeinit(self.render_handle);
+    self.render.deinit(self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -124,7 +133,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
     if (self.scene == .particle_lab) particle_lab.update(world, &self.presentation);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.resources.texture_table, &world.controller, &self.options)) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.resources().texture_table, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -140,17 +149,11 @@ pub fn update(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
     extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
-    try extract.present(world, &self.presentation, self.resources.model_loader, &self.frame_packet);
-    _ = self.render.renderDrain(self.render_handle, world.render_outbox.items.ptr, world.render_outbox.items.len);
+    try extract.present(world, &self.presentation, self.resources().model_loader, &self.frame_packet);
+    _ = self.render.symbols.renderDrain(self.render_handle, world.render_outbox.items.ptr, world.render_outbox.items.len);
     world.render_outbox.clearRetainingCapacity();
-    _ = self.render.renderUpdate(self.render_handle, &self.frame_packet);
-    if (try self.render_watcher.reload(self.io)) {
-        std.log.err("render table updated", .{});
-        self.render.renderReload(self.render_handle, true);
-        self.render = try .load(&self.render_watcher.dynlib.?);
-        self.render.renderReload(self.render_handle, false);
-        self.resources = self.render.renderResources(self.render_handle);
-    }
+    _ = self.render.symbols.renderUpdate(self.render_handle, &self.frame_packet);
+    try self.render.swap(self.io, null, self.render_handle);
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
@@ -167,7 +170,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     defer tracy_scope.end();
     const window = self.window;
     if (!window.size.eql(self.window_size_applied)) {
-        _ = self.render.renderResize(self.render_handle, window.size.width, window.size.height);
+        _ = self.render.symbols.renderResize(self.render_handle, window.size.width, window.size.height);
         self.ui.screen_width = @floatFromInt(window.size.width);
         self.ui.screen_heigth = @floatFromInt(window.size.height);
         self.window_size_applied = window.size;
@@ -243,12 +246,9 @@ fn applyOptions(self: *System, world: *World) !void {
 }
 
 fn reload(self: *System, pre_reload: bool) !void {
-    if (pre_reload) {
-        std.log.debug("pre-hotreload", .{});
-    } else {
-        std.log.debug("post-hotreload", .{});
-        self.render.renderReload(self.render_handle, false);
-    }
+    // Each .so image has its own copy of shared's globals, so a fresh one starts with a
+    // null log_io and every line from it loses its timestamp.
+    if (!pre_reload) shared.log_io = self.io;
 }
 
 comptime {
@@ -260,19 +260,6 @@ pub const Table = struct {
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
     systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
-
-    pub fn load(dynlib: *shared.DynLib) !Table {
-        var self: Table = undefined;
-        inline for (std.meta.fields(Table)) |field| {
-            std.log.debug("Looking up symbol: {s}", .{field.name});
-            const ptr = dynlib.lookup(field.type, field.name) orelse {
-                std.log.err("Failed to lookup symbol: {s}", .{field.name});
-                return error.DynlibLookup;
-            };
-            @field(self, field.name) = ptr;
-        }
-        return self;
-    }
 };
 
 pub const ffi = struct {

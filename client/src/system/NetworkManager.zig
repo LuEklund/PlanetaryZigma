@@ -425,11 +425,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        world.effects.appendAssumeCapacity(.{ .effect = .explosion, .origin = position, .target = position });
+                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .explosion, .origin = position, .target = position });
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = world.getPtr(id) orelse continue;
-                        world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
+                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
                     },
                 },
                 .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
