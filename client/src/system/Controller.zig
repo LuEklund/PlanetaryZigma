@@ -6,13 +6,14 @@ const shared = @import("shared");
 const Window = @import("Window");
 
 pub const MouseButton = std.meta.FieldEnum(Window.Pointer.Buttons);
+pub const InputKey = std.meta.FieldEnum(@FieldType(shared.net.Input, "keys"));
 
 pub const Action = struct {
     id: @EnumLiteral(),
     default: Binding,
-    /// Field of `net.Input.keys` this drives. Actions without one toggle local state
-    /// and are handled explicitly in `applyAction`.
-    key_field: ?[]const u8 = null,
+    /// Which wire input bit this sets. Actions without one toggle local state and are
+    /// handled explicitly in `applyAction`.
+    input: ?InputKey = null,
     /// null means hard-bound: the default stands, and the options menu never lists it.
     bindable: ?Bindable = null,
 };
@@ -43,17 +44,17 @@ pub const Binding = union(enum) {
 };
 
 pub const actions: []const Action = &.{
-    .{ .id = .move_forward, .default = .{ .key = .w }, .key_field = "w", .bindable = .{ .label = "Move Forward" } },
-    .{ .id = .move_backward, .default = .{ .key = .s }, .key_field = "s", .bindable = .{ .label = "Move Backward" } },
-    .{ .id = .move_left, .default = .{ .key = .a }, .key_field = "a", .bindable = .{ .label = "Move Left" } },
-    .{ .id = .move_right, .default = .{ .key = .d }, .key_field = "d", .bindable = .{ .label = "Move Right" } },
-    .{ .id = .jump, .default = .{ .key = .space }, .key_field = "space", .bindable = .{ .label = "Jump" } },
-    .{ .id = .move_down, .default = .{ .key = .left_shift }, .key_field = "l_shift", .bindable = .{ .label = "Move Down" } },
-    .{ .id = .reload, .default = .{ .key = .r }, .key_field = "r", .bindable = .{ .label = "Reload" } },
-    .{ .id = .interact, .default = .{ .key = .e }, .key_field = "e", .bindable = .{ .label = "Interact" } },
-    .{ .id = .attack, .default = .{ .mouse = .left }, .key_field = "mouse_button_left", .bindable = .{ .label = "Attack" } },
-    .{ .id = .aim, .default = .{ .mouse = .right }, .key_field = "mouse_button_right", .bindable = .{ .label = "Aim" } },
-    .{ .id = .use_equipment, .default = .{ .key = .q }, .key_field = "q", .bindable = .{ .label = "Use Equipment" } },
+    .{ .id = .move_forward, .default = .{ .key = .w }, .input = .w, .bindable = .{ .label = "Move Forward" } },
+    .{ .id = .move_backward, .default = .{ .key = .s }, .input = .s, .bindable = .{ .label = "Move Backward" } },
+    .{ .id = .move_left, .default = .{ .key = .a }, .input = .a, .bindable = .{ .label = "Move Left" } },
+    .{ .id = .move_right, .default = .{ .key = .d }, .input = .d, .bindable = .{ .label = "Move Right" } },
+    .{ .id = .jump, .default = .{ .key = .space }, .input = .space, .bindable = .{ .label = "Jump" } },
+    .{ .id = .move_down, .default = .{ .key = .left_shift }, .input = .l_shift, .bindable = .{ .label = "Move Down" } },
+    .{ .id = .reload, .default = .{ .key = .r }, .input = .r, .bindable = .{ .label = "Reload" } },
+    .{ .id = .interact, .default = .{ .key = .e }, .input = .e, .bindable = .{ .label = "Interact" } },
+    .{ .id = .attack, .default = .{ .mouse = .left }, .input = .mouse_button_left, .bindable = .{ .label = "Attack" } },
+    .{ .id = .aim, .default = .{ .mouse = .right }, .input = .mouse_button_right, .bindable = .{ .label = "Aim" } },
+    .{ .id = .use_equipment, .default = .{ .key = .q }, .input = .q, .bindable = .{ .label = "Use Equipment" } },
     .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
     .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
 };
@@ -212,7 +213,7 @@ fn applyAction(self: *Controller, action: Kind, pressed: bool) void {
         .debug_colliders => if (pressed) {
             self.debug_draw_colliders = !self.debug_draw_colliders;
         },
-        inline else => |inline_action| @field(self.input_map.keys, get(inline_action).key_field.?) = pressed,
+        inline else => |inline_action| @field(self.input_map.keys, @tagName(get(inline_action).input.?)) = pressed,
     }
 }
 
