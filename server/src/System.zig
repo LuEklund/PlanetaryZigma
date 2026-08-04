@@ -43,18 +43,18 @@ pub const Data = struct {
 
 pub fn init(self: *System, data: *const Data) !void {
     shared.log_io = data.io;
-    self.* = .{
-        .gpa = data.gpa,
-        .io = data.io,
-        .world = data.world,
-        .steam_server = data.steam_server,
-        .network_manager = try .init(data.gpa, data.io, data.steam_server),
-        .physics = .init(data.gpa, data.io),
-        .request_exit = false,
-        .viewer = undefined,
-    };
-
+    self.gpa = data.gpa;
+    self.io = data.io;
+    self.world = data.world;
+    self.steam_server = data.steam_server;
+    self.request_exit = false;
+    self.network_manager = try .init(data.gpa, data.io, data.steam_server);
+    errdefer self.network_manager.deinit() catch {};
+    self.physics = .init(data.gpa, data.io);
+    errdefer self.physics.deinit();
+    self.viewer = undefined;
     if (build_options.render) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world);
+    errdefer if (build_options.render) self.viewer.deinit(self.gpa, self.io);
 
     try self.world.loadPlace(.ship, &self.physics);
 }

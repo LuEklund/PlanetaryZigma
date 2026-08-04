@@ -27,15 +27,15 @@ pub const Camera = struct {
     yaw_rotation: Quat,
     pitch: f32,
     speed: f32,
-    /// Index into `World.players`, or null to fly. Following mirrors that client's own
-    /// camera off the wire, so the window shows exactly what they see.
-    follow: ?usize,
+    /// Entity id of the followed player, `.none` to fly. An id stays valid across
+    /// roster changes, where an index would dangle on the first disconnect.
+    follow: shared.entity.Id,
 
     const pitch_limit: f32 = std.math.degreesToRadians(80);
     const look_sensitivity: f32 = 0.0025;
 
     pub fn init(position: nz.Vec3(f32)) Camera {
-        return .{ .position = position, .yaw_rotation = .identity, .pitch = 0, .speed = 20, .follow = null };
+        return .{ .position = position, .yaw_rotation = .identity, .pitch = 0, .speed = 20, .follow = .none };
     }
 
     pub fn rotation(self: Camera) Quat {
@@ -45,14 +45,14 @@ pub const Camera = struct {
 
     /// F toggles follow, Q/E pick the player. Flying: the mouse looks, WASD moves,
     /// space/shift rise and fall, wheel changes speed.
-    pub fn update(self: *Camera, window: *Window, delta_time: f32, player_count: usize) void {
-        if (window.keyboard.get(.f) == .press) self.follow = if (self.follow == null and player_count > 0) 0 else null;
-        if (self.follow) |index| if (index >= player_count) {
-            self.follow = if (player_count > 0) player_count - 1 else null;
-        };
-        if (self.follow) |index| {
-            if (window.keyboard.get(.e) == .press) self.follow = (index + 1) % player_count;
-            if (window.keyboard.get(.q) == .press) self.follow = (index + player_count - 1) % player_count;
+    pub fn update(self: *Camera, window: *Window, delta_time: f32, players: []const shared.entity.Id) void {
+        if (window.keyboard.get(.f) == .press) self.follow = if (self.follow == .none and players.len > 0) players[0] else .none;
+        if (self.follow != .none and players.len == 0) self.follow = .none;
+        if (self.follow != .none) {
+            var index = std.mem.indexOfScalar(shared.entity.Id, players, self.follow) orelse 0;
+            if (window.keyboard.get(.e) == .press) index = (index + 1) % players.len;
+            if (window.keyboard.get(.q) == .press) index = (index + players.len - 1) % players.len;
+            self.follow = players[index];
             return;
         }
 
@@ -123,7 +123,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         try window.setPointerVisible(false);
         try window.setPointerConstraint(.locked);
         try window.setPointerRelative(true);
-        self.camera.update(window, world.delta_time, world.players.items.len);
+        self.camera.update(window, world.delta_time, world.players.items);
     }
 
     self.ui.screen_width = @floatFromInt(window.size.width);
@@ -138,7 +138,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .right_click = window.pointer.buttons.right,
     }, world.delta_time);
     var quit = window.should_close;
-    if (self.paused) switch (pause.update(&self.ui, world.players.items.len, self.camera.follow)) {
+    if (self.paused) switch (pause.update(&self.ui, world.players.items.len, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow))) {
         .none => {},
         .resume_view => self.paused = false,
         .quit => quit = true,

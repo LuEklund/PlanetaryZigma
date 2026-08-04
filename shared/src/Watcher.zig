@@ -65,6 +65,9 @@ pub fn load(self: *Watcher, io: std.Io) !void {
 
     const stat = try std.Io.Dir.cwd().statFile(io, source_path, .{});
 
+    // Two processes on one machine (a client and a --render server, or two clients)
+    // must not overwrite each other's /tmp copies mid-run.
+    if (self.copy_id == 0) self.copy_id = @intCast(@mod(std.Io.Timestamp.zero.durationTo(.now(io, .real)).nanoseconds, 1_000_000_000));
     self.copy_id += 1;
     var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
     const copy_path = if (is_windows)

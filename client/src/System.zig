@@ -87,7 +87,7 @@ pub fn deinit(self: *System) void {
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
-    self.rendering.animator.clear();
+    self.rendering.clear();
     self.hud.reset();
     switch (next) {
         .menu => menu_world.populate(world),
@@ -124,7 +124,7 @@ pub fn update(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
     try extract.frame(world, &self.rendering, &self.hud.ui, self.scene != .particle_lab);
-    try self.rendering.reloadIfChanged(self.io);
+    self.rendering.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

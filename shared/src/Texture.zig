@@ -1,12 +1,6 @@
 const std = @import("std");
 const Item = @import("Item.zig");
 
-/// Every texture the game can name.
-///
-/// `blank` and `missing` are the renderer's two reserved descriptor slots and load no
-/// file. The rest are spelled out so the editor completes them. Item icons are not
-/// restated here — `Item` already declares one per item, so an icon's slot is just its
-/// position in that table.
 pub const Kind = union(enum) {
     blank,
     missing,
@@ -15,23 +9,20 @@ pub const Kind = union(enum) {
     item: Item.Kind,
 };
 
-/// blank and missing own descriptor slots 0 and 1 and load no file, so the file list
-/// starts after them. Every arm below is one file, in this order.
+/// blank and missing own descriptor slots 0 and 1 and load no file.
 pub const reserved = 2;
-const file_arms = 2;
+const named_files = [_]std.meta.Tag(Kind){ .skybox_cubemap, .crosshair };
 
-pub const paths_capacity = file_arms + Item.items.len;
+pub const paths_capacity = named_files.len + Item.items.len;
 
 pub fn count() usize {
     return reserved + paths_capacity;
 }
 
-/// The files to load, in slot order: named first, then one per item. The loader builds
-/// its list from this, so file order and slot index cannot disagree.
+/// The files to load, in slot order: named first, then one per item.
 pub fn paths(buffer: *[paths_capacity][]const u8) []const []const u8 {
-    buffer[0] = @tagName(Kind.skybox_cubemap) ++ ".png";
-    buffer[1] = @tagName(Kind.crosshair) ++ ".png";
-    var found: usize = file_arms;
+    inline for (named_files, 0..) |named, index| buffer[index] = @tagName(named) ++ ".png";
+    var found: usize = named_files.len;
     for (Item.icon_paths) |path| {
         buffer[found] = path["textures/".len..];
         found += 1;
@@ -39,13 +30,11 @@ pub fn paths(buffer: *[paths_capacity][]const u8) []const []const u8 {
     return buffer[0..found];
 }
 
-/// Index into the caller-owned slot array.
 pub fn slot(kind: Kind) usize {
     return switch (kind) {
         .blank => 0,
         .missing => 1,
-        .skybox_cubemap => 2,
-        .crosshair => 3,
-        .item => |item| reserved + file_arms + @as(usize, @intFromEnum(item)),
+        .item => |item| reserved + named_files.len + @as(usize, @intFromEnum(item)),
+        else => reserved + std.mem.indexOfScalar(std.meta.Tag(Kind), &named_files, kind).?,
     };
 }

@@ -254,15 +254,15 @@ pub fn setMinSize(self: *Wayland, _: *Window, size: ?Window.Size) !void {
 }
 
 pub fn minimize(self: *Wayland, _: *Window) !void {
-    self.toplevel.setMinSizeimized();
+    self.toplevel.setMinimized();
 }
 
 pub fn maximize(self: *Wayland, _: *Window) !void {
-    self.toplevel.setMaxSizeimized();
+    self.toplevel.setMaximized();
 }
 
 pub fn restore(self: *Wayland, _: *Window) !void {
-    self.toplevel.unsetMaxSizeimized();
+    self.toplevel.unsetMaximized();
 }
 
 pub fn setFullscreen(self: *Wayland, _: *Window, enabled: bool) !void {

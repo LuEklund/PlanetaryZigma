@@ -10,7 +10,7 @@ const Ui = @import("render").Ui;
 pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !void {
     // Following reads the client's own camera off the wire — `Entity.camera` only holds
     // the yaw the sim needs for movement, so its transform is never filled in.
-    const followed = if (camera.follow) |index| world.getPtr(world.players.items[index]) else null;
+    const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
     const camera_position: nz.Vec3(f32) = if (followed) |player| player.controller.input.camera_position else camera.position;
     const camera_rotation: nz.quat.Hamiltonian(f32) = if (followed) |player|
         .fromVec(player.controller.input.camera_rotation)
@@ -47,7 +47,10 @@ pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !voi
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
-        .camera_pitch = if (followed) |player| player.camera.pitch else camera.pitch,
+        .camera_pitch = if (followed) |player| pitch: {
+            const planet_up = nz.vec.normalize(player.transform.position);
+            break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
+        } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
     }, &.{}, &rendering.models);
 

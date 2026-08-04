@@ -87,6 +87,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         self.world = undefined;
     } else {
         self.world = makeWorld();
+        for (world.entities.values()) |*entity| entity.collider.body_id = null;
         for (world.entities.values()) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
             if (shared.entity.collider(entity.kind)) |kind_collider| {
@@ -94,7 +95,6 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
                 entity.collider.motion_type = kind_collider.motion;
                 entity.collider.object_layer = kind_collider.layer;
             }
-            entity.collider.body_id = null;
             try self.createBody(entity);
         }
     }

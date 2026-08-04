@@ -118,6 +118,7 @@ pub fn deinit(self: *World) void {
 }
 
 pub fn clearSession(self: *World) void {
+    self.go_again_pending = false;
     for (self.entities.values()) |*entity| {
         entity.deinit(self.gpa);
     }

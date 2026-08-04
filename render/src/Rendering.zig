@@ -86,6 +86,12 @@ pub const Frame = struct {
     surface_height: u32,
 };
 
+/// Scene-change reset: forget every animation instance and live effect.
+pub fn clear(self: *Rendering) void {
+    self.animator.clear();
+    self.emitters = @splat(Emitter.free);
+}
+
 pub fn beginFrame(self: *Rendering, frame: Frame) void {
     self.list.clear();
     self.list.camera = frame.camera;
@@ -109,6 +115,7 @@ pub fn drawJoints(self: *Rendering, matrices: []const nz.Mat4x4(f32)) u32 {
 }
 
 pub fn drawLine(self: *Rendering, a: nz.Vec3(f32), b: nz.Vec3(f32), color: [4]f32) void {
+    if (self.list.draw_lines.items.len == DrawList.max_lines) return;
     self.list.draw_lines.appendAssumeCapacity(.{ .a = a, .b = b, .color = color });
 }
 
@@ -145,7 +152,7 @@ pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
             .spawn_time = emitter.spawn_time,
         });
     }
-    _ = self.lib.symbols.renderUpdate(self.handle, &self.list);
+    self.lib.symbols.renderUpdate(self.handle, &self.list);
 }
 
 pub fn reloadIfChanged(self: *Rendering, io: std.Io) !void {

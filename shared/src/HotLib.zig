@@ -55,10 +55,6 @@ pub fn HotLib(
             if (self.current_generation != 0) return;
 
             if (!self.watcher.changed(io)) return;
-            // A build writes the .so in pieces; loading a half-written one must leave the
-            // mtime untouched so the next frame retries instead of skipping the build.
-            const previous_mtime = self.watcher.mtime;
-            errdefer self.watcher.mtime = previous_mtime;
             if (!try self.watcher.reload(io)) return;
             try self.commit(handle, &self.watcher.dynlib.?, 0);
         }

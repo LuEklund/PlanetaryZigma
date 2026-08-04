@@ -80,9 +80,6 @@ pub fn observe(self: *Animator, entity: View.Entity, loader: *ModelTable) !void 
     instance.seen = true;
     instance.kind = entity.kind;
     instance.transform = entity.transform;
-    // Reset here rather than a frame later in animate(): a revived entity that is
-    // observed alive again must not keep counting toward deathDone().
-    if (instance.is_dying and !entity.is_dying) instance.death_time = 0;
     instance.is_dying = entity.is_dying;
     if (instance.skeleton == null) return;
 

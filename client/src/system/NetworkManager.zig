@@ -389,7 +389,8 @@ fn handleCommand(
             try queueSpawn(world, spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
-            world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
+            if (world.pending_despawn.items.len < world.pending_despawn.capacity)
+                world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = world.getPtr(update_motion_command.id) orelse return;
@@ -400,7 +401,8 @@ fn handleCommand(
         },
         .update_health => |update_health_command| {
             const entity = world.getPtr(update_health_command.id) orelse {
-                world.pending_healths.appendAssumeCapacity(update_health_command);
+                if (world.pending_healths.items.len < world.pending_healths.capacity)
+                    world.pending_healths.appendAssumeCapacity(update_health_command);
                 return;
             };
             world.applyHealth(entity, update_health_command);
@@ -418,7 +420,8 @@ fn handleCommand(
                     world.stage = new_stage;
                 },
                 .trigger => |trigger| {
-                    world.trigger_events.appendAssumeCapacity(trigger);
+                    if (world.trigger_events.items.len < world.trigger_events.capacity)
+                        world.trigger_events.appendAssumeCapacity(trigger);
                 },
                 .stun => |stun| if (world.getPtr(stun.id)) |entity| {
                     entity.stun_time = stun.duration;
@@ -439,7 +442,8 @@ fn handleCommand(
         },
         .update_inventory => |inventory| {
             const entity = world.getPtr(inventory.id) orelse {
-                world.pending_inventory.appendAssumeCapacity(inventory);
+                if (world.pending_inventory.items.len < world.pending_inventory.capacity)
+                    world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
             entity.inventory.set(inventory.item_kind, inventory.set);

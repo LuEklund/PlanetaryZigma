@@ -266,7 +266,7 @@ pub fn parse(comptime Packet: type, reader: *std.Io.Reader) !Packet {
 fn parseFromOpcode(comptime Packet: type, reader: *std.Io.Reader, comptime opcode: std.meta.Tag(Packet)) !Packet {
     const tag_name = @tagName(opcode);
     const T = @FieldType(Packet, tag_name);
-    const out = try unmarshal(null, reader, T, true);
+    const out = try unmarshal(null, reader, T);
     return @unionInit(Packet, tag_name, out);
 }
 
@@ -312,7 +312,7 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
     }
 }
 
-fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: type, deserialize_slices: bool) !Out {
+fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: type) !Out {
     return switch (@typeInfo(Out)) {
         .void => return,
         .bool => try reader.takeByte() == 1,
@@ -328,7 +328,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         .vector => |vector| out: {
             var val: Out = @splat(0);
-            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);
+            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child);
             break :out val;
         },
         .@"struct" => {
@@ -338,7 +338,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                 .bool => try reader.takeByte() == 1,
                 .int => try reader.takeInt(field.type, endian),
                 .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
-                .pointer => |ptr| if (deserialize_slices) slice: {
+                .pointer => |ptr| slice: {
                     const element_len_name = field.name ++ "_len";
                     std.debug.assert(@typeInfo(@FieldType(Out, element_len_name)) == .int);
                     const element_len: usize = @field(out, element_len_name);
@@ -351,29 +351,29 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                             const slice = try allocator.alloc(ptr.child, element_len);
 
                             for (0..element_len) |i| {
-                                slice[i] = try unmarshal(allocator, reader, ptr.child, endian, true);
+                                slice[i] = try unmarshal(allocator, reader, ptr.child);
                             }
                             break :slice slice;
                         } else {
                             for (0..element_len) |_| {
-                                _ = try unmarshal(null, reader, ptr.child, endian, true);
+                                _ = try unmarshal(null, reader, ptr.child);
                             }
 
                             break :slice &.{};
                         }
                     }
-                } else &.{},
+                },
                 .array => |array| if (array.child == u8) (try reader.takeArray(array.len)).* else array: {
                     var val: field.type = std.mem.zeroes(field.type);
                     for (0..array.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, array.child, deserialize_slices);
+                        val[i] = try unmarshal(opt_allocator, reader, array.child);
                     }
                     break :array val;
                 },
                 .vector => |vector| vector: {
                     var val: field.type = @splat(0);
                     inline for (0..vector.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);
+                        val[i] = try unmarshal(opt_allocator, reader, vector.child);
                     }
                     break :vector val;
                 },
@@ -384,10 +384,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     };
                 },
                 .@"struct" => |s| switch (s.layout) {
-                    .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
+                    .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type),
                     .@"packed" => try reader.takeStruct(field.type, endian),
                 },
-                .@"union" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
+                .@"union" => try unmarshal(opt_allocator, reader, field.type),
                 else => @compileError("can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(@typeInfo(field.type))),
             };
             return out;
@@ -398,7 +398,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
             switch (tag) {
                 inline else => |t| {
                     const name = @tagName(t);
-                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name), deserialize_slices));
+                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name)));
                 },
             }
         },

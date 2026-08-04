@@ -22,11 +22,8 @@ pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetSe
     std.debug.assert(slots.len == shared.Texture.reserved + texture_paths.len);
     const files = try gpa.alloc([]const u8, texture_paths.len);
     @memcpy(files, texture_paths);
-    // Unloaded and failed textures both read as the magenta checker, so there is no
-    // "missing" branch anywhere downstream.
     @memset(slots, @intFromEnum(Image.Handle.material_not_found));
     slots[0] = @intFromEnum(Image.Handle.blank);
-    slots[1] = @intFromEnum(Image.Handle.material_not_found);
 
     self.* = .{
         .table = table,

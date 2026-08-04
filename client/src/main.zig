@@ -108,7 +108,7 @@ pub fn main(init: std.process.Init) !void {
             }
             break :requested null;
         };
-        try system_lib.swap(io, requested_generation, system);
+        system_lib.swap(io, requested_generation, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
 }
 
