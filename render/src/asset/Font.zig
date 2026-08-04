@@ -4,7 +4,6 @@ const std = @import("std");
 const stbTruetype = @import("stb_truetype");
 
 pub const files: []const []const u8 = &.{"Roboto-Regular.ttf"};
-/// How many `Font` slots a caller must own to pass into the loader.
 pub const count: usize = files.len;
 
 pub const atlas_width: usize = 512;

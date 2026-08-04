@@ -29,7 +29,7 @@ pub const Entry = struct {
 
 pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, models: *ModelTable) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const model_paths = ModelTable.paths(&path_buffer);
+    const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
     const files = try gpa.alloc([]const u8, model_paths.len);
     const entries = try gpa.alloc(Entry, model_paths.len);
     for (model_paths, entries, files) |path, *entry, *file| {

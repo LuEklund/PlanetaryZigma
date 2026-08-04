@@ -9,7 +9,6 @@ pub const Kind = union(enum) {
     item: Item.Kind,
 };
 
-/// blank and missing own descriptor slots 0 and 1 and load no file.
 pub const reserved = 2;
 const named_files = [_]std.meta.Tag(Kind){ .skybox_cubemap, .crosshair };
 
@@ -19,7 +18,6 @@ pub fn count() usize {
     return reserved + paths_capacity;
 }
 
-/// The files to load, in slot order: named first, then one per item.
 pub fn paths(buffer: *[paths_capacity][]const u8) []const []const u8 {
     inline for (named_files, 0..) |named, index| buffer[index] = @tagName(named) ++ ".png";
     var found: usize = named_files.len;

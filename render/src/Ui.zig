@@ -16,9 +16,6 @@ pub const Vertex = extern struct {
     _: [2]u32 = .{ 0, 0 },
 };
 
-/// A layout names a texture by Kind; the GPU slot is resolved here, at draw time.
-/// Slots start as the magenta checker, so a texture that failed to load draws as
-/// obviously broken rather than blank.
 fn textureSlot(self: *const Ui, kind: Texture.Kind) u32 {
     return self.texture_slots[Texture.slot(kind)];
 }
@@ -333,7 +330,6 @@ fn pushQuads(self: *Ui) void {
         const rect = node.rect;
         if (node.layout.color.a != 0 and self.quads.items.len < max_ui_quads) {
             const colors: [4]f32 = node.layout.color.toVec();
-            //left_top, right_top, right_bottom, left_bottom
             self.quads.appendAssumeCapacity(.{ .vertices = .{
                 .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
                 .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },

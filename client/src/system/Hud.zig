@@ -51,8 +51,6 @@ options_tab: OptionsTab = .gameplay,
 damage_popups: DamagePopup.List = .{},
 popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
 
-/// The layout engine and the assets it reads. They live here because the HUD is their
-/// only consumer — extract just copies the finished quads out.
 ui: Ui,
 
 pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size, rendering: *Rendering) !void {
@@ -65,8 +63,7 @@ pub fn deinit(hud: *Hud, gpa: std.mem.Allocator) void {
     hud.ui.deinit(gpa);
 }
 
-/// Screen state only — the layout engine and its assets outlive a scene change.
-pub fn reset(hud: *Hud) void {
+pub fn resetScreen(hud: *Hud) void {
     hud.screen = .main;
     hud.overlay = .none;
     hud.options_tab = .gameplay;

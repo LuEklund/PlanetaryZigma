@@ -97,7 +97,6 @@ fn loadFile(self: *AssetServer, loader_index: usize, file_index: usize) !void {
     try loader.vtable.load(loader, file, file_index);
 }
 
-/// Checks for modified assets and reloads any that have changed.
 pub fn reloadChangedAssets(self: *AssetServer) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();

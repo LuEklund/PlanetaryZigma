@@ -90,8 +90,6 @@ pub fn observe(self: *Animator, entity: View.Entity, loader: *ModelTable) !void 
     instance.state = state;
 }
 
-/// Moves time forward: starts triggered overlays, ticks clips and fades, recomputes
-/// joint matrices.
 pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -100,9 +98,6 @@ pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, load
     self.animate(loader);
 }
 
-/// Emits every instance's draws and retires the ones that are finished. `emitters` is
-/// passed in rather than owned: the ambient item effect is animation-driven, but the
-/// emitter pool belongs to whoever is drawing the frame.
 pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();

@@ -11,7 +11,6 @@ const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
-/// Every use below sits behind the same `build_options.render` check.
 pub const Viewer = if (build_options.render) @import("system/Viewer.zig") else void;
 pub const Window = if (build_options.render) @import("Window") else void;
 pub const AssetServer = if (build_options.render) @import("render").AssetServer else void;

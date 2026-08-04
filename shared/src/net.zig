@@ -16,12 +16,8 @@ pub fn PacketQueue(comptime Packet: type) type {
     };
 }
 
-// ── Packets, split by direction ─────────────────────────────────────────────
-// Each side only ever receives one direction, so its switch over the packet is
-// naturally exhaustive (no `else` swallowing a forgotten variant). Opcode spaces
-// are independent because direction is known from the socket.
-
-/// client → server
+// Split by direction so each side's switch is exhaustive without an `else` that
+// would swallow a forgotten variant.
 pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
@@ -30,7 +26,6 @@ pub const ClientPacket = union(enum) {
     go_again: void,
 };
 
-/// server → client
 pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
@@ -43,8 +38,6 @@ pub const ServerPacket = union(enum) {
     set_currency: SetCurrency,
     chat_message: ChatMessage,
 };
-
-// ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const DevCommand = enum(u8) {
     none,
@@ -67,10 +60,8 @@ pub const Connect = struct {
     player_name: PlayerName,
 };
 
-// Comptime fingerprint of the entire wire format. Changes if and only if the
-// structural layout reachable from ClientPacket/ServerPacket changes, or
-// version is bumped (the manual lever for behavior changes that keep
-// the wire layout identical — terrain math, gameplay rules).
+// `root.version` is the manual lever for behaviour changes that keep the wire
+// layout identical — terrain math, gameplay rules.
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
     break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);

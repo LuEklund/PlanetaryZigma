@@ -7,19 +7,16 @@ const Font = @import("asset/Font.zig");
 pub const ModelTable = @import("asset/ModelTable.zig");
 const shared = @import("shared");
 
-// Each .so carries its own copy of shared's globals, so this one needs its own log
-// wiring exactly like System.init does — otherwise the first log here reads a null io.
+// Each .so carries its own copy of shared's globals, so this one needs its own wiring.
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     asset_server: *AssetServer,
-    /// Caller-owned, `Font.count` long. Ui reads glyph metrics through it, so the
-    /// storage lives on the exe side rather than being lent back out of render.so.
-    fonts: []Font,
+    fonts: *[Font.count]Font,
     models: *ModelTable,
-    texture_slots: []u32,
+    texture_slots: *[shared.Texture.count()]u32,
     window: *Window,
 };
 
@@ -70,11 +67,9 @@ pub const ffi = struct {
     // A freshly dlopened render.so has its OWN procs.instance/device globals, still
     // undefined — rebinding them is what makes a render swap work at all.
     //
-    // ponytail: asset loaders are NOT re-registered here, so after a swap they keep
-    // running the previous image's code (harmless — it is never unloaded). They are
-    // setup-path, not hot-path; re-registering would mean tearing down and rematching
-    // live GPU resources. Symptom if it ever bites: an edit to *Loader.zig appears to
-    // do nothing. Fix is a restart.
+    // ponytail: asset loaders are NOT re-registered, so after a swap they keep running
+    // the previous image's code. Symptom: an edit to *Loader.zig appears to do nothing.
+    // Fix is a restart.
     pub export fn renderReload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));

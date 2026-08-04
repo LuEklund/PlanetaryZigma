@@ -25,8 +25,6 @@ pub fn main(init: std.process.Init) !void {
     var eng: miniaudio.ma_engine = undefined;
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
     defer miniaudio.ma_engine_uninit(&eng);
-    // _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
-    // _ = miniaudio.ma_engine_set_volume(&eng, 1);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
@@ -98,18 +96,20 @@ pub fn main(init: std.process.Init) !void {
 
         if (system_lib.symbols.systemUpdate(system, &world)) break;
 
-        // numpad 0-9 picks a generation to run: 0 is newest, 1 the previous build.
-        // A new build on disk is the same thing with generation 0, so both go through
-        // one swap — the reload hooks only have to be written once.
-        const keypad_0_code = @intFromEnum(Window.Keyboard.Key.keypad_0);
-        const requested_generation: ?usize = requested: {
-            for (0..10) |n| {
-                if (window.keyboard.get(@enumFromInt(keypad_0_code + n)) == .release) break :requested n;
-            }
-            break :requested null;
-        };
-        system_lib.swap(io, requested_generation, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        if (requestedGeneration(window.keyboard)) |generation| {
+            system_lib.rewind(generation, system) catch |err| std.log.err("system rewind: {s}", .{@errorName(err)});
+        } else if (system_lib.hasNewBuild(io)) {
+            system_lib.swap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        }
     }
+}
+
+fn requestedGeneration(keyboard: Window.Keyboard) ?usize {
+    const keypad_0_code = @intFromEnum(Window.Keyboard.Key.keypad_0);
+    for (0..10) |generation| {
+        if (keyboard.get(@enumFromInt(keypad_0_code + generation)) == .release) return generation;
+    }
+    return null;
 }
 
 pub fn getDeltaTime(io: std.Io) f32 {

@@ -12,14 +12,11 @@ const nz = shared.numz;
 const extract = @import("extract.zig");
 const pause = @import("pause.zig");
 
-/// Everything the --render debug window needs. Nothing outside this file exists in a
-/// dedicated build — `System.viewer` is `void` when the render option is off.
 rendering: Rendering,
 camera: Camera,
 ui: Ui,
 paused: bool,
 
-/// The fly camera the window looks through, and which player it is following.
 pub const Camera = struct {
     position: nz.Vec3(f32),
     /// Yaw lives as a rotation rather than an angle because it turns around the planet's
@@ -43,8 +40,6 @@ pub const Camera = struct {
         return self.yaw_rotation.mul(pitch_quat).normalize();
     }
 
-    /// F toggles follow, Q/E pick the player. Flying: the mouse looks, WASD moves,
-    /// space/shift rise and fall, wheel changes speed.
     pub fn update(self: *Camera, window: *Window, delta_time: f32, players: []const shared.entity.Id) void {
         if (window.keyboard.get(.f) == .press) self.follow = if (self.follow == .none and players.len > 0) players[0] else .none;
         if (self.follow != .none and players.len == 0) self.follow = .none;

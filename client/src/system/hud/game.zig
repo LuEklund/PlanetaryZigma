@@ -63,7 +63,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .name = "HUD",
             .axis_align = .horizontal,
             .offset = .{ .top = 60, .left = 0 },
-            // .child_anchor = .{ .x = .end, .y = .end },
             .size = .{ .percent = .{ .height = 1, .width = 1 } },
         });
 
@@ -74,7 +73,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
 
         ui.add("HUD", .{
             .name = "inventory",
-            // .child_anchor = .{ .y = .end, .x = .end },
             .size = .{ .fixed = .{ .width = inventory_width, .height = inventory_height } },
             .color = .new(0.5, 0.5, 0.5, 0.2),
             .axis_align = .horizontal,
@@ -191,7 +189,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         );
         if (world.getPtr(world.teleporter_id)) |entity| {
             const teleporter = entity.teleporter;
-            // const active = entity.teleporter.active;
             ui.add(
                 "world",
                 .{
@@ -202,8 +199,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     },
                 },
             );
-            // if (teleporter.charged != teleporter.max_charge and active) {
-            // }
         }
 
         if (options.show_crosshair) {

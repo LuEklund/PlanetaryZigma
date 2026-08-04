@@ -14,9 +14,7 @@ items: []Font,
 samplers: []c.VkSampler,
 interface: Loader,
 
-/// `fonts` is owned by the caller, not allocated here: Ui needs a stable `*Font` for
-/// glyph metrics, and a loader-owned one would be a pointer into render.so. Reload keeps
-/// writing through it in place, so the borrow stays correct across a .ttf edit.
+/// `fonts` is caller-owned: a loader-owned one would be a pointer into render.so.
 pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, fonts: []Font) !void {
     std.debug.assert(fonts.len == Font.files.len);
     const items = fonts;

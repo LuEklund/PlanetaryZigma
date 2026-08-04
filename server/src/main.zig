@@ -105,7 +105,9 @@ pub fn main(init: std.process.Init) !void {
 
         system_lib.symbols.systemUpdate(&system_instance, &world);
 
-        system_lib.swap(io, null, &system_instance) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        if (system_lib.hasNewBuild(io)) {
+            system_lib.swap(io, &system_instance) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        }
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {
         std.log.err("packet pump exit: {s}", .{@errorName(err)});

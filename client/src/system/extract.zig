@@ -8,7 +8,6 @@ const Rendering = @import("render").Rendering;
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
-/// Builds one frame: frame-wide state, animated entities, debug lines, UI.
 pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !void {
     const planet_entity = world.getPtr(world.planet_id);
 

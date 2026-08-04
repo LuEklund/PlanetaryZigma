@@ -3,8 +3,6 @@ const Ui = @import("render").Ui;
 
 pub const Request = enum { none, resume_view, quit };
 
-/// The server view's only screen. The sim keeps ticking behind it — this releases the
-/// mouse and offers a clean exit, nothing more.
 pub fn update(ui: *Ui, player_count: usize, following: ?usize) Request {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
     const button_height = std.math.clamp(ui.screen_height * 0.058, @as(f32, 40), @as(f32, 52));

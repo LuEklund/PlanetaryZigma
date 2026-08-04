@@ -15,8 +15,6 @@ layouts: std.EnumArray(Shader.Descriptor, c.VkDescriptorSetLayout),
 shaders: []Stages,
 interface: Loader,
 
-/// One compiled VkShaderEXT. Created only here, so it lives here rather than beside
-/// the spec table it is built from.
 pub const Object = struct {
     handle: c.VkShaderEXT,
     device: Device,

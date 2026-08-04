@@ -13,22 +13,14 @@ const Ui = @import("Ui.zig");
 const Font = @import("asset/Font.zig");
 const nz = shared.numz;
 
-/// The renderer and everything that feeds it. `lib` and `handle` are always used
-/// together, so nothing outside needs to see either — callers go through the functions
-/// below.
 lib: shared.HotLib(Backend.Table, *anyopaque, "renderInit", "renderReload"),
 handle: *anyopaque,
-/// The frame being built. Private on purpose — producers go through the draw calls
-/// below, so nothing outside has to know how draws are stored.
 list: DrawList,
 animator: Animator,
 emitters: Emitter.List,
-/// CPU-side model data. Parsed by the renderer's loader, read here by `animator`
-/// for clips and skins — it lives on this side because `animator` does.
 models: Backend.ModelTable,
 window: *Window,
-/// The renderer's loaders fill these in place, so they have to outlive a render.so
-/// swap — which is why they are here and not lent back out of the library.
+/// render.so's loaders fill these in place, so they must outlive a swap of it.
 fonts: [Font.count]Font,
 texture_slots: [shared.Texture.count()]u32,
 
@@ -75,7 +67,6 @@ pub fn deinit(self: *Rendering, gpa: std.mem.Allocator, io: std.Io) void {
     self.models.deinit(gpa);
 }
 
-/// Frame-wide state, set once at the start of a frame.
 pub const Frame = struct {
     camera: DrawList.Camera,
     elapsed_time: f32,
@@ -107,8 +98,7 @@ pub fn drawModel(self: *Rendering, draw: DrawList.DrawModel) void {
     self.list.draw_models.appendAssumeCapacity(draw);
 }
 
-/// Uploads a skin's matrices and returns where they landed, for `DrawModel.palette_offset`.
-pub fn drawJoints(self: *Rendering, matrices: []const nz.Mat4x4(f32)) u32 {
+pub fn uploadJoints(self: *Rendering, matrices: []const nz.Mat4x4(f32)) u32 {
     const offset: u32 = @intCast(self.list.joint_matrices.items.len);
     self.list.joint_matrices.appendSliceAssumeCapacity(matrices);
     return offset;
@@ -141,7 +131,6 @@ pub fn drawUi(self: *Rendering, quads: []const Ui.Quad, screen_width: f32, scree
     self.list.ui.screen_height = screen_height;
 }
 
-/// Emits the live emitters and hands the frame to the renderer.
 pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
     for (&self.emitters) |emitter| {
         if (!emitter.alive(elapsed_time)) continue;
@@ -156,5 +145,6 @@ pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
 }
 
 pub fn reloadIfChanged(self: *Rendering, io: std.Io) !void {
-    try self.lib.swap(io, null, self.handle);
+    if (!self.lib.hasNewBuild(io)) return;
+    try self.lib.swap(io, self.handle);
 }

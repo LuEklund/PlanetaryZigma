@@ -82,7 +82,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
 
     for (&self.frames) |*frame| {
         frame.* = try .init(self.vma, self.device);
-        // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
     self.resources = try .init(gpa, asset_server, fonts, models, texture_slots, self.vma, self.physical_device, self.device);
@@ -307,10 +306,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
 
     ext.vkCmdSetViewportWithCountEXT(cmd, 1, &viewport);
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);
-
-    // std.debug.print("time: {d}\n", .{self.elapsed_time});
     // const tmp: i32 = @intFromFloat(elapsed_time);
-    // std.debug.print("fixed-time: {d}\n", .{tmp});
     if (false) {
         ext.vkCmdSetPolygonModeEXT(cmd, c.VK_POLYGON_MODE_LINE);
         c.vkCmdSetLineWidth(cmd, 1);

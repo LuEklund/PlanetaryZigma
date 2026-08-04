@@ -37,7 +37,6 @@ pub fn decodeAll(gpa: std.mem.Allocator, tasks: []Task) !void {
         return;
     }
 
-    // TODO: Replace per-model thread spawning with a persistent asset thread pool.
     var threads = try gpa.alloc(std.Thread, worker_count);
     defer gpa.free(threads);
 

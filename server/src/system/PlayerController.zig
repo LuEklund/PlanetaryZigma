@@ -29,15 +29,12 @@ pub fn update(world: *World, physics: *Physics) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                // _ = world.giveItem(player, .pickaxe, 1);
                 _ = world.giveItem(player, .freezer, 1);
                 // _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
-                // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
                 _ = world.giveItem(player, .lightning, 1);
-                // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f3 => {
                 world.toggle_spawning_requested = true;

@@ -2,16 +2,8 @@ const std = @import("std");
 const Watcher = @import("Watcher.zig");
 const DynLib = @import("DynLib.zig").DynLib;
 
-/// A hot-reloadable dynamic library plus its resolved symbol table.
-///
-/// `Table` is a struct of function pointers whose FIELD NAMES are the exported symbol
-/// names; that is the whole contract. `Handle` is whatever the exports take as their
-/// first argument — the client passes `*anyopaque`, the server passes `*System`.
-///
-/// Swapping without calling the library's reload hook either side is always a bug, so
-/// `swap` is the only door and it calls it for you.
 pub fn HotLib(
-    comptime Table: type,
+    comptime ExportTable: type,
     comptime Handle: type,
     comptime probe_symbol: [:0]const u8,
     comptime reload_symbol: [:0]const u8,
@@ -20,7 +12,7 @@ pub fn HotLib(
         const Self = @This();
 
         watcher: Watcher,
-        symbols: Table,
+        symbols: ExportTable,
         current_generation: usize,
 
         pub fn init(comptime library_name: []const u8, io: std.Io) !Self {
@@ -37,30 +29,33 @@ pub fn HotLib(
             self.watcher.deinit(io);
         }
 
-        /// `requested` null means "no opinion, carry on" — NOT generation 0, or a caller
-        /// polling every frame would yank a rewind back to newest on the next one.
-        /// 0 = newest, 1 = the previous build, and so on back through the ring.
-        pub fn swap(self: *Self, io: std.Io, requested: ?usize, handle: Handle) !void {
-            if (requested) |generation| if (generation != self.current_generation) {
-                // Returning to 0 after a rewind goes through the ring too — `changed()`
-                // would say "up to date" because the mtime never moved.
-                const dynlib = self.watcher.version(generation) orelse {
-                    std.log.warn("{s}: no build {d} generations back", .{ self.watcher.source_name, generation });
-                    return;
-                };
-                try self.commit(handle, dynlib, generation);
-                return;
-            };
-            // Only the newest build auto-updates; a deliberate rewind stays put.
-            if (self.current_generation != 0) return;
+        pub fn rewound(self: *const Self) bool {
+            return self.current_generation != 0;
+        }
 
-            if (!self.watcher.changed(io)) return;
+        /// A newer build is on disk, and we are not deliberately running an old one.
+        pub fn hasNewBuild(self: *Self, io: std.Io) bool {
+            if (self.rewound()) return false;
+            return self.watcher.changed(io);
+        }
+
+        pub fn swap(self: *Self, io: std.Io, handle: Handle) !void {
             if (!try self.watcher.reload(io)) return;
             try self.commit(handle, &self.watcher.dynlib.?, 0);
         }
 
-        /// Resolves BEFORE the pre-reload hook: a library missing an export must leave
-        /// the running one untouched, with no half-applied hook pair.
+        /// Runs an older build: 0 is newest, 1 the previous, back through the ring.
+        pub fn rewind(self: *Self, generation: usize, handle: Handle) !void {
+            if (generation == self.current_generation) return;
+            const dynlib = self.watcher.buildAt(generation) orelse {
+                std.log.warn("{s}: no build {d} generations back", .{ self.watcher.source_name, generation });
+                return;
+            };
+            try self.commit(handle, dynlib, generation);
+        }
+
+        /// Resolves BEFORE the pre-reload hook, so a library missing an export leaves the
+        /// running one untouched rather than half-applying a hook pair.
         fn commit(self: *Self, handle: Handle, dynlib: *DynLib, generation: usize) !void {
             const next = try resolve(dynlib);
             @field(self.symbols, reload_symbol)(handle, true);
@@ -69,9 +64,9 @@ pub fn HotLib(
             @field(self.symbols, reload_symbol)(handle, false);
         }
 
-        fn resolve(dynlib: *DynLib) !Table {
-            var table: Table = undefined;
-            inline for (std.meta.fields(Table)) |field| {
+        fn resolve(dynlib: *DynLib) !ExportTable {
+            var table: ExportTable = undefined;
+            inline for (std.meta.fields(ExportTable)) |field| {
                 @field(table, field.name) = dynlib.lookup(field.type, field.name) orelse {
                     std.log.err("missing symbol: {s}", .{field.name});
                     return error.DynlibLookup;

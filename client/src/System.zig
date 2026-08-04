@@ -88,7 +88,7 @@ pub fn deinit(self: *System) void {
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
     self.rendering.clear();
-    self.hud.reset();
+    self.hud.resetScreen();
     switch (next) {
         .menu => menu_world.populate(world),
         .game => {},
@@ -100,7 +100,6 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    // tracy.frameMark();
     var text_buffer: [64]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
@@ -133,7 +132,6 @@ pub fn update(self: *System, world: *World) !void {
     if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &self.options);
     world.controller.resetMouseDelta();
     world.controller.mouse_wheel = 0;
-    // std.log.debug("time : {d}", .{world.elapsed_time});
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !void {

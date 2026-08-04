@@ -229,7 +229,6 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
     try shared.net.write(shared.net.ClientPacket, command, &w);
-    // std.log.debug("len: {d}", .{w.buffered().len});
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
@@ -336,7 +335,6 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         if (world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         world.controller.input_map.dev_command = .none;
-        // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
     if (world.go_again_pending) {
         try self.sendCommand(.go_again, .reliable);
@@ -348,7 +346,6 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         world.chat.pending = false;
         world.chat.input_len = 0;
     }
-    // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     for (self.steam_client.packets.incoming.items) |*msg| {
         var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
@@ -370,7 +367,6 @@ fn handleCommand(
     world: *World,
     command: shared.net.ServerPacket,
 ) !void {
-    // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();

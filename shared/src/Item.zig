@@ -94,7 +94,6 @@ pub const Kind = kind: {
     break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
 };
 
-// same as spec alright Lucas
 pub fn get(kind: Kind) Item {
     return items[@intFromEnum(kind)];
 }

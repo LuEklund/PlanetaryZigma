@@ -364,10 +364,8 @@ pub const Barrier = struct {
     pub fn transition(self: *Barrier, layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
         var new: c.VkImageMemoryBarrier = .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            // .srcStageMask = src_stage,
-            .srcAccessMask = self.src_access,
-            // .dstStageMask = dst_stage,
-            .dstAccessMask = access,
+                .srcAccessMask = self.src_access,
+                .dstAccessMask = access,
             .oldLayout = self.old_layout,
             .newLayout = layout,
             .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,

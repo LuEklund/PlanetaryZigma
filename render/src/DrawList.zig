@@ -22,8 +22,6 @@ draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(PacketEmitter),
 ui: UiLayer,
 planet: PlanetState,
-/// The renderer resizes itself when this stops matching its swapchain, so the caller
-/// never needs a separate entry point for it.
 surface_width: u32,
 surface_height: u32,
 
@@ -61,9 +59,6 @@ pub const UiLayer = struct {
 };
 
 pub const PlanetState = struct {
-    /// `.none` means there is no planet this frame. The renderer builds or retires its
-    /// chunks by comparing this against what it last built, so nothing has to announce
-    /// a spawn or a despawn separately.
     id: shared.entity.Id,
     transform: nz.Mat4x4(f32),
     radius: u32,

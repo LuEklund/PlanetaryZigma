@@ -5,16 +5,13 @@ const shared = @import("shared");
 const entity = shared.entity;
 const Model = @import("Model.zig");
 
-/// CPU-side model data, owned by whoever runs the game loop rather than by the renderer.
-/// The renderer's loader parses into this and keeps only the GPU half (meshes, image
-/// slots), so animation code reads clips and skins without reaching into render.so.
+/// Owned by the game loop, not render.so: animation reads clips and skins from here
+/// without a pointer into a library that can be swapped underneath it.
 models: []Model,
 reloaded: std.ArrayList(u32),
 
-/// Every distinct .glb path, in the order kinds declare them. This ordering IS the file
-/// index, and the loader builds its own file list from the same call, so the two cannot
-/// disagree.
-pub fn paths(buffer: *[entity.all_kinds.len][]const u8) []const []const u8 {
+/// Order is the file index; the loader builds its list from this same call.
+pub fn pathsByFileIndex(buffer: *[entity.all_kinds.len][]const u8) []const []const u8 {
     var found: usize = 0;
     for (entity.all_kinds) |kind| {
         const model_spec = entity.spec(kind).model orelse continue;
@@ -31,7 +28,7 @@ pub fn paths(buffer: *[entity.all_kinds.len][]const u8) []const []const u8 {
 
 pub fn init(gpa: std.mem.Allocator) !ModelTable {
     var buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const models = try gpa.alloc(Model, paths(&buffer).len);
+    const models = try gpa.alloc(Model, pathsByFileIndex(&buffer).len);
     @memset(models, .empty);
     return .{ .models = models, .reloaded = .empty };
 }
@@ -47,7 +44,7 @@ pub fn handleForKind(kind: entity.Kind) ?Model.Handle {
         return .{ .generated = std.meta.stringToEnum(Model.Generated, wanted).? };
     }
     var buffer: [entity.all_kinds.len][]const u8 = undefined;
-    for (paths(&buffer), 0..) |path, index| {
+    for (pathsByFileIndex(&buffer), 0..) |path, index| {
         if (std.mem.eql(u8, path, wanted)) return .{ .file = @intCast(index) };
     }
     return null;

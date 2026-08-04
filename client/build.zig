@@ -81,7 +81,6 @@ pub fn build(b: *std.Build) void {
     const install_render = b.addInstallArtifact(render_dep.artifact("render"), .{});
     b.getInstallStep().dependOn(&install_render.step);
 
-    // Shared Tracy client dll must sit next to the binaries that link it.
     if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
 
     if (target.result.os.tag == .windows) {

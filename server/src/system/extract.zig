@@ -6,10 +6,9 @@ const Rendering = @import("render").Rendering;
 const Camera = @import("Viewer.zig").Camera;
 const Ui = @import("render").Ui;
 
-/// Builds one frame from the authoritative sim, seen from the server's own fly camera.
 pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !void {
-    // Following reads the client's own camera off the wire — `Entity.camera` only holds
-    // the yaw the sim needs for movement, so its transform is never filled in.
+    // The wire carries the client's real camera; `Entity.camera` holds only the yaw
+    // the sim needs for movement.
     const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
     const camera_position: nz.Vec3(f32) = if (followed) |player| player.controller.input.camera_position else camera.position;
     const camera_rotation: nz.quat.Hamiltonian(f32) = if (followed) |player|

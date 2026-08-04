@@ -154,5 +154,4 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
         const mesh = try Mesh.init(gpa, vma, name, device, Mesh.StaticVertex, cpu_chunk.vertices, cpu_chunk.indices, &.{.{ .index_start = 0, .index_count = @intCast(cpu_chunk.indices.len), .texture = .blank }});
         try self.meshes.put(gpa, cpu_chunk.coord, mesh);
     }
-    // std.log.debug("planet chunks: added={d}, evicted={d}, active={d}", .{ results.items.len, evicted, self.meshes.count() });
 }
