@@ -12,7 +12,7 @@ const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("asset/ModelTable.zig");
 const DrawList = @import("DrawList.zig");
 const Emitter = @import("Emitter.zig");
-const Shader = @import("Renderer/Vulkan/Shader.zig");
+const Shader = @import("Shader.zig");
 
 const max_skins = 8;
 

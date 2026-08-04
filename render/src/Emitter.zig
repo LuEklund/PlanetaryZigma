@@ -1,7 +1,7 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Shader = @import("Renderer/Vulkan/Shader.zig");
+const Shader = @import("Shader.zig");
 
 const Emitter = @This();
 

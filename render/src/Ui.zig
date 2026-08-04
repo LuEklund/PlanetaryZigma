@@ -328,7 +328,7 @@ fn screenRect(self: *const Ui) Rect {
 fn pushQuads(self: *Ui) void {
     for (self.nodes.items) |node| {
         const rect = node.rect;
-        if (node.layout.color.a != 0 and self.quads.items.len < max_ui_quads) {
+        if (node.layout.color.a != 0) {
             const colors: [4]f32 = node.layout.color.toVec();
             self.quads.appendAssumeCapacity(.{ .vertices = .{
                 .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
@@ -357,7 +357,6 @@ fn pushQuads(self: *Ui) void {
                 const y0 = pen.y + glyph.yoff * scale;
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.height * scale;
-                if (self.quads.items.len >= max_ui_quads) break;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
                     .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
                     .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },

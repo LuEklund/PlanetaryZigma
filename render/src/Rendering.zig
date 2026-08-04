@@ -8,7 +8,7 @@ const AssetServer = @import("AssetServer.zig");
 const DrawList = @import("DrawList.zig");
 const Animator = @import("Animator.zig");
 const Emitter = @import("Emitter.zig");
-const Shader = @import("Renderer/Vulkan/Shader.zig");
+const Shader = @import("Shader.zig");
 const Ui = @import("Ui.zig");
 const Font = @import("asset/Font.zig");
 const nz = shared.numz;
@@ -105,7 +105,6 @@ pub fn uploadJoints(self: *Rendering, matrices: []const nz.Mat4x4(f32)) u32 {
 }
 
 pub fn drawLine(self: *Rendering, a: nz.Vec3(f32), b: nz.Vec3(f32), color: [4]f32) void {
-    if (self.list.draw_lines.items.len >= DrawList.max_lines) return;
     self.list.draw_lines.appendAssumeCapacity(.{ .a = a, .b = b, .color = color });
 }
 

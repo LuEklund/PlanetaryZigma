@@ -15,7 +15,6 @@ const DrawList = @import("render").DrawList;
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
 pub const Options = @import("Options.zig");
-pub const Backend = @import("render").Backend;
 
 pub const Camera = @import("system/Camera.zig");
 pub const Chat = @import("system/Chat.zig");
