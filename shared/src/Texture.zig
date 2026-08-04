@@ -33,6 +33,11 @@ pub fn slot(kind: Kind) usize {
         .blank => 0,
         .missing => 1,
         .item => |item| reserved + named_files.len + @as(usize, @intFromEnum(item)),
-        else => reserved + std.mem.indexOfScalar(std.meta.Tag(Kind), &named_files, kind).?,
+        inline else => |_, tag| reserved + comptime namedIndex(tag),
     };
+}
+
+fn namedIndex(comptime tag: std.meta.Tag(Kind)) usize {
+    return std.mem.indexOfScalar(std.meta.Tag(Kind), &named_files, tag) orelse
+        @compileError("texture kind ." ++ @tagName(tag) ++ " loads a file but is missing from named_files");
 }

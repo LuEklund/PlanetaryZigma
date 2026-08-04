@@ -41,7 +41,7 @@ pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !voi
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
         .camera_pitch = if (followed) |player| pitch: {
-            const planet_up = nz.vec.normalize(player.transform.position);
+            const planet_up = shared.planet.up(player.transform.position) orelse break :pitch 0;
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,

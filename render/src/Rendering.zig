@@ -105,7 +105,7 @@ pub fn uploadJoints(self: *Rendering, matrices: []const nz.Mat4x4(f32)) u32 {
 }
 
 pub fn drawLine(self: *Rendering, a: nz.Vec3(f32), b: nz.Vec3(f32), color: [4]f32) void {
-    if (self.list.draw_lines.items.len == DrawList.max_lines) return;
+    if (self.list.draw_lines.items.len >= DrawList.max_lines) return;
     self.list.draw_lines.appendAssumeCapacity(.{ .a = a, .b = b, .color = color });
 }
 

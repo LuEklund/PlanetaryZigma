@@ -357,7 +357,7 @@ fn pushQuads(self: *Ui) void {
                 const y0 = pen.y + glyph.yoff * scale;
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.height * scale;
-                if (self.quads.items.len == max_ui_quads) break;
+                if (self.quads.items.len >= max_ui_quads) break;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
                     .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
                     .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },

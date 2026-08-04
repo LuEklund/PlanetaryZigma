@@ -288,7 +288,7 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     }
     if (current <= 0) {
         self.queueDespawn(entity.id);
-        if (entity.kind == .enemy) self.rewardKill(entity);
+        self.dropBossReward(entity);
     }
     self.client_updates.appendAssumeCapacity(.{ .health = .{
         .id = entity.id,
@@ -298,14 +298,9 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
-/// Runs at the kill decision, before flush — the lightning drop lands in `new_spawns`
-/// in time for this tick's flush to give it a body and a spawn packet.
-fn rewardKill(self: *World, entity: *Entity) void {
-    for (self.players.items) |player_id| {
-        const player = self.getPtr(player_id) orelse continue;
-        player.currency += entity.currency;
-        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
-    }
+/// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
+/// this tick's flush to give it a body and a spawn packet.
+fn dropBossReward(self: *World, entity: *Entity) void {
     if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, entity.id) == null) return;
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
     const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
@@ -474,6 +469,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
     }
     self.new_spawns.clearRetainingCapacity();
 
+    var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
 
@@ -489,6 +485,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
                 _ = self.players.swapRemove(player_index);
             }
+            if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
             }
@@ -497,5 +494,11 @@ pub fn flush(self: *World, physics: *Physics) !void {
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
+    if (currency_reward > 0) for (self.players.items) |player_id| {
+        const player = self.getPtr(player_id) orelse continue;
+        player.currency += currency_reward;
+        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
+    };
+
     self.pending_despawns.clearRetainingCapacity();
 }
