@@ -20,6 +20,8 @@ pub fn build(b: *std.Build) void {
 
     const windows_step = b.step("windows", "Build Windows server artifacts used by the hosted client");
     const windows_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows });
+    // Always dedicated, regardless of -Drender: the hosted Windows server must
+    // cross-compile without a Vulkan SDK on the machine building it.
     const windows_artifacts = addServerArtifacts(b, windows_target, optimize, tracy_enable, false);
     installServerArtifacts(b, windows_step, windows_artifacts, windows_target, tracy_enable);
 

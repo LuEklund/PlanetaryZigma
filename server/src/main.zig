@@ -42,7 +42,10 @@ pub fn main(init: std.process.Init) !void {
             dev_mode = true;
             continue;
         }
-        host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
+        host_steam_id = std.fmt.parseInt(u64, arg, 10) catch {
+            std.log.warn("ignoring unrecognised argument: {s}", .{arg});
+            continue;
+        };
         break;
     }
 
