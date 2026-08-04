@@ -5,7 +5,7 @@ const ServerArtifacts = struct {
     system: *std.Build.Step.Compile,
     steam_dep: *std.Build.Dependency,
     ztracy_dep: *std.Build.Dependency,
-    render_dep: *std.Build.Dependency,
+    render_dep: ?*std.Build.Dependency,
 };
 
 pub fn build(b: *std.Build) void {
@@ -13,13 +13,16 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
     if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
+    // Off by default: a dedicated server compiles no render package, no windowing and
+    // no Vulkan, and rejects --render at startup.
+    const render_enable = b.option(bool, "render", "Build the server with its own render window") orelse false;
 
-    const artifacts = addServerArtifacts(b, target, optimize, tracy_enable);
+    const artifacts = addServerArtifacts(b, target, optimize, tracy_enable, render_enable);
     installServerArtifacts(b, b.getInstallStep(), artifacts, target, tracy_enable);
 
     const windows_step = b.step("windows", "Build Windows server artifacts used by the hosted client");
     const windows_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows });
-    const windows_artifacts = addServerArtifacts(b, windows_target, optimize, tracy_enable);
+    const windows_artifacts = addServerArtifacts(b, windows_target, optimize, tracy_enable, false);
     installServerArtifacts(b, windows_step, windows_artifacts, windows_target, tracy_enable);
 
     const run_step = b.step("run", "Run the server");
@@ -34,14 +37,19 @@ fn addServerArtifacts(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     tracy_enable: bool,
+    render_enable: bool,
 ) ServerArtifacts {
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "render", render_enable);
+    const build_options_module = build_options.createModule();
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const ztracy = ztracy_dep.module("ztracy");
 
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
-    const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
-    const render = render_dep.module("render");
-    const window = render_dep.module("Window");
+    const render_dep: ?*std.Build.Dependency = if (render_enable)
+        b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable })
+    else
+        null;
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
 
@@ -93,8 +101,7 @@ fn addServerArtifacts(
                 .{ .name = "shared", .module = shared },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "box3d", .module = box3d_mod },
-                .{ .name = "render", .module = render },
-                .{ .name = "Window", .module = window },
+                .{ .name = "build_options", .module = build_options_module },
             },
             .link_libc = true,
         }),
@@ -102,6 +109,11 @@ fn addServerArtifacts(
         .use_lld = true,
         .use_llvm = true,
     });
+
+    if (render_dep) |dep| {
+        system.root_module.addImport("render", dep.module("render"));
+        system.root_module.addImport("Window", dep.module("Window"));
+    }
 
     system.root_module.linkLibrary(box3d_lib);
     if (target.result.os.tag != .windows) system.link_z_defs = true;
@@ -117,12 +129,14 @@ fn addServerArtifacts(
                 .{ .name = "system", .module = system.root_module },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
-                .{ .name = "Window", .module = window },
+                .{ .name = "build_options", .module = build_options_module },
             },
         }),
         .use_lld = true,
         .use_llvm = true,
     });
+
+    if (render_dep) |dep| exe.root_module.addImport("Window", dep.module("Window"));
 
     if (target.result.os.tag != .windows) {
         exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));
@@ -147,10 +161,8 @@ fn installServerArtifacts(
 ) void {
     step.dependOn(&b.addInstallArtifact(artifacts.system, .{}).step);
     step.dependOn(&b.addInstallArtifact(artifacts.exe, .{}).step);
-    // --render is a local debug view; the hosted Windows server is always dedicated and
-    // must not need the Vulkan SDK to cross-compile.
-    if (target.result.os.tag != .windows) {
-        step.dependOn(&b.addInstallArtifact(artifacts.render_dep.artifact("render"), .{}).step);
+    if (artifacts.render_dep) |dep| {
+        step.dependOn(&b.addInstallArtifact(dep.artifact("render"), .{}).step);
     }
     if (tracy_enable) {
         step.dependOn(&b.addInstallArtifact(artifacts.ztracy_dep.artifact("tracy"), .{}).step);

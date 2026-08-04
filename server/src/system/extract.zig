@@ -3,19 +3,19 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Rendering = @import("render").Rendering;
-const Observer = @import("Observer.zig");
+const Camera = @import("Viewer.zig").Camera;
 const Ui = @import("render").Ui;
 
 /// Builds one frame from the authoritative sim, seen from the server's own fly camera.
-pub fn frame(world: *World, rendering: *Rendering, observer: Observer, ui: *Ui) !void {
+pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !void {
     // Following reads the client's own camera off the wire — `Entity.camera` only holds
     // the yaw the sim needs for movement, so its transform is never filled in.
-    const followed = if (observer.follow) |index| world.getPtr(world.players.items[index]) else null;
-    const camera_position: nz.Vec3(f32) = if (followed) |player| player.controller.input.camera_position else observer.position;
+    const followed = if (camera.follow) |index| world.getPtr(world.players.items[index]) else null;
+    const camera_position: nz.Vec3(f32) = if (followed) |player| player.controller.input.camera_position else camera.position;
     const camera_rotation: nz.quat.Hamiltonian(f32) = if (followed) |player|
         .fromVec(player.controller.input.camera_rotation)
     else
-        observer.rotation();
+        camera.rotation();
 
     rendering.beginFrame(.{
         .camera = .{
@@ -47,8 +47,8 @@ pub fn frame(world: *World, rendering: *Rendering, observer: Observer, ui: *Ui) 
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
-        .camera_pitch = if (followed) |player| player.camera.pitch else observer.pitch,
-        .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else observer.yaw_rotation,
+        .camera_pitch = if (followed) |player| player.camera.pitch else camera.pitch,
+        .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
     }, &.{}, &rendering.models);
 
     for (world.entities.values()) |*entity| {

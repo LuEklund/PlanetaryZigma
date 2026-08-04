@@ -8,14 +8,13 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
 const PlayerController = @import("system/PlayerController.zig");
-const Window = @import("Window");
-const extract = @import("system/extract.zig");
-const Observer = @import("system/Observer.zig");
-const pause = @import("system/pause.zig");
-const Ui = @import("render").Ui;
-pub const AssetServer = @import("render").AssetServer;
-pub const Backend = @import("render").Backend;
-const Rendering = @import("render").Rendering;
+const build_options = @import("build_options");
+
+/// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
+/// Every use below sits behind the same `build_options.render` check.
+pub const Viewer = if (build_options.render) @import("system/Viewer.zig") else void;
+pub const Window = if (build_options.render) @import("Window") else void;
+pub const AssetServer = if (build_options.render) @import("render").AssetServer else void;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
@@ -31,20 +30,15 @@ steam_server: *shared.SteamNet.Server,
 network_manager: NetworkManager,
 physics: Physics,
 request_exit: bool,
-/// Only present under --render. A dedicated server leaves this null, never opens a
-/// window, and never dlopens render.so.
-rendering: ?Rendering,
-observer: Observer,
-ui: Ui,
-paused: bool,
+viewer: Viewer,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     world: *World,
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
-    window: ?*Window,
-    asset_server: ?*AssetServer,
+    window: if (build_options.render) *Window else void,
+    asset_server: if (build_options.render) *AssetServer else void,
 };
 
 pub fn init(self: *System, data: *const Data) !void {
@@ -57,75 +51,23 @@ pub fn init(self: *System, data: *const Data) !void {
         .network_manager = try .init(data.gpa, data.io, data.steam_server),
         .physics = .init(data.gpa, data.io),
         .request_exit = false,
-        .rendering = null,
-        .observer = .init(.{ 0, data.world.planet_radius * World.ship_room_altitude_factor, 30 }),
-        .ui = undefined,
-        .paused = false,
+        .viewer = undefined,
     };
 
-    if (data.window) |window| {
-        self.rendering = undefined;
-        try self.rendering.?.init(.{
-            .gpa = data.gpa,
-            .io = data.io,
-            .window = window,
-            .asset_server = data.asset_server.?,
-        });
-        self.ui = try .init(data.gpa, window.size.width, window.size.height);
-        self.ui.default_font = &self.rendering.?.fonts[0];
-        self.ui.texture_slots = &self.rendering.?.texture_slots;
-    }
+    if (build_options.render) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world);
 
     try self.world.loadPlace(.ship, &self.physics);
 }
 
 pub fn deinit(self: *System) !void {
-    if (self.rendering) |*rendering| {
-        self.ui.deinit(self.gpa);
-        rendering.deinit(self.gpa, self.io);
-    }
+    if (build_options.render) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
     try self.network_manager.deinit();
 }
 
 fn draw(self: *System, world: *World) !void {
-    if (self.rendering == null) return;
-    const rendering = &self.rendering.?;
-    const window = rendering.window;
-    try window.poll(.{ .text = null });
-
-    if (window.keyboard.get(.escape) == .press) self.paused = !self.paused;
-    if (self.paused or !window.focused) {
-        try window.setPointerRelative(false);
-        try window.setPointerConstraint(.none);
-        try window.setPointerVisible(true);
-    } else {
-        try window.setPointerVisible(false);
-        try window.setPointerConstraint(.locked);
-        try window.setPointerRelative(true);
-        self.observer.update(window, world.delta_time, world.players.items.len);
-    }
-
-    self.ui.screen_width = @floatFromInt(window.size.width);
-    self.ui.screen_heigth = @floatFromInt(window.size.height);
-    const pointer_position = switch (window.pointer.movement) {
-        .position => |position| [2]f32{ @floatCast(position.x), @floatCast(position.y) },
-        .relative => [2]f32{ 0, 0 },
-    };
-    self.ui.start(.{
-        .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
-        .left_click = window.pointer.buttons.left,
-        .right_click = window.pointer.buttons.right,
-    }, world.delta_time);
-    if (self.paused) switch (pause.update(&self.ui, world.players.items.len, self.observer.follow)) {
-        .none => {},
-        .resume_view => self.paused = false,
-        .quit => self.request_exit = true,
-    };
-    self.ui.end();
-
-    try extract.frame(world, rendering, self.observer, &self.ui);
-    try rendering.reloadIfChanged(self.io);
+    if (!build_options.render) return;
+    if (try self.viewer.draw(world, self.io)) self.request_exit = true;
 }
 
 pub fn update(self: *System, world: *World) !void {
@@ -170,6 +112,9 @@ pub fn update(self: *System, world: *World) !void {
 }
 
 fn reload(self: *System, pre_reload: bool) !void {
+    // The fresh .so has its own copy of shared's globals, so without this every log
+    // line after a swap comes out of a null io and loses its timestamp.
+    if (!pre_reload) shared.log_io = self.io;
     try self.physics.reload(pre_reload, self.world);
 }
 
@@ -179,19 +124,20 @@ comptime {
 
 pub const ffi = struct {
     pub const Table = struct {
-        systemInit: *const fn (*System, data: *const Data) callconv(.c) void,
+        systemInit: *const fn (*System, data: *const Data) callconv(.c) bool,
         systemDeinit: *const fn (*System) callconv(.c) void,
         systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
         systemReload: *const fn (*System, pre_reload: bool) callconv(.c) void,
     };
 
-    pub export fn systemInit(system: *System, data: *const Data) void {
+    pub export fn systemInit(system: *System, data: *const Data) bool {
         std.log.info("system init", .{});
         system.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system init: {s}", .{@errorName(err)});
-            return;
+            return false;
         };
+        return true;
     }
 
     pub export fn systemDeinit(system: *System) void {
