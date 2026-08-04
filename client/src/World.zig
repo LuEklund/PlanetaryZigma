@@ -7,19 +7,14 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
-const Model = @import("asset/Model.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
+const FramePacket = @import("Renderer/FramePacket.zig");
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,
     source: shared.entity.Id,
     position: nz.Vec3(f32),
     delta: f32,
-};
-
-pub const RenderCommand = union(enum) {
-    entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
-    entity_despawned: shared.entity.Id,
 };
 
 mutex: std.Io.Mutex = .init,
@@ -32,7 +27,7 @@ pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
-render_outbox: std.ArrayList(RenderCommand) = .empty,
+render_outbox: std.ArrayList(FramePacket.RenderCommand) = .empty,
 emitters: Emitter.List,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
@@ -62,7 +57,6 @@ pub const Entity = struct {
     motion: Motion = .{},
     override_animation_state: ?shared.entity.State = null,
     stun_time: f32 = 0,
-    model_handle: ?Model.Handle = null,
     flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
@@ -195,7 +189,11 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
             },
             .unknown, .item, .lootbox, .platform, .target_dummy => {},
         }
-        self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
+        if (entity.kind == .planet) {
+            self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = .{ .id = entity.id, .radius = entity_info.data.planet_radius } });
+        } else {
+            self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
+        }
     }
 
     for (self.pending_healths.items) |command| {

@@ -16,34 +16,34 @@ const planet_spin_speed: f32 = 0.22;
 const bozo_surface_offset: f32 = 3.5;
 const bozo_scale: f32 = 4.4;
 
-pub fn populate(world: *World) !void {
+pub fn populate(world: *World) void {
     world.camera = .{ .transform = .{}, .fov_rad = camera_fov_rad };
 
-    const planet = try world.spawn(planet_id);
-    planet.* = .{
+    world.pending_spawn.appendAssumeCapacity(.{
         .id = planet_id,
         .kind = .planet,
-        .transform = .{ .position = planet_position, .scale = @splat(planet_scale) },
-    };
-    world.planet_radius = @floatFromInt(planet_mesh_radius);
-    world.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = planet_id, .kind = .planet } });
+        .position = planet_position,
+        .data = .{ .planet_radius = planet_mesh_radius },
+    });
 
     const stand_height = @as(f32, @floatFromInt(planet_mesh_radius)) * planet_scale + bozo_surface_offset;
-    const bozo = try world.spawn(bozo_id);
-    bozo.* = .{
+    world.pending_spawn.appendAssumeCapacity(.{
         .id = bozo_id,
         .kind = .player,
-        .transform = .{
-            .position = planet_position + nz.Vec3(f32){ 0, stand_height, 0 },
-            .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }),
-            .scale = @splat(bozo_scale),
-        },
-        .override_animation_state = .walk,
-    };
-    world.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = bozo_id, .kind = .player } });
+        .position = planet_position + nz.Vec3(f32){ 0, stand_height, 0 },
+        .rotation = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 }).toVec(),
+        .data = .none,
+    });
 }
 
 pub fn update(world: *World, elapsed_time: f32) void {
     const planet = world.getPtr(planet_id) orelse return;
+    planet.motion.update = null;
+    planet.transform.scale = @splat(planet_scale);
     planet.transform.rotation = nz.Quat(f32).angleAxis(elapsed_time * planet_spin_speed, .{ 1, 0, 0 });
+
+    const bozo = world.getPtr(bozo_id) orelse return;
+    bozo.motion.update = null;
+    bozo.transform.scale = @splat(bozo_scale);
+    bozo.override_animation_state = .walk;
 }

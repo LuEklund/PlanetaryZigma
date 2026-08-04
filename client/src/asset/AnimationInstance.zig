@@ -43,6 +43,7 @@ pub const Skeleton = struct {
         const joint_matrices = try gpa.alloc([]nz.Mat4x4(f32), model.skins.len);
         for (model.skins, joint_matrices) |skin, *matrices| {
             matrices.* = try gpa.alloc(nz.Mat4x4(f32), skin.inverse_bind_matrices.?.len);
+            @memset(matrices.*, .identity);
         }
         return .{
             .nodes = nodes,

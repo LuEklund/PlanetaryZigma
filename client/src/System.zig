@@ -11,6 +11,8 @@ const Animation = @import("system/Animations.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
 const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
+const extract = @import("system/extract.zig");
+const FramePacket = @import("Renderer/FramePacket.zig");
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -43,6 +45,7 @@ renderer: Renderer,
 network_manager: NetworkManager,
 animation: Animation,
 animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
+frame_packet: FramePacket,
 ui: Ui,
 scene: Scene,
 hud: Hud,
@@ -71,6 +74,7 @@ pub fn init(self: *System, data: Data) !void {
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     self.animation = .init(data.gpa);
     self.animation_instances = .init(data.gpa);
+    self.frame_packet = try .init(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
     self.ui.default_font = &self.renderer.inner.resources.font_loader.items[0];
     self.options = .{};
@@ -84,6 +88,7 @@ pub fn deinit(self: *System) void {
     var instance_iterator = self.animation_instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
     self.animation_instances.deinit();
+    self.frame_packet.deinit(self.gpa);
     self.ui.deinit(self.gpa);
     self.renderer.deinit(self.gpa);
     self.network_manager.deinit();
@@ -93,7 +98,7 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
     self.hud = .{};
     switch (next) {
-        .menu => try menu_world.populate(world),
+        .menu => menu_world.populate(world),
         .game => {},
         .particle_lab => particle_lab.populate(world),
     }
@@ -121,13 +126,15 @@ pub fn update(self: *System, world: *World) !void {
     }
     try self.applyOptions(world);
     Emitter.update(world);
-    try self.renderer.update(world, &self.animation_instances, &self.ui, self.scene != .particle_lab);
+    extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
+    try self.renderer.inner.drainRenderCommands(self.gpa, world.render_outbox.items, &self.animation_instances);
+    world.render_outbox.clearRetainingCapacity();
+    try self.renderer.update(&self.frame_packet, &self.animation_instances);
     try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush(&self.animation_instances);
-    try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, world);
     try self.animation.updateStates(world, &self.animation_instances);
     try self.animation.update(world, &self.animation_instances);
 

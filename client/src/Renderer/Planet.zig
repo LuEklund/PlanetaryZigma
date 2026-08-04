@@ -4,8 +4,6 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const system = @import("../System.zig");
-const World = system.World;
 const Mesh = @import("Vulkan/Mesh.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Device = @import("Vulkan/device.zig").Logical;
@@ -75,15 +73,13 @@ pub fn drainRetired(self: *Planet, gpa: std.mem.Allocator, vma: Vma, frame: u32)
     }
 }
 
-pub fn update(self: *Planet, gpa: std.mem.Allocator, world: *World) !void {
+pub fn update(self: *Planet, gpa: std.mem.Allocator, anchor_position: nz.Vec3(f32), view_distance: i32) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     if (self.job) |_| return;
     if (self.planet_id == .none) return;
-    const position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position;
-    const player_chunk: shared.planet.Chunk.Coord = .fromPosition(position);
-    const chunk_view_distance: i32 = @max(world.chunk_view_distance, 1);
-    try self.startJob(gpa, player_chunk, chunk_view_distance);
+    const player_chunk: shared.planet.Chunk.Coord = .fromPosition(anchor_position);
+    try self.startJob(gpa, player_chunk, view_distance);
 }
 
 fn startJob(self: *Planet, gpa: std.mem.Allocator, player_chunk: shared.planet.Chunk.Coord, chunk_view_distance: i32) !void {
@@ -117,7 +113,7 @@ fn closerToPlayer(player_chunk: shared.planet.Chunk.Coord, a: shared.planet.Chun
     return @reduce(.Add, delta_a * delta_a) < @reduce(.Add, delta_b * delta_b);
 }
 
-pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, world: *World, frame: u32) !void {
+pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, anchor_position: nz.Vec3(f32), view_distance: i32, frame: u32) !void {
     const running = self.job orelse return;
     var results = running.job.collect() orelse return;
     const tracy_scope = tracy.zone(@src());
@@ -134,14 +130,12 @@ pub fn collect(self: *Planet, gpa: std.mem.Allocator, vma: Vma, device: Device, 
 
     var evicted: usize = 0;
     if (self.radius > @as(u32, @intCast(shared.planet.Chunk.dim))) {
-        const live_position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position;
-        const live_player_chunk: shared.planet.Chunk.Coord = .fromPosition(live_position);
-        const live_chunk_view_distance: i32 = @max(world.chunk_view_distance, 1);
+        const live_player_chunk: shared.planet.Chunk.Coord = .fromPosition(anchor_position);
         var mesh_index: usize = self.meshes.count();
         while (mesh_index > 0) {
             mesh_index -= 1;
             const coord = self.meshes.keys()[mesh_index];
-            if (!coord.within(live_player_chunk, live_chunk_view_distance)) {
+            if (!coord.within(live_player_chunk, view_distance)) {
                 if (self.meshes.values()[mesh_index]) |mesh| {
                     try self.retired.append(gpa, .{ .mesh = mesh, .frame = frame });
                 }

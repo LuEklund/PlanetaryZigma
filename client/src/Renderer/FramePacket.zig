@@ -1,0 +1,95 @@
+const FramePacket = @This();
+
+const std = @import("std");
+const shared = @import("shared");
+const nz = shared.numz;
+const Shader = @import("Vulkan/Shader.zig");
+const FrameData = @import("Vulkan/FrameData.zig");
+const Emitter = @import("../system/Emitter.zig");
+const Ui = @import("../Ui.zig");
+
+pub const max_lines: u32 = FrameData.max_debug_vertices / 2;
+
+camera: Camera,
+time: f32,
+light_color: [4]f32,
+draw_sky: bool,
+draw_models: std.ArrayList(DrawModel),
+draw_lines: std.ArrayList(Line),
+emitters: std.ArrayList(PacketEmitter),
+ui: UiLayer,
+planet: PlanetState,
+
+pub const Camera = struct {
+    position: nz.Vec3(f32),
+    rotation: nz.Quat(f32),
+    fov_rad: f32,
+};
+
+pub const DrawModel = struct {
+    kind: shared.entity.Kind,
+    model_matrix: nz.Mat4x4(f32),
+    position: nz.Vec3(f32),
+    skeleton_entity: ?shared.entity.Id,
+};
+
+pub const RenderCommand = union(enum) {
+    entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
+    entity_despawned: shared.entity.Id,
+    planet_spawned: struct { id: shared.entity.Id, radius: u32 },
+};
+
+pub const Line = struct {
+    a: nz.Vec3(f32),
+    b: nz.Vec3(f32),
+    color: [4]f32,
+};
+
+pub const PacketEmitter = struct {
+    effect: Shader.Kind,
+    origin: nz.Vec3(f32),
+    target: nz.Vec3(f32),
+    spawn_time: f32,
+};
+
+pub const UiLayer = struct {
+    quads: std.ArrayList(Ui.Quad),
+    screen_width: f32,
+    screen_height: f32,
+};
+
+pub const PlanetState = struct {
+    transform: nz.Mat4x4(f32),
+    radius: u32,
+    anchor_position: nz.Vec3(f32),
+    view_distance: i32,
+    present: bool,
+};
+
+pub fn init(gpa: std.mem.Allocator) !FramePacket {
+    return .{
+        .camera = .{ .position = @splat(0), .rotation = .identity, .fov_rad = 0 },
+        .time = 0,
+        .light_color = .{ 1, 1, 1, 1 },
+        .draw_sky = false,
+        .draw_models = try .initCapacity(gpa, shared.max_entities),
+        .draw_lines = try .initCapacity(gpa, max_lines),
+        .emitters = try .initCapacity(gpa, Emitter.max_emitters),
+        .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
+        .planet = .{ .transform = .identity, .radius = 0, .anchor_position = @splat(0), .view_distance = 1, .present = false },
+    };
+}
+
+pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
+    self.draw_models.deinit(gpa);
+    self.draw_lines.deinit(gpa);
+    self.emitters.deinit(gpa);
+    self.ui.quads.deinit(gpa);
+}
+
+pub fn clear(self: *FramePacket) void {
+    self.draw_models.clearRetainingCapacity();
+    self.draw_lines.clearRetainingCapacity();
+    self.emitters.clearRetainingCapacity();
+    self.ui.quads.clearRetainingCapacity();
+}

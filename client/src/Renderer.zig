@@ -4,10 +4,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Window = @import("Window");
-const World = @import("System.zig").World;
 const AssetServer = @import("AssetServer.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
-const Ui = @import("Ui.zig");
 const tracy = @import("ztracy");
 
 inner: Inner,
@@ -16,6 +14,7 @@ const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Inner = *Vulkan;
 
+pub const FramePacket = @import("Renderer/FramePacket.zig");
 pub const TextureTable = @import("Renderer/loader/TextureTable.zig");
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, window: *Window) !Renderer {
@@ -34,10 +33,10 @@ pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     }
 }
 
-pub fn update(self: *Renderer, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), ui: *const Ui, draw_sky: bool) !void {
+pub fn update(self: *Renderer, packet: *const FramePacket, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    try self.inner.update(world, instances, ui, draw_sky);
+    try self.inner.update(packet, instances);
 }
 
 const debug_instance_extensions = if (builtin.mode == .Debug)
