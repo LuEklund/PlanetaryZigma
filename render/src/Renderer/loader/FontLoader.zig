@@ -11,13 +11,20 @@ const check = @import("../Vulkan/utils.zig").check;
 
 const font_files: []const []const u8 = &.{"Roboto-Regular.ttf"};
 
+/// How many `Font` slots a caller must own to pass into `init`.
+pub const count: usize = font_files.len;
+
 table: *TextureTable,
 items: []Font,
 samplers: []c.VkSampler,
 interface: Loader,
 
-pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
-    const items = try gpa.alloc(Font, font_files.len);
+/// `fonts` is owned by the caller, not allocated here: Ui needs a stable `*Font` for
+/// glyph metrics, and a loader-owned one would be a pointer into render.so. Reload keeps
+/// writing through it in place, so the borrow stays correct across a .ttf edit.
+pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, fonts: []Font) !void {
+    std.debug.assert(fonts.len == font_files.len);
+    const items = fonts;
     @memset(items, .empty);
     const samplers = try gpa.alloc(c.VkSampler, font_files.len);
     @memset(samplers, null);
@@ -40,7 +47,6 @@ pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServe
 pub fn deinit(self: *FontLoader) void {
     const gpa = self.interface.gpa;
     for (0..self.items.len) |index| unload(&self.interface, index);
-    gpa.free(self.items);
     gpa.free(self.samplers);
 }
 

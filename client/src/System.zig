@@ -47,6 +47,9 @@ frame_packet: FramePacket,
 ui: Ui,
 scene: Scene,
 hud: Hud,
+fonts: [Backend.FontLoader.count]@import("render").Font,
+model_table: Backend.ModelTable,
+texture_paths: std.StringHashMapUnmanaged(Backend.Image.Handle),
 options: Options,
 request_exit: bool = false,
 fullscreen_applied: bool = false,
@@ -70,12 +73,18 @@ pub fn init(self: *System, data: Data) !void {
     self.asset_server = data.asset_server;
     // Hot-reloadable, but only function bodies survive: adding a field to
     // Vulkan/Resources/Swapchain reinterprets live GPU state, so those edits need a restart.
+    self.fonts = @splat(.empty);
+    self.model_table = try .init(data.gpa);
+    self.texture_paths = .empty;
     self.render = try .init("render", data.io);
     errdefer self.render.deinit(data.io);
     self.render_handle = self.render.symbols.renderInit(&Backend.Data{
         .gpa = data.gpa,
         .io = data.io,
         .asset_server = data.asset_server,
+        .fonts = &self.fonts,
+        .models = &self.model_table,
+        .texture_paths = &self.texture_paths,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.render.symbols.renderDeinit(self.render_handle);
@@ -87,18 +96,13 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.frame_packet.deinit(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
     errdefer self.ui.deinit(data.gpa);
-    self.ui.default_font = &self.resources().font_loader.items[0];
+    self.ui.default_font = &self.fonts[0];
+    self.ui.handles_by_path = &self.texture_paths;
     self.options = .{};
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
     self.fullscreen_applied = false;
     self.window_size_applied = data.window.size;
-}
-
-/// Fetched per use, never cached: it points into render.so, so a cached copy would
-/// have to be refreshed on every swap — one more thing to forget.
-fn resources(self: *System) *@import("render").Resources {
-    return self.render.symbols.renderResources(self.render_handle);
 }
 
 pub fn deinit(self: *System) void {
@@ -108,6 +112,7 @@ pub fn deinit(self: *System) void {
     self.presentation.deinit();
     self.render.symbols.renderDeinit(self.render_handle);
     self.render.deinit(self.io);
+    self.model_table.deinit(self.gpa);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -133,7 +138,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
     if (self.scene == .particle_lab) particle_lab.update(world, &self.presentation);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.resources().texture_table, &world.controller, &self.options)) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -149,8 +154,8 @@ pub fn update(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
     extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
-    try extract.present(world, &self.presentation, self.resources().model_loader, &self.frame_packet);
-    _ = self.render.symbols.renderDrain(self.render_handle, world.render_outbox.items.ptr, world.render_outbox.items.len);
+    try extract.present(world, &self.presentation, &self.model_table, &self.frame_packet);
+    self.frame_packet.commands.appendSliceAssumeCapacity(world.render_outbox.items);
     world.render_outbox.clearRetainingCapacity();
     _ = self.render.symbols.renderUpdate(self.render_handle, &self.frame_packet);
     try self.render.swap(self.io, null, self.render_handle);
@@ -170,7 +175,6 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     defer tracy_scope.end();
     const window = self.window;
     if (!window.size.eql(self.window_size_applied)) {
-        _ = self.render.symbols.renderResize(self.render_handle, window.size.width, window.size.height);
         self.ui.screen_width = @floatFromInt(window.size.width);
         self.ui.screen_heigth = @floatFromInt(window.size.height);
         self.window_size_applied = window.size;

@@ -13,7 +13,7 @@ const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *TextureTable, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -93,7 +93,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
 
                 .color = .new(1, 1, 1, 1),
                 .name = @tagName(item_kind),
-                .texture = texture_table.handle(shared.Item.spec(item_kind).icon),
+                .texture = ui.texture(shared.Item.spec(item_kind).icon),
                 .child_anchor = .{ .x = .end, .y = .end },
                 .children = &.{.{
                     .size = .{ .fixed = ui.textSize(amount_text, 32) },
@@ -199,7 +199,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(TextureTable.crosshair_texture_path),
+                        .texture = ui.texture(TextureTable.crosshair_texture_path),
                     },
                 },
             });

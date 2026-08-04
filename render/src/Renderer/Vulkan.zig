@@ -6,6 +6,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Window = @import("Window");
 const AssetServer = @import("../AssetServer.zig");
+const Font = @import("../asset/Font.zig");
+const ModelTable = @import("../asset/ModelTable.zig");
 const ModelLoader = @import("loader/ModelLoader.zig");
 const TextureTable = @import("loader/TextureTable.zig");
 const Instance = @import("Vulkan/Instance.zig");
@@ -51,7 +53,7 @@ planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, window: *Window) !*Vulkan {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_paths: *std.StringHashMapUnmanaged(Image.Handle), window: *Window) !*Vulkan {
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.planet = .init();
@@ -82,7 +84,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, window: *Window)
         // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
-    self.resources = try .init(gpa, asset_server, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, asset_server, fonts, models, texture_paths, self.vma, self.physical_device, self.device);
 
     try asset_server.load();
 
@@ -128,6 +130,11 @@ const frame_timeout_ns: u64 = 1000000000;
 pub fn update(self: *Vulkan, packet: *const FramePacket) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+
+    try self.drainRenderCommands(self.gpa, packet.commands.items);
+    if (packet.surface_width != self.swapchain.extent.width or packet.surface_height != self.swapchain.extent.height) {
+        try self.resize(self.gpa, packet.surface_width, packet.surface_height);
+    }
 
     try self.planet.collect(self.gpa, self.vma, self.device, packet.planet.anchor_position, packet.planet.view_distance, self.current_frame_inflight);
     try self.planet.update(self.gpa, packet.planet.anchor_position, packet.planet.view_distance);
@@ -499,14 +506,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
         for (packet.draw_models.items) |draw_model| {
             if (draw_model.mesh_id != null) continue;
             if (!matrix.cascadeContains(&cascade_vp, draw_model.position)) continue;
-            const handle = self.resources.model_loader.handleForKind(draw_model.kind) orelse continue;
+            const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
             drawStatic(self, cmd, handle, cascade_vp.mul(draw_model.model_matrix));
         }
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_skinned));
         for (packet.draw_models.items) |draw_model| {
             const mesh_id = draw_model.mesh_id orelse continue;
             if (!matrix.cascadeContains(&cascade_vp, draw_model.position)) continue;
-            const handle = self.resources.model_loader.handleForKind(draw_model.kind) orelse continue;
+            const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
             const entry = fileEntry(self, handle) orelse continue;
             drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, cascade_vp.mul(draw_model.model_matrix));
         }
@@ -547,7 +554,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     bindFragmentShader(cmd, self.resources.shader_loader.frag(.mesh));
     for (packet.draw_models.items) |draw_model| {
         if (draw_model.mesh_id != null) continue;
-        const handle = self.resources.model_loader.handleForKind(draw_model.kind) orelse continue;
+        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
         drawStatic(self, cmd, handle, draw_model.model_matrix);
     }
 
@@ -558,7 +565,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
     for (packet.draw_models.items) |draw_model| {
         const mesh_id = draw_model.mesh_id orelse continue;
-        const handle = self.resources.model_loader.handleForKind(draw_model.kind) orelse continue;
+        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
         const entry = fileEntry(self, handle) orelse continue;
         drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, draw_model.model_matrix);
     }
@@ -804,8 +811,9 @@ fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle,
         },
         .file => |file_index| {
             const entry = &self.resources.model_loader.entries[file_index];
-            if (entry.model.isEmpty() or entry.model.isSkinned()) return;
-            for (entry.model.surfaces.items) |surface| {
+            const model = &self.resources.model_loader.models.models[file_index];
+            if (model.isEmpty() or model.isSkinned()) return;
+            for (model.surfaces.items) |surface| {
                 const mesh = &entry.meshes[surface.mesh_id];
                 const surface_matrix = top_matrix.mul(surface.model_matrix);
                 var push: Shader.WorldPushConstant = .{

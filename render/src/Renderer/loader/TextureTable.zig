@@ -20,12 +20,15 @@ descriptor_size: usize,
 images: std.ArrayList(Image),
 free_slots: std.ArrayList(usize),
 samplers: std.ArrayList(c.VkSampler),
-paths: std.StringHashMapUnmanaged(Image.Handle),
+/// Caller-owned: the HUD resolves icon handles from it at startup, so it must not live
+/// behind the render FFI. Keys are duped here and freed here; only the map is borrowed.
+paths: *std.StringHashMapUnmanaged(Image.Handle),
 skybox: ?Image,
 skybox_descriptor: Buffer,
 
 pub fn init(
     gpa: std.mem.Allocator,
+    paths: *std.StringHashMapUnmanaged(Image.Handle),
     vma: Vma,
     device: Device,
     textures_layout: c.VkDescriptorSetLayout,
@@ -56,7 +59,7 @@ pub fn init(
         .images = .empty,
         .free_slots = .empty,
         .samplers = .empty,
-        .paths = .empty,
+        .paths = paths,
         .skybox = null,
         .skybox_descriptor = try .init(
             device,

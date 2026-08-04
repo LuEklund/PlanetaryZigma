@@ -5,12 +5,12 @@ const World = @import("../World.zig");
 const Ui = @import("render").Ui;
 const FramePacket = @import("render").FramePacket;
 const Presentation = @import("render").Presentation;
-const ModelLoader = @import("render").ModelLoader;
+const ModelTable = @import("render").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
-pub fn present(world: *World, presentation: *Presentation, loader: *ModelLoader, packet: *FramePacket) !void {
+pub fn present(world: *World, presentation: *Presentation, loader: *ModelTable, packet: *FramePacket) !void {
     try presentation.begin(.{
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
@@ -63,6 +63,8 @@ pub fn extract(world: *World, ui: *Ui, packet: *FramePacket, draw_sky: bool) voi
     packet.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
     packet.ui.screen_width = ui.screen_width;
     packet.ui.screen_height = ui.screen_heigth;
+    packet.surface_width = @intFromFloat(ui.screen_width);
+    packet.surface_height = @intFromFloat(ui.screen_heigth);
 
     const planet_entity: ?*World.Entity = for (world.entities.values()) |*entity| {
         if (entity.kind == .planet) break entity;

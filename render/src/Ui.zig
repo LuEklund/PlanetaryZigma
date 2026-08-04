@@ -16,6 +16,10 @@ pub const Vertex = extern struct {
     _: [2]u32 = .{ 0, 0 },
 };
 
+pub fn texture(self: *const Ui, path: []const u8) Image.Handle {
+    return self.handles_by_path.get(path) orelse .blank;
+}
+
 pub const Quad = struct {
     vertices: [4]Vertex,
 };
@@ -32,6 +36,7 @@ mouse_state: MouseState = .{},
 screen_width: f32,
 screen_heigth: f32,
 default_font: *Font,
+handles_by_path: *const std.StringHashMapUnmanaged(Image.Handle),
 hot_item: ?u64 = null,
 active_item: ?u64 = null,
 fire_item: ?u64 = null,
@@ -125,6 +130,7 @@ pub fn init(
         .screen_width = @floatFromInt(screen_width),
         .screen_heigth = @floatFromInt(screen_heigth),
         .default_font = undefined,
+        .handles_by_path = undefined,
     };
 }
 

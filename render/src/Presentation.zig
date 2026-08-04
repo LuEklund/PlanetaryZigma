@@ -9,7 +9,7 @@ const Model = @import("asset/Model.zig");
 const Node = @import("asset/Node.zig");
 const AnimationClip = @import("asset/AnimationClip.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
-const ModelLoader = @import("Renderer/loader/ModelLoader.zig");
+const ModelTable = @import("asset/ModelTable.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 const Emitter = @import("Emitter.zig");
 const Shader = @import("Renderer/Vulkan/Shader.zig");
@@ -60,11 +60,11 @@ pub fn deinit(self: *Presentation) void {
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(loader: *ModelLoader, instance: *const AnimationInstance) ?*Model {
+fn resolveModel(loader: *ModelTable, instance: *const AnimationInstance) ?*Model {
     return loader.modelPtr(instance.model_handle orelse return null);
 }
 
-pub fn begin(self: *Presentation, frame: View.Frame, deaths: []const shared.entity.Id, loader: *ModelLoader) !void {
+pub fn begin(self: *Presentation, frame: View.Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.seen = false;
@@ -76,10 +76,10 @@ pub fn begin(self: *Presentation, frame: View.Frame, deaths: []const shared.enti
     try self.applyReloads(loader);
 }
 
-pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelLoader) !void {
+pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelTable) !void {
     if (shared.entity.modelSpec(entity.kind) == null) return;
     if (!self.instances.contains(entity.id)) {
-        const handle = loader.handleForKind(entity.kind);
+        const handle = ModelTable.handleForKind(entity.kind);
         const model = if (handle) |model_handle| loader.modelPtr(model_handle) else null;
         if (model) |file_model| if (file_model.isEmpty()) {
             std.log.err("model not loaded for {s}", .{@tagName(entity.kind)});
@@ -104,7 +104,7 @@ pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelLoader) !
     instance.state = state;
 }
 
-pub fn finish(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelLoader, packet: *FramePacket) void {
+pub fn finish(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelTable, packet: *FramePacket) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -123,9 +123,9 @@ pub fn finish(self: *Presentation, triggers: []const shared.net.Event.Trigger, l
     self.retire();
 }
 
-fn applyReloads(self: *Presentation, loader: *ModelLoader) !void {
+fn applyReloads(self: *Presentation, loader: *ModelTable) !void {
     for (loader.reloaded.items) |file_index| {
-        const reloaded_model = &loader.entries[file_index].model;
+        const reloaded_model = &loader.models[file_index];
         var instance_iterator = self.instances.valueIterator();
         while (instance_iterator.next()) |instance| {
             const handle = instance.model_handle orelse continue;
@@ -161,7 +161,7 @@ fn retire(self: *Presentation) void {
     }
 }
 
-fn applyTriggers(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelLoader) void {
+fn applyTriggers(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
     for (triggers) |trigger| {
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
@@ -171,7 +171,7 @@ fn applyTriggers(self: *Presentation, triggers: []const shared.net.Event.Trigger
     }
 }
 
-fn animate(self: *Presentation, loader: *ModelLoader) void {
+fn animate(self: *Presentation, loader: *ModelTable) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;

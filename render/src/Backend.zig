@@ -1,9 +1,12 @@
 const std = @import("std");
 const Window = @import("Window");
 const Vulkan = @import("Renderer/Vulkan.zig");
-const Resources = @import("Renderer/Vulkan/Resources.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 const AssetServer = @import("AssetServer.zig");
+const Font = @import("asset/Font.zig");
+pub const ModelTable = @import("asset/ModelTable.zig");
+pub const Image = @import("Renderer/Vulkan/Image.zig");
+pub const FontLoader = @import("Renderer/loader/FontLoader.zig");
 const shared = @import("shared");
 
 // Each .so carries its own copy of shared's globals, so this one needs its own log
@@ -14,6 +17,11 @@ pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     asset_server: *AssetServer,
+    /// Caller-owned, `FontLoader.count` long. Ui reads glyph metrics through it, so the
+    /// storage lives on the exe side rather than being lent back out of render.so.
+    fonts: []Font,
+    models: *ModelTable,
+    texture_paths: *std.StringHashMapUnmanaged(Image.Handle),
     window: *Window,
 };
 
@@ -26,9 +34,6 @@ const Context = struct {
 pub const Table = struct {
     renderInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     renderDeinit: *const fn (*anyopaque) callconv(.c) void,
-    renderResources: *const fn (*anyopaque) callconv(.c) *Resources,
-    renderResize: *const fn (*anyopaque, width: u32, height: u32) callconv(.c) bool,
-    renderDrain: *const fn (*anyopaque, commands: [*]const FramePacket.RenderCommand, count: usize) callconv(.c) bool,
     renderUpdate: *const fn (*anyopaque, packet: *FramePacket) callconv(.c) bool,
     renderReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
@@ -47,7 +52,7 @@ pub const ffi = struct {
         context.* = .{
             .gpa = data.gpa,
             .io = data.io,
-            .vulkan = Vulkan.init(data.gpa, data.asset_server, data.window) catch |err| {
+            .vulkan = Vulkan.init(data.gpa, data.asset_server, data.fonts, data.models, data.texture_paths, data.window) catch |err| {
                 std.log.err("render init: {s}", .{@errorName(err)});
                 data.gpa.destroy(context);
                 return null;
@@ -62,29 +67,6 @@ pub const ffi = struct {
         const gpa = context.gpa;
         context.vulkan.deinit(gpa);
         gpa.destroy(context);
-    }
-
-    pub export fn renderResources(handle: *anyopaque) *Resources {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources;
-    }
-
-    pub export fn renderResize(handle: *anyopaque, width: u32, height: u32) bool {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resize(context.gpa, width, height) catch |err| {
-            std.log.err("render resize: {s}", .{@errorName(err)});
-            return false;
-        };
-        return true;
-    }
-
-    pub export fn renderDrain(handle: *anyopaque, commands: [*]const FramePacket.RenderCommand, count: usize) bool {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.drainRenderCommands(context.gpa, commands[0..count]) catch |err| {
-            std.log.err("render drain: {s}", .{@errorName(err)});
-            return false;
-        };
-        return true;
     }
 
     // A freshly dlopened render.so has its OWN procs.instance/device globals, still

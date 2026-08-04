@@ -21,6 +21,13 @@ draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(PacketEmitter),
 ui: UiLayer,
 planet: PlanetState,
+/// The renderer resizes itself when this stops matching its swapchain, so the caller
+/// never needs a separate entry point for it.
+surface_width: u32,
+surface_height: u32,
+/// Spawn/despawn/planet events, drained by the renderer before it draws — the ordering
+/// that used to depend on the caller invoking drain before update.
+commands: std.ArrayList(RenderCommand),
 
 pub const Camera = struct {
     position: nz.Vec3(f32),
@@ -79,6 +86,9 @@ pub fn init(gpa: std.mem.Allocator) !FramePacket {
         .joint_matrices = try .initCapacity(gpa, FrameData.max_joint_matrices),
         .draw_lines = try .initCapacity(gpa, max_lines),
         .emitters = try .initCapacity(gpa, Emitter.max_emitters),
+        .surface_width = 0,
+        .surface_height = 0,
+        .commands = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
         .planet = .{ .transform = .identity, .radius = 0, .anchor_position = @splat(0), .view_distance = 1, .present = false },
     };
@@ -89,6 +99,7 @@ pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
     self.joint_matrices.deinit(gpa);
     self.draw_lines.deinit(gpa);
     self.emitters.deinit(gpa);
+    self.commands.deinit(gpa);
     self.ui.quads.deinit(gpa);
 }
 
@@ -97,5 +108,6 @@ pub fn clear(self: *FramePacket) void {
     self.joint_matrices.clearRetainingCapacity();
     self.draw_lines.clearRetainingCapacity();
     self.emitters.clearRetainingCapacity();
+    self.commands.clearRetainingCapacity();
     self.ui.quads.clearRetainingCapacity();
 }

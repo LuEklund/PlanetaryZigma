@@ -4,7 +4,6 @@ const nz = shared.numz;
 const system = @import("../../System.zig");
 const World = system.World;
 const Ui = @import("render").Ui;
-const Resources = @import("render").Resources;
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");

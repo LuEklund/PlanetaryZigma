@@ -12,66 +12,40 @@ const Mesh = @import("../Vulkan/Mesh.zig");
 const Image = @import("../Vulkan/Image.zig");
 const Buffer = @import("../Vulkan/Buffer.zig");
 const TextureTable = @import("TextureTable.zig");
+const ModelTable = @import("../../asset/ModelTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 table: *TextureTable,
+models: *ModelTable,
 entries: []Entry,
-indices_by_path: std.StringHashMapUnmanaged(u32),
-reloaded: std.ArrayList(u32),
 interface: Loader,
 
+/// The GPU half only — the CPU `Model` lives in the caller-owned `ModelTable`.
 pub const Entry = struct {
     kind: entity.Kind,
-    model: Model,
     meshes: []Mesh,
     image_slots: []Image.Handle,
 };
 
-pub fn handleForKind(self: *const ModelLoader, kind: entity.Kind) ?Model.Handle {
-    const path = (entity.modelSpec(kind) orelse return null).path;
-    if (std.mem.endsWith(u8, path, ".glb")) return .{ .file = self.indices_by_path.get(path).? };
-    return .{ .generated = std.meta.stringToEnum(Model.Generated, path).? };
-}
-
-pub fn modelPtr(self: *ModelLoader, handle: Model.Handle) ?*Model {
-    return switch (handle) {
-        .file => |file_index| &self.entries[file_index].model,
-        .generated => null,
-    };
-}
-
-pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
-    const files = try gpa.alloc([]const u8, entity.all_kinds.len);
-    const entries_storage = try gpa.alloc(Entry, entity.all_kinds.len);
-    var indices_by_path: std.StringHashMapUnmanaged(u32) = .empty;
-    var count: u32 = 0;
-    for (entity.all_kinds) |kind| {
-        const model_spec = entity.spec(kind).model orelse continue;
-        const path = model_spec.path;
-        if (!std.mem.endsWith(u8, path, ".glb")) continue;
-        if (indices_by_path.contains(path)) continue;
-        try indices_by_path.put(gpa, path, count);
-        entries_storage[count] = .{
-            .kind = kind,
-            .model = .empty,
-            .meshes = &.{},
-            .image_slots = &.{},
-        };
-        files[count] = path["objects/".len..];
-        count += 1;
+pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, models: *ModelTable) !void {
+    var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
+    const model_paths = ModelTable.paths(&path_buffer);
+    const files = try gpa.alloc([]const u8, model_paths.len);
+    const entries = try gpa.alloc(Entry, model_paths.len);
+    for (model_paths, entries, files) |path, *entry, *file| {
+        entry.* = .{ .kind = kindForPath(path), .meshes = &.{}, .image_slots = &.{} };
+        file.* = path["objects/".len..];
     }
-    const entries = try gpa.realloc(entries_storage, count);
 
     self.* = .{
         .table = table,
+        .models = models,
         .entries = entries,
-        .indices_by_path = indices_by_path,
-        .reloaded = .empty,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
             .root_path = "objects",
-            .files = try gpa.realloc(files, count),
+            .files = files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
@@ -82,9 +56,15 @@ pub fn deinit(self: *ModelLoader) void {
     const gpa = self.interface.gpa;
     for (0..self.entries.len) |index| unload(&self.interface, index);
     gpa.free(self.entries);
-    self.indices_by_path.deinit(gpa);
     gpa.free(self.interface.files);
-    self.reloaded.deinit(gpa);
+}
+
+fn kindForPath(path: []const u8) entity.Kind {
+    for (entity.all_kinds) |kind| {
+        const model_spec = entity.spec(kind).model orelse continue;
+        if (std.mem.eql(u8, model_spec.path, path)) return kind;
+    }
+    unreachable;
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -95,18 +75,19 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     unload(loader, index);
 
     const entry = &self.entries[index];
+    const model = &self.models.models[index];
     const kind_spec = entity.spec(entry.kind);
     const model_spec = kind_spec.model orelse return;
     if (model_spec.clip_names != null) {
-        var upload_data = try entry.model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec, model_spec);
+        var upload_data = try model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec, model_spec);
         defer upload_data.deinit(gpa);
         try self.uploadToGpu(Mesh.SkinnedVertex, gpa, entry, upload_data);
     } else {
-        var upload_data = try entry.model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec, model_spec);
+        var upload_data = try model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec, model_spec);
         defer upload_data.deinit(gpa);
         try self.uploadToGpu(Mesh.StaticVertex, gpa, entry, upload_data);
     }
-    try self.reloaded.append(gpa, @intCast(index));
+    try self.models.reloaded.append(gpa, @intCast(index));
 }
 
 fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Allocator, entry: *Entry, upload: gltf.UploadData(VertexType)) !void {
@@ -167,7 +148,8 @@ fn unload(loader: *Loader, index: usize) void {
     const self: *ModelLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
     const entry = &self.entries[index];
-    if (entry.meshes.len == 0 and entry.model.isEmpty()) return;
+    const model = &self.models.models[index];
+    if (entry.meshes.len == 0 and model.isEmpty()) return;
     check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
     for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
     gpa.free(entry.meshes);
@@ -175,6 +157,6 @@ fn unload(loader: *Loader, index: usize) void {
     for (entry.image_slots) |slot| self.table.freeSlot(gpa, slot);
     gpa.free(entry.image_slots);
     entry.image_slots = &.{};
-    entry.model.deinit(gpa);
-    entry.model = .empty;
+    model.deinit(gpa);
+    model.* = .empty;
 }

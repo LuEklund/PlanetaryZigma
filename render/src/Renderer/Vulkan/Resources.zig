@@ -20,6 +20,8 @@ const ModelLoader = @import("../loader/ModelLoader.zig");
 const TextureLoader = @import("../loader/TextureLoader.zig");
 const ShaderLoader = @import("../loader/ShaderLoader.zig");
 const FontLoader = @import("../loader/FontLoader.zig");
+const Font = @import("../../asset/Font.zig");
+const ModelTable = @import("../../asset/ModelTable.zig");
 const Model = @import("../../asset/Model.zig");
 const Mesh = @import("../Vulkan/Mesh.zig");
 
@@ -56,7 +58,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_paths: *std.StringHashMapUnmanaged(Image.Handle), vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -234,6 +236,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
     };
     self.texture_table = try .init(
         gpa,
+        texture_paths,
         vma,
         device,
         descriptor_layouts.get(.textures).handle,
@@ -241,7 +244,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         physical_device.combined_image_sampler_descriptor_size,
     );
     self.model_loader = try gpa.create(ModelLoader);
-    try self.model_loader.init(gpa, asset_server, &self.texture_table);
+    try self.model_loader.init(gpa, asset_server, &self.texture_table, models);
     self.texture_loader = try gpa.create(TextureLoader);
     try self.texture_loader.init(gpa, asset_server, &self.texture_table);
     self.shader_loader = try gpa.create(ShaderLoader);
@@ -252,7 +255,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, vma: Vma, physic
         .shadow = descriptor_layouts.get(.shadow).handle,
     }));
     self.font_loader = try gpa.create(FontLoader);
-    try self.font_loader.init(gpa, asset_server, &self.texture_table);
+    try self.font_loader.init(gpa, asset_server, &self.texture_table, fonts);
 
     self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
     self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
