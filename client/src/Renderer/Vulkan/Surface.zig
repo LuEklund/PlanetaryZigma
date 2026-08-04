@@ -1,12 +1,96 @@
 const Surface = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
+const Window = @import("Window");
 const Instance = @import("Instance.zig");
 const device = @import("device.zig");
 const c = @import("vulkan");
 const check = @import("utils.zig").check;
 
 handle: c.VkSurfaceKHR,
+
+const debug_instance_extensions = if (builtin.mode == .Debug)
+    [_][*:0]const u8{c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME}
+else
+    [_][*:0]const u8{};
+
+pub fn instanceExtensions(window: *const Window) []const [*:0]const u8 {
+    return switch (builtin.os.tag) {
+        .windows => &(debug_instance_extensions ++ [_][*:0]const u8{
+            "VK_KHR_surface",
+            "VK_KHR_win32_surface",
+        }),
+        .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
+            .wayland => &(debug_instance_extensions ++ [_][*:0]const u8{
+                c.VK_KHR_SURFACE_EXTENSION_NAME,
+                c.VK_KHR_DISPLAY_EXTENSION_NAME,
+                "VK_KHR_wayland_surface",
+            }),
+            .x11 => &(debug_instance_extensions ++ [_][*:0]const u8{
+                c.VK_KHR_SURFACE_EXTENSION_NAME,
+                c.VK_KHR_DISPLAY_EXTENSION_NAME,
+                "VK_KHR_xlib_surface",
+                "VK_KHR_xcb_surface",
+            }),
+        },
+        else => &.{},
+    };
+}
+
+const VkWaylandSurfaceCreateInfoKHR = extern struct {
+    sType: u32,
+    pNext: ?*const anyopaque,
+    flags: u32,
+    display: *anyopaque,
+    surface: *anyopaque,
+};
+
+const VkXlibSurfaceCreateInfoKHR = extern struct {
+    sType: u32,
+    pNext: ?*const anyopaque,
+    flags: u32,
+    dpy: *anyopaque,
+    window: c_ulong,
+};
+
+const VkWin32SurfaceCreateInfoKHR = extern struct {
+    sType: u32,
+    pNext: ?*const anyopaque,
+    flags: u32,
+    hinstance: *anyopaque,
+    hwnd: *anyopaque,
+};
+
+fn surfaceProc(comptime CreateInfo: type, instance: Instance, name: [*:0]const u8) !*const fn (c.VkInstance, *const CreateInfo, ?*const anyopaque, *c.VkSurfaceKHR) callconv(.c) c.VkResult {
+    return @ptrCast(c.vkGetInstanceProcAddr(instance.handle, name) orelse return error.SurfaceProcMissing);
+}
+
+pub fn create(instance: Instance, window: *Window) !Surface {
+    var surface: c.VkSurfaceKHR = undefined;
+    const result = switch (builtin.os.tag) {
+        .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
+            .wayland => |wayland| blk: {
+                const create_surface = try surfaceProc(VkWaylandSurfaceCreateInfoKHR, instance, "vkCreateWaylandSurfaceKHR");
+                var create_info: VkWaylandSurfaceCreateInfoKHR = .{ .sType = 1000006000, .pNext = null, .flags = 0, .display = wayland.display, .surface = wayland.surface };
+                break :blk create_surface(instance.handle, &create_info, null, &surface);
+            },
+            .x11 => |x11| blk: {
+                const create_surface = try surfaceProc(VkXlibSurfaceCreateInfoKHR, instance, "vkCreateXlibSurfaceKHR");
+                var create_info: VkXlibSurfaceCreateInfoKHR = .{ .sType = 1000004000, .pNext = null, .flags = 0, .dpy = x11.display, .window = x11.window.id };
+                break :blk create_surface(instance.handle, &create_info, null, &surface);
+            },
+        },
+        .windows => blk: {
+            const create_surface = try surfaceProc(VkWin32SurfaceCreateInfoKHR, instance, "vkCreateWin32SurfaceKHR");
+            var create_info: VkWin32SurfaceCreateInfoKHR = .{ .sType = 1000009000, .pNext = null, .flags = 0, .hinstance = window.inner.hinstance, .hwnd = window.inner.hwnd };
+            break :blk create_surface(instance.handle, &create_info, null, &surface);
+        },
+        else => return error.UnsupportedPlatform,
+    };
+    if (result != c.VK_SUCCESS) return error.CreateSurface;
+    return .{ .handle = surface };
+}
 
 pub fn deinit(self: Surface, instance: Instance) void {
     c.vkDestroySurfaceKHR(instance.handle, self.handle, null);

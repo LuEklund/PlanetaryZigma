@@ -17,9 +17,11 @@ gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
 emitter_buffer: Buffer,
+joint_buffer: Buffer,
 
 pub const max_frames_inflight: usize = 3;
 pub const max_debug_vertices: u32 = 65536;
+pub const max_joint_matrices: u32 = 16384;
 
 pub const GPUEmitter = extern struct {
     origin: [3]f32,
@@ -116,6 +118,17 @@ pub fn init(vma: Vma, device: Device) !FrameData {
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
             },
         ),
+        .joint_buffer = try .init(
+            device,
+            vma,
+            [16]f32,
+            max_joint_matrices,
+            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            .{
+                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            },
+        ),
     };
 }
 
@@ -127,4 +140,5 @@ pub fn deinit(self: *FrameData, vma: Vma, device: Device) void {
     self.ui_vertex_buffer.deinit(vma);
     self.debug_vertex_buffer.deinit(vma);
     self.emitter_buffer.deinit(vma);
+    self.joint_buffer.deinit(vma);
 }

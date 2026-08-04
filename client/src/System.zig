@@ -17,7 +17,7 @@ const FramePacket = @import("Renderer/FramePacket.zig");
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
 pub const Options = @import("Options.zig");
-pub const Renderer = @import("Renderer.zig");
+pub const Vulkan = @import("Renderer/Vulkan.zig");
 
 pub const Camera = @import("system/Camera.zig");
 pub const Chat = @import("system/Chat.zig");
@@ -41,7 +41,7 @@ io: std.Io,
 window: *Window,
 steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
-renderer: Renderer,
+renderer: *Vulkan,
 network_manager: NetworkManager,
 animation: Animation,
 animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
@@ -70,13 +70,13 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
-    self.renderer = try .init(data.gpa, data.asset_server, data.window);
+    self.renderer = try Vulkan.init(data.gpa, data.asset_server, data.window);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     self.animation = .init(data.gpa);
     self.animation_instances = .init(data.gpa);
     self.frame_packet = try .init(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
-    self.ui.default_font = &self.renderer.inner.resources.font_loader.items[0];
+    self.ui.default_font = &self.renderer.resources.font_loader.items[0];
     self.options = .{};
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
@@ -116,7 +116,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
     if (self.scene == .particle_lab) particle_lab.update(world);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &world.controller, &self.options)) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.resources.texture_table, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -126,17 +126,18 @@ pub fn update(self: *System, world: *World) !void {
     }
     try self.applyOptions(world);
     Emitter.update(world);
-    extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
-    try self.renderer.inner.drainRenderCommands(self.gpa, world.render_outbox.items, &self.animation_instances);
+    try self.animation.applyEvents(world.render_outbox.items, self.renderer.resources.model_loader, &self.animation_instances);
+    try self.renderer.drainRenderCommands(self.gpa, world.render_outbox.items);
     world.render_outbox.clearRetainingCapacity();
-    try self.renderer.update(&self.frame_packet, &self.animation_instances);
+    extract.extract(world, &self.ui, &self.animation_instances, &self.frame_packet, self.scene != .particle_lab);
+    try self.renderer.update(&self.frame_packet);
     try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush(&self.animation_instances);
-    try self.animation.updateStates(world, &self.animation_instances);
-    try self.animation.update(world, &self.animation_instances);
+    try self.animation.updateStates(world, self.renderer.resources.model_loader, &self.animation_instances);
+    try self.animation.update(world, self.renderer.resources.model_loader, &self.animation_instances);
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
@@ -152,7 +153,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     defer tracy_scope.end();
     const window = self.window;
     if (!window.size.eql(self.window_size_applied)) {
-        try self.renderer.resize(self.gpa, window);
+        try self.renderer.resize(self.gpa, window.size.width, window.size.height);
         self.ui.screen_width = @floatFromInt(window.size.width);
         self.ui.screen_heigth = @floatFromInt(window.size.height);
         self.window_size_applied = window.size;
@@ -232,7 +233,7 @@ fn reload(self: *System, pre_reload: bool) !void {
         std.log.debug("pre-hotreload", .{});
     } else {
         std.log.debug("post-hotreload", .{});
-        self.renderer.inner.rebindProcs();
+        self.renderer.rebindProcs();
     }
 }
 

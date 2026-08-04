@@ -6,10 +6,12 @@ const nz = shared.numz;
 const Model = @import("Model.zig");
 const Node = @import("Node.zig");
 
-model: ?*Model,
+model_handle: ?Model.Handle,
 state: shared.entity.State,
 spawn_time: f32,
 death_time: f32,
+spawn_duration: f32,
+death_duration: f32,
 skeleton: ?Skeleton,
 
 pub const fade_duration: f32 = 0.15;
@@ -87,12 +89,14 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, model: ?*Model) !AnimationInstance {
+pub fn init(gpa: std.mem.Allocator, model_handle: ?Model.Handle, model: ?*Model) !AnimationInstance {
     return .{
-        .model = model,
+        .model_handle = model_handle,
         .state = .idle,
         .spawn_time = 0,
         .death_time = 0,
+        .spawn_duration = if (model) |file_model| file_model.spawn_duration else 0,
+        .death_duration = if (model) |file_model| file_model.death_duration else 0,
         .skeleton = if (model) |file_model|
             (if (file_model.isSkinned()) try Skeleton.init(gpa, file_model) else null)
         else
@@ -105,11 +109,11 @@ pub fn deinit(self: *AnimationInstance, gpa: std.mem.Allocator) void {
 }
 
 pub fn spawnDuration(self: *const AnimationInstance) f32 {
-    return if (self.model) |model| model.spawn_duration else 0;
+    return self.spawn_duration;
 }
 
 pub fn deathDuration(self: *const AnimationInstance) f32 {
-    return if (self.model) |model| model.death_duration else 0;
+    return self.death_duration;
 }
 
 pub fn deathDone(self: *const AnimationInstance) bool {

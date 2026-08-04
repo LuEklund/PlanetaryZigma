@@ -4,7 +4,7 @@ const nz = shared.numz;
 const system = @import("../../System.zig");
 const World = system.World;
 const Ui = @import("../../Ui.zig");
-const Renderer = @import("../../Renderer.zig");
+const TextureTable = @import("../../Renderer/loader/TextureTable.zig");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -13,7 +13,7 @@ const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *Renderer.TextureTable, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_table: *TextureTable, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -199,7 +199,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, texture_
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = texture_table.handle(Renderer.TextureTable.crosshair_texture_path),
+                        .texture = texture_table.handle(TextureTable.crosshair_texture_path),
                     },
                 },
             });

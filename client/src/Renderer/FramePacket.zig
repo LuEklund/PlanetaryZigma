@@ -9,12 +9,14 @@ const Emitter = @import("../system/Emitter.zig");
 const Ui = @import("../Ui.zig");
 
 pub const max_lines: u32 = FrameData.max_debug_vertices / 2;
+pub const max_draw_models: u32 = shared.max_entities * 8;
 
 camera: Camera,
 time: f32,
 light_color: [4]f32,
 draw_sky: bool,
 draw_models: std.ArrayList(DrawModel),
+joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(PacketEmitter),
 ui: UiLayer,
@@ -30,7 +32,8 @@ pub const DrawModel = struct {
     kind: shared.entity.Kind,
     model_matrix: nz.Mat4x4(f32),
     position: nz.Vec3(f32),
-    skeleton_entity: ?shared.entity.Id,
+    mesh_id: ?u32,
+    palette_offset: ?u32,
 };
 
 pub const RenderCommand = union(enum) {
@@ -72,7 +75,8 @@ pub fn init(gpa: std.mem.Allocator) !FramePacket {
         .time = 0,
         .light_color = .{ 1, 1, 1, 1 },
         .draw_sky = false,
-        .draw_models = try .initCapacity(gpa, shared.max_entities),
+        .draw_models = try .initCapacity(gpa, max_draw_models),
+        .joint_matrices = try .initCapacity(gpa, FrameData.max_joint_matrices),
         .draw_lines = try .initCapacity(gpa, max_lines),
         .emitters = try .initCapacity(gpa, Emitter.max_emitters),
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
@@ -82,6 +86,7 @@ pub fn init(gpa: std.mem.Allocator) !FramePacket {
 
 pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
     self.draw_models.deinit(gpa);
+    self.joint_matrices.deinit(gpa);
     self.draw_lines.deinit(gpa);
     self.emitters.deinit(gpa);
     self.ui.quads.deinit(gpa);
@@ -89,6 +94,7 @@ pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
 
 pub fn clear(self: *FramePacket) void {
     self.draw_models.clearRetainingCapacity();
+    self.joint_matrices.clearRetainingCapacity();
     self.draw_lines.clearRetainingCapacity();
     self.emitters.clearRetainingCapacity();
     self.ui.quads.clearRetainingCapacity();

@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Ui = @import("../Ui.zig");
-const Renderer = @import("../Renderer.zig");
+const TextureTable = @import("../Renderer/loader/TextureTable.zig");
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -60,7 +60,7 @@ pub fn update(
     scene: system.Scene,
     network_manager: *NetworkManager,
     ui: *Ui,
-    texture_table: *Renderer.TextureTable,
+    texture_table: *TextureTable,
     controller: *Controller,
     options: *Options,
 ) !Request {

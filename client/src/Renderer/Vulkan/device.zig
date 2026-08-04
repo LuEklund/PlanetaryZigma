@@ -86,7 +86,14 @@ pub const Logical = struct {
         }
     };
 
-    pub fn init(physical_device: Physical, extensions: []const [*:0]const u8) !Logical {
+    pub fn init(physical_device: Physical) !Logical {
+        const extensions: []const [*:0]const u8 = &.{
+            c.VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+            c.VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+            c.VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+            c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+            c.VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
+        };
         var extension_count: u32 = undefined;
         try check(c.vkEnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
         var extension_properties: [516]c.VkExtensionProperties = undefined;

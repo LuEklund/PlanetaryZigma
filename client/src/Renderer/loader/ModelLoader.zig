@@ -27,6 +27,19 @@ pub const Entry = struct {
     image_slots: []Image.Handle,
 };
 
+pub fn handleForKind(self: *const ModelLoader, kind: entity.Kind) ?Model.Handle {
+    const path = (entity.modelSpec(kind) orelse return null).path;
+    if (std.mem.endsWith(u8, path, ".glb")) return .{ .file = self.indices_by_path.get(path).? };
+    return .{ .generated = std.meta.stringToEnum(Model.Generated, path).? };
+}
+
+pub fn modelPtr(self: *ModelLoader, handle: Model.Handle) ?*Model {
+    return switch (handle) {
+        .file => |file_index| &self.entries[file_index].model,
+        .generated => null,
+    };
+}
+
 pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
     const files = try gpa.alloc([]const u8, entity.all_kinds.len);
     const entries_storage = try gpa.alloc(Entry, entity.all_kinds.len);

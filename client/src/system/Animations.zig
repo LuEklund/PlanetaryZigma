@@ -10,6 +10,8 @@ const Model = @import("../asset/Model.zig");
 const Node = @import("../asset/Node.zig");
 const AnimationClip = @import("../asset/AnimationClip.zig");
 const AnimationInstance = @import("../asset/AnimationInstance.zig");
+const ModelLoader = @import("../Renderer/loader/ModelLoader.zig");
+const FramePacket = @import("../Renderer/FramePacket.zig");
 
 const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
@@ -30,12 +32,49 @@ pub fn init(gpa: std.mem.Allocator) Animations {
     return .{ .gpa = gpa };
 }
 
-pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+fn resolveModel(loader: *ModelLoader, instance: *const AnimationInstance) ?*Model {
+    return loader.modelPtr(instance.model_handle orelse return null);
+}
+
+pub fn applyEvents(self: *Animations, events: []const FramePacket.RenderCommand, loader: *ModelLoader, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+    for (loader.reloaded.items) |file_index| {
+        const reloaded_model = &loader.entries[file_index].model;
+        var instance_iterator = instances.valueIterator();
+        while (instance_iterator.next()) |instance| {
+            const handle = instance.model_handle orelse continue;
+            if (handle != .file or handle.file != file_index) continue;
+            if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
+            instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
+        }
+    }
+    loader.reloaded.clearRetainingCapacity();
+
+    for (events) |command| switch (command) {
+        .entity_spawned => |spawned| {
+            if (instances.contains(spawned.id)) continue;
+            const handle = loader.handleForKind(spawned.kind) orelse continue;
+            const model = loader.modelPtr(handle);
+            if (model) |file_model| if (file_model.isEmpty()) {
+                std.log.err("model not loaded for {s}", .{@tagName(spawned.kind)});
+            };
+            try instances.put(spawned.id, try .init(self.gpa, handle, model));
+        },
+        .entity_despawned => |id| {
+            if (instances.fetchRemove(id)) |removed| {
+                var instance = removed.value;
+                instance.deinit(self.gpa);
+            }
+        },
+        .planet_spawned => {},
+    };
+}
+
+pub fn updateStates(self: *Animations, world: *World, loader: *ModelLoader, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     _ = self;
     for (world.trigger_events.items) |trigger| {
         const instance = instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = instance.model orelse continue;
+        const model = resolveModel(loader, instance) orelse continue;
         const clip_index = model.state_clips.get(trigger.state) orelse continue;
         skeleton.playOverlay(model, clip_index);
     }
@@ -56,7 +95,7 @@ pub fn updateStates(self: *Animations, world: *World, instances: *std.AutoHashMa
     }
 }
 
-pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn update(self: *Animations, world: *World, loader: *ModelLoader, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     _ = self;
@@ -69,7 +108,7 @@ pub fn update(self: *Animations, world: *World, instances: *std.AutoHashMap(shar
             instance.death_time = 0;
         }
         if (instance.skeleton) |*skeleton| {
-            const model = instance.model.?;
+            const model = resolveModel(loader, instance) orelse continue;
             playAnimation(world, entity, skeleton, model, model.state_clips.get(instance.state));
         }
     }

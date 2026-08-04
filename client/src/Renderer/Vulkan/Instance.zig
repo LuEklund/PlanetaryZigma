@@ -1,12 +1,18 @@
 const Instance = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("vulkan");
 const check = @import("utils.zig").check;
 
 handle: c.VkInstance,
 
-pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8, layers: []const [*:0]const u8) !Instance {
+const layers: []const [*:0]const u8 = if (builtin.mode == .Debug)
+    &.{ "VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_shader_object" }
+else
+    &.{"VK_LAYER_KHRONOS_shader_object"};
+
+pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) !Instance {
     var version: u32 = undefined;
     try check(c.vkEnumerateInstanceVersion(&version));
     if (c.VK_API_VERSION_MAJOR(version) < 1 or c.VK_API_VERSION_MINOR(version) < 3) {
