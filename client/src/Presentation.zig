@@ -11,6 +11,8 @@ const AnimationClip = @import("asset/AnimationClip.zig");
 const AnimationInstance = @import("asset/AnimationInstance.zig");
 const ModelLoader = @import("Renderer/loader/ModelLoader.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
+const Emitter = @import("Emitter.zig");
+const Shader = @import("Renderer/Vulkan/Shader.zig");
 
 const max_skins = 8;
 
@@ -30,6 +32,7 @@ fn easeOutBack(x: f32) f32 {
 gpa: std.mem.Allocator,
 instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
 retiring: std.ArrayList(shared.entity.Id),
+emitters: Emitter.List,
 frame: View.Frame,
 
 pub fn init(gpa: std.mem.Allocator) !Presentation {
@@ -37,8 +40,17 @@ pub fn init(gpa: std.mem.Allocator) !Presentation {
         .gpa = gpa,
         .instances = .init(gpa),
         .retiring = try .initCapacity(gpa, shared.max_entities),
-        .frame = .{ .delta_time = 0, .local_entity = .none, .camera_pitch = 0, .camera_yaw_rotation = .identity },
+        .emitters = @splat(Emitter.free),
+        .frame = .{ .delta_time = 0, .elapsed_time = 0, .local_entity = .none, .camera_pitch = 0, .camera_yaw_rotation = .identity },
     };
+}
+
+pub fn spawnEffect(self: *Presentation, request: Emitter.Spawn) void {
+    Emitter.spawn(&self.emitters, request, self.frame.elapsed_time);
+}
+
+pub fn keepAliveEffect(self: *Presentation, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32)) void {
+    Emitter.keepAlive(&self.emitters, effect, owner, origin, self.frame.elapsed_time);
 }
 
 pub fn deinit(self: *Presentation) void {
@@ -79,6 +91,10 @@ pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelLoader) !
     instance.kind = entity.kind;
     instance.transform = entity.transform;
     instance.is_dying = entity.is_dying;
+    if (entity.kind == .item) {
+        const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+        self.keepAliveEffect(.item_effect, entity.id, entity.transform.position - offset);
+    }
     if (instance.skeleton == null) return;
 
     var state: shared.entity.State = if (nz.vec.length(entity.velocity) > 0.5) .walk else .idle;
@@ -95,6 +111,15 @@ pub fn finish(self: *Presentation, triggers: []const shared.net.Event.Trigger, l
     self.applyTriggers(triggers, loader);
     self.animate(loader);
     self.appendDraws(packet);
+    for (&self.emitters) |emitter| {
+        if (!emitter.alive(self.frame.elapsed_time)) continue;
+        packet.emitters.appendAssumeCapacity(.{
+            .effect = emitter.effect,
+            .origin = emitter.origin,
+            .target = emitter.target,
+            .spawn_time = emitter.spawn_time,
+        });
+    }
     self.retire();
 }
 

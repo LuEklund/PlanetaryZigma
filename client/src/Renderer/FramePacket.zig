@@ -5,7 +5,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Shader = @import("Vulkan/Shader.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
-const Emitter = @import("../system/Emitter.zig");
+const Emitter = @import("../Emitter.zig");
 const Ui = @import("../Ui.zig");
 
 pub const max_lines: u32 = FrameData.max_debug_vertices / 2;

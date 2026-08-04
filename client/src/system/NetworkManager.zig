@@ -6,7 +6,6 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../System.zig");
-const Emitter = @import("Emitter.zig");
 const World = system.World;
 
 gpa: std.mem.Allocator,
@@ -426,11 +425,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Emitter.spawnQuad(world, .explosion, position);
+                        world.effects.appendAssumeCapacity(.{ .effect = .explosion, .origin = position, .target = position });
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = world.getPtr(id) orelse continue;
-                        Emitter.spawnRibbon(world, .lightning, bolt.start_position, target.transform.position);
+                        world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
                     },
                 },
                 .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {

@@ -7,7 +7,7 @@ const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Ui = @import("../../Ui.zig");
-const Emitter = @import("../../system/Emitter.zig");
+const Emitter = @import("../../Emitter.zig");
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,

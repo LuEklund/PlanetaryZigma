@@ -3,7 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Shader = @import("../Renderer/Vulkan/Shader.zig");
-const Emitter = @import("Emitter.zig");
+const Presentation = @import("../Presentation.zig");
 
 const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
@@ -15,17 +15,18 @@ pub fn populate(world: *World) void {
     world.camera = .{ .transform = .{ .position = camera_position }, .fov_rad = camera_fov_rad };
 }
 
-pub fn update(world: *World) void {
+pub fn update(world: *World, presentation: *Presentation) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        Emitter.keepAlive(world, particle_kind, .none, surface_point);
+        presentation.keepAliveEffect(particle_kind, .none, surface_point);
         return;
     }
-    for (&world.emitters) |emitter| {
+    for (&presentation.emitters) |emitter| {
         if (emitter.effect == particle_kind and emitter.alive(world.elapsed_time)) return;
     }
-    switch (particle_info.topology) {
-        .quad => Emitter.spawnQuad(world, particle_kind, surface_point),
-        .ribbon => Emitter.spawnRibbon(world, particle_kind, surface_point, ribbon_target),
-    }
+    presentation.spawnEffect(.{
+        .effect = particle_kind,
+        .origin = surface_point,
+        .target = if (particle_info.topology == .ribbon) ribbon_target else surface_point,
+    });
 }

@@ -1,8 +1,7 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Shader = @import("../Renderer/Vulkan/Shader.zig");
-const World = @import("../World.zig");
+const Shader = @import("Renderer/Vulkan/Shader.zig");
 
 const Emitter = @This();
 
@@ -47,53 +46,38 @@ fn insert(list: *List, new_emitter: Emitter, elapsed_time: f32) void {
     oldest.* = new_emitter;
 }
 
-pub fn spawnQuad(world: *World, effect: Shader.Kind, origin: nz.Vec3(f32)) void {
-    std.debug.assert(Shader.particleInfo(effect).topology == .quad);
-    insert(&world.emitters, .{
-        .effect = effect,
-        .origin = origin,
-        .target = origin,
-        .spawn_time = world.elapsed_time,
+pub const Spawn = struct {
+    effect: Shader.Kind,
+    origin: nz.Vec3(f32),
+    target: nz.Vec3(f32),
+};
+
+pub fn spawn(list: *List, request: Spawn, elapsed_time: f32) void {
+    insert(list, .{
+        .effect = request.effect,
+        .origin = request.origin,
+        .target = request.target,
+        .spawn_time = elapsed_time,
         .owner = .none,
-        .last_seen = world.elapsed_time,
-    }, world.elapsed_time);
+        .last_seen = elapsed_time,
+    }, elapsed_time);
 }
 
-pub fn spawnRibbon(world: *World, effect: Shader.Kind, from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
-    std.debug.assert(Shader.particleInfo(effect).topology == .ribbon);
-    insert(&world.emitters, .{
-        .effect = effect,
-        .origin = from,
-        .target = to,
-        .spawn_time = world.elapsed_time,
-        .owner = .none,
-        .last_seen = world.elapsed_time,
-    }, world.elapsed_time);
-}
-
-pub fn keepAlive(world: *World, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32)) void {
+pub fn keepAlive(list: *List, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32), elapsed_time: f32) void {
     std.debug.assert(Shader.particleInfo(effect).duration == null);
-    for (&world.emitters) |*emitter| {
+    for (list) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;
         emitter.origin = origin;
         emitter.target = origin;
-        emitter.last_seen = world.elapsed_time;
+        emitter.last_seen = elapsed_time;
         return;
     }
-    insert(&world.emitters, .{
+    insert(list, .{
         .effect = effect,
         .origin = origin,
         .target = origin,
-        .spawn_time = world.elapsed_time,
+        .spawn_time = elapsed_time,
         .owner = owner,
-        .last_seen = world.elapsed_time,
-    }, world.elapsed_time);
-}
-
-pub fn update(world: *World) void {
-    for (world.entities.values()) |*entity| {
-        if (entity.kind != .item) continue;
-        const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-        keepAlive(world, .item_effect, entity.id, entity.transform.position - offset);
-    }
+        .last_seen = elapsed_time,
+    }, elapsed_time);
 }

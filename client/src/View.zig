@@ -3,6 +3,7 @@ const nz = shared.numz;
 
 pub const Frame = struct {
     delta_time: f32,
+    elapsed_time: f32,
     local_entity: shared.entity.Id,
     camera_pitch: f32,
     camera_yaw_rotation: nz.Quat(f32),

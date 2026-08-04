@@ -6,7 +6,7 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
-const Emitter = @import("system/Emitter.zig");
+const Emitter = @import("Emitter.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 
 pub const DamageEvent = struct {
@@ -28,7 +28,7 @@ pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 deaths: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(FramePacket.RenderCommand) = .empty,
-emitters: Emitter.List,
+effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
 controller: Controller = .{},
@@ -95,10 +95,10 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
         .deaths = try .initCapacity(gpa, shared.max_entities),
+        .effects = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
-        .emitters = @splat(Emitter.free),
     };
 }
 
@@ -114,6 +114,7 @@ pub fn deinit(self: *World) void {
     self.pending_inventory.deinit(self.gpa);
     self.trigger_events.deinit(self.gpa);
     self.deaths.deinit(self.gpa);
+    self.effects.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
@@ -132,6 +133,7 @@ pub fn clearSession(self: *World) void {
     self.pending_inventory.clearRetainingCapacity();
     self.trigger_events.clearRetainingCapacity();
     self.deaths.clearRetainingCapacity();
+    self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};

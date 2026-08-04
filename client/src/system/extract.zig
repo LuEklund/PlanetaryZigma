@@ -13,11 +13,14 @@ const circle_segments = 16;
 pub fn present(world: *World, presentation: *Presentation, loader: *ModelLoader, packet: *FramePacket) !void {
     try presentation.begin(.{
         .delta_time = world.delta_time,
+        .elapsed_time = world.elapsed_time,
         .local_entity = world.player_id,
         .camera_pitch = world.camera.pitch,
         .camera_yaw_rotation = world.camera.yaw_rotation,
     }, world.deaths.items, loader);
     world.deaths.clearRetainingCapacity();
+    for (world.effects.items) |request| presentation.spawnEffect(request);
+    world.effects.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
         try presentation.observe(.{
             .id = entity.id,
@@ -55,16 +58,6 @@ pub fn extract(world: *World, ui: *Ui, packet: *FramePacket, draw_sky: bool) voi
                 .box => |box| appendBoxLines(packet, collider_transform, box),
             }
         }
-    }
-
-    for (&world.emitters) |emitter| {
-        if (!emitter.alive(world.elapsed_time)) continue;
-        packet.emitters.appendAssumeCapacity(.{
-            .effect = emitter.effect,
-            .origin = emitter.origin,
-            .target = emitter.target,
-            .spawn_time = emitter.spawn_time,
-        });
     }
 
     packet.ui.quads.appendSliceAssumeCapacity(ui.quads.items);

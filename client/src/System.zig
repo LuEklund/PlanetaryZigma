@@ -9,7 +9,6 @@ const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("AssetServer.zig");
 const Presentation = @import("Presentation.zig");
 const motion = @import("system/motion.zig");
-const Emitter = @import("system/Emitter.zig");
 const extract = @import("system/extract.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 
@@ -111,7 +110,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
-    if (self.scene == .particle_lab) particle_lab.update(world);
+    if (self.scene == .particle_lab) particle_lab.update(world, &self.presentation);
     switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.resources.texture_table, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -126,7 +125,6 @@ pub fn update(self: *System, world: *World) !void {
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush();
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
-    Emitter.update(world);
 
     extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
     try extract.present(world, &self.presentation, self.renderer.resources.model_loader, &self.frame_packet);
