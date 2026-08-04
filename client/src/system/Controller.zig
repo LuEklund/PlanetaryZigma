@@ -7,37 +7,20 @@ const Window = @import("Window");
 
 pub const MouseButton = std.meta.FieldEnum(Window.Pointer.Buttons);
 
-pub const Action = enum {
-    move_forward,
-    move_backward,
-    move_left,
-    move_right,
-    jump,
-    move_down,
-    reload,
-    interact,
-    attack,
-    aim,
-    free_camera,
-    debug_colliders,
-    equipment,
+pub const Action = struct {
+    id: @EnumLiteral(),
+    default: Binding,
+    /// Field of `net.Input.keys` this drives. Actions without one toggle local state
+    /// and are handled explicitly in `applyAction`.
+    key_field: ?[]const u8 = null,
+    /// null means hard-bound: the default stands, and the options menu never lists it.
+    bindable: ?Bindable = null,
 };
 
-pub const bindable_actions = [_]Action{
-    .move_forward,
-    .move_backward,
-    .move_left,
-    .move_right,
-    .jump,
-    .move_down,
-    .reload,
-    .interact,
-    .attack,
-    .aim,
-    .free_camera,
-    .debug_colliders,
-    .equipment,
+pub const Bindable = struct {
+    label: []const u8,
 };
+
 
 pub const Binding = union(enum) {
     none,
@@ -59,56 +42,51 @@ pub const Binding = union(enum) {
     }
 };
 
-pub const Bindings = struct {
-    move_forward: Binding = .{ .key = .w },
-    move_backward: Binding = .{ .key = .s },
-    move_left: Binding = .{ .key = .a },
-    move_right: Binding = .{ .key = .d },
-    jump: Binding = .{ .key = .space },
-    move_down: Binding = .{ .key = .left_shift },
-    reload: Binding = .{ .key = .r },
-    interact: Binding = .{ .key = .e },
-    attack: Binding = .{ .mouse = .left },
-    aim: Binding = .{ .mouse = .right },
-    free_camera: Binding = .{ .key = .f },
-    debug_colliders: Binding = .{ .key = .g },
-    use_equipment: Binding = .{ .key = .q },
+pub const actions: []const Action = &.{
+    .{ .id = .move_forward, .default = .{ .key = .w }, .key_field = "w", .bindable = .{ .label = "Move Forward" } },
+    .{ .id = .move_backward, .default = .{ .key = .s }, .key_field = "s", .bindable = .{ .label = "Move Backward" } },
+    .{ .id = .move_left, .default = .{ .key = .a }, .key_field = "a", .bindable = .{ .label = "Move Left" } },
+    .{ .id = .move_right, .default = .{ .key = .d }, .key_field = "d", .bindable = .{ .label = "Move Right" } },
+    .{ .id = .jump, .default = .{ .key = .space }, .key_field = "space", .bindable = .{ .label = "Jump" } },
+    .{ .id = .move_down, .default = .{ .key = .left_shift }, .key_field = "l_shift", .bindable = .{ .label = "Move Down" } },
+    .{ .id = .reload, .default = .{ .key = .r }, .key_field = "r", .bindable = .{ .label = "Reload" } },
+    .{ .id = .interact, .default = .{ .key = .e }, .key_field = "e", .bindable = .{ .label = "Interact" } },
+    .{ .id = .attack, .default = .{ .mouse = .left }, .key_field = "mouse_button_left", .bindable = .{ .label = "Attack" } },
+    .{ .id = .aim, .default = .{ .mouse = .right }, .key_field = "mouse_button_right", .bindable = .{ .label = "Aim" } },
+    .{ .id = .use_equipment, .default = .{ .key = .q }, .key_field = "q", .bindable = .{ .label = "Use Equipment" } },
+    .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
+    .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
+};
 
-    pub fn get(self: *const Bindings, action: Action) Binding {
-        return switch (action) {
-            .move_forward => self.move_forward,
-            .move_backward => self.move_backward,
-            .move_left => self.move_left,
-            .move_right => self.move_right,
-            .jump => self.jump,
-            .move_down => self.move_down,
-            .reload => self.reload,
-            .interact => self.interact,
-            .attack => self.attack,
-            .aim => self.aim,
-            .free_camera => self.free_camera,
-            .debug_colliders => self.debug_colliders,
-            .equipment => self.use_equipment,
-        };
+pub const Kind = kind: {
+    const TagInt = u16;
+    var field_names: [actions.len][]const u8 = undefined;
+    var field_values: [field_names.len]TagInt = undefined;
+    for (actions, &field_names, &field_values, 0..) |action, *name, *value, i| {
+        name.* = @tagName(action.id);
+        value.* = i;
     }
+    break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
+};
 
-    pub fn set(self: *Bindings, action: Action, binding: Binding) void {
-        switch (action) {
-            .move_forward => self.move_forward = binding,
-            .move_backward => self.move_backward = binding,
-            .move_left => self.move_left = binding,
-            .move_right => self.move_right = binding,
-            .jump => self.jump = binding,
-            .move_down => self.move_down = binding,
-            .reload => self.reload = binding,
-            .interact => self.interact = binding,
-            .attack => self.attack = binding,
-            .aim => self.aim = binding,
-            .free_camera => self.free_camera = binding,
-            .debug_colliders => self.debug_colliders = binding,
-            .equipment => self.use_equipment = binding,
-        }
-    }
+/// `actions` rows carry an `@EnumLiteral()` id, which is comptime-only — so the two
+/// fields read at runtime get their own tables.
+pub fn get(comptime kind: Kind) Action {
+    return actions[@intFromEnum(kind)];
+}
+
+pub const bindable: std.EnumArray(Kind, ?Bindable) = table: {
+    var bindable_table: std.EnumArray(Kind, ?Bindable) = .initFill(null);
+    for (actions, 0..) |action, i| bindable_table.set(@enumFromInt(i), action.bindable);
+    break :table bindable_table;
+};
+
+pub const Bindings = std.EnumArray(Kind, Binding);
+
+pub const default_bindings: Bindings = bindings: {
+    var table: Bindings = .initFill(.none);
+    for (actions, 0..) |action, i| table.set(@enumFromInt(i), action.default);
+    break :bindings table;
 };
 
 mouse_pos: [2]f64 = .{ 0, 0 },
@@ -118,8 +96,8 @@ mouse_button_left: bool = false,
 mouse_button_right: bool = false,
 previous_buttons: Window.Pointer.Buttons = .{},
 input_map: shared.net.Input = .{},
-bindings: Bindings = .{},
-rebinding_action: ?Action = null,
+bindings: Bindings = default_bindings,
+rebinding_action: ?Kind = null,
 suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
@@ -160,6 +138,7 @@ pub fn update(self: *Controller, window: *const Window) void {
     defer self.previous_buttons = buttons;
 
     if (self.rebinding_action) |action| {
+        std.debug.assert(bindable.get(action) != null);
         for (std.enums.values(Window.Keyboard.Key)) |key| {
             if (keyboard.get(key) != .press) continue;
             if (key == .escape) {
@@ -197,7 +176,7 @@ pub fn update(self: *Controller, window: *const Window) void {
     if (keyboard.get(.f11) == .press) self.input_map.dev_command = .f11;
     if (keyboard.get(.f12) == .press) self.input_map.dev_command = .f12;
 
-    for (bindable_actions) |action| {
+    for (std.enums.values(Kind)) |action| {
         switch (self.bindings.get(action)) {
             .none => {},
             .key => |key| switch (keyboard.get(key)) {
@@ -225,44 +204,16 @@ pub fn update(self: *Controller, window: *const Window) void {
     self.mouse_wheel = window.pointer.axis.vertical;
 }
 
-fn applyAction(self: *Controller, action: Action, pressed: bool) void {
+fn applyAction(self: *Controller, action: Kind, pressed: bool) void {
     switch (action) {
-        .move_forward => self.input_map.keys.w = pressed,
-        .move_backward => self.input_map.keys.s = pressed,
-        .move_left => self.input_map.keys.a = pressed,
-        .move_right => self.input_map.keys.d = pressed,
-        .jump => self.input_map.keys.space = pressed,
-        .move_down => self.input_map.keys.l_shift = pressed,
-        .reload => self.input_map.keys.r = pressed,
-        .interact => self.input_map.keys.e = pressed,
-        .attack => self.input_map.keys.mouse_button_left = pressed,
-        .aim => self.input_map.keys.mouse_button_right = pressed,
-        .free_camera => {
-            if (pressed) self.free_camera = !self.free_camera;
+        .free_camera => if (pressed) {
+            self.free_camera = !self.free_camera;
         },
-        .debug_colliders => {
-            if (pressed) self.debug_draw_colliders = !self.debug_draw_colliders;
+        .debug_colliders => if (pressed) {
+            self.debug_draw_colliders = !self.debug_draw_colliders;
         },
-        .equipment => self.input_map.keys.q = pressed,
+        inline else => |inline_action| @field(self.input_map.keys, get(inline_action).key_field.?) = pressed,
     }
-}
-
-pub fn actionLabel(action: Action) []const u8 {
-    return switch (action) {
-        .move_forward => "Move Forward",
-        .move_backward => "Move Backward",
-        .move_left => "Move Left",
-        .move_right => "Move Right",
-        .jump => "Jump",
-        .move_down => "Move Down",
-        .reload => "Reload",
-        .interact => "Interact",
-        .attack => "Attack",
-        .aim => "Aim",
-        .free_camera => "Free Camera",
-        .debug_colliders => "Debug Colliders",
-        .equipment => "Use Equipment",
-    };
 }
 
 pub fn bindingLabel(binding: Binding) []const u8 {

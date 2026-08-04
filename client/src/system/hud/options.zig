@@ -89,15 +89,18 @@ fn optionsKeyboardMouse(ui: *Ui, options: *Options, controller: *Controller, lef
     const bindings_top = top + slider_height + toggle_height + 18;
     const column_gap: f32 = 14;
     const column_width = (width - column_gap) * 0.5;
-    for (Controller.bindable_actions, 0..) |action, i| {
-        const column: f32 = if (i < 6) 0 else 1;
-        const row: f32 = @floatFromInt(if (i < 6) i else i - 6);
+    var listed: usize = 0;
+    for (std.enums.values(Controller.Kind)) |action| {
+        const bindable = Controller.bindable.get(action) orelse continue;
+        const column: f32 = if (listed < 6) 0 else 1;
+        const row: f32 = @floatFromInt(if (listed < 6) listed else listed - 6);
         const row_left = left + column * (column_width + column_gap);
         const row_top = bindings_top + row * (binding_height + binding_gap);
-        if (addBindingRow(ui, controller, action, row_left, row_top, column_width, binding_height)) {
+        if (addBindingRow(ui, controller, action, bindable.label, row_left, row_top, column_width, binding_height)) {
             controller.rebinding_action = action;
             controller.clearInput();
         }
+        listed += 1;
     }
 }
 
@@ -158,10 +161,10 @@ fn addOptionToggle(ui: *Ui, name: []const u8, label: []const u8, value: []const 
     return ui.isClicked(name);
 }
 
-fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.Action, left: f32, top: f32, width: f32, height: f32) bool {
+fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.Kind, label: []const u8, left: f32, top: f32, width: f32, height: f32) bool {
     const name = bindingRowName(action);
     const value = if (controller.rebinding_action == action) "Listening" else Controller.bindingLabel(controller.bindings.get(action));
-    return addOptionToggle(ui, name, Controller.actionLabel(action), value, left, top, width, height);
+    return addOptionToggle(ui, name, label, value, left, top, width, height);
 }
 
 fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min: f32, max: f32, left: f32, top: f32, width: f32, height: f32, value_text: []const u8) ?f32 {
@@ -219,21 +222,9 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     return next;
 }
 
-fn bindingRowName(action: Controller.Action) []const u8 {
+fn bindingRowName(action: Controller.Kind) []const u8 {
     return switch (action) {
-        .move_forward => "bind_move_forward",
-        .move_backward => "bind_move_backward",
-        .move_left => "bind_move_left",
-        .move_right => "bind_move_right",
-        .jump => "bind_jump",
-        .move_down => "bind_move_down",
-        .reload => "bind_reload",
-        .interact => "bind_interact",
-        .attack => "bind_attack",
-        .aim => "bind_aim",
-        .free_camera => "bind_free_camera",
-        .debug_colliders => "bind_debug_colliders",
-        .equipment => "bind_use_equipment",
+        inline else => |inline_action| "bind_" ++ @tagName(inline_action),
     };
 }
 
