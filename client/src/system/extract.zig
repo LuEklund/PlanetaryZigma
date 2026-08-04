@@ -4,13 +4,11 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("../Ui.zig");
 const FramePacket = @import("../Renderer/FramePacket.zig");
-const AnimationInstance = @import("../asset/AnimationInstance.zig");
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
-const max_skins = 8;
 
-pub fn extract(world: *World, ui: *Ui, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance), packet: *FramePacket, draw_sky: bool) void {
+pub fn extract(world: *World, ui: *Ui, packet: *FramePacket, draw_sky: bool) void {
     packet.clear();
 
     packet.camera = .{
@@ -21,40 +19,6 @@ pub fn extract(world: *World, ui: *Ui, instances: *std.AutoHashMap(shared.entity
     packet.time = world.elapsed_time;
     packet.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
     packet.draw_sky = draw_sky;
-
-    for (world.entities.values()) |*entity| {
-        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const top_matrix = entity.transform.toMat4x4().mul(model_spec.offset.toMat4x4());
-        const skeleton: ?*AnimationInstance.Skeleton = if (instances.getPtr(entity.id)) |instance|
-            (if (instance.skeleton) |*instance_skeleton| instance_skeleton else null)
-        else
-            null;
-        if (skeleton) |instance_skeleton| {
-            var skin_offsets: [max_skins]u32 = undefined;
-            for (instance_skeleton.joint_matrices, 0..) |matrices, skin_index| {
-                skin_offsets[skin_index] = @intCast(packet.joint_matrices.items.len);
-                packet.joint_matrices.appendSliceAssumeCapacity(matrices);
-            }
-            for (instance_skeleton.nodes) |node| {
-                const mesh_id = node.mesh_id orelse continue;
-                packet.draw_models.appendAssumeCapacity(.{
-                    .kind = entity.kind,
-                    .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
-                    .position = entity.transform.position,
-                    .mesh_id = @intCast(mesh_id),
-                    .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
-                });
-            }
-        } else {
-            packet.draw_models.appendAssumeCapacity(.{
-                .kind = entity.kind,
-                .model_matrix = top_matrix,
-                .position = entity.transform.position,
-                .mesh_id = null,
-                .palette_offset = null,
-            });
-        }
-    }
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {

@@ -7,8 +7,7 @@ const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("AssetServer.zig");
-const Animation = @import("system/Animations.zig");
-const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Presentation = @import("Presentation.zig");
 const motion = @import("system/motion.zig");
 const Emitter = @import("system/Emitter.zig");
 const extract = @import("system/extract.zig");
@@ -43,8 +42,7 @@ steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
 renderer: *Vulkan,
 network_manager: NetworkManager,
-animation: Animation,
-animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
+presentation: Presentation,
 frame_packet: FramePacket,
 ui: Ui,
 scene: Scene,
@@ -72,8 +70,7 @@ pub fn init(self: *System, data: Data) !void {
     self.asset_server = data.asset_server;
     self.renderer = try Vulkan.init(data.gpa, data.asset_server, data.window);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
-    self.animation = .init(data.gpa);
-    self.animation_instances = .init(data.gpa);
+    self.presentation = .init(data.gpa);
     self.frame_packet = try .init(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
     self.ui.default_font = &self.renderer.resources.font_loader.items[0];
@@ -85,9 +82,7 @@ pub fn init(self: *System, data: Data) !void {
 }
 
 pub fn deinit(self: *System) void {
-    var instance_iterator = self.animation_instances.valueIterator();
-    while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
-    self.animation_instances.deinit();
+    self.presentation.deinit();
     self.frame_packet.deinit(self.gpa);
     self.ui.deinit(self.gpa);
     self.renderer.deinit(self.gpa);
@@ -125,19 +120,18 @@ pub fn update(self: *System, world: *World) !void {
         world.controller.clearInput();
     }
     try self.applyOptions(world);
-    Emitter.update(world);
-    try self.animation.applyEvents(world.render_outbox.items, self.renderer.resources.model_loader, &self.animation_instances);
-    try self.renderer.drainRenderCommands(self.gpa, world.render_outbox.items);
-    world.render_outbox.clearRetainingCapacity();
-    extract.extract(world, &self.ui, &self.animation_instances, &self.frame_packet, self.scene != .particle_lab);
-    try self.renderer.update(&self.frame_packet);
-    try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
-    try world.flush(&self.animation_instances);
-    try self.animation.updateStates(world, self.renderer.resources.model_loader, &self.animation_instances);
-    try self.animation.update(world, self.renderer.resources.model_loader, &self.animation_instances);
+    try world.flush(&self.presentation);
+    Emitter.update(world);
+
+    extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
+    try self.presentation.update(world, self.renderer.resources.model_loader, world.render_outbox.items, &self.frame_packet);
+    try self.renderer.drainRenderCommands(self.gpa, world.render_outbox.items);
+    world.render_outbox.clearRetainingCapacity();
+    try self.renderer.update(&self.frame_packet);
+    try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);

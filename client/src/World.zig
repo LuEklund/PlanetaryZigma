@@ -7,7 +7,7 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
-const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Presentation = @import("Presentation.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 
 pub const DamageEvent = struct {
@@ -142,7 +142,7 @@ pub fn clearSession(self: *World) void {
     self.stage = 0;
 }
 
-pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn flush(self: *World, presentation: *const Presentation) !void {
     defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
         if (self.getPtr(entity_info.id) != null) continue;
@@ -212,11 +212,9 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
         if (self.getPtr(id)) |entity| {
             entity.motion.update = null;
             entity.flags.is_dying = true;
-            if (instances.getPtr(id)) |instance| {
-                if (instance.deathDuration() > 0 and !instance.deathDone()) {
-                    despawn_index += 1;
-                    continue;
-                }
+            if (!presentation.deathDone(id)) {
+                despawn_index += 1;
+                continue;
             }
         }
         _ = self.pending_despawn.swapRemove(despawn_index);
