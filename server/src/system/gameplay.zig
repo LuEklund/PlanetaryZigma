@@ -34,11 +34,13 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...40 => .tubloid,
-            41...60 => .tubloida,
-            61...75 => .hunkloid,
-            76...90 => .blooploid,
-            else => .bloorp_lord,
+            // 0...10 => .acorn,
+            // 11...40 => .tubloid,
+            // 41...60 => .tubloida,
+            // 61...75 => .hunkloid,
+            // 76...90 => .blooploid,
+            // else => .bloorp_lord,
+            else => .acorn,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -81,7 +83,7 @@ pub fn updateEnemies(world: *World) !void {
     if (world.players.items.len == 0) return;
 
     for (world.entities.values()) |*enemy| {
-        if (enemy.kind != .enemy) continue;
+        if (enemy.kind != .enemy or enemy.flags.is_dead) continue;
         if (enemy.un_stun_at > world.elapsed_time) continue;
         const body_id = enemy.collider.body_id orelse continue;
 
@@ -200,6 +202,23 @@ pub fn updateEnemies(world: *World) !void {
                         .damage = damage,
                     });
                 }
+            },
+            .acorn => {
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(enemy, -chase_dir, speed, world.delta_time);
+                // for (world.entities.values()) |*acorn| {
+                //     if (acorn.kind != .enemy or acorn.kind.enemy != .acorn or acorn.id == enemy.id) continue;
+                //     if (nz.vec.distance(acorn.transform.position, enemy.transform.position) > 2) continue;
+                //     if (nz.vec.dot(enemy.transform.scale, enemy.transform.scale) >= nz.vec.dot(acorn.transform.scale, acorn.transform.scale)) {
+                //         world.queueDespawn(acorn.id);
+                //         acorn.flags.is_dead = true;
+                //         enemy.transform.scale += acorn.transform.scale;
+                //     } else {
+                //         world.queueDespawn(enemy.id);
+                //         enemy.flags.is_dead = true;
+                //         acorn.transform.scale += enemy.transform.scale;
+                //     }
+                // }
             },
         }
     }

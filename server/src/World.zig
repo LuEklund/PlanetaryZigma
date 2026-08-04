@@ -35,7 +35,6 @@ world_unstun_at: f32 = 0,
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
 
-pub const spawn_hover: f32 = 1.5;
 pub const item_throw_speed: f32 = 18;
 
 pub const item_launch_angle: f32 = std.math.pi / 4.0;
@@ -307,7 +306,7 @@ fn dropBossReward(self: *World, entity: *Entity) void {
     _ = self.spawn(.{
         .kind = .{ .item = .lightning },
         .transform = .{
-            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
+            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
             .rotation = teleporter.transform.rotation,
         },
         .spawn_impulse = shared.planet.surfaceLaunch(
@@ -410,7 +409,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                     nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
                 else
                     nz.vec.randomUnitVector(nz.Vec3(f32), random);
-                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
+                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, 0.2);
                 _ = try self.spawn(.{
                     .kind = .lootbox,
                     .transform = transform,

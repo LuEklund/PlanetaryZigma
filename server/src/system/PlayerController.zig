@@ -29,8 +29,8 @@ pub fn update(world: *World, physics: *Physics) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                _ = world.giveItem(player, .freezer, 1);
-                // _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
+                // _ = world.giveItem(player, .freezer, 1);
+                _ = try world.spawn(.{ .kind = .{ .enemy = .acorn }, .transform = player.transform });
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
@@ -48,7 +48,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 _ = world.spawn(.{
                     .kind = .{ .item = random.enumValue(shared.Item.Kind) },
                     .transform = .{
-                        .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
+                        .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
                         .rotation = teleporter.transform.rotation,
                     },
                     .spawn_impulse = shared.planet.surfaceLaunch(
@@ -70,7 +70,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             },
             .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
-                Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10));
+                Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, 10));
             },
             .f9 => world.start_round_requested = true,
 
@@ -121,7 +121,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                     _ = try world.spawn(.{
                         .kind = .{ .item = item_kind },
                         .transform = .{
-                            .position = entity.transform.position + nz.vec.scale(chest_up, system.World.spawn_hover),
+                            .position = entity.transform.position + nz.vec.scale(chest_up, 1),
                             .rotation = entity.transform.rotation,
                         },
                         .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
