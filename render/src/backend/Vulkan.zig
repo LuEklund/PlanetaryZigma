@@ -33,6 +33,7 @@ const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
 const DrawList = @import("../DrawList.zig");
+const Backend = @import("../Backend.zig");
 
 const check = @import("Vulkan/utils.zig").check;
 
@@ -54,7 +55,9 @@ planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_slots: []u32, window: *Window) !*Vulkan {
+pub fn init(data: *const Backend.Data) !*Vulkan {
+    const gpa = data.gpa;
+    const window = data.window;
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.planet = .init();
@@ -84,9 +87,9 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, asset_server, fonts, models, texture_slots, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, data.asset_server, data.fonts, data.models, data.texture_slots, self.vma, self.physical_device, self.device);
 
-    try asset_server.load();
+    try data.asset_server.load();
 
     return self;
 }

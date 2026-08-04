@@ -74,7 +74,6 @@ pub const Entity = struct {
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
         return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
-
 };
 
 pub fn init(gpa: std.mem.Allocator) !World {

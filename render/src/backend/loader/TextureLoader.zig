@@ -11,8 +11,6 @@ const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
 const Texture = @import("../../Texture.zig");
 
-
-
 table: *TextureTable,
 slots: []u32,
 interface: Loader,

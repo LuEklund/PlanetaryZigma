@@ -117,4 +117,3 @@ pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Mod
 pub fn deinit(self: *Instance, gpa: std.mem.Allocator) void {
     if (self.skeleton) |*skeleton| skeleton.deinit(gpa);
 }
-

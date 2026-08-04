@@ -48,7 +48,7 @@ pub const ffi = struct {
         context.* = .{
             .gpa = data.gpa,
             .io = data.io,
-            .vulkan = Vulkan.init(data.gpa, data.asset_server, data.fonts, data.models, data.texture_slots, data.window) catch |err| {
+            .vulkan = Vulkan.init(data) catch |err| {
                 std.log.err("render init: {s}", .{@errorName(err)});
                 data.gpa.destroy(context);
                 return null;

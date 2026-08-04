@@ -10,8 +10,14 @@ io: std.Io,
 dir: std.Io.Dir,
 assets_path: []const u8,
 
-loaders: std.ArrayList(*Loader) = .empty,
-file_mtimes: std.ArrayList([]std.Io.Timestamp) = .empty,
+entries: std.ArrayList(Entry) = .empty,
+
+/// A registered loader and the last-seen mtime of each of its files. One row, so the
+/// two can never fall out of step.
+pub const Entry = struct {
+    loader: *Loader,
+    mtimes: []std.Io.Timestamp,
+};
 
 pub const Loader = struct {
     gpa: std.mem.Allocator,
@@ -56,32 +62,29 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !AssetServer {
 
 pub fn deinit(self: *AssetServer) void {
     self.dir.close(self.io);
-    self.loaders.deinit(self.gpa);
-    for (self.file_mtimes.items) |mtimes| self.gpa.free(mtimes);
-    self.file_mtimes.deinit(self.gpa);
+    for (self.entries.items) |entry| self.gpa.free(entry.mtimes);
+    self.entries.deinit(self.gpa);
     self.* = undefined;
 }
 
 pub fn addLoader(self: *AssetServer, loader: *Loader) !void {
-    try self.loaders.append(self.gpa, loader);
     const mtimes = try self.gpa.alloc(std.Io.Timestamp, loader.files.len);
     @memset(mtimes, .zero);
-    try self.file_mtimes.append(self.gpa, mtimes);
+    try self.entries.append(self.gpa, .{ .loader = loader, .mtimes = mtimes });
 }
 
 pub fn load(self: *AssetServer) !void {
-    for (self.loaders.items, 0..) |_, loader_index| {
-        const loader = self.loaders.items[loader_index];
+    for (self.entries.items) |entry| {
+        const loader = entry.loader;
         for (0..loader.files.len) |file_index| {
-            try self.loadFile(loader_index, file_index);
-            self.file_mtimes.items[loader_index][file_index] = .now(self.io, .real);
+            try self.loadFile(loader, file_index);
+            entry.mtimes[file_index] = .now(self.io, .real);
         }
     }
 }
 
-fn loadFile(self: *AssetServer, loader_index: usize, file_index: usize) !void {
+fn loadFile(self: *AssetServer, loader: *Loader, file_index: usize) !void {
     const io = self.io;
-    const loader = self.loaders.items[loader_index];
     const loader_root = try self.dir.openDir(io, loader.root_path, .{});
     defer loader_root.close(io);
     std.log.debug("loading {s}", .{loader.files[file_index]});
@@ -99,7 +102,9 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
 
 fn pollChangedAssets(self: *AssetServer) !void {
     const io = self.io;
-    for (self.loaders.items, self.file_mtimes.items, 0..) |loader, mtimes, loader_index| {
+    for (self.entries.items) |entry| {
+        const loader = entry.loader;
+        const mtimes = entry.mtimes;
         const loader_root = self.dir.openDir(io, loader.root_path, .{}) catch continue;
         defer loader_root.close(io);
         for (loader.files, mtimes, 0..) |file_path, *mtime, file_index| {
@@ -107,7 +112,7 @@ fn pollChangedAssets(self: *AssetServer) !void {
             if (entry_stat.mtime.nanoseconds <= mtime.nanoseconds + std.time.ns_per_s) continue;
             std.log.debug("reload asset {s}/{s}", .{ loader.root_path, file_path });
             loader.vtable.unload(loader, file_index);
-            self.loadFile(loader_index, file_index) catch |err| {
+            self.loadFile(loader, file_index) catch |err| {
                 std.log.warn("reload failed {s}: {t}, retrying", .{ file_path, err });
                 continue;
             };

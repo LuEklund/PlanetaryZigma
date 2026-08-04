@@ -20,7 +20,6 @@ pub const Bindable = struct {
     label: []const u8,
 };
 
-
 pub const Binding = union(enum) {
     none,
     key: Window.Keyboard.Key,
@@ -174,7 +173,6 @@ pub fn update(self: *Controller, window: *const Window) void {
 
     self.show_stats = keyboard.isDown(.tab);
 
-
     for (std.enums.values(Kind)) |action| {
         switch (self.bindings.get(action)) {
             .none => {},
@@ -250,4 +248,3 @@ fn titleCase(comptime tag: []const u8) []const u8 {
     const final = text;
     return &final;
 }
-

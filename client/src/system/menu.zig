@@ -6,7 +6,6 @@ const World = @import("../World.zig");
 const planet_id: shared.entity.Id = @enumFromInt(1);
 const bozo_id: shared.entity.Id = @enumFromInt(2);
 
-
 const planet_mesh_radius: u32 = 18;
 const planet_position: nz.Vec3(f32) = .{ 4.6, -16.1, -60 };
 const planet_scale: f32 = 0.75;
