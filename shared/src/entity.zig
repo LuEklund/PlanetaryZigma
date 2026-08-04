@@ -14,6 +14,7 @@ pub const EnemyKind = enum(u16) {
     bloorp_lord,
     hunkloid,
     blooploid,
+    acorn,
     pub const count: usize = @typeInfo(EnemyKind).@"enum".fields.len;
 };
 
@@ -226,6 +227,17 @@ pub fn spec(kind: Kind) Spec {
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
                 .primary_range = 15,
                 .currency = 7,
+            },
+            .acorn => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.05, .radius = 0.4 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/acorn.glb", .offset = .{ .position = .{ 0, -0.4, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
+                    .idle = "Idle",
+                    .walk = "Run",
+                }) },
+                .has_health = true,
+                .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),
+                .primary_range = 2,
+                .currency = 5,
             },
         },
         .item => |item_kind| .{

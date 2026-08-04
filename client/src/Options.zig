@@ -1,11 +1,11 @@
 const Options = @This();
 
 show_crosshair: bool = true,
-mouse_sensitivity: f32 = 1.0,
+mouse_sensitivity: f32 = 0.25,
 invert_y: bool = false,
 fullscreen: bool = false,
 dev_planet: bool = false,
-fov_rad: f32 = 1.5,
+fov_rad: f32 = 0.65,
 chunk_view_distance: f32 = 2,
 
 pub fn cycleMouseSensitivity(options: *Options) void {
