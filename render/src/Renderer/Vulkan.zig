@@ -872,7 +872,6 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     };
 }
 
-
 pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, events: []const FramePacket.RenderCommand) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
     for (events) |command| switch (command) {

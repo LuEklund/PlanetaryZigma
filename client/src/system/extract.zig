@@ -2,10 +2,10 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Ui = @import("../Ui.zig");
-const FramePacket = @import("../Renderer/FramePacket.zig");
-const Presentation = @import("../Presentation.zig");
-const ModelLoader = @import("../Renderer/loader/ModelLoader.zig");
+const Ui = @import("render").Ui;
+const FramePacket = @import("render").FramePacket;
+const Presentation = @import("render").Presentation;
+const ModelLoader = @import("render").ModelLoader;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;

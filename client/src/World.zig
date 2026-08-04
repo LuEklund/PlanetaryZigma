@@ -6,8 +6,8 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
-const Emitter = @import("Emitter.zig");
-const FramePacket = @import("Renderer/FramePacket.zig");
+const Emitter = @import("render").Emitter;
+const FramePacket = @import("render").FramePacket;
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,

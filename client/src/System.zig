@@ -6,22 +6,22 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
-pub const AssetServer = @import("AssetServer.zig");
-const Presentation = @import("Presentation.zig");
+pub const AssetServer = @import("render").AssetServer;
+const Presentation = @import("render").Presentation;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
-const FramePacket = @import("Renderer/FramePacket.zig");
+const FramePacket = @import("render").FramePacket;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
 pub const Options = @import("Options.zig");
-pub const Vulkan = @import("Renderer/Vulkan.zig");
+pub const Vulkan = @import("render").Vulkan;
 
 pub const Camera = @import("system/Camera.zig");
 pub const Chat = @import("system/Chat.zig");
 pub const Controller = @import("system/Controller.zig");
 pub const Hud = @import("system/Hud.zig");
-pub const Ui = @import("Ui.zig");
+pub const Ui = @import("render").Ui;
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
