@@ -35,7 +35,7 @@ animations: std.AutoArrayHashMapUnmanaged(u64, Animation) = .empty,
 mouse_state: MouseState = .{},
 screen_width: f32,
 screen_height: f32,
-default_font: *Font,
+default_font: *const Font,
 texture_slots: []const u32,
 hot_item: ?u64 = null,
 active_item: ?u64 = null,
@@ -129,7 +129,7 @@ pub fn init(
         .animations = animations,
         .screen_width = @floatFromInt(screen_width),
         .screen_height = @floatFromInt(screen_height),
-        .default_font = undefined,
+        .default_font = &Font.empty,
         .texture_slots = &.{},
     };
 }
@@ -141,7 +141,9 @@ pub fn deinit(self: *Ui, gpa: std.mem.Allocator) void {
     self.animations.deinit(gpa);
 }
 
-pub fn start(self: *Ui, mouse_state: MouseState, delta_time: f32) void {
+pub fn start(self: *Ui, mouse_state: MouseState, font: *const Font, texture_slots: []const u32, delta_time: f32) void {
+    self.default_font = font;
+    self.texture_slots = texture_slots;
     const left_click_prev = self.mouse_state.left_click;
     self.mouse_state = mouse_state;
     self.delta_time = delta_time;

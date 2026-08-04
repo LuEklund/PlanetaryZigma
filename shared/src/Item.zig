@@ -102,10 +102,6 @@ pub fn getModel(kind: Kind) []const u8 {
     return model_paths[@intFromEnum(kind)];
 }
 
-pub fn getIcon(kind: Kind) []const u8 {
-    return icon_paths[@intFromEnum(kind)];
-}
-
 pub const Inventory = struct {
     counts: std.EnumMap(Item.Kind, u8) = .initFull(0),
 

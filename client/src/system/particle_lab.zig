@@ -16,18 +16,18 @@ pub fn populate(world: *World) void {
     world.camera = .{ .transform = .{ .position = camera_position }, .fov_rad = camera_fov_rad };
 }
 
-pub fn update(world: *World, renderer: *Renderer) void {
+pub fn update(renderer: *Renderer, elapsed_time: f32) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        renderer.keepAliveEffect(particle_kind, .none, surface_point, world.elapsed_time);
+        renderer.keepAliveEffect(particle_kind, .none, surface_point, elapsed_time);
         return;
     }
     for (&renderer.emitters) |emitter| {
-        if (emitter.effect == particle_kind and emitter.alive(world.elapsed_time)) return;
+        if (emitter.effect == particle_kind and emitter.alive(elapsed_time)) return;
     }
     renderer.spawnEffect(.{
         .effect = particle_kind,
         .origin = surface_point,
         .target = if (particle_info.topology == .ribbon) ribbon_target else surface_point,
-    }, world.elapsed_time);
+    }, elapsed_time);
 }

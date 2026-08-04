@@ -52,10 +52,10 @@ pub fn init(self: *System, data: *const Data) !void {
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();
     self.viewer = undefined;
-    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world);
+    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world.planet_radius);
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try self.world.loadPlace(.ship, &self.physics);
+    try data.world.loadPlace(.ship, &self.physics);
 }
 
 pub fn deinit(self: *System) !void {
@@ -84,29 +84,29 @@ pub fn update(self: *System, world: *World) !void {
             self.request_exit = true;
         },
     }
-    if (self.world.next_stage_requested) {
-        self.world.next_stage_requested = false;
-        try self.world.loadPlace(.planet, &self.physics);
+    if (world.next_stage_requested) {
+        world.next_stage_requested = false;
+        try world.loadPlace(.planet, &self.physics);
     }
-    if (self.world.start_round_requested) {
-        self.world.start_round_requested = false;
-        try self.world.loadPlace(.planet, &self.physics);
+    if (world.start_round_requested) {
+        world.start_round_requested = false;
+        try world.loadPlace(.planet, &self.physics);
     }
-    if (self.world.go_again_requested) {
-        self.world.go_again_requested = false;
+    if (world.go_again_requested) {
+        world.go_again_requested = false;
         try gameplay.updateWipe(world, &self.physics);
     }
 
     try PlayerController.update(world, &self.physics);
-    if (self.world.place == .planet) try gameplay.updateEnemies(world);
-    if (self.world.place == .planet) try gameplay.updateDirector(world);
+    if (world.place == .planet) try gameplay.updateEnemies(world);
+    if (world.place == .planet) try gameplay.updateDirector(world);
     try self.physics.update(world);
     gameplay.updateProjectiles(world, &self.physics);
     try gameplay.updateItems(world);
-    if (self.world.place == .planet) gameplay.updateTeleporter(world);
+    if (world.place == .planet) gameplay.updateTeleporter(world);
     gameplay.updateLifetimes(world);
     gameplay.playerRegen(world);
-    try self.world.flush(&self.physics);
+    try world.flush(&self.physics);
     try self.draw(world);
 }
 

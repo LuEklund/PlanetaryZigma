@@ -18,7 +18,7 @@ camera: Camera,
 ui: Ui,
 menu_open: bool,
 
-pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, world: *World) !void {
+pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
     try self.renderer.init(.{
         .gpa = gpa,
         .io = io,
@@ -28,9 +28,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     errdefer self.renderer.deinit(gpa, io);
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
-    self.ui.default_font = &self.renderer.fonts[0];
-    self.ui.texture_slots = &self.renderer.texture_slots;
-    self.camera = .init(.{ 0, world.planet_radius * World.ship_room_altitude_factor, 30 });
+    self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
     self.menu_open = false;
 }
 
@@ -66,7 +64,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, world.delta_time);
+    }, &self.renderer.fonts[0], &self.renderer.texture_slots, world.delta_time);
     var quit = window.should_close;
     if (self.menu_open) switch (menu.update(&self.ui, world.players.items.len, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow))) {
         .none => {},

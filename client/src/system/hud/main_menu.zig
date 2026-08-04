@@ -13,8 +13,7 @@ const OptionsTab = Hud.OptionsTab;
 
 const hot_seconds: f32 = 0.08;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
-    _ = world;
+pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
     const button_height = std.math.clamp(ui.screen_height * 0.048, @as(f32, 36), @as(f32, 46));
     const button_gap = std.math.clamp(ui.screen_height * 0.012, @as(f32, 7), @as(f32, 11));

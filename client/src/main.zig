@@ -54,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
     var asset_server = try System.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
-    var world: World = try .init(gpa, io);
+    var world: World = try .init(gpa);
     defer world.deinit();
 
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");

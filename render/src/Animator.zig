@@ -153,7 +153,7 @@ fn retire(self: *Animator) void {
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
         if (instance.seen) continue;
-        if (instance.is_dying and !instance.deathDone()) continue;
+        if (instance.is_dying and instance.death_time < instance.death_duration) continue;
         self.retiring.appendAssumeCapacity(entry.key_ptr.*);
     }
     for (self.retiring.items) |id| {
@@ -182,7 +182,7 @@ fn animate(self: *Animator, loader: *ModelTable) void {
             instance.death_time = 0;
         }
         if (instance.kind == .item) {
-            instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawnDuration());
+            instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawn_duration);
             instance.spin_time += self.frame.delta_time;
         }
         const model = resolveModel(loader, instance) orelse continue;
@@ -202,13 +202,13 @@ fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void
         var transform = instance.transform;
         switch (instance.kind) {
             .lootbox => {
-                if (instance.is_dying and instance.deathDuration() > 0) {
-                    transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.deathDuration(), 0, 1));
+                if (instance.is_dying and instance.death_duration > 0) {
+                    transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.death_duration, 0, 1));
                 }
             },
             .item => {
-                if (instance.spawnDuration() > 0) {
-                    transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawnDuration(), 0, 1)));
+                if (instance.spawn_duration > 0) {
+                    transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawn_duration, 0, 1)));
                 }
                 transform.rotation = transform.rotation
                     .mul(nz.Quat(f32).angleAxis(item_spin_speed * instance.spin_time, .{ 0, 1, 0 }))

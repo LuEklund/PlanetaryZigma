@@ -36,7 +36,6 @@ pub const Entity = World.Entity;
 gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
-steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
 renderer: Renderer,
 network_manager: NetworkManager,
@@ -59,7 +58,6 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
-    self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
     try self.renderer.init(.{
         .gpa = data.gpa,
@@ -69,7 +67,7 @@ pub fn init(self: *System, data: Data) !void {
     });
     errdefer self.renderer.deinit(data.gpa, data.io);
 
-    try self.hud.init(data.gpa, data.window.size, &self.renderer);
+    try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     errdefer self.network_manager.deinit();
@@ -105,8 +103,8 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
-    if (self.scene == .particle_lab) particle_lab.update(world, &self.renderer);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.hud.ui, &world.controller, &self.options)) {
+    if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,

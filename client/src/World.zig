@@ -16,9 +16,7 @@ pub const DamageEvent = struct {
     delta: f32,
 };
 
-mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
-io: std.Io,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
@@ -84,10 +82,9 @@ pub const Entity = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
+pub fn init(gpa: std.mem.Allocator) !World {
     return .{
         .gpa = gpa,
-        .io = io,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),

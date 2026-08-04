@@ -205,7 +205,7 @@ fn colliderGroundExtent(collider: Collider) f32 {
     };
 }
 
-pub fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
+fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
     const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
     const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;

@@ -118,14 +118,3 @@ pub fn deinit(self: *Instance, gpa: std.mem.Allocator) void {
     if (self.skeleton) |*skeleton| skeleton.deinit(gpa);
 }
 
-pub fn spawnDuration(self: *const Instance) f32 {
-    return self.spawn_duration;
-}
-
-pub fn deathDuration(self: *const Instance) f32 {
-    return self.death_duration;
-}
-
-pub fn deathDone(self: *const Instance) bool {
-    return self.death_time >= self.deathDuration();
-}

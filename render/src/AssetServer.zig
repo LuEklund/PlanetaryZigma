@@ -12,12 +12,6 @@ assets_path: []const u8,
 
 loaders: std.ArrayList(*Loader) = .empty,
 file_mtimes: std.ArrayList([]std.Io.Timestamp) = .empty,
-retries: std.ArrayList(Retry) = .empty,
-
-const Retry = struct {
-    loader_index: usize,
-    file_index: usize,
-};
 
 pub const Loader = struct {
     gpa: std.mem.Allocator,
@@ -65,7 +59,6 @@ pub fn deinit(self: *AssetServer) void {
     self.loaders.deinit(self.gpa);
     for (self.file_mtimes.items) |mtimes| self.gpa.free(mtimes);
     self.file_mtimes.deinit(self.gpa);
-    self.retries.deinit(self.gpa);
     self.* = undefined;
 }
 
@@ -101,15 +94,6 @@ pub fn reloadChangedAssets(self: *AssetServer) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    var retry_index: usize = 0;
-    while (retry_index < self.retries.items.len) {
-        const retry = self.retries.items[retry_index];
-        if (self.loadFile(retry.loader_index, retry.file_index)) |_| {
-            _ = self.retries.swapRemove(retry_index);
-        } else |_| {
-            retry_index += 1;
-        }
-    }
     try self.pollChangedAssets();
 }
 

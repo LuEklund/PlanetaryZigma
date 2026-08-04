@@ -95,16 +95,6 @@ pub fn beginFrame(self: *Renderer, frame: Frame) void {
     self.list.surface_height = frame.surface_height;
 }
 
-pub fn drawModel(self: *Renderer, draw: DrawList.DrawModel) void {
-    self.list.draw_models.appendAssumeCapacity(draw);
-}
-
-pub fn uploadJoints(self: *Renderer, matrices: []const nz.Mat4x4(f32)) u32 {
-    const offset: u32 = @intCast(self.list.joint_matrices.items.len);
-    self.list.joint_matrices.appendSliceAssumeCapacity(matrices);
-    return offset;
-}
-
 pub fn drawLine(self: *Renderer, a: nz.Vec3(f32), b: nz.Vec3(f32), color: [4]f32) void {
     self.list.draw_lines.appendAssumeCapacity(.{ .a = a, .b = b, .color = color });
 }
