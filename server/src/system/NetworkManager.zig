@@ -273,7 +273,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         try client.sendCommand(writer, .{ .server_tick = world.tick }, .unreliable_no_delay);
 
         if (world.getPtr(client.entity_id)) |player_entity| {
-            client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.r;
+            client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.reload;
         }
 
         const did_full_sync = client.needs_full_sync;

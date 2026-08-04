@@ -6,14 +6,15 @@ const shared = @import("shared");
 const Window = @import("Window");
 
 pub const MouseButton = std.meta.FieldEnum(Window.Pointer.Buttons);
-pub const InputKey = std.meta.FieldEnum(@FieldType(shared.net.Input, "keys"));
 
 pub const Action = struct {
     id: @EnumLiteral(),
     default: Binding,
-    /// Which wire input bit this sets. Actions without one toggle local state and are
-    /// handled explicitly in `applyAction`.
-    input: ?InputKey = null,
+    /// Set while held. The action's own tag names the wire bit, so there is nothing
+    /// to keep in sync — actions with no matching bit leave this false.
+    sends_input: bool = false,
+    /// Sent once on press. Server-only slots; ignored outside dev mode.
+    dev_command: ?shared.net.DevCommand = null,
     /// null means hard-bound: the default stands, and the options menu never lists it.
     bindable: ?Bindable = null,
 };
@@ -44,19 +45,31 @@ pub const Binding = union(enum) {
 };
 
 pub const actions: []const Action = &.{
-    .{ .id = .move_forward, .default = .{ .key = .w }, .input = .w, .bindable = .{ .label = "Move Forward" } },
-    .{ .id = .move_backward, .default = .{ .key = .s }, .input = .s, .bindable = .{ .label = "Move Backward" } },
-    .{ .id = .move_left, .default = .{ .key = .a }, .input = .a, .bindable = .{ .label = "Move Left" } },
-    .{ .id = .move_right, .default = .{ .key = .d }, .input = .d, .bindable = .{ .label = "Move Right" } },
-    .{ .id = .jump, .default = .{ .key = .space }, .input = .space, .bindable = .{ .label = "Jump" } },
-    .{ .id = .move_down, .default = .{ .key = .left_shift }, .input = .l_shift, .bindable = .{ .label = "Move Down" } },
-    .{ .id = .reload, .default = .{ .key = .r }, .input = .r, .bindable = .{ .label = "Reload" } },
-    .{ .id = .interact, .default = .{ .key = .e }, .input = .e, .bindable = .{ .label = "Interact" } },
-    .{ .id = .attack, .default = .{ .mouse = .left }, .input = .mouse_button_left, .bindable = .{ .label = "Attack" } },
-    .{ .id = .aim, .default = .{ .mouse = .right }, .input = .mouse_button_right, .bindable = .{ .label = "Aim" } },
-    .{ .id = .use_equipment, .default = .{ .key = .q }, .input = .q, .bindable = .{ .label = "Use Equipment" } },
+    .{ .id = .move_forward, .default = .{ .key = .w }, .sends_input = true, .bindable = .{ .label = "Move Forward" } },
+    .{ .id = .move_backward, .default = .{ .key = .s }, .sends_input = true, .bindable = .{ .label = "Move Backward" } },
+    .{ .id = .move_left, .default = .{ .key = .a }, .sends_input = true, .bindable = .{ .label = "Move Left" } },
+    .{ .id = .move_right, .default = .{ .key = .d }, .sends_input = true, .bindable = .{ .label = "Move Right" } },
+    .{ .id = .jump, .default = .{ .key = .space }, .sends_input = true, .bindable = .{ .label = "Jump" } },
+    .{ .id = .move_down, .default = .{ .key = .left_shift }, .sends_input = true, .bindable = .{ .label = "Move Down" } },
+    .{ .id = .reload, .default = .{ .key = .r }, .sends_input = true, .bindable = .{ .label = "Reload" } },
+    .{ .id = .interact, .default = .{ .key = .e }, .sends_input = true, .bindable = .{ .label = "Interact" } },
+    .{ .id = .attack, .default = .{ .mouse = .left }, .sends_input = true, .bindable = .{ .label = "Attack" } },
+    .{ .id = .aim, .default = .{ .mouse = .right }, .sends_input = true, .bindable = .{ .label = "Aim" } },
+    .{ .id = .use_equipment, .default = .{ .key = .q }, .sends_input = true, .bindable = .{ .label = "Use Equipment" } },
     .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
     .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
+    .{ .id = .dev_f1, .default = .{ .key = .f1 }, .dev_command = .f1 },
+    .{ .id = .dev_f2, .default = .{ .key = .f2 }, .dev_command = .f2 },
+    .{ .id = .dev_f3, .default = .{ .key = .f3 }, .dev_command = .f3 },
+    .{ .id = .dev_f4, .default = .{ .key = .f4 }, .dev_command = .f4 },
+    .{ .id = .dev_f5, .default = .{ .key = .f5 }, .dev_command = .f5 },
+    .{ .id = .dev_f6, .default = .{ .key = .f6 }, .dev_command = .f6 },
+    .{ .id = .dev_f7, .default = .{ .key = .f7 }, .dev_command = .f7 },
+    .{ .id = .dev_f8, .default = .{ .key = .f8 }, .dev_command = .f8 },
+    .{ .id = .dev_f9, .default = .{ .key = .f9 }, .dev_command = .f9 },
+    .{ .id = .dev_f10, .default = .{ .key = .f10 }, .dev_command = .f10 },
+    .{ .id = .dev_f11, .default = .{ .key = .f11 }, .dev_command = .f11 },
+    .{ .id = .dev_f12, .default = .{ .key = .f12 }, .dev_command = .f12 },
 };
 
 pub const Kind = kind: {
@@ -164,18 +177,6 @@ pub fn update(self: *Controller, window: *const Window) void {
 
     self.show_stats = keyboard.isDown(.tab);
 
-    if (keyboard.get(.f1) == .press) self.input_map.dev_command = .f1;
-    if (keyboard.get(.f2) == .press) self.input_map.dev_command = .f2;
-    if (keyboard.get(.f3) == .press) self.input_map.dev_command = .f3;
-    if (keyboard.get(.f4) == .press) self.input_map.dev_command = .f4;
-    if (keyboard.get(.f5) == .press) self.input_map.dev_command = .f5;
-    if (keyboard.get(.f6) == .press) self.input_map.dev_command = .f6;
-    if (keyboard.get(.f7) == .press) self.input_map.dev_command = .f7;
-    if (keyboard.get(.f8) == .press) self.input_map.dev_command = .f8;
-    if (keyboard.get(.f9) == .press) self.input_map.dev_command = .f9;
-    if (keyboard.get(.f10) == .press) self.input_map.dev_command = .f10;
-    if (keyboard.get(.f11) == .press) self.input_map.dev_command = .f11;
-    if (keyboard.get(.f12) == .press) self.input_map.dev_command = .f12;
 
     for (std.enums.values(Kind)) |action| {
         switch (self.bindings.get(action)) {
@@ -213,7 +214,13 @@ fn applyAction(self: *Controller, action: Kind, pressed: bool) void {
         .debug_colliders => if (pressed) {
             self.debug_draw_colliders = !self.debug_draw_colliders;
         },
-        inline else => |inline_action| @field(self.input_map.keys, @tagName(get(inline_action).input.?)) = pressed,
+        inline else => |inline_action| {
+            const spec = comptime get(inline_action);
+            if (spec.sends_input) @field(self.input_map.keys, @tagName(inline_action)) = pressed;
+            if (spec.dev_command) |command| if (pressed) {
+                self.input_map.dev_command = command;
+            };
+        },
     }
 }
 

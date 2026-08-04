@@ -67,12 +67,12 @@ pub fn update(self: *Camera, world: *World, options: *const Options) void {
         const pitch_quat: Quat = .angleAxis(self.pitch, .{ 1, 0, 0 });
         const rotation = self.yaw_rotation.mul(pitch_quat).normalize();
         var direction: Vec3 = .{ 0, 0, 0 };
-        if (keys.w) direction[2] -= 1;
-        if (keys.s) direction[2] += 1;
-        if (keys.d) direction[0] += 1;
-        if (keys.a) direction[0] -= 1;
-        if (keys.space) direction[1] += 1;
-        if (keys.l_shift) direction[1] -= 1;
+        if (keys.move_forward) direction[2] -= 1;
+        if (keys.move_backward) direction[2] += 1;
+        if (keys.move_right) direction[0] += 1;
+        if (keys.move_left) direction[0] -= 1;
+        if (keys.jump) direction[1] += 1;
+        if (keys.move_down) direction[1] -= 1;
         if (nz.vec.length(direction) > 0) {
             const world_direction = rotation.rotateVec(nz.vec.normalize(direction));
             self.transform.position += nz.vec.scale(world_direction, self.free_speed * world.delta_time);
