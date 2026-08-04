@@ -10,7 +10,7 @@ const Node = @import("asset/Node.zig");
 const AnimationClip = @import("asset/AnimationClip.zig");
 const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("asset/ModelTable.zig");
-const DrawList = @import("Renderer/DrawList.zig");
+const DrawList = @import("DrawList.zig");
 const Emitter = @import("Emitter.zig");
 const Shader = @import("Renderer/Vulkan/Shader.zig");
 

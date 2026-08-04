@@ -13,6 +13,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet_radius: f32,
+planet_id: shared.entity.Id,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
@@ -155,6 +156,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
+        .planet_id = .none,
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -321,10 +323,10 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     }
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
-    _ = try self.spawn(.{
+    self.planet_id = (try self.spawn(.{
         .kind = .planet,
         .transform = .{},
-    });
+    })).id;
     try self.flush(physics);
 
     switch (place) {

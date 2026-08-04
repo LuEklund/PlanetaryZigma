@@ -5,6 +5,7 @@ const ServerArtifacts = struct {
     system: *std.Build.Step.Compile,
     steam_dep: *std.Build.Dependency,
     ztracy_dep: *std.Build.Dependency,
+    render_dep: *std.Build.Dependency,
 };
 
 pub fn build(b: *std.Build) void {
@@ -38,6 +39,9 @@ fn addServerArtifacts(
     const ztracy = ztracy_dep.module("ztracy");
 
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
+    const render = render_dep.module("render");
+    const window = render_dep.module("Window");
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
 
@@ -89,6 +93,8 @@ fn addServerArtifacts(
                 .{ .name = "shared", .module = shared },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "box3d", .module = box3d_mod },
+                .{ .name = "render", .module = render },
+                .{ .name = "Window", .module = window },
             },
             .link_libc = true,
         }),
@@ -111,6 +117,7 @@ fn addServerArtifacts(
                 .{ .name = "system", .module = system.root_module },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "Window", .module = window },
             },
         }),
         .use_lld = true,
@@ -127,6 +134,7 @@ fn addServerArtifacts(
         .system = system,
         .steam_dep = steam_dep,
         .ztracy_dep = ztracy_dep,
+        .render_dep = render_dep,
     };
 }
 
@@ -139,6 +147,11 @@ fn installServerArtifacts(
 ) void {
     step.dependOn(&b.addInstallArtifact(artifacts.system, .{}).step);
     step.dependOn(&b.addInstallArtifact(artifacts.exe, .{}).step);
+    // --render is a local debug view; the hosted Windows server is always dedicated and
+    // must not need the Vulkan SDK to cross-compile.
+    if (target.result.os.tag != .windows) {
+        step.dependOn(&b.addInstallArtifact(artifacts.render_dep.artifact("render"), .{}).step);
+    }
     if (tracy_enable) {
         step.dependOn(&b.addInstallArtifact(artifacts.ztracy_dep.artifact("tracy"), .{}).step);
     }

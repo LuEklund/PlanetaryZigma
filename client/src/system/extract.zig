@@ -22,24 +22,21 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
         .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 },
         .draw_sky = draw_sky,
         .planet = if (planet_entity) |planet| .{
+            .id = planet.id,
             .transform = planet.transform.toMat4x4(),
             .radius = @intFromFloat(world.planet_radius),
             .anchor_position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position,
             .view_distance = @max(world.chunk_view_distance, 1),
-            .present = true,
         } else .{
+            .id = .none,
             .transform = .identity,
             .radius = 0,
             .anchor_position = @splat(0),
             .view_distance = 1,
-            .present = false,
         },
         .surface_width = @intFromFloat(ui.screen_width),
         .surface_height = @intFromFloat(ui.screen_heigth),
     });
-
-    for (world.render_outbox.items) |value| rendering.command(value);
-    world.render_outbox.clearRetainingCapacity();
 
     try rendering.animator.begin(.{
         .delta_time = world.delta_time,

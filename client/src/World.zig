@@ -27,7 +27,6 @@ pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 deaths: std.ArrayList(shared.entity.Id) = .empty,
-render_outbox: std.ArrayList(DrawList.RenderCommand) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
@@ -97,7 +96,6 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
         .deaths = try .initCapacity(gpa, shared.max_entities),
         .effects = try .initCapacity(gpa, shared.max_entities),
-        .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
@@ -116,13 +114,11 @@ pub fn deinit(self: *World) void {
     self.trigger_events.deinit(self.gpa);
     self.deaths.deinit(self.gpa);
     self.effects.deinit(self.gpa);
-    self.render_outbox.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
 
 pub fn clearSession(self: *World) void {
     for (self.entities.values()) |*entity| {
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = entity.id });
         entity.deinit(self.gpa);
     }
     self.entities.clearRetainingCapacity();
@@ -197,11 +193,6 @@ pub fn flush(self: *World) !void {
             },
             .unknown, .item, .lootbox, .platform, .target_dummy => {},
         }
-        if (entity.kind == .planet) {
-            self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = .{ .id = entity.id, .radius = entity_info.data.planet_radius } });
-        } else {
-            self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
-        }
     }
 
     for (self.pending_healths.items) |command| {
@@ -224,7 +215,6 @@ pub fn flush(self: *World) !void {
         if (entity.flags.is_dying or shared.entity.spec(entity.kind).death_duration > 0) {
             self.deaths.appendAssumeCapacity(id);
         }
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
         _ = self.despawn(id);
     }
 }

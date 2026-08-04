@@ -118,6 +118,16 @@ pub fn build(b: *std.Build) void {
         .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
     });
 
+    const stbi_impl = b.addWriteFiles().add("stbi_impl.c",
+        \\#define STB_IMAGE_IMPLEMENTATION
+        \\#include "stb_image.h"
+        \\#define STB_TRUETYPE_IMPLEMENTATION
+        \\#include "stb_truetype.h"
+    );
+
+    // Producers get everything except `vulkan`. root.zig still names the Vulkan files,
+    // but an unreferenced decl is never analysed, so nothing in that half is loaded —
+    // and VMA's C translation unit, which is what drags in libvulkan, is never linked.
     const render = b.addModule("render", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -129,26 +139,16 @@ pub fn build(b: *std.Build) void {
             .{ .name = "stb_image", .module = stb_image.createModule() },
             .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
             .{ .name = "ztracy", .module = ztracy },
-            .{ .name = "vulkan", .module = vulkan },
         },
         .link_libc = true,
     });
-
-    render.addCSourceFile(.{
-        .file = b.addWriteFiles().add("stbi_impl.c",
-            \\#define STB_IMAGE_IMPLEMENTATION
-            \\#include "stb_image.h"
-            \\#define STB_TRUETYPE_IMPLEMENTATION
-            \\#include "stb_truetype.h"
-        ),
-        // Hidden, not exported: both .so roots compile these sources, so without this
-        // 102 stb symbols are global in both and ELF interposition picks by dlopen order.
-        .flags = &.{"-fvisibility=hidden"},
-    });
+    // Hidden, not exported: both .so roots compile this source, so without this 102 stb
+    // symbols are global in both and ELF interposition picks by dlopen order.
+    render.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
     render.addIncludePath(stb_dep.path("."));
 
-    // The hot-reloadable backend: same static module, compiled as its own .so so a
-    // renderer edit does not rebuild the game systems.
+    // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
+    // not rebuild the game systems.
     const backend = b.addLibrary(.{
         .name = "render",
         .root_module = b.createModule(.{
@@ -170,17 +170,7 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .linkage = .dynamic,
     });
-    backend.root_module.addCSourceFile(.{
-        .file = b.addWriteFiles().add("stbi_impl.c",
-            \\#define STB_IMAGE_IMPLEMENTATION
-            \\#include "stb_image.h"
-            \\#define STB_TRUETYPE_IMPLEMENTATION
-            \\#include "stb_truetype.h"
-        ),
-        // Hidden, not exported: both .so roots compile these sources, so without this
-        // 102 stb symbols are global in both and ELF interposition picks by dlopen order.
-        .flags = &.{"-fvisibility=hidden"},
-    });
+    backend.root_module.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
     backend.root_module.addIncludePath(stb_dep.path("."));
     linkVulkan(b, backend, target);
     b.installArtifact(backend);

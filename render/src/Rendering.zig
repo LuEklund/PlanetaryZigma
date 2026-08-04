@@ -5,7 +5,7 @@ const shared = @import("shared");
 const Window = @import("Window");
 const Backend = @import("Backend.zig");
 const AssetServer = @import("AssetServer.zig");
-const DrawList = @import("Renderer/DrawList.zig");
+const DrawList = @import("DrawList.zig");
 const Animator = @import("Animator.zig");
 const Emitter = @import("Emitter.zig");
 const Shader = @import("Renderer/Vulkan/Shader.zig");
@@ -26,17 +26,23 @@ emitters: Emitter.List,
 /// CPU-side model data. Parsed by the renderer's loader, read here by `animator`
 /// for clips and skins — it lives on this side because `animator` does.
 models: Backend.ModelTable,
+window: *Window,
+/// The renderer's loaders fill these in place, so they have to outlive a render.so
+/// swap — which is why they are here and not lent back out of the library.
+fonts: [Font.count]Font,
+texture_slots: [shared.Texture.count()]u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     window: *Window,
     asset_server: *AssetServer,
-    fonts: []Font,
-    texture_slots: []u32,
 };
 
 pub fn init(self: *Rendering, data: Data) !void {
+    self.window = data.window;
+    self.fonts = @splat(.empty);
+    self.texture_slots = @splat(0);
     self.models = try .init(data.gpa);
     errdefer self.models.deinit(data.gpa);
 
@@ -47,9 +53,9 @@ pub fn init(self: *Rendering, data: Data) !void {
         .gpa = data.gpa,
         .io = data.io,
         .asset_server = data.asset_server,
-        .fonts = data.fonts,
+        .fonts = &self.fonts,
         .models = &self.models,
-        .texture_slots = data.texture_slots,
+        .texture_slots = &self.texture_slots,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.lib.symbols.renderDeinit(self.handle);
@@ -128,10 +134,6 @@ pub fn drawUi(self: *Rendering, quads: []const Ui.Quad, screen_width: f32, scree
     self.list.ui.screen_height = screen_height;
 }
 
-pub fn command(self: *Rendering, value: DrawList.RenderCommand) void {
-    self.list.commands.appendAssumeCapacity(value);
-}
-
 /// Emits the live emitters and hands the frame to the renderer.
 pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
     for (&self.emitters) |emitter| {
@@ -146,7 +148,6 @@ pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
     _ = self.lib.symbols.renderUpdate(self.handle, &self.list);
 }
 
-/// Picks up a newer librender.so if one has been built. Safe to call every frame.
-pub fn reloadChanged(self: *Rendering, io: std.Io) !void {
+pub fn reloadIfChanged(self: *Rendering, io: std.Io) !void {
     try self.lib.swap(io, null, self.handle);
 }

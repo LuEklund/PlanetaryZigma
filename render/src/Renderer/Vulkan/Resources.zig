@@ -47,7 +47,7 @@ shader_loader: *ShaderLoader,
 font_loader: *FontLoader,
 generated: std.EnumArray(Model.Generated, Mesh),
 
-descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout),
+descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
 
 identity_joint_buffer: Buffer,
@@ -59,7 +59,7 @@ shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
 pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_slots: []u32, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
-    const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
+    const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
                 .binding = 0,

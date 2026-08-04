@@ -9,13 +9,6 @@ const check = @import("utils.zig").check;
 handle: c.VkDescriptorSetLayout,
 count: u32,
 
-pub const Kind = enum {
-    scene,
-    material,
-    textures,
-    shadow,
-};
-
 pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DesrciptorLayout {
     var info: c.VkDescriptorSetLayoutCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,

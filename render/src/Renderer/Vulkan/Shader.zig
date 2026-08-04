@@ -1,16 +1,13 @@
-const Shader = @This();
-
 const std = @import("std");
-const c = @import("vulkan");
-const Device = @import("device.zig").Logical;
-const ext = @import("procs.zig").device.ProcTable;
-const check = @import("utils.zig").check;
-const DescriptorLayout = @import("DesrciptorLayout.zig");
-
-handle: c.VkShaderEXT,
-device: Device,
 
 pub const Topology = enum { quad, ribbon };
+
+pub const Descriptor = enum {
+    scene,
+    material,
+    textures,
+    shadow,
+};
 
 pub const ParticleInfo = struct {
     particle_count: u32,
@@ -38,7 +35,7 @@ pub const Spec = struct {
     path: []const u8,
     vert: ?[:0]const u8,
     frag: ?[:0]const u8,
-    descriptors: []const DescriptorLayout.Kind,
+    descriptors: []const Descriptor,
     push_constant_size: u32,
     particle: ?ParticleInfo,
 };
@@ -109,49 +106,22 @@ pub fn instancesPerEmitter(kind: Kind) u32 {
     };
 }
 
+pub const VkDeviceAddress = u64;
+
 pub const WorldPushConstant = extern struct {
     model_matrix: [16]f32,
-    vertex_buffer_address: c.VkDeviceAddress,
-    joint_matrices_address: c.VkDeviceAddress,
+    vertex_buffer_address: VkDeviceAddress,
+    joint_matrices_address: VkDeviceAddress,
     texture_index: u32,
 };
 pub const UiPushConstant = extern struct {
-    vertex_buffer_address: c.VkDeviceAddress,
+    vertex_buffer_address: VkDeviceAddress,
     screnn_size: [2]f32,
 };
 pub const ParticlePushConstant = extern struct {
-    emitter_buffer_address: c.VkDeviceAddress,
+    emitter_buffer_address: VkDeviceAddress,
     elapsed_time: f32,
     particle_count: u32,
     emitter_count: u32,
     duration: f32,
 };
-
-pub fn init(device: Device, kind: Kind, entry_point: [:0]const u8, stage: c.VkShaderStageFlagBits, next_stage: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout, data: []align(4) const u8) !Shader {
-    const push_constant_size: u32 = get(kind).push_constant_size;
-    const push_constant_range: c.VkPushConstantRange = .{
-        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = push_constant_size,
-    };
-    const shader_create_info: c.VkShaderCreateInfoEXT = .{
-        .sType = c.VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT,
-        .stage = stage,
-        .nextStage = next_stage,
-        .codeType = c.VK_SHADER_CODE_TYPE_SPIRV_EXT,
-        .pName = entry_point.ptr,
-        .pSetLayouts = descriptor_set_layouts.ptr,
-        .setLayoutCount = @intCast(descriptor_set_layouts.len),
-        .pPushConstantRanges = &push_constant_range,
-        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
-        .codeSize = data.len,
-        .pCode = data.ptr,
-    };
-    var handle: c.VkShaderEXT = null;
-    try check(ext.vkCreateShadersEXT(device.handle, 1, &shader_create_info, null, &handle));
-    return .{ .device = device, .handle = handle };
-}
-
-pub fn deinit(self: *Shader) void {
-    ext.vkDestroyShaderEXT(self.device.handle, self.handle, null);
-}

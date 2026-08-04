@@ -25,13 +25,14 @@ const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Planet = @import("Planet.zig");
 const Shader = @import("Vulkan/Shader.zig");
+const ShaderLoader = @import("loader/ShaderLoader.zig");
 const Ui = @import("../Ui.zig");
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
-const DrawList = @import("DrawList.zig");
+const DrawList = @import("../DrawList.zig");
 
 const check = @import("Vulkan/utils.zig").check;
 
@@ -131,7 +132,7 @@ pub fn update(self: *Vulkan, packet: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    try self.drainRenderCommands(self.gpa, packet.commands.items);
+    try self.syncPlanet(self.gpa, packet.planet);
     if (packet.surface_width != self.swapchain.extent.width or packet.surface_height != self.swapchain.extent.height) {
         try self.resize(self.gpa, packet.surface_width, packet.surface_height);
     }
@@ -558,7 +559,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawStatic(self, cmd, handle, draw_model.model_matrix);
     }
 
-    if (packet.planet.present) {
+    if (packet.planet.id != .none) {
         for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, packet.planet.transform);
     }
 
@@ -785,13 +786,13 @@ fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *c
     ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 2, 1, &buf_idx_2, &off_2);
 }
 
-fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void {
     const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
     const handle = [_]c.VkShaderEXT{shader.handle};
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
 
-fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shader) void {
+fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void {
     const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_FRAGMENT_BIT};
     const handle = [_]c.VkShaderEXT{shader.handle};
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
@@ -880,11 +881,9 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     };
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, events: []const DrawList.RenderCommand) !void {
+fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
-    for (events) |command| switch (command) {
-        .entity_spawned => {},
-        .planet_spawned => |spawned| try self.planet.build(gpa, spawned.id, spawned.radius, self.current_frame_inflight),
-        .entity_despawned => |id| try self.planet.remove(gpa, id, self.current_frame_inflight),
-    };
+    if (state.id == .none) return self.planet.remove(gpa, self.planet.planet_id, self.current_frame_inflight);
+    if (state.id == self.planet.planet_id and state.radius == self.planet.radius) return;
+    try self.planet.build(gpa, state.id, state.radius, self.current_frame_inflight);
 }

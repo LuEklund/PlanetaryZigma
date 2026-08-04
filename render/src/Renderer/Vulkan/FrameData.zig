@@ -8,6 +8,7 @@ const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Ui = @import("../../Ui.zig");
 const Emitter = @import("../../Emitter.zig");
+const DrawList = @import("../../DrawList.zig");
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,
@@ -20,8 +21,6 @@ emitter_buffer: Buffer,
 joint_buffer: Buffer,
 
 pub const max_frames_inflight: usize = 3;
-pub const max_debug_vertices: u32 = 65536;
-pub const max_joint_matrices: u32 = 16384;
 
 pub const GPUEmitter = extern struct {
     origin: [3]f32,
@@ -100,7 +99,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             device,
             vma,
             DebugVertex,
-            max_debug_vertices,
+            DrawList.max_debug_vertices,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
@@ -122,7 +121,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             device,
             vma,
             [16]f32,
-            max_joint_matrices,
+            DrawList.max_joint_matrices,
             c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,

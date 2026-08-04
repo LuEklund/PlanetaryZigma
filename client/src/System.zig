@@ -62,20 +62,16 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
-    // Hud owns the font and texture storage the renderer's loaders write into, so it
-    // has to exist before the renderer starts.
-    try self.hud.init(data.gpa, data.window.size);
-    errdefer self.hud.deinit(data.gpa);
-
     try self.rendering.init(.{
         .gpa = data.gpa,
         .io = data.io,
         .window = data.window,
         .asset_server = data.asset_server,
-        .fonts = &self.hud.fonts,
-        .texture_slots = &self.hud.texture_slots,
     });
     errdefer self.rendering.deinit(data.gpa, data.io);
+
+    try self.hud.init(data.gpa, data.window.size, &self.rendering);
+    errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     errdefer self.network_manager.deinit();
     self.options = .{};
@@ -128,7 +124,7 @@ pub fn update(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
     try extract.frame(world, &self.rendering, &self.hud.ui, self.scene != .particle_lab);
-    try self.rendering.reloadChanged(self.io);
+    try self.rendering.reloadIfChanged(self.io);
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

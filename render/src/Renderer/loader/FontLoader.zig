@@ -9,11 +9,6 @@ const Image = @import("../Vulkan/Image.zig");
 const TextureTable = @import("TextureTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
-const font_files: []const []const u8 = &.{"Roboto-Regular.ttf"};
-
-/// How many `Font` slots a caller must own to pass into `init`.
-pub const count: usize = font_files.len;
-
 table: *TextureTable,
 items: []Font,
 samplers: []c.VkSampler,
@@ -23,10 +18,10 @@ interface: Loader,
 /// glyph metrics, and a loader-owned one would be a pointer into render.so. Reload keeps
 /// writing through it in place, so the borrow stays correct across a .ttf edit.
 pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, fonts: []Font) !void {
-    std.debug.assert(fonts.len == font_files.len);
+    std.debug.assert(fonts.len == Font.files.len);
     const items = fonts;
     @memset(items, .empty);
-    const samplers = try gpa.alloc(c.VkSampler, font_files.len);
+    const samplers = try gpa.alloc(c.VkSampler, Font.files.len);
     @memset(samplers, null);
 
     self.* = .{
@@ -37,7 +32,7 @@ pub fn init(self: *FontLoader, gpa: std.mem.Allocator, asset_server: *AssetServe
             .gpa = gpa,
             .io = asset_server.io,
             .root_path = "fonts",
-            .files = font_files,
+            .files = Font.files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };

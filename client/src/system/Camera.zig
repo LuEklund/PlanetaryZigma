@@ -56,11 +56,9 @@ pub fn update(self: *Camera, world: *World, options: *const Options) void {
         self.free_speed = std.math.clamp(self.free_speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(controller.mouse_wheel))), 1, 1000);
         if (nz.vec.length(self.transform.position) > 0.001) {
             const planet_up = nz.vec.normalize(self.transform.position);
-            if (keys.mouse_button_right) {
-                const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
-                self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
-                self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
-            }
+            const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
+            self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
+            self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
             const camera_forward = self.yaw_rotation.rotateVec(.{ 0, 0, -1 });
             const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
             if (nz.vec.length(tangent_forward) > 0.0001) {

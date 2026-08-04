@@ -1,11 +1,10 @@
 const std = @import("std");
 const Window = @import("Window");
 const Vulkan = @import("Renderer/Vulkan.zig");
-const DrawList = @import("Renderer/DrawList.zig");
+const DrawList = @import("DrawList.zig");
 const AssetServer = @import("AssetServer.zig");
 const Font = @import("asset/Font.zig");
 pub const ModelTable = @import("asset/ModelTable.zig");
-pub const FontLoader = @import("Renderer/loader/FontLoader.zig");
 const shared = @import("shared");
 
 // Each .so carries its own copy of shared's globals, so this one needs its own log
@@ -16,7 +15,7 @@ pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     asset_server: *AssetServer,
-    /// Caller-owned, `FontLoader.count` long. Ui reads glyph metrics through it, so the
+    /// Caller-owned, `Font.count` long. Ui reads glyph metrics through it, so the
     /// storage lives on the exe side rather than being lent back out of render.so.
     fonts: []Font,
     models: *ModelTable,

@@ -6,7 +6,6 @@ const Vma = @import("Vma.zig");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const check = @import("utils.zig").check;
-const stb_image = @import("stb_image");
 
 vk_image: c.VkImage = undefined,
 vk_imageview: c.VkImageView = undefined,

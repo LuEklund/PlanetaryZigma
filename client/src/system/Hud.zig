@@ -7,10 +7,9 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Ui = @import("render").Ui;
+const Rendering = @import("render").Rendering;
 const Window = @import("Window");
-const TextureTable = @import("render").TextureTable;
 const Font = @import("render").Font;
-const FontLoader = @import("render").Backend.FontLoader;
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -55,19 +54,11 @@ popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
 /// The layout engine and the assets it reads. They live here because the HUD is their
 /// only consumer — extract just copies the finished quads out.
 ui: Ui,
-fonts: [FontLoader.count]Font,
-texture_slots: [shared.Texture.count()]u32,
 
-/// The font and texture arrays are handed to the renderer, whose loaders fill them in
-/// place — so this only has to exist first, not be populated first.
-pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size) !void {
-    hud.* = .{
-        .ui = try .init(gpa, size.width, size.height),
-        .fonts = @splat(.empty),
-        .texture_slots = @splat(0),
-    };
-    hud.ui.default_font = &hud.fonts[0];
-    hud.ui.texture_slots = &hud.texture_slots;
+pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size, rendering: *Rendering) !void {
+    hud.* = .{ .ui = try .init(gpa, size.width, size.height) };
+    hud.ui.default_font = &rendering.fonts[0];
+    hud.ui.texture_slots = &rendering.texture_slots;
 }
 
 pub fn deinit(hud: *Hud, gpa: std.mem.Allocator) void {

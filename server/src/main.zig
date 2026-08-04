@@ -4,6 +4,7 @@ const System = @import("system");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const World = System.World;
+const Window = @import("Window");
 const nz = shared.numz;
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
@@ -29,6 +30,7 @@ pub fn main(init: std.process.Init) !void {
     _ = args_iterator.next();
     var host_steam_id: u64 = 0;
     var dev_mode = false;
+    var render = false;
     var server_mode: shared.SteamNet.Server.Mode = .steam_p2p;
     while (args_iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "--local-singleplayer")) {
@@ -38,6 +40,10 @@ pub fn main(init: std.process.Init) !void {
         }
         if (std.mem.eql(u8, arg, "--dev")) {
             dev_mode = true;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--render")) {
+            render = true;
             continue;
         }
         host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
@@ -57,6 +63,19 @@ pub fn main(init: std.process.Init) !void {
     var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
+    var window: Window = undefined;
+    if (render) {
+        try window.open(gpa, init.minimal, .{
+            .app_id = "planetary_zigma_server",
+            .title = "PlanetaryZigma — server view",
+            .size = .{ .width = 854, .height = 480 },
+        });
+    }
+    defer if (render) window.close();
+
+    var asset_server: System.AssetServer = if (render) try .init(gpa, io) else undefined;
+    defer if (render) asset_server.deinit();
+
     var system_instance: System = undefined;
 
     system_lib.symbols.systemInit(&system_instance, &System.Data{
@@ -64,6 +83,8 @@ pub fn main(init: std.process.Init) !void {
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
+        .window = if (render) &window else null,
+        .asset_server = if (render) &asset_server else null,
     });
 
     defer system_lib.symbols.systemDeinit(&system_instance);
@@ -72,6 +93,7 @@ pub fn main(init: std.process.Init) !void {
     const time_step: f32 = shared.tick_seconds;
     while (true) {
         if (system_instance.request_exit) break;
+        if (render and window.should_close) break;
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;
