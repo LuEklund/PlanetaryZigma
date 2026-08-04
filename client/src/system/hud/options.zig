@@ -233,6 +233,7 @@ fn bindingRowName(action: Controller.Action) []const u8 {
         .aim => "bind_aim",
         .free_camera => "bind_free_camera",
         .debug_colliders => "bind_debug_colliders",
+        .equipment => "bind_use_quipment",
     };
 }
 

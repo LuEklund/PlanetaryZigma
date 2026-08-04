@@ -53,7 +53,7 @@ planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_paths: *std.StringHashMapUnmanaged(Image.Handle), window: *Window) !*Vulkan {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_slots: []u32, window: *Window) !*Vulkan {
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.planet = .init();
@@ -84,7 +84,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
         // std.debug.print("PTR: {*}\n", .{&frame.gpu_scene.buffer});
     }
 
-    self.resources = try .init(gpa, asset_server, fonts, models, texture_paths, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, asset_server, fonts, models, texture_slots, self.vma, self.physical_device, self.device);
 
     try asset_server.load();
 

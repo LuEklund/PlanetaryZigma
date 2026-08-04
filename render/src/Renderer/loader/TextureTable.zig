@@ -10,7 +10,7 @@ const Buffer = @import("../Vulkan/Buffer.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
 pub const max_textures = 256;
-pub const crosshair_texture_path = "textures/crosshair.png";
+pub const crosshair_texture_path = "crosshair.png";
 
 vma: Vma,
 device: Device,
@@ -20,15 +20,12 @@ descriptor_size: usize,
 images: std.ArrayList(Image),
 free_slots: std.ArrayList(usize),
 samplers: std.ArrayList(c.VkSampler),
-/// Caller-owned: the HUD resolves icon handles from it at startup, so it must not live
-/// behind the render FFI. Keys are duped here and freed here; only the map is borrowed.
-paths: *std.StringHashMapUnmanaged(Image.Handle),
+paths: std.StringHashMapUnmanaged(Image.Handle),
 skybox: ?Image,
 skybox_descriptor: Buffer,
 
 pub fn init(
     gpa: std.mem.Allocator,
-    paths: *std.StringHashMapUnmanaged(Image.Handle),
     vma: Vma,
     device: Device,
     textures_layout: c.VkDescriptorSetLayout,
@@ -59,7 +56,7 @@ pub fn init(
         .images = .empty,
         .free_slots = .empty,
         .samplers = .empty,
-        .paths = paths,
+        .paths = .empty,
         .skybox = null,
         .skybox_descriptor = try .init(
             device,

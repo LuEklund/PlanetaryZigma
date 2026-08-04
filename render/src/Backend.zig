@@ -5,7 +5,6 @@ const FramePacket = @import("Renderer/FramePacket.zig");
 const AssetServer = @import("AssetServer.zig");
 const Font = @import("asset/Font.zig");
 pub const ModelTable = @import("asset/ModelTable.zig");
-pub const Image = @import("Renderer/Vulkan/Image.zig");
 pub const FontLoader = @import("Renderer/loader/FontLoader.zig");
 const shared = @import("shared");
 
@@ -21,7 +20,7 @@ pub const Data = struct {
     /// storage lives on the exe side rather than being lent back out of render.so.
     fonts: []Font,
     models: *ModelTable,
-    texture_paths: *std.StringHashMapUnmanaged(Image.Handle),
+    texture_slots: []u32,
     window: *Window,
 };
 
@@ -52,7 +51,7 @@ pub const ffi = struct {
         context.* = .{
             .gpa = data.gpa,
             .io = data.io,
-            .vulkan = Vulkan.init(data.gpa, data.asset_server, data.fonts, data.models, data.texture_paths, data.window) catch |err| {
+            .vulkan = Vulkan.init(data.gpa, data.asset_server, data.fonts, data.models, data.texture_slots, data.window) catch |err| {
                 std.log.err("render init: {s}", .{@errorName(err)});
                 data.gpa.destroy(context);
                 return null;

@@ -58,7 +58,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_paths: *std.StringHashMapUnmanaged(Image.Handle), vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_slots: []u32, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(DescriptorLayout.Kind, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -236,7 +236,6 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
     };
     self.texture_table = try .init(
         gpa,
-        texture_paths,
         vma,
         device,
         descriptor_layouts.get(.textures).handle,
@@ -246,7 +245,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
     self.model_loader = try gpa.create(ModelLoader);
     try self.model_loader.init(gpa, asset_server, &self.texture_table, models);
     self.texture_loader = try gpa.create(TextureLoader);
-    try self.texture_loader.init(gpa, asset_server, &self.texture_table);
+    try self.texture_loader.init(gpa, asset_server, &self.texture_table, texture_slots);
     self.shader_loader = try gpa.create(ShaderLoader);
     try self.shader_loader.init(gpa, asset_server, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,

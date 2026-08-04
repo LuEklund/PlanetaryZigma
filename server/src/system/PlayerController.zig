@@ -30,8 +30,8 @@ pub fn update(world: *World, physics: *Physics) !void {
         switch (input.dev_command) {
             .f1 => {
                 // _ = world.giveItem(player, .pickaxe, 1);
-                // _ = world.giveItem(player, .icicle, 1);
-                _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
+                _ = world.giveItem(player, .freezer, 1);
+                // _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
                 // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
@@ -49,7 +49,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 const random = world.prng.random();
                 _ = world.spawn(.{
-                    .kind = .{ .item = random.enumValue(shared.Item) },
+                    .kind = .{ .item = random.enumValue(shared.Item.Kind) },
                     .transform = .{
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, system.World.spawn_hover + 10),
                         .rotation = teleporter.transform.rotation,
@@ -112,52 +112,48 @@ pub fn update(world: *World, physics: *Physics) !void {
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
         }
 
-        if (player.controller.input.keys.e) {
-            if (world.getPtr(player.interacting)) |entity| {
-                switch (entity.kind) {
-                    .lootbox => {
-                        if (player.currency >= entity.currency) {
-                            world.queueDespawn(entity.id);
+        if (player.controller.input.keys.e) if (world.getPtr(player.interacting)) |entity| {
+            switch (entity.kind) {
+                .lootbox => if (player.currency >= entity.currency) {
+                    world.queueDespawn(entity.id);
 
-                            const random = world.prng.random();
-                            var item_kind = random.enumValue(shared.Item);
-                            if (item_kind == .lightning) item_kind = .oxygen_tank;
-                            const chest_up = shared.planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                            _ = try world.spawn(.{
-                                .kind = .{ .item = item_kind },
-                                .transform = .{
-                                    .position = entity.transform.position + nz.vec.scale(chest_up, system.World.spawn_hover),
-                                    .rotation = entity.transform.rotation,
-                                },
-                                .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
-                            });
-                            player.currency -= entity.currency;
-                            world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
+                    const random = world.prng.random();
+                    var item_kind = random.enumValue(shared.Item.Kind);
+                    if (item_kind == .lightning) item_kind = .oxygen_tank;
+                    const chest_up = shared.planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                    _ = try world.spawn(.{
+                        .kind = .{ .item = item_kind },
+                        .transform = .{
+                            .position = entity.transform.position + nz.vec.scale(chest_up, system.World.spawn_hover),
+                            .rotation = entity.transform.rotation,
+                        },
+                        .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
+                    });
+                    player.currency -= entity.currency;
+                    world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
+                },
+                .teleporter => {
+                    const teleporter = &entity.teleporter;
+                    if (teleporter.state == .idle) {
+                        teleporter.state = .active;
+                        world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
+                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
+                        const boss_surface = shared.planet.surfacePointNear(entity.transform.position, world.planet_radius, 15, 25, world.prng.random());
+                        _ = try world.spawn(.{
+                            .kind = .{ .enemy = .bloorp_lord },
+                            .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
+                            .flags = .{ .is_teleporter_boss = true },
+                            .last_attack = world.elapsed_time,
+                        });
+                    } else {
+                        if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
+                            world.next_stage_requested = true;
                         }
-                    },
-                    .teleporter => {
-                        const teleporter = &entity.teleporter;
-                        if (teleporter.state == .idle) {
-                            teleporter.state = .active;
-                            world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
-                            world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                            const boss_surface = shared.planet.surfacePointNear(entity.transform.position, world.planet_radius, 15, 25, world.prng.random());
-                            _ = try world.spawn(.{
-                                .kind = .{ .enemy = .bloorp_lord },
-                                .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
-                                .flags = .{ .is_teleporter_boss = true },
-                                .last_attack = world.elapsed_time,
-                            });
-                        } else {
-                            if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
-                                world.next_stage_requested = true;
-                            }
-                        }
-                    },
-                    else => {},
-                }
+                    }
+                },
+                else => {},
             }
-        }
+        };
 
         const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
         const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
@@ -190,6 +186,9 @@ pub fn update(world: *World, physics: *Physics) !void {
                 Physics.setPosition(id, .{ 0, 0, 0 });
                 Physics.setRotation(id, transform.rotation);
             }
+        }
+        if (input.keys.q and player.inventory.get(.freezer) > 0) {
+            world.world_unstun_at = world.elapsed_time + 10;
         }
 
         if (input.keys.mouse_button_left and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {

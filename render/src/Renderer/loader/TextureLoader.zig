@@ -10,40 +10,32 @@ const Image = @import("../Vulkan/Image.zig");
 const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
 
-const skybox_file = "skybox_cubemap.png";
+
 
 table: *TextureTable,
-items: []?Image.Handle,
+slots: []u32,
 interface: Loader,
 
-pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
-    const spec_capacity = entity.all_kinds.len + 2;
-    const files = try gpa.alloc([]const u8, spec_capacity);
-    files[0] = skybox_file;
-    files[1] = TextureTable.crosshair_texture_path["textures/".len..];
-    var count: usize = 2;
-    for (entity.all_kinds) |kind| {
-        const icon = entity.spec(kind).icon orelse continue;
-        const file = icon["textures/".len..];
-        const already_known = for (files[0..count]) |existing| {
-            if (std.mem.eql(u8, existing, file)) break true;
-        } else false;
-        if (already_known) continue;
-        files[count] = file;
-        count += 1;
-    }
-
-    const items = try gpa.alloc(?Image.Handle, count);
-    @memset(items, null);
+pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, slots: []u32) !void {
+    var path_buffer: [shared.Texture.paths_capacity][]const u8 = undefined;
+    const texture_paths = shared.Texture.paths(&path_buffer);
+    std.debug.assert(slots.len == shared.Texture.reserved + texture_paths.len);
+    const files = try gpa.alloc([]const u8, texture_paths.len);
+    @memcpy(files, texture_paths);
+    // Unloaded and failed textures both read as the magenta checker, so there is no
+    // "missing" branch anywhere downstream.
+    @memset(slots, @intFromEnum(Image.Handle.material_not_found));
+    slots[0] = @intFromEnum(Image.Handle.blank);
+    slots[1] = @intFromEnum(Image.Handle.material_not_found);
 
     self.* = .{
         .table = table,
-        .items = items,
+        .slots = slots,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
             .root_path = "textures",
-            .files = try gpa.realloc(files, count),
+            .files = files,
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
@@ -52,8 +44,7 @@ pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetSe
 
 pub fn deinit(self: *TextureLoader) void {
     const gpa = self.interface.gpa;
-    for (0..self.items.len) |index| unload(&self.interface, index);
-    gpa.free(self.items);
+    for (0..self.interface.files.len) |index| unload(&self.interface, index);
     gpa.free(self.interface.files);
 }
 
@@ -77,13 +68,14 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
     const gpa = loader.gpa;
     const table = self.table;
+
     const file = try err_file;
     unload(&self.interface, index);
 
     var decoded = try decodeFile(gpa, loader.io, file);
     defer decoded.deinit();
 
-    if (std.mem.eql(u8, loader.files[index], skybox_file)) return self.loadSkybox(gpa, decoded);
+    if (shared.Texture.reserved + index == shared.Texture.slot(.skybox_cubemap)) return self.loadSkybox(gpa, decoded);
 
     var image: Image = try .init(
         table.vma,
@@ -100,7 +92,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 
     var path_buffer: [512]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buffer, "textures/{s}", .{loader.files[index]});
-    self.items[index] = try table.allocSlot(gpa, image, table.samplers.items[0], path);
+    self.slots[shared.Texture.reserved + index] = @intFromEnum(try table.allocSlot(gpa, image, table.samplers.items[0], path));
 }
 
 fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !void {
@@ -151,8 +143,9 @@ fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !vo
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
-    if (self.items[index]) |image_handle| {
-        self.table.freeSlot(loader.gpa, image_handle);
-        self.items[index] = null;
-    }
+    const missing = @intFromEnum(Image.Handle.material_not_found);
+    const slot = &self.slots[shared.Texture.reserved + index];
+    if (slot.* == missing) return;
+    self.table.freeSlot(loader.gpa, @enumFromInt(slot.*));
+    slot.* = missing;
 }

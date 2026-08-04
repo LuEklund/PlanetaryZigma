@@ -3,7 +3,7 @@ const Ui = @This();
 const std = @import("std");
 const nz = @import("shared").numz;
 const Font = @import("asset/Font.zig");
-const Image = @import("Renderer/Vulkan/Image.zig");
+const Texture = @import("shared").Texture;
 
 pub const max_ui_quads: usize = 2048;
 
@@ -16,8 +16,11 @@ pub const Vertex = extern struct {
     _: [2]u32 = .{ 0, 0 },
 };
 
-pub fn texture(self: *const Ui, path: []const u8) Image.Handle {
-    return self.handles_by_path.get(path) orelse .blank;
+/// A layout names a texture by Kind; the GPU slot is resolved here, at draw time.
+/// Slots start as the magenta checker, so a texture that failed to load draws as
+/// obviously broken rather than blank.
+fn textureSlot(self: *const Ui, kind: Texture.Kind) u32 {
+    return self.texture_slots[Texture.slot(kind)];
 }
 
 pub const Quad = struct {
@@ -36,7 +39,7 @@ mouse_state: MouseState = .{},
 screen_width: f32,
 screen_heigth: f32,
 default_font: *Font,
-handles_by_path: *const std.StringHashMapUnmanaged(Image.Handle),
+texture_slots: []const u32,
 hot_item: ?u64 = null,
 active_item: ?u64 = null,
 fire_item: ?u64 = null,
@@ -70,7 +73,7 @@ const Position2D = struct {
     top: f32,
 };
 
-const Size2D = struct {
+pub const Size2D = struct {
     width: f32,
     heigth: f32,
 };
@@ -106,7 +109,7 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
-    texture: Image.Handle = .blank,
+    texture: Texture.Kind = .blank,
     gap: f32 = 0,
     text: ?Text = null,
     name: ?[]const u8 = null,
@@ -130,7 +133,7 @@ pub fn init(
         .screen_width = @floatFromInt(screen_width),
         .screen_heigth = @floatFromInt(screen_heigth),
         .default_font = undefined,
-        .handles_by_path = undefined,
+        .texture_slots = &.{},
     };
 }
 
@@ -332,10 +335,10 @@ fn pushQuads(self: *Ui) void {
             const colors: [4]f32 = node.layout.color.toVec();
             //left_top, right_top, right_bottom, left_bottom
             self.quads.appendAssumeCapacity(.{ .vertices = .{
-                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
-                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
-                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
-                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
             } });
         }
         if (node.layout.text) |text| {
@@ -403,9 +406,3 @@ fn hotUpdate(self: *Ui) void {
         }
     }
 }
-
-// fn activeUpdate(self: *Ui) void {
-//     if (self.hot_item)
-//     if (self.left_click_prev) return;
-// }
-

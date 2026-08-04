@@ -1,7 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
-const Item = @import("item.zig").Item;
-const Stat = @import("item.zig").Stat;
+const Item = @import("Item.zig");
+const Stat = Item.Stat;
 
 pub const Id = enum(u32) {
     none = 0,
@@ -86,7 +86,6 @@ pub fn modelSpec(kind: Kind) ?ModelSpec {
 pub const Spec = struct {
     collider: ?Collider,
     model: ?ModelSpec,
-    icon: ?[]const u8 = null,
     has_health: bool,
     base_stats: ?std.EnumArray(Stat, f32) = null,
     spawn_duration: f32 = 0,
@@ -231,8 +230,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
-            .model = .{ .path = Item.spec(item_kind).model, .clip_names = null },
-            .icon = Item.spec(item_kind).icon,
+            .model = .{ .path = Item.getModel(item_kind), .clip_names = null },
             .has_health = false,
             .spawn_duration = 0.35,
         },
@@ -241,7 +239,7 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
-const all_kind_count: usize = 9 + EnemyKind.count + Item.count;
+const all_kind_count: usize = 9 + EnemyKind.count + Item.items.len;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;
     kinds[0..9].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };
@@ -250,7 +248,7 @@ const all_kinds_array: [all_kind_count]Kind = blk: {
         kinds[kind_index] = .{ .enemy = enemy_kind };
         kind_index += 1;
     }
-    for (std.enums.values(Item)) |item_kind| {
+    for (std.enums.values(Item.Kind)) |item_kind| {
         kinds[kind_index] = .{ .item = item_kind };
         kind_index += 1;
     }
@@ -262,7 +260,7 @@ pub const Kind = union(enum) {
 
     player,
     enemy: EnemyKind,
-    item: Item,
+    item: Item.Kind,
 
     planet,
     teleporter,

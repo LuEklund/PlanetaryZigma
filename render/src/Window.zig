@@ -12,6 +12,7 @@ max_size: ?Window.Size = null,
 min_size: ?Window.Size = null,
 position: Position,
 focused: bool = true,
+fullscreen: bool = false,
 pointer: Pointer = .{},
 keyboard: Keyboard = .{},
 
@@ -229,7 +230,9 @@ pub fn restore(self: *Window) !void {
 }
 
 pub fn setFullscreen(self: *Window, enabled: bool) !void {
+    if (self.fullscreen == enabled) return;
     try self.call(.setFullscreen, .{enabled});
+    self.fullscreen = enabled;
 }
 
 pub fn setPointerVisible(self: *Window, visible: bool) !void {

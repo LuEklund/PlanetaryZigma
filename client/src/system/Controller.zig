@@ -20,6 +20,7 @@ pub const Action = enum {
     aim,
     free_camera,
     debug_colliders,
+    equipment,
 };
 
 pub const bindable_actions = [_]Action{
@@ -35,6 +36,7 @@ pub const bindable_actions = [_]Action{
     .aim,
     .free_camera,
     .debug_colliders,
+    .equipment,
 };
 
 pub const Binding = union(enum) {
@@ -70,6 +72,7 @@ pub const Bindings = struct {
     aim: Binding = .{ .mouse = .right },
     free_camera: Binding = .{ .key = .f },
     debug_colliders: Binding = .{ .key = .g },
+    use_equipment: Binding = .{ .key = .q },
 
     pub fn get(self: *const Bindings, action: Action) Binding {
         return switch (action) {
@@ -85,6 +88,7 @@ pub const Bindings = struct {
             .aim => self.aim,
             .free_camera => self.free_camera,
             .debug_colliders => self.debug_colliders,
+            .equipment => self.use_equipment,
         };
     }
 
@@ -102,6 +106,7 @@ pub const Bindings = struct {
             .aim => self.aim = binding,
             .free_camera => self.free_camera = binding,
             .debug_colliders => self.debug_colliders = binding,
+            .equipment => self.use_equipment = binding,
         }
     }
 };
@@ -238,6 +243,7 @@ fn applyAction(self: *Controller, action: Action, pressed: bool) void {
         .debug_colliders => {
             if (pressed) self.debug_draw_colliders = !self.debug_draw_colliders;
         },
+        .equipment => self.input_map.keys.q = pressed,
     }
 }
 
@@ -255,6 +261,7 @@ pub fn actionLabel(action: Action) []const u8 {
         .aim => "Aim",
         .free_camera => "Free Camera",
         .debug_colliders => "Debug Colliders",
+        .equipment => "Use Quipment",
     };
 }
 
