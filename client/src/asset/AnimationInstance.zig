@@ -7,6 +7,10 @@ const Model = @import("Model.zig");
 const Node = @import("Node.zig");
 
 model_handle: ?Model.Handle,
+kind: shared.entity.Kind,
+transform: nz.Transform3D(f32),
+is_dying: bool,
+seen: bool,
 state: shared.entity.State,
 spawn_time: f32,
 death_time: f32,
@@ -90,9 +94,13 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, model_handle: ?Model.Handle, model: ?*Model) !AnimationInstance {
+pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Model.Handle, model: ?*Model) !AnimationInstance {
     return .{
         .model_handle = model_handle,
+        .kind = kind,
+        .transform = .{},
+        .is_dying = false,
+        .seen = true,
         .state = .idle,
         .spawn_time = 0,
         .death_time = 0,

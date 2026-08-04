@@ -4,9 +4,34 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("../Ui.zig");
 const FramePacket = @import("../Renderer/FramePacket.zig");
+const Presentation = @import("../Presentation.zig");
+const ModelLoader = @import("../Renderer/loader/ModelLoader.zig");
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
+
+pub fn present(world: *World, presentation: *Presentation, loader: *ModelLoader, packet: *FramePacket) !void {
+    try presentation.begin(.{
+        .delta_time = world.delta_time,
+        .local_entity = world.player_id,
+        .camera_pitch = world.camera.pitch,
+        .camera_yaw_rotation = world.camera.yaw_rotation,
+    }, world.deaths.items, loader);
+    world.deaths.clearRetainingCapacity();
+    for (world.entities.values()) |*entity| {
+        try presentation.observe(.{
+            .id = entity.id,
+            .kind = entity.kind,
+            .transform = entity.transform,
+            .velocity = if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
+            .is_dying = entity.flags.is_dying,
+            .stun_time = entity.stun_time,
+            .state_override = entity.override_animation_state,
+        }, loader);
+    }
+    presentation.finish(world.trigger_events.items, loader, packet);
+    world.trigger_events.clearRetainingCapacity();
+}
 
 pub fn extract(world: *World, ui: *Ui, packet: *FramePacket, draw_sky: bool) void {
     packet.clear();

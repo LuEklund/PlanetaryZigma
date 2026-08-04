@@ -7,7 +7,6 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("system/Emitter.zig");
-const Presentation = @import("Presentation.zig");
 const FramePacket = @import("Renderer/FramePacket.zig");
 
 pub const DamageEvent = struct {
@@ -27,6 +26,7 @@ pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
+deaths: std.ArrayList(shared.entity.Id) = .empty,
 render_outbox: std.ArrayList(FramePacket.RenderCommand) = .empty,
 emitters: Emitter.List,
 damage_events: std.ArrayList(DamageEvent) = .empty,
@@ -94,6 +94,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
         .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
+        .deaths = try .initCapacity(gpa, shared.max_entities),
         .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
@@ -112,6 +113,7 @@ pub fn deinit(self: *World) void {
     self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
     self.trigger_events.deinit(self.gpa);
+    self.deaths.deinit(self.gpa);
     self.render_outbox.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
@@ -129,6 +131,7 @@ pub fn clearSession(self: *World) void {
     self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
     self.trigger_events.clearRetainingCapacity();
+    self.deaths.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
@@ -142,7 +145,7 @@ pub fn clearSession(self: *World) void {
     self.stage = 0;
 }
 
-pub fn flush(self: *World, presentation: *const Presentation) !void {
+pub fn flush(self: *World) !void {
     defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
         if (self.getPtr(entity_info.id) != null) continue;
@@ -206,23 +209,16 @@ pub fn flush(self: *World, presentation: *const Presentation) !void {
     }
     self.pending_inventory.clearRetainingCapacity();
 
-    var despawn_index: usize = 0;
-    while (despawn_index < self.pending_despawn.items.len) {
-        const id = self.pending_despawn.items[despawn_index];
-        if (self.getPtr(id)) |entity| {
-            entity.motion.update = null;
-            entity.flags.is_dying = true;
-            if (!presentation.deathDone(id)) {
-                despawn_index += 1;
-                continue;
-            }
-        }
-        _ = self.pending_despawn.swapRemove(despawn_index);
-        if (self.getPtr(id) == null) continue;
+    defer self.pending_despawn.clearRetainingCapacity();
+    for (self.pending_despawn.items) |id| {
+        const entity = self.getPtr(id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
         }
         if (id == self.player_id) self.controller.free_camera = true;
+        if (entity.flags.is_dying or shared.entity.spec(entity.kind).death_duration > 0) {
+            self.deaths.appendAssumeCapacity(id);
+        }
         self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
         _ = self.despawn(id);
     }
@@ -244,17 +240,16 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
     }
-    if (entity.kind == .player) {
-        if (entity.health <= 0 and !entity.flags.is_dying) {
-            entity.flags.is_dying = true;
-            entity.motion.update = null;
-            if (entity.id == self.player_id) self.controller.free_camera = true;
-        } else if (entity.health > 0 and entity.flags.is_dying) {
-            entity.flags.is_dying = false;
-            if (entity.id == self.player_id) {
-                self.controller.free_camera = false;
-                self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            }
+    if (!entity.kind.hasHealth()) return;
+    if (entity.health <= 0 and !entity.flags.is_dying) {
+        entity.flags.is_dying = true;
+        entity.motion.update = null;
+        if (entity.id == self.player_id) self.controller.free_camera = true;
+    } else if (entity.health > 0 and entity.flags.is_dying) {
+        entity.flags.is_dying = false;
+        if (entity.id == self.player_id) {
+            self.controller.free_camera = false;
+            self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
         }
     }
 }

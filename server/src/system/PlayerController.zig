@@ -42,7 +42,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             .f3 => {
                 world.toggle_spawning_requested = true;
                 for (world.entities.values()) |*entity| {
-                    if (entity.kind == .enemy) world.queueDespawn(entity.id);
+                    if (entity.kind == .enemy) _ = world.addHealth(entity, -entity.max_health, null);
                 }
             },
             .f4 => if (world.getPtr(world.teleporter_id)) |teleporter| {

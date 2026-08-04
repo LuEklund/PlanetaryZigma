@@ -70,7 +70,7 @@ pub fn init(self: *System, data: Data) !void {
     self.asset_server = data.asset_server;
     self.renderer = try Vulkan.init(data.gpa, data.asset_server, data.window);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
-    self.presentation = .init(data.gpa);
+    self.presentation = try .init(data.gpa);
     self.frame_packet = try .init(data.gpa);
     self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
     self.ui.default_font = &self.renderer.resources.font_loader.items[0];
@@ -91,6 +91,7 @@ pub fn deinit(self: *System) void {
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
+    self.presentation.clear();
     self.hud = .{};
     switch (next) {
         .menu => menu_world.populate(world),
@@ -123,12 +124,12 @@ pub fn update(self: *System, world: *World) !void {
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
-    try world.flush(&self.presentation);
+    try world.flush();
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     Emitter.update(world);
 
     extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
-    try self.presentation.update(world, self.renderer.resources.model_loader, world.render_outbox.items, &self.frame_packet);
+    try extract.present(world, &self.presentation, self.renderer.resources.model_loader, &self.frame_packet);
     try self.renderer.drainRenderCommands(self.gpa, world.render_outbox.items);
     world.render_outbox.clearRetainingCapacity();
     try self.renderer.update(&self.frame_packet);
