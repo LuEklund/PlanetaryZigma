@@ -7,7 +7,7 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Emitter = @import("render").Emitter;
-const FramePacket = @import("render").FramePacket;
+const DrawList = @import("render").DrawList;
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,
@@ -27,7 +27,7 @@ pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 deaths: std.ArrayList(shared.entity.Id) = .empty,
-render_outbox: std.ArrayList(FramePacket.RenderCommand) = .empty,
+render_outbox: std.ArrayList(DrawList.RenderCommand) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 camera: Camera = .{},
@@ -35,6 +35,7 @@ controller: Controller = .{},
 chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
+planet_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
@@ -143,6 +144,7 @@ pub fn clearSession(self: *World) void {
     self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
+    self.planet_id = .none;
     self.planet_radius = 0;
     self.stage = 0;
 }
@@ -180,6 +182,7 @@ pub fn flush(self: *World) !void {
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
+                self.planet_id = entity.id;
                 self.planet_radius = @floatFromInt(radius);
                 std.log.info("SPAWNED: Planet {d}", .{radius});
             },

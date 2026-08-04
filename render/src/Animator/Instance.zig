@@ -1,10 +1,10 @@
-const AnimationInstance = @This();
+const Instance = @This();
 
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Model = @import("Model.zig");
-const Node = @import("Node.zig");
+const Model = @import("../asset/Model.zig");
+const Node = @import("../asset/Node.zig");
 
 model_handle: ?Model.Handle,
 kind: shared.entity.Kind,
@@ -94,7 +94,7 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Model.Handle, model: ?*Model) !AnimationInstance {
+pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Model.Handle, model: ?*Model) !Instance {
     return .{
         .model_handle = model_handle,
         .kind = kind,
@@ -114,18 +114,18 @@ pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Mod
     };
 }
 
-pub fn deinit(self: *AnimationInstance, gpa: std.mem.Allocator) void {
+pub fn deinit(self: *Instance, gpa: std.mem.Allocator) void {
     if (self.skeleton) |*skeleton| skeleton.deinit(gpa);
 }
 
-pub fn spawnDuration(self: *const AnimationInstance) f32 {
+pub fn spawnDuration(self: *const Instance) f32 {
     return self.spawn_duration;
 }
 
-pub fn deathDuration(self: *const AnimationInstance) f32 {
+pub fn deathDuration(self: *const Instance) f32 {
     return self.death_duration;
 }
 
-pub fn deathDone(self: *const AnimationInstance) bool {
+pub fn deathDone(self: *const Instance) bool {
     return self.death_time >= self.deathDuration();
 }

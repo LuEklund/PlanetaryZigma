@@ -1,4 +1,4 @@
-const FramePacket = @This();
+const DrawList = @This();
 
 const std = @import("std");
 const shared = @import("shared");
@@ -76,7 +76,7 @@ pub const PlanetState = struct {
     present: bool,
 };
 
-pub fn init(gpa: std.mem.Allocator) !FramePacket {
+pub fn init(gpa: std.mem.Allocator) !DrawList {
     return .{
         .camera = .{ .position = @splat(0), .rotation = .identity, .fov_rad = 0 },
         .time = 0,
@@ -94,7 +94,7 @@ pub fn init(gpa: std.mem.Allocator) !FramePacket {
     };
 }
 
-pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
+pub fn deinit(self: *DrawList, gpa: std.mem.Allocator) void {
     self.draw_models.deinit(gpa);
     self.joint_matrices.deinit(gpa);
     self.draw_lines.deinit(gpa);
@@ -103,7 +103,7 @@ pub fn deinit(self: *FramePacket, gpa: std.mem.Allocator) void {
     self.ui.quads.deinit(gpa);
 }
 
-pub fn clear(self: *FramePacket) void {
+pub fn clear(self: *DrawList) void {
     self.draw_models.clearRetainingCapacity();
     self.joint_matrices.clearRetainingCapacity();
     self.draw_lines.clearRetainingCapacity();

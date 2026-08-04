@@ -7,10 +7,10 @@ const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("render").AssetServer;
-const Rendering = @import("system/Rendering.zig");
+const Rendering = @import("render").Rendering;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
-const FramePacket = @import("render").FramePacket;
+const DrawList = @import("render").DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -91,7 +91,7 @@ pub fn deinit(self: *System) void {
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
-    self.rendering.presentation.clear();
+    self.rendering.animator.clear();
     self.hud.reset();
     switch (next) {
         .menu => menu_world.populate(world),
@@ -111,7 +111,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
-    if (self.scene == .particle_lab) particle_lab.update(world, &self.rendering.presentation);
+    if (self.scene == .particle_lab) particle_lab.update(world, &self.rendering);
     switch (try self.hud.update(world, self.scene, &self.network_manager, &self.hud.ui, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -127,11 +127,7 @@ pub fn update(self: *System, world: *World) !void {
     try world.flush();
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
-    extract.extract(world, &self.hud.ui, &self.rendering.packet, self.scene != .particle_lab);
-    try extract.present(world, &self.rendering.presentation, &self.rendering.models, &self.rendering.packet);
-    self.rendering.packet.commands.appendSliceAssumeCapacity(world.render_outbox.items);
-    world.render_outbox.clearRetainingCapacity();
-    self.rendering.submit();
+    try extract.frame(world, &self.rendering, &self.hud.ui, self.scene != .particle_lab);
     try self.rendering.reloadChanged(self.io);
     try self.asset_server.reloadChangedAssets();
 

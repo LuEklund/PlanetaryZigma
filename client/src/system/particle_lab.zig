@@ -3,7 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Shader = @import("render").Shader;
-const Presentation = @import("render").Presentation;
+const Rendering = @import("render").Rendering;
+const Emitter = @import("render").Emitter;
 
 const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
@@ -15,18 +16,18 @@ pub fn populate(world: *World) void {
     world.camera = .{ .transform = .{ .position = camera_position }, .fov_rad = camera_fov_rad };
 }
 
-pub fn update(world: *World, presentation: *Presentation) void {
+pub fn update(world: *World, rendering: *Rendering) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        presentation.keepAliveEffect(particle_kind, .none, surface_point);
+        rendering.keepAliveEffect(particle_kind, .none, surface_point, world.elapsed_time);
         return;
     }
-    for (&presentation.emitters) |emitter| {
+    for (&rendering.emitters) |emitter| {
         if (emitter.effect == particle_kind and emitter.alive(world.elapsed_time)) return;
     }
-    presentation.spawnEffect(.{
+    rendering.spawnEffect(.{
         .effect = particle_kind,
         .origin = surface_point,
         .target = if (particle_info.topology == .ribbon) ribbon_target else surface_point,
-    });
+    }, world.elapsed_time);
 }

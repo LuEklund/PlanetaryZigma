@@ -1,7 +1,7 @@
 const std = @import("std");
 const Window = @import("Window");
 const Vulkan = @import("Renderer/Vulkan.zig");
-const FramePacket = @import("Renderer/FramePacket.zig");
+const DrawList = @import("Renderer/DrawList.zig");
 const AssetServer = @import("AssetServer.zig");
 const Font = @import("asset/Font.zig");
 pub const ModelTable = @import("asset/ModelTable.zig");
@@ -33,7 +33,7 @@ const Context = struct {
 pub const Table = struct {
     renderInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     renderDeinit: *const fn (*anyopaque) callconv(.c) void,
-    renderUpdate: *const fn (*anyopaque, packet: *FramePacket) callconv(.c) bool,
+    renderUpdate: *const fn (*anyopaque, packet: *DrawList) callconv(.c) bool,
     renderReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
@@ -83,7 +83,7 @@ pub const ffi = struct {
         context.vulkan.rebindProcs();
     }
 
-    pub export fn renderUpdate(handle: *anyopaque, packet: *FramePacket) bool {
+    pub export fn renderUpdate(handle: *anyopaque, packet: *DrawList) bool {
         const context: *Context = @ptrCast(@alignCast(handle));
         context.vulkan.update(packet) catch |err| {
             std.log.err("render update: {s}", .{@errorName(err)});

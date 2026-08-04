@@ -1,4 +1,4 @@
-const Presentation = @This();
+const Animator = @This();
 
 const std = @import("std");
 const shared = @import("shared");
@@ -8,9 +8,9 @@ const View = @import("View.zig");
 const Model = @import("asset/Model.zig");
 const Node = @import("asset/Node.zig");
 const AnimationClip = @import("asset/AnimationClip.zig");
-const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("asset/ModelTable.zig");
-const FramePacket = @import("Renderer/FramePacket.zig");
+const DrawList = @import("Renderer/DrawList.zig");
 const Emitter = @import("Emitter.zig");
 const Shader = @import("Renderer/Vulkan/Shader.zig");
 
@@ -30,41 +30,31 @@ fn easeOutBack(x: f32) f32 {
 }
 
 gpa: std.mem.Allocator,
-instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
+instances: std.AutoHashMap(shared.entity.Id, Instance),
 retiring: std.ArrayList(shared.entity.Id),
-emitters: Emitter.List,
 frame: View.Frame,
 
-pub fn init(gpa: std.mem.Allocator) !Presentation {
+pub fn init(gpa: std.mem.Allocator) !Animator {
     return .{
         .gpa = gpa,
         .instances = .init(gpa),
         .retiring = try .initCapacity(gpa, shared.max_entities * 2),
-        .emitters = @splat(Emitter.free),
         .frame = .{ .delta_time = 0, .elapsed_time = 0, .local_entity = .none, .camera_pitch = 0, .camera_yaw_rotation = .identity },
     };
 }
 
-pub fn spawnEffect(self: *Presentation, request: Emitter.Spawn) void {
-    Emitter.spawn(&self.emitters, request, self.frame.elapsed_time);
-}
-
-pub fn keepAliveEffect(self: *Presentation, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32)) void {
-    Emitter.keepAlive(&self.emitters, effect, owner, origin, self.frame.elapsed_time);
-}
-
-pub fn deinit(self: *Presentation) void {
+pub fn deinit(self: *Animator) void {
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
     self.instances.deinit();
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(loader: *ModelTable, instance: *const AnimationInstance) ?*Model {
+fn resolveModel(loader: *ModelTable, instance: *const Instance) ?*Model {
     return loader.modelPtr(instance.model_handle orelse return null);
 }
 
-pub fn begin(self: *Presentation, frame: View.Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
+pub fn begin(self: *Animator, frame: View.Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.seen = false;
@@ -76,7 +66,7 @@ pub fn begin(self: *Presentation, frame: View.Frame, deaths: []const shared.enti
     try self.applyReloads(loader);
 }
 
-pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelTable) !void {
+pub fn observe(self: *Animator, entity: View.Entity, loader: *ModelTable) !void {
     if (shared.entity.modelSpec(entity.kind) == null) return;
     if (!self.instances.contains(entity.id)) {
         const handle = ModelTable.handleForKind(entity.kind);
@@ -90,11 +80,10 @@ pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelTable) !v
     instance.seen = true;
     instance.kind = entity.kind;
     instance.transform = entity.transform;
+    // Reset here rather than a frame later in animate(): a revived entity that is
+    // observed alive again must not keep counting toward deathDone().
+    if (instance.is_dying and !entity.is_dying) instance.death_time = 0;
     instance.is_dying = entity.is_dying;
-    if (entity.kind == .item) {
-        const offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-        self.keepAliveEffect(.item_effect, entity.id, entity.transform.position - offset);
-    }
     if (instance.skeleton == null) return;
 
     var state: shared.entity.State = if (nz.vec.length(entity.velocity) > 0.5) .walk else .idle;
@@ -104,26 +93,28 @@ pub fn observe(self: *Presentation, entity: View.Entity, loader: *ModelTable) !v
     instance.state = state;
 }
 
-pub fn finish(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelTable, packet: *FramePacket) void {
+/// Moves time forward: starts triggered overlays, ticks clips and fades, recomputes
+/// joint matrices.
+pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
     self.applyTriggers(triggers, loader);
     self.animate(loader);
-    self.appendDraws(packet);
-    for (&self.emitters) |emitter| {
-        if (!emitter.alive(self.frame.elapsed_time)) continue;
-        packet.emitters.appendAssumeCapacity(.{
-            .effect = emitter.effect,
-            .origin = emitter.origin,
-            .target = emitter.target,
-            .spawn_time = emitter.spawn_time,
-        });
-    }
+}
+
+/// Emits every instance's draws and retires the ones that are finished. `emitters` is
+/// passed in rather than owned: the ambient item effect is animation-driven, but the
+/// emitter pool belongs to whoever is drawing the frame.
+pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+
+    self.appendDraws(list, emitters);
     self.retire();
 }
 
-fn applyReloads(self: *Presentation, loader: *ModelTable) !void {
+fn applyReloads(self: *Animator, loader: *ModelTable) !void {
     for (loader.reloaded.items) |file_index| {
         const reloaded_model = &loader.models[file_index];
         var instance_iterator = self.instances.valueIterator();
@@ -139,14 +130,13 @@ fn applyReloads(self: *Presentation, loader: *ModelTable) !void {
     loader.reloaded.clearRetainingCapacity();
 }
 
-pub fn clear(self: *Presentation) void {
+pub fn clear(self: *Animator) void {
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
     self.instances.clearRetainingCapacity();
-    self.emitters = @splat(Emitter.free);
 }
 
-fn retire(self: *Presentation) void {
+fn retire(self: *Animator) void {
     self.retiring.clearRetainingCapacity();
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
@@ -161,7 +151,7 @@ fn retire(self: *Presentation) void {
     }
 }
 
-fn applyTriggers(self: *Presentation, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
+fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
     for (triggers) |trigger| {
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
@@ -171,7 +161,7 @@ fn applyTriggers(self: *Presentation, triggers: []const shared.net.Event.Trigger
     }
 }
 
-fn animate(self: *Presentation, loader: *ModelTable) void {
+fn animate(self: *Animator, loader: *ModelTable) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
@@ -189,9 +179,14 @@ fn animate(self: *Presentation, loader: *ModelTable) void {
     }
 }
 
-fn appendDraws(self: *Presentation, packet: *FramePacket) void {
-    var instance_iterator = self.instances.valueIterator();
-    while (instance_iterator.next()) |instance| {
+fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void {
+    var instance_iterator = self.instances.iterator();
+    while (instance_iterator.next()) |entry| {
+        const instance = entry.value_ptr;
+        if (instance.kind == .item) {
+            const offset = nz.vec.scale(nz.vec.normalize(instance.transform.position), 0.5);
+            Emitter.keepAlive(emitters, .item_effect, entry.key_ptr.*, instance.transform.position - offset, self.frame.elapsed_time);
+        }
         const model_spec = shared.entity.modelSpec(instance.kind) orelse continue;
         var transform = instance.transform;
         switch (instance.kind) {
@@ -239,7 +234,7 @@ fn appendDraws(self: *Presentation, packet: *FramePacket) void {
     }
 }
 
-fn playAnimation(frame: View.Frame, id: shared.entity.Id, instance: *AnimationInstance, model: *Model) void {
+fn playAnimation(frame: View.Frame, id: shared.entity.Id, instance: *Instance, model: *Model) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
     const clip_index = model.state_clips.get(instance.state);
     if (clip_index) |index| {
@@ -279,7 +274,7 @@ fn playAnimation(frame: View.Frame, id: shared.entity.Id, instance: *AnimationIn
     }
     if (skeleton.fade_time > 0) {
         skeleton.fade_time -= frame.delta_time;
-        const alpha = @max(skeleton.fade_time, 0) / AnimationInstance.fade_duration;
+        const alpha = @max(skeleton.fade_time, 0) / Instance.fade_duration;
         for (skeleton.nodes, skeleton.fade_joints) |*node, fade_joint| {
             node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
             node.rotation = nz.Quat(f32).slerp(node.rotation, fade_joint.rotation, alpha);

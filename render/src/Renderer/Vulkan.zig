@@ -31,7 +31,7 @@ const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
-const FramePacket = @import("FramePacket.zig");
+const DrawList = @import("DrawList.zig");
 
 const check = @import("Vulkan/utils.zig").check;
 
@@ -127,7 +127,7 @@ pub fn rebindProcs(self: *Vulkan) void {
 
 const frame_timeout_ns: u64 = 1000000000;
 
-pub fn update(self: *Vulkan, packet: *const FramePacket) !void {
+pub fn update(self: *Vulkan, packet: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -234,7 +234,7 @@ fn presentFrame(self: *Vulkan, render_semaphore: c.VkSemaphore, image_index: u32
     return c.vkQueuePresentKHR(self.device.graphics_queue, &present_info);
 }
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, packet: *const FramePacket) !void {
+pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, packet: *const DrawList) !void {
     var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
 
     draw_image_barrier.transition(
@@ -349,7 +349,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     ext.vkCmdSetVertexInputEXT(cmd, 0, null, 0, null);
 }
 
-fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, packet: *const FramePacket) void {
+fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, packet: *const DrawList) void {
     const camera_transform: nz.Transform3D(f32) = .{ .position = packet.camera.position, .rotation = packet.camera.rotation };
     const view_matrix = matrix.getViewMatrix(&camera_transform);
     var proj = matrix.perspective(packet.camera.fov_rad, drawAspect(self), 0.01, 1000);
@@ -370,7 +370,7 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, packet: *const Fram
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 }
 
-fn uploadCascades(self: *Vulkan, packet: *const FramePacket) [Resources.shadow_cascade_count]nz.Mat4x4(f32) {
+fn uploadCascades(self: *Vulkan, packet: *const DrawList) [Resources.shadow_cascade_count]nz.Mat4x4(f32) {
     const camera_transform: nz.Transform3D(f32) = .{ .position = packet.camera.position, .rotation = packet.camera.rotation };
     const fov_rad: f32 = packet.camera.fov_rad;
     const aspect: f32 = drawAspect(self);
@@ -450,7 +450,7 @@ fn beginRendering(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     ext.vkCmdBeginRendering(cmd, &render_info);
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const FramePacket, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
+fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const DrawList, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
     var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
@@ -540,7 +540,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
-fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const FramePacket) void {
+fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const DrawList) void {
     const color_blend_enables: c.VkBool32 = c.VK_FALSE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
@@ -612,7 +612,7 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
-fn packEmitters(current_frame: *const FrameData, packet: *const FramePacket) std.EnumArray(Shader.Kind, ParticleBatch) {
+fn packEmitters(current_frame: *const FrameData, packet: *const DrawList) std.EnumArray(Shader.Kind, ParticleBatch) {
     const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
     var batches: std.EnumArray(Shader.Kind, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
     var first_emitter: u32 = 0;
@@ -634,7 +634,7 @@ fn packEmitters(current_frame: *const FrameData, packet: *const FramePacket) std
     return batches;
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const FramePacket, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const DrawList, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
     const color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
@@ -667,7 +667,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     }
 }
 
-fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const FramePacket) void {
+fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, packet: *const DrawList) void {
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
     const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.vert(.debug).handle, self.resources.shader_loader.frag(.debug).handle };
     ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
@@ -706,7 +706,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     c.vkCmdDraw(cmd, @as(u32, @intCast(packet.draw_lines.items.len * 2)), 1, 0, 0);
 }
 
-fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, packet: *const FramePacket) void {
+fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, packet: *const DrawList) void {
     current_frame.ui_vertex_buffer.copy(Ui.Quad, packet.ui.quads.items);
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
@@ -880,7 +880,7 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     };
 }
 
-pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, events: []const FramePacket.RenderCommand) !void {
+pub fn drainRenderCommands(self: *Vulkan, gpa: std.mem.Allocator, events: []const DrawList.RenderCommand) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
     for (events) |command| switch (command) {
         .entity_spawned => {},
