@@ -8,6 +8,7 @@ pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
 pub const Watcher = @import("Watcher.zig");
+pub const HotLib = @import("HotLib.zig").HotLib;
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
@@ -64,7 +65,6 @@ pub fn redirectStderrToFile(io: std.Io, path: []const u8) void {
 }
 
 pub const teleporter = struct {
-    pub const intertact_distance: f32 = 6;
     pub const charge_distance: f32 = 12;
 
     pub const State = struct {

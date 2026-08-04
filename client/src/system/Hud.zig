@@ -6,8 +6,10 @@ const shared = @import("shared");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
-const Ui = @import("../Ui.zig");
-const Renderer = @import("../Renderer.zig");
+const Ui = @import("render").Ui;
+const Renderer = @import("render").Renderer;
+const Window = @import("Window");
+const Font = @import("render").Font;
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -49,6 +51,23 @@ options_tab: OptionsTab = .gameplay,
 damage_popups: DamagePopup.List = .{},
 popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
 
+ui: Ui,
+
+pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size) !void {
+    hud.* = .{ .ui = try .init(gpa, size.width, size.height) };
+}
+
+pub fn deinit(hud: *Hud, gpa: std.mem.Allocator) void {
+    hud.ui.deinit(gpa);
+}
+
+pub fn resetScreen(hud: *Hud) void {
+    hud.screen = .main;
+    hud.overlay = .none;
+    hud.options_tab = .gameplay;
+    hud.damage_popups = .{};
+}
+
 pub const transition_seconds: f32 = 0.12;
 
 pub const crosshair_texture = "textures/crosshair.png";
@@ -59,11 +78,12 @@ pub fn update(
     world: *World,
     scene: system.Scene,
     network_manager: *NetworkManager,
-    ui: *Ui,
-    texture_table: *Renderer.TextureTable,
-    controller: *Controller,
     options: *Options,
+    font: *const Font,
+    texture_slots: []const u32,
 ) !Request {
+    const ui = &hud.ui;
+    const controller = &world.controller;
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -72,7 +92,7 @@ pub fn update(
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
-    }, world.delta_time);
+    }, font, texture_slots, world.delta_time);
     hud.damage_popups.update(world.delta_time);
     if (world.getPtr(world.player_id)) |player| {
         for (world.damage_events.items) |damage_event| {
@@ -92,10 +112,10 @@ pub fn update(
 
     var request: Request = .none;
     if (scene == .menu) {
-        request = try main_menu.update(world, network_manager, ui, hud, options);
+        request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(world, network_manager, ui, texture_table, options, &hud.damage_popups, controller.show_stats);
+        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, controller.show_stats);
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;
@@ -135,7 +155,7 @@ fn addTransition(ui: *Ui, phase: NetworkManager.Phase, phase_seconds: f32) void 
 
     ui.add(null, .{
         .name = if (covering) "transition_veil" else null,
-        .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
+        .size = .{ .fixed = .{ .height = ui.screen_height, .width = ui.screen_width } },
         .offset = .{ .left = 0, .top = 0 },
         .color = .new(0, 0, 0, transition),
         .child_anchor = .{ .x = .center, .y = .center },

@@ -223,8 +223,8 @@ pub fn handlePackets(self: *Server) !void {
             defer self.packet_mutex.unlock(self.io);
             _ = self.steamCallback(self.gpa, self.pipe, self.socket) catch |err|
                 std.log.err("steamCallback: {s}", .{@errorName(err)});
-            self.recievePackets() catch |err|
-                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.receivePackets() catch |err|
+                std.log.err("receivePackets: {s}", .{@errorName(err)});
             self.sendPackets() catch |err|
                 std.log.err("sendPackets: {s}", .{@errorName(err)});
         }
@@ -232,7 +232,7 @@ pub fn handlePackets(self: *Server) !void {
     }
 }
 
-pub fn recievePackets(self: *Server) !void {
+pub fn receivePackets(self: *Server) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
         if (conn == 0) continue;

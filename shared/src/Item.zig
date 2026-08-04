@@ -94,17 +94,12 @@ pub const Kind = kind: {
     break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
 };
 
-// same as spec alright Lucas
 pub fn get(kind: Kind) Item {
     return items[@intFromEnum(kind)];
 }
 
 pub fn getModel(kind: Kind) []const u8 {
     return model_paths[@intFromEnum(kind)];
-}
-
-pub fn getIcon(kind: Kind) []const u8 {
-    return icon_paths[@intFromEnum(kind)];
 }
 
 pub const Inventory = struct {

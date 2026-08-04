@@ -4,8 +4,6 @@ const steam = @import("steamworks");
 pub const Server = @import("steamNet/Server.zig");
 pub const Client = @import("steamNet/Client.zig");
 
-/// Mirrors steam.HSteamNetConnection (u32). Defined locally so the dynlib
-/// doesn't need to import the steamworks package.
 pub const max_msg_bytes: usize = 1024;
 pub const local_server_port: u16 = 27018;
 

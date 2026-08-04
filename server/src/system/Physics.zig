@@ -87,6 +87,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         self.world = undefined;
     } else {
         self.world = makeWorld();
+        for (world.entities.values()) |*entity| entity.collider.body_id = null;
         for (world.entities.values()) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
             if (shared.entity.collider(entity.kind)) |kind_collider| {
@@ -94,7 +95,6 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
                 entity.collider.motion_type = kind_collider.motion;
                 entity.collider.object_layer = kind_collider.layer;
             }
-            entity.collider.body_id = null;
             try self.createBody(entity);
         }
     }
@@ -199,13 +199,13 @@ fn colliderGroundExtent(collider: Collider) f32 {
     return switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
             .box => |box| box.x,
-            .capsule => |capsule| capsule.half_heigth + capsule.radius,
+            .capsule => |capsule| capsule.half_height + capsule.radius,
         },
         .mesh => 0,
     };
 }
 
-pub fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
+fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
     const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
     const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;
@@ -258,8 +258,8 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
             },
             .capsule => |capsule| {
                 const cap: c.b3Capsule = .{
-                    .center1 = .{ .x = 0, .y = -capsule.half_heigth, .z = 0 },
-                    .center2 = .{ .x = 0, .y = capsule.half_heigth, .z = 0 },
+                    .center1 = .{ .x = 0, .y = -capsule.half_height, .z = 0 },
+                    .center2 = .{ .x = 0, .y = capsule.half_height, .z = 0 },
                     .radius = capsule.radius,
                 };
                 _ = c.b3CreateCapsuleShape(body_id, &shape_def, &cap);

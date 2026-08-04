@@ -10,13 +10,14 @@ dynlib: ?DynLib = null,
 old_dynlib: ?DynLib = null,
 dir_path: []const u8,
 source_name: []const u8,
+probe_symbol: [:0]const u8,
 mtime: std.Io.Timestamp,
 process_id: u32,
 copy_id: u64,
 versions: [25]?DynLib,
 version_count: u64,
 
-pub fn init(comptime library_name: []const u8, io: std.Io) !Watcher {
+pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const u8, io: std.Io) !Watcher {
     const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
     const search_paths: []const [:0]const u8 = &.{
         "../lib/",
@@ -44,6 +45,7 @@ pub fn init(comptime library_name: []const u8, io: std.Io) !Watcher {
     return .{
         .dir_path = found_path,
         .source_name = source_name,
+        .probe_symbol = probe_symbol,
         .mtime = .zero,
         .process_id = if (is_windows) std.os.windows.GetCurrentProcessId() else 0,
         .copy_id = 0,
@@ -63,6 +65,9 @@ pub fn load(self: *Watcher, io: std.Io) !void {
 
     const stat = try std.Io.Dir.cwd().statFile(io, source_path, .{});
 
+    // Two processes on one machine (a client and a --render server, or two clients)
+    // must not overwrite each other's /tmp copies mid-run.
+    if (self.copy_id == 0) self.copy_id = @intCast(@mod(std.Io.Timestamp.zero.durationTo(.now(io, .real)).nanoseconds, 1_000_000_000));
     self.copy_id += 1;
     var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
     const copy_path = if (is_windows)
@@ -77,10 +82,11 @@ pub fn load(self: *Watcher, io: std.Io) !void {
         return err;
     };
 
-    if (dynlib.lookup(*const fn () void, "systemInit") == null) {
+    if (dynlib.lookup(*const fn () void, self.probe_symbol) == null) {
         dynlib.close();
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
-        return error.SystemInitSymbolNotFound;
+        std.log.err("{s}: probe symbol {s} missing", .{ self.source_name, self.probe_symbol });
+        return error.ProbeSymbolNotFound;
     }
 
     // Debug keeps the copy on disk: an unlinked file has no DWARF for the panic
@@ -93,18 +99,24 @@ pub fn load(self: *Watcher, io: std.Io) !void {
     self.version_count += 1;
 }
 
-pub fn version(self: *Watcher, n: usize) ?*DynLib {
-    if (n >= self.versions.len) return null;
-    if (self.versions[n]) |*lib| return lib;
+/// Indexing the raw slot instead made generation 0 mean "25 builds ago" once the ring
+/// wrapped, silently adopting live state into a stale library.
+pub fn buildAt(self: *Watcher, generations_back: usize) ?*DynLib {
+    if (generations_back >= self.versions.len or generations_back >= self.version_count) return null;
+    const slot = (self.version_count - 1 - generations_back) % self.versions.len;
+    if (self.versions[slot]) |*lib| return lib;
     return null;
 }
 
-pub fn reload(self: *Watcher, io: std.Io) !bool {
+pub fn changed(self: *Watcher, io: std.Io) bool {
     var source_buf: [std.fs.max_path_bytes]u8 = undefined;
     const source_path = std.fmt.bufPrint(&source_buf, "{s}{s}", .{ self.dir_path, self.source_name }) catch return false;
-
     const stat = std.Io.Dir.cwd().statFile(io, source_path, .{}) catch return false;
-    if (stat.mtime.nanoseconds <= self.mtime.nanoseconds) return false;
+    return stat.mtime.nanoseconds > self.mtime.nanoseconds;
+}
+
+pub fn reload(self: *Watcher, io: std.Io) !bool {
+    if (!self.changed(io)) return false;
 
     self.old_dynlib = self.dynlib;
     self.dynlib = null;
@@ -113,9 +125,9 @@ pub fn reload(self: *Watcher, io: std.Io) !bool {
         self.old_dynlib = null;
         return false;
     };
-    self.old_dynlib = null; // ring retains the old lib; never close it mid-run
+    self.old_dynlib = null;
 
-    std.log.info("Reloaded dynamic lib: {s} (ring slot {d})", .{ self.source_name, (self.version_count - 1) % self.versions.len });
+    std.log.info("reloaded {s} (build {d})", .{ self.source_name, self.version_count });
     return true;
 }
 

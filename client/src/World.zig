@@ -6,9 +6,9 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
-const Emitter = @import("system/Emitter.zig");
-const Model = @import("asset/Model.zig");
-const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Options = @import("Options.zig");
+const Emitter = @import("render").Emitter;
+const DrawList = @import("render").DrawList;
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,
@@ -17,14 +17,7 @@ pub const DamageEvent = struct {
     delta: f32,
 };
 
-pub const RenderCommand = union(enum) {
-    entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
-    entity_despawned: shared.entity.Id,
-};
-
-mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
-io: std.Io,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
@@ -32,27 +25,28 @@ pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
-render_outbox: std.ArrayList(RenderCommand) = .empty,
-emitters: Emitter.List,
+deaths: std.ArrayList(shared.entity.Id) = .empty,
+effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
+options: Options = .{},
 camera: Camera = .{},
 controller: Controller = .{},
 chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
+planet_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
 fps: f32 = 0,
 go_again_pending: bool = false,
 stage: u32 = 0,
-chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
-    player_name: []const u8 = "",
+    player_name: shared.net.PlayerName = .copy(""),
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     health: f32 = 0,
@@ -62,7 +56,6 @@ pub const Entity = struct {
     motion: Motion = .{},
     override_animation_state: ?shared.entity.State = null,
     stun_time: f32 = 0,
-    model_handle: ?Model.Handle = null,
     flags: Flags = .{},
 
     transform: nz.Transform3D(f32) = .{},
@@ -81,36 +74,25 @@ pub const Entity = struct {
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
         return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
-
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (self.player_name.len != 0) {
-            gpa.free(self.player_name);
-            self.player_name = "";
-        }
-    }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !World {
+pub fn init(gpa: std.mem.Allocator) !World {
     return .{
         .gpa = gpa,
-        .io = io,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
-        .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
+        .deaths = try .initCapacity(gpa, shared.max_entities),
+        .effects = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
-        .emitters = @splat(Emitter.free),
     };
 }
 
 pub fn deinit(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        entity.deinit(self.gpa);
-    }
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
@@ -118,15 +100,13 @@ pub fn deinit(self: *World) void {
     self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
     self.trigger_events.deinit(self.gpa);
-    self.render_outbox.deinit(self.gpa);
+    self.deaths.deinit(self.gpa);
+    self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
 }
 
-pub fn clearSession(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = entity.id });
-        entity.deinit(self.gpa);
-    }
+pub fn clear(self: *World) void {
+    self.go_again_pending = false;
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
@@ -135,6 +115,8 @@ pub fn clearSession(self: *World) void {
     self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
     self.trigger_events.clearRetainingCapacity();
+    self.deaths.clearRetainingCapacity();
+    self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
@@ -144,11 +126,12 @@ pub fn clearSession(self: *World) void {
     self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
+    self.planet_id = .none;
     self.planet_radius = 0;
     self.stage = 0;
 }
 
-pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, AnimationInstance)) !void {
+pub fn flush(self: *World) !void {
     defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
         if (self.getPtr(entity_info.id) != null) continue;
@@ -172,7 +155,7 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
         switch (entity_info.kind) {
             .player => {
                 if (entity_info.data == .player_name) {
-                    try self.setPlayerName(entity, entity_info.data.player_name.slice());
+                    setPlayerName(entity, entity_info.data.player_name.slice());
                 }
                 if (entity_info.id == self.player_id) {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
@@ -181,6 +164,7 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
             },
             .planet => {
                 const radius: u32 = entity_info.data.planet_radius;
+                self.planet_id = entity.id;
                 self.planet_radius = @floatFromInt(radius);
                 std.log.info("SPAWNED: Planet {d}", .{radius});
             },
@@ -195,7 +179,6 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
             },
             .unknown, .item, .lootbox, .platform, .target_dummy => {},
         }
-        self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
     }
 
     for (self.pending_healths.items) |command| {
@@ -204,32 +187,30 @@ pub fn flush(self: *World, instances: *std.AutoHashMap(shared.entity.Id, Animati
     self.pending_healths.clearRetainingCapacity();
 
     for (self.pending_inventory.items) |command| {
-        if (self.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
+        if (self.getPtr(command.id)) |entity| applyInventory(entity, command);
     }
     self.pending_inventory.clearRetainingCapacity();
 
-    var despawn_index: usize = 0;
-    while (despawn_index < self.pending_despawn.items.len) {
-        const id = self.pending_despawn.items[despawn_index];
-        if (self.getPtr(id)) |entity| {
-            entity.motion.update = null;
-            entity.flags.is_dying = true;
-            if (instances.getPtr(id)) |instance| {
-                if (instance.deathDuration() > 0 and !instance.deathDone()) {
-                    despawn_index += 1;
-                    continue;
-                }
-            }
-        }
-        _ = self.pending_despawn.swapRemove(despawn_index);
-        if (self.getPtr(id) == null) continue;
+    defer self.pending_despawn.clearRetainingCapacity();
+    for (self.pending_despawn.items) |id| {
+        const entity = self.getPtr(id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
         }
         if (id == self.player_id) self.controller.free_camera = true;
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
+        if (entity.flags.is_dying or shared.entity.spec(entity.kind).death_duration > 0) {
+            self.deaths.appendAssumeCapacity(id);
+        }
         _ = self.despawn(id);
     }
+}
+
+pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
+    self.pending_spawn.appendAssumeCapacity(spawn_entity);
+}
+
+pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {
+    entity.inventory.set(command.item_kind, command.set);
 }
 
 pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {
@@ -248,17 +229,16 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
     }
-    if (entity.kind == .player) {
-        if (entity.health <= 0 and !entity.flags.is_dying) {
-            entity.flags.is_dying = true;
-            entity.motion.update = null;
-            if (entity.id == self.player_id) self.controller.free_camera = true;
-        } else if (entity.health > 0 and entity.flags.is_dying) {
-            entity.flags.is_dying = false;
-            if (entity.id == self.player_id) {
-                self.controller.free_camera = false;
-                self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            }
+    if (!entity.kind.hasHealth()) return;
+    if (entity.health <= 0 and !entity.flags.is_dying) {
+        entity.flags.is_dying = true;
+        entity.motion.update = null;
+        if (entity.id == self.player_id) self.controller.free_camera = true;
+    } else if (entity.health > 0 and entity.flags.is_dying) {
+        entity.flags.is_dying = false;
+        if (entity.id == self.player_id) {
+            self.controller.free_camera = false;
+            self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
         }
     }
 }
@@ -272,15 +252,9 @@ pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn setPlayerName(self: *World, entity: *Entity, name: []const u8) !void {
+pub fn setPlayerName(entity: *Entity, name: []const u8) void {
     var name_buffer: [shared.max_player_name_len]u8 = undefined;
-    const sanitized = sanitizePlayerName(&name_buffer, name);
-    if (std.mem.eql(u8, entity.player_name, sanitized)) return;
-    if (entity.player_name.len != 0) {
-        self.gpa.free(entity.player_name);
-        entity.player_name = "";
-    }
-    entity.player_name = if (sanitized.len == 0) "" else try self.gpa.dupe(u8, sanitized);
+    entity.player_name = .copy(sanitizePlayerName(&name_buffer, name));
 }
 
 fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
@@ -295,6 +269,5 @@ fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) 
 }
 
 pub fn despawn(self: *World, id: shared.entity.Id) bool {
-    if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
 }

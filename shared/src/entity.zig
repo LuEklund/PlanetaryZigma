@@ -37,7 +37,7 @@ pub fn hasCollider(kind: Kind) bool {
 
 pub const ColliderShape = union(enum) {
     box: HalfBoxExtent,
-    capsule: struct { half_heigth: f32, radius: f32 },
+    capsule: struct { half_height: f32, radius: f32 },
     pub const HalfBoxExtent = struct {
         x: f32,
         y: f32,
@@ -86,7 +86,6 @@ pub fn modelSpec(kind: Kind) ?ModelSpec {
 pub const Spec = struct {
     collider: ?Collider,
     model: ?ModelSpec,
-    icon: ?[]const u8 = null,
     has_health: bool,
     base_stats: ?std.EnumArray(Stat, f32) = null,
     spawn_duration: f32 = 0,
@@ -104,7 +103,7 @@ pub fn spec(kind: Kind) Spec {
             .has_health = false,
         },
         .player => .{
-            .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
                 .path = "objects/BenBozo.glb",
                 .offset = player_model_offset,
@@ -145,7 +144,7 @@ pub fn spec(kind: Kind) Spec {
             .has_health = false,
         },
         .target_dummy => .{
-            .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
+            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
             .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                 .idle = "idle",
                 .walk = "walk",
@@ -167,7 +166,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
@@ -180,7 +179,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 5,
             },
             .tubloida => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/Tubloida.glb", .offset = enemy_model_offset, .clip_names = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
@@ -193,7 +192,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 7,
             },
             .hunkloid => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walk",
@@ -208,7 +207,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 30,
             },
             .bloorp_lord => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/BloorpLord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walking",
@@ -221,7 +220,7 @@ pub fn spec(kind: Kind) Spec {
                 .currency = 100,
             },
             .blooploid => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
                 .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .clip_names = null },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
@@ -232,7 +231,6 @@ pub fn spec(kind: Kind) Spec {
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
             .model = .{ .path = Item.getModel(item_kind), .clip_names = null },
-            .icon = Item.getIcon(item_kind),
             .has_health = false,
             .spawn_duration = 0.35,
         },

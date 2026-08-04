@@ -1,4 +1,5 @@
 const std = @import("std");
+const render_build = @import("render");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -11,83 +12,12 @@ pub fn build(b: *std.Build) void {
 
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
 
-    const win32 = b.dependency("win32", .{}).module("win32");
-
-    const window = b.createModule(.{
-        .root_source_file = b.path("src/Window.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "win32", .module = win32 },
-        },
-        .link_libc = true,
-    });
-    switch (target.result.os.tag) {
-        .linux, .freebsd, .netbsd, .openbsd => {
-            const scanner = @import("wayland").Scanner.create(b, .{});
-            const wayland_protocols = b.dependency("wayland_protocols", .{});
-
-            const wayland = b.createModule(.{
-                .root_source_file = scanner.result,
-                .target = target,
-                .optimize = optimize,
-            });
-
-            scanner.addCustomProtocol(wayland_protocols.path("stable/xdg-shell/xdg-shell.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/relative-pointer/relative-pointer-unstable-v1.xml"));
-
-            scanner.generate("wl_compositor", 1);
-            scanner.generate("wl_output", 4);
-            scanner.generate("wl_shm", 1);
-            scanner.generate("wl_seat", 4);
-            scanner.generate("wl_data_device_manager", 3);
-            scanner.generate("xdg_wm_base", 3);
-            scanner.generate("wp_cursor_shape_manager_v1", 2);
-            scanner.generate("zxdg_decoration_manager_v1", 1);
-            scanner.generate("zwp_tablet_manager_v2", 1);
-            scanner.generate("zwp_pointer_constraints_v1", 1);
-            scanner.generate("zwp_relative_pointer_manager_v1", 1);
-
-            const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
-
-            const libxkbcommon = b.dependency("libxkbcommon", .{
-                .target = target,
-                .optimize = optimize,
-                .@"xkb-config-root" = "/usr/share/X11/xkb",
-                .@"x-locale-root" = "/usr/share/X11/locale",
-            }).artifact("xkbcommon");
-
-            xkbcommon.linkLibrary(libxkbcommon);
-
-            window.addImport("wayland", wayland);
-            window.addImport("xkbcommon", xkbcommon);
-        },
-        else => {},
-    }
+    const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
+    const render = render_dep.module("render");
+    const window = render_dep.module("Window");
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
-
-    const zgltf = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf");
-
-    const stb_dep = b.dependency("stb", .{});
-    const stb_image = b.addTranslateC(.{
-        .root_source_file = stb_dep.path("stb_image.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    stb_image.addIncludePath(b.dependency("stb", .{}).path("."));
-
-    const stb_truetype = b.addTranslateC(.{
-        .root_source_file = stb_dep.path("stb_truetype.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    stb_truetype.addIncludePath(b.dependency("stb", .{}).path("."));
 
     const miniaudio_dep = b.dependency("miniaudio", .{});
     const miniaudio_translate_c = b.addTranslateC(.{
@@ -106,10 +36,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
+                .{ .name = "render", .module = render },
                 .{ .name = "Window", .module = window },
-                .{ .name = "zgltf", .module = zgltf },
-                .{ .name = "stb_image", .module = stb_image.createModule() },
-                .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
             },
             .link_libc = true,
@@ -118,16 +46,6 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .linkage = .dynamic,
     });
-
-    system.root_module.addCSourceFile(.{
-        .file = b.addWriteFiles().add("stbi_impl.c",
-            \\#define STB_IMAGE_IMPLEMENTATION
-            \\#include "stb_image.h"
-            \\#define STB_TRUETYPE_IMPLEMENTATION
-            \\#include "stb_truetype.h"
-        ),
-    });
-    system.root_module.addIncludePath(stb_dep.path("."));
 
     const exe = b.addExecutable(.{
         .name = "client",
@@ -149,59 +67,20 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
     });
 
-    const vulkandeps = b.dependency("vulkan_headers", .{});
-    const vmadep = b.dependency("vma", .{});
+    const shaders = compileShaders(b);
 
-    const vulkan_c = b.addTranslateC(.{
-        .root_source_file = b.addWriteFiles().add("vma_vulkan.h",
-            \\#include <vulkan/vulkan.h>
-            \\#include <vk_mem_alloc.h>
-        ),
-        .target = target,
-        .optimize = optimize,
-    });
-    vulkan_c.addIncludePath(vulkandeps.path("include/"));
-    vulkan_c.addIncludePath(vmadep.path("include/"));
-
-    const vulkan = vulkan_c.createModule();
-    vulkan.link_libcpp = true;
-    for (vulkan_c.include_dirs.items) |include_dir| vulkan.addIncludePath(include_dir.path);
-
-    vulkan.addCSourceFile(.{
-        .file = b.addWriteFiles().add("vma_impl.cpp",
-            \\#define VMA_STATIC_VULKAN_FUNCTIONS 1
-            \\#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
-            \\#define VMA_IMPLEMENTATION
-            \\#include <vk_mem_alloc.h>
-        ),
-        .flags = &.{"-std=c++17"},
-    });
-
-    compileShaders(b);
-
-    system.root_module.addImport("vulkan", vulkan);
-
-    if (target.result.os.tag == .windows) {
-        if (b.graph.environ_map.get("VULKAN_SDK")) |sdk| {
-            const lib_dir = b.pathJoin(&.{ sdk, "Lib" });
-            system.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
-            exe.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
-        } else {
-            std.log.warn("VULKAN_SDK not set; vulkan-1 may not be found at link time", .{});
-        }
-        system.root_module.linkSystemLibrary("vulkan-1", .{});
-        exe.root_module.linkSystemLibrary("vulkan-1", .{});
-    } else {
-        system.root_module.linkSystemLibrary("vulkan", .{});
-        exe.root_module.linkSystemLibrary("vulkan", .{});
-        system.link_z_defs = true;
-    }
+    render_build.linkVulkan(b, system, target);
+    render_build.linkVulkan(b, exe, target);
     exe.root_module.link_libcpp = true;
 
-    b.installArtifact(system);
+    // One install step, reused: two of them write the same path, so a single rebuild
+    // landed twice and the running client hot-reloaded twice per build.
+    const install_system = b.addInstallArtifact(system, .{});
+    b.getInstallStep().dependOn(&install_system.step);
     b.installArtifact(exe);
+    const install_render = b.addInstallArtifact(render_dep.artifact("render"), .{});
+    b.getInstallStep().dependOn(&install_render.step);
 
-    // Shared Tracy client dll must sit next to the binaries that link it.
     if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
 
     if (target.result.os.tag == .windows) {
@@ -216,10 +95,17 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
 
     const lib_step = b.step("lib", "Build only the hot-reload library (.so)");
-    lib_step.dependOn(&b.addInstallArtifact(system, .{}).step);
+    lib_step.dependOn(&install_system.step);
+
+    const render_step = b.step("render", "Build only the hot-reload renderer (.so) and shaders");
+    render_step.dependOn(&install_render.step);
+    render_step.dependOn(shaders);
+
+    const shader_step = b.step("shaders", "Compile shaders only");
+    shader_step.dependOn(shaders);
 }
 
-fn compileShaders(b: *std.Build) void {
+fn compileShaders(b: *std.Build) *std.Build.Step {
     const io = b.graph.io;
     var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
     defer dir.close(io);
@@ -237,4 +123,5 @@ fn compileShaders(b: *std.Build) void {
         usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
+    return &usf.step;
 }

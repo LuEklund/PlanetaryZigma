@@ -6,7 +6,6 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
 const system = @import("../System.zig");
-const Emitter = @import("Emitter.zig");
 const World = system.World;
 
 gpa: std.mem.Allocator,
@@ -230,7 +229,6 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
     try shared.net.write(shared.net.ClientPacket, command, &w);
-    // std.log.debug("len: {d}", .{w.buffered().len});
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
@@ -337,7 +335,6 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         if (world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
         world.controller.input_map.dev_command = .none;
-        // std.log.debug("input_map: {any}", .{entity.camera.input_map});
     }
     if (world.go_again_pending) {
         try self.sendCommand(.go_again, .reliable);
@@ -349,7 +346,6 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         world.chat.pending = false;
         world.chat.input_len = 0;
     }
-    // std.log.debug("cmd size {d}", .{self.steam_client.packets.incoming.items.len});
     for (self.steam_client.packets.incoming.items) |*msg| {
         var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
@@ -371,12 +367,11 @@ fn handleCommand(
     world: *World,
     command: shared.net.ServerPacket,
 ) !void {
-    // std.log.debug("packet: {t}", .{command});
     switch (command) {
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
             world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            try queueSpawn(world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
+            world.queueSpawn(.{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
             world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -387,7 +382,7 @@ fn handleCommand(
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            try queueSpawn(world, spawn_entity);
+            world.queueSpawn(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
@@ -426,11 +421,11 @@ fn handleCommand(
                 },
                 .effect => |effect| switch (effect) {
                     .rocket_impact => |position| {
-                        Emitter.spawnQuad(world, .explosion, position);
+                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .explosion, .origin = position, .target = position });
                     },
                     .lightning => |bolt| for (bolt.targets) |id| {
                         const target = world.getPtr(id) orelse continue;
-                        Emitter.spawnRibbon(world, .lightning, bolt.start_position, target.transform.position);
+                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
                     },
                 },
                 .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
@@ -443,7 +438,7 @@ fn handleCommand(
                 world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
-            entity.inventory.set(inventory.item_kind, inventory.set);
+            World.applyInventory(entity, inventory);
         },
         .set_currency => |set_currency| {
             if (world.getPtr(set_currency.id)) |entity| {
@@ -452,18 +447,11 @@ fn handleCommand(
         },
         .chat_message => |chat_message| {
             const sender = world.getPtr(chat_message.id);
-            const name = if (sender != null and sender.?.player_name.len != 0)
-                sender.?.player_name
+            const name = if (sender != null and sender.?.player_name.slice().len != 0)
+                sender.?.player_name.slice()
             else
                 shared.default_player_name;
             world.chat.push(name, chat_message.text, world.elapsed_time);
         },
     }
 }
-
-fn queueSpawn(world: *World, spawn_entity: shared.net.SpawnEntity) !void {
-    if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
-
-    world.pending_spawn.appendAssumeCapacity(spawn_entity);
-}
-

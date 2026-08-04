@@ -13,6 +13,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet_radius: f32,
+planet_id: shared.entity.Id,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
@@ -118,7 +119,7 @@ pub const Entity = struct {
     };
 
     pub const Flags = packed struct {
-        invinsible: bool = false,
+        invincible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
     };
@@ -155,6 +156,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .dev_mode = dev_mode,
         .teleporter_id = .none,
         .planet_radius = 100,
+        .planet_id = .none,
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -249,7 +251,7 @@ pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8
 pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
-    if (entity.flags.invinsible) return .ignored;
+    if (entity.flags.invincible) return .ignored;
     const random = self.prng.random();
     var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
     new_amount = @min(new_amount, amount);
@@ -284,13 +286,37 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
         } });
         return .changed;
     }
-    if (current <= 0) self.queueDespawn(entity.id);
+    if (current <= 0) {
+        self.queueDespawn(entity.id);
+        self.dropBossReward(entity);
+    }
     self.client_updates.appendAssumeCapacity(.{ .health = .{
         .id = entity.id,
         .source = if (source) |source_entity| source_entity.id else .none,
         .amount = .{ .set_current = @floatCast(current) },
     } });
     return if (current <= 0) .killed else .changed;
+}
+
+/// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
+/// this tick's flush to give it a body and a spawn packet.
+fn dropBossReward(self: *World, entity: *Entity) void {
+    if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, entity.id) == null) return;
+    const teleporter = self.getPtr(self.teleporter_id) orelse return;
+    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    _ = self.spawn(.{
+        .kind = .{ .item = .lightning },
+        .transform = .{
+            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
+            .rotation = teleporter.transform.rotation,
+        },
+        .spawn_impulse = shared.planet.surfaceLaunch(
+            teleporter.transform.position,
+            nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
+            item_launch_angle,
+            item_throw_speed,
+        ),
+    }) catch {};
 }
 
 pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
@@ -321,10 +347,10 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     }
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
-    _ = try self.spawn(.{
+    self.planet_id = (try self.spawn(.{
         .kind = .planet,
         .transform = .{},
-    });
+    })).id;
     try self.flush(physics);
 
     switch (place) {
@@ -358,7 +384,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 .kind = .target_dummy,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){
                     slab.x * 0.5,
-                    slab.y + dummy_capsule.half_heigth + dummy_capsule.radius,
+                    slab.y + dummy_capsule.half_height + dummy_capsule.radius,
                     0,
                 } },
             });
@@ -462,22 +488,6 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
-                if (self.getPtr(self.teleporter_id)) |teleporter| {
-                    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                    _ = self.spawn(.{
-                        .kind = .{ .item = .lightning },
-                        .transform = .{
-                            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
-                            .rotation = teleporter.transform.rotation,
-                        },
-                        .spawn_impulse = shared.planet.surfaceLaunch(
-                            teleporter.transform.position,
-                            nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
-                            item_launch_angle,
-                            item_throw_speed,
-                        ),
-                    }) catch {};
-                }
             }
             entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);

@@ -3,8 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../../System.zig");
 const World = system.World;
-const Ui = @import("../../Ui.zig");
-const Resources = @import("../../Renderer/Vulkan/Resources.zig");
+const Ui = @import("render").Ui;
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -14,16 +13,15 @@ const OptionsTab = Hud.OptionsTab;
 
 const hot_seconds: f32 = 0.08;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
-    _ = world;
+pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
-    const button_height = std.math.clamp(ui.screen_heigth * 0.048, @as(f32, 36), @as(f32, 46));
-    const button_gap = std.math.clamp(ui.screen_heigth * 0.012, @as(f32, 7), @as(f32, 11));
+    const button_height = std.math.clamp(ui.screen_height * 0.048, @as(f32, 36), @as(f32, 46));
+    const button_gap = std.math.clamp(ui.screen_height * 0.012, @as(f32, 7), @as(f32, 11));
     const button_text_size = std.math.clamp(button_height * 0.55, @as(f32, 20), @as(f32, 25));
     const left = std.math.clamp(ui.screen_width * 0.07, @as(f32, 48), @as(f32, 132));
     const total_height = button_height * 5 + button_gap * 4;
-    const max_top = @max(@as(f32, 28), ui.screen_heigth - total_height - 28);
-    const top = std.math.clamp((ui.screen_heigth - total_height) * 0.5, @as(f32, 28), max_top);
+    const max_top = @max(@as(f32, 28), ui.screen_height - total_height - 28);
+    const top = std.math.clamp((ui.screen_height - total_height) * 0.5, @as(f32, 28), max_top);
     const panel_gap = std.math.clamp(ui.screen_width * 0.025, @as(f32, 24), @as(f32, 48));
     const panel_left = if (ui.screen_width < 760) left else left + button_width + panel_gap;
     const panel_top = if (ui.screen_width < 760) top + total_height + 20 else top;
@@ -66,8 +64,8 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, hud: *Hu
 
     ui.add(null, .{
         .name = "menu_version",
-        .size = .{ .fixed = .{ .heigth = 22, .width = 140 } },
-        .offset = .{ .left = 10, .top = ui.screen_heigth - 28 },
+        .size = .{ .fixed = .{ .height = 22, .width = 140 } },
+        .offset = .{ .left = 10, .top = ui.screen_height - 28 },
         .color = .new(0, 0, 0, 0),
         .child_anchor = .{ .x = .start, .y = .center },
         .text = .{ .data = "v" ++ shared.version, .size = 18, .color = .new(0.55, 0.58, 0.54, 1) },
@@ -89,7 +87,7 @@ fn addDevPlanetButton(ui: *Ui, dev_mode: bool, left: f32, top: f32, width: f32, 
 
     ui.add(null, .{
         .name = "menu_dev_planet",
-        .size = .{ .fixed = .{ .heigth = height, .width = width } },
+        .size = .{ .fixed = .{ .height = height, .width = width } },
         .offset = .{ .left = left, .top = top },
         .color = bg,
         .child_anchor = .{ .x = .center, .y = .center },
@@ -125,7 +123,7 @@ fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top
 
     ui.add(null, .{
         .name = name,
-        .size = .{ .fixed = .{ .heigth = height, .width = width } },
+        .size = .{ .fixed = .{ .height = height, .width = width } },
         .offset = .{ .left = left, .top = top },
         .color = bg,
         .child_anchor = .{ .x = .center, .y = .center },
@@ -145,7 +143,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
 
     ui.add(null, .{
         .name = "menu_refresh",
-        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
+        .size = .{ .fixed = .{ .height = button_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -156,7 +154,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
     }
     ui.add(null, .{
         .name = "menu_host",
-        .size = .{ .fixed = .{ .heigth = button_height, .width = button_width } },
+        .size = .{ .fixed = .{ .height = button_height, .width = button_width } },
         .offset = .{ .left = left + button_width + row_gap, .top = top },
         .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -172,7 +170,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
 
     if (network_manager.server_list.count == 0) {
         ui.add(null, .{
-            .size = .{ .fixed = .{ .heigth = button_height, .width = panel_width } },
+            .size = .{ .fixed = .{ .height = button_height, .width = panel_width } },
             .offset = .{ .left = left, .top = top + button_height + row_gap },
             .color = .new(0.02, 0.025, 0.025, 0.62),
             .child_anchor = .{ .x = .center, .y = .center },
@@ -216,22 +214,22 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
             .axis_align = .vertical,
             .gap = 2,
             .child_anchor = .{ .x = .start, .y = .center },
-            .size = .{ .fixed = .{ .heigth = row_height, .width = panel_width } },
+            .size = .{ .fixed = .{ .height = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
             .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
             .children = &.{
                 .{
-                    .size = .{ .fixed = .{ .heigth = 24, .width = panel_width } },
+                    .size = .{ .fixed = .{ .height = 24, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
                     .text = .{ .data = title, .size = 20, .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1) },
                 },
                 .{
-                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .size = .{ .fixed = .{ .height = 16, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
                     .text = .{ .data = host_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
                 },
                 .{
-                    .size = .{ .fixed = .{ .heigth = 16, .width = panel_width } },
+                    .size = .{ .fixed = .{ .height = 16, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
                     .text = .{ .data = player_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
                 },

@@ -25,8 +25,6 @@ pub fn main(init: std.process.Init) !void {
     var eng: miniaudio.ma_engine = undefined;
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
     defer miniaudio.ma_engine_uninit(&eng);
-    // _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
-    // _ = miniaudio.ma_engine_set_volume(&eng, 1);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
@@ -39,9 +37,8 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
+    var system_lib: shared.HotLib(System.Table, *anyopaque, "systemInit", "systemReload") = try .init("system_client", io);
+    defer system_lib.deinit(io);
 
     var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
@@ -57,13 +54,11 @@ pub fn main(init: std.process.Init) !void {
     var asset_server = try System.AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
-    var world: World = try .init(gpa, io);
+    var world: World = try .init(gpa);
     defer world.deinit();
 
-    var system_table: System.Table = try .load(&watcher.dynlib.?);
-
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
-    const system: *anyopaque = system_table.systemInit(&System.Data{
+    const system: *anyopaque = system_lib.symbols.systemInit(&System.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
         .window = &window,
@@ -72,9 +67,9 @@ pub fn main(init: std.process.Init) !void {
         .steam_client = &steam_client,
     }) orelse return error.SystemInit;
     ctx_zone.end();
-    defer system_table.systemDeinit(system);
+    defer system_lib.symbols.systemDeinit(system);
 
-    var accumlated_time: f32 = 0;
+    var accumulated_time: f32 = 0;
     var fps_window_seconds: f32 = 0;
     var fps_window_frames: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
@@ -83,13 +78,13 @@ pub fn main(init: std.process.Init) !void {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
-        accumlated_time += delta_time;
+        accumulated_time += delta_time;
         fps_window_seconds += delta_time;
-        if (accumlated_time < time_step) {
+        if (accumulated_time < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
             continue;
         }
-        accumlated_time -= time_step;
+        accumulated_time -= time_step;
         world.elapsed_time += time_step;
         world.delta_time = time_step;
         fps_window_frames += 1;
@@ -99,26 +94,14 @@ pub fn main(init: std.process.Init) !void {
             fps_window_seconds = 0;
         }
 
-        if (system_table.systemUpdate(system, &world)) break;
+        if (system_lib.symbols.systemUpdate(system, &world)) break;
 
-        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-        const np0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
-        for (0..10) |n| {
-            if (window.keyboard.get(@enumFromInt(np0 + n)) != .release) continue;
-            if (watcher.version(n)) |lib| {
-                system_table.systemReload(system, true);
-                system_table = try .load(lib);
-                system_table.systemReload(system, false);
-                std.log.err("switched to version slot {d}", .{n});
-            }
-        }
-
-        if (try watcher.reload(io)) {
-            std.log.err("system table updated", .{});
-            system_table.systemReload(system, true);
-            system_table = try .load(&watcher.dynlib.?);
-            system_table.systemReload(system, false);
-        }
+        const keypad_0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
+        for (0..10) |generation| {
+            if (window.keyboard.get(@enumFromInt(keypad_0 + generation)) != .release) continue;
+            system_lib.rewind(generation, system) catch |err| std.log.err("system rewind: {s}", .{@errorName(err)});
+            break;
+        } else system_lib.trySwap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
 }
 

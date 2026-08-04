@@ -29,20 +29,17 @@ pub fn update(world: *World, physics: *Physics) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                // _ = world.giveItem(player, .pickaxe, 1);
                 _ = world.giveItem(player, .freezer, 1);
                 // _ = try world.spawn(.{ .kind = .{ .enemy = .hunkloid }, .transform = player.transform });
-                // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
                 _ = world.giveItem(player, .lightning, 1);
-                // _ = world.giveItem(player, .tougherer_times, 1);
             },
             .f3 => {
                 world.toggle_spawning_requested = true;
                 for (world.entities.values()) |*entity| {
-                    if (entity.kind == .enemy) world.queueDespawn(entity.id);
+                    if (entity.kind == .enemy) _ = world.addHealth(entity, -entity.max_health, null);
                 }
             },
             .f4 => if (world.getPtr(world.teleporter_id)) |teleporter| {
@@ -69,7 +66,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 _ = world.addHealth(player, -player.health, null);
             },
             .f7 => {
-                player.flags.invinsible = !player.flags.invinsible;
+                player.flags.invincible = !player.flags.invincible;
             },
             .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
@@ -112,7 +109,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
         }
 
-        if (player.controller.input.keys.e) if (world.getPtr(player.interacting)) |entity| {
+        if (player.controller.input.keys.interact) if (world.getPtr(player.interacting)) |entity| {
             switch (entity.kind) {
                 .lootbox => if (player.currency >= entity.currency) {
                     world.queueDespawn(entity.id);
@@ -165,21 +162,21 @@ pub fn update(world: *World, physics: *Physics) !void {
 
         if (player.collider.body_id) |id| {
             var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
-            if (input.keys.w) dir += move_fwd;
-            if (input.keys.s) dir -= move_fwd;
-            if (input.keys.d) dir += move_right;
-            if (input.keys.a) dir -= move_right;
+            if (input.keys.move_forward) dir += move_fwd;
+            if (input.keys.move_backward) dir -= move_fwd;
+            if (input.keys.move_right) dir += move_right;
+            if (input.keys.move_left) dir -= move_right;
 
             const speed = player.stat(.speed);
 
-            if (input.keys.space and player.mode == .walking) Physics.jump(player, 20);
+            if (input.keys.jump and player.mode == .walking) Physics.jump(player, 20);
 
             Physics.moveOnPlanet(player, dir, speed, world.delta_time);
 
             Physics.setRotation(id, camera.yaw_rotation);
             transform.rotation = camera.yaw_rotation;
 
-            if (input.keys.r) {
+            if (input.keys.reload) {
                 camera.* = .{};
                 transform.* = .{};
                 Physics.setLinearVelocity(id, .{ 0, 0, 0 });
@@ -187,11 +184,11 @@ pub fn update(world: *World, physics: *Physics) !void {
                 Physics.setRotation(id, transform.rotation);
             }
         }
-        if (input.keys.q and player.inventory.get(.freezer) > 0) {
+        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0) {
             world.world_unstun_at = world.elapsed_time + 10;
         }
 
-        if (input.keys.mouse_button_left and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
+        if (input.keys.attack and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
             player.last_attack = world.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
