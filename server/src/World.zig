@@ -119,7 +119,7 @@ pub const Entity = struct {
     };
 
     pub const Flags = packed struct {
-        invinsible: bool = false,
+        invincible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
     };
@@ -251,7 +251,7 @@ pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8
 pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
-    if (entity.flags.invinsible) return .ignored;
+    if (entity.flags.invincible) return .ignored;
     const random = self.prng.random();
     var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
     new_amount = @min(new_amount, amount);
@@ -389,7 +389,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 .kind = .target_dummy,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){
                     slab.x * 0.5,
-                    slab.y + dummy_capsule.half_heigth + dummy_capsule.radius,
+                    slab.y + dummy_capsule.half_height + dummy_capsule.radius,
                     0,
                 } },
             });

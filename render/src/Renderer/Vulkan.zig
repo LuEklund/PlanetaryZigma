@@ -746,7 +746,7 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
 
     var push: Shader.UiPushConstant = .{
         .vertex_buffer_address = current_frame.ui_vertex_buffer.getGPUAddress(),
-        .screnn_size = .{ packet.ui.screen_width, packet.ui.screen_height },
+        .screen_size = .{ packet.ui.screen_width, packet.ui.screen_height },
     };
     c.vkCmdPushConstants(cmd, ui_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
     c.vkCmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);

@@ -141,7 +141,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     defer tracy_scope.end();
     const window = self.window;
     self.hud.ui.screen_width = @floatFromInt(window.size.width);
-    self.hud.ui.screen_heigth = @floatFromInt(window.size.height);
+    self.hud.ui.screen_height = @floatFromInt(window.size.height);
     const keyboard = window.keyboard;
     if (world.controller.rebinding_action != null) {
         world.controller.update(window);

@@ -127,7 +127,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     }
 
     self.ui.screen_width = @floatFromInt(window.size.width);
-    self.ui.screen_heigth = @floatFromInt(window.size.height);
+    self.ui.screen_height = @floatFromInt(window.size.height);
     const pointer_position = switch (window.pointer.movement) {
         .position => |position| [2]f32{ @floatCast(position.x), @floatCast(position.y) },
         .relative => [2]f32{ 0, 0 },

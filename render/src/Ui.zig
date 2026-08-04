@@ -37,7 +37,7 @@ names: std.AutoArrayHashMapUnmanaged(u64, u32) = .empty,
 animations: std.AutoArrayHashMapUnmanaged(u64, Animation) = .empty,
 mouse_state: MouseState = .{},
 screen_width: f32,
-screen_heigth: f32,
+screen_height: f32,
 default_font: *Font,
 texture_slots: []const u32,
 hot_item: ?u64 = null,
@@ -75,7 +75,7 @@ const Position2D = struct {
 
 pub const Size2D = struct {
     width: f32,
-    heigth: f32,
+    height: f32,
 };
 
 const MouseState = struct {
@@ -88,7 +88,7 @@ const Rect = struct {
     left: f32,
     top: f32,
     width: f32,
-    heigth: f32,
+    height: f32,
 };
 
 pub const Layout = struct {
@@ -119,7 +119,7 @@ pub const Layout = struct {
 pub fn init(
     gpa: std.mem.Allocator,
     screen_width: u32,
-    screen_heigth: u32,
+    screen_height: u32,
 ) !Ui {
     var names: std.AutoArrayHashMapUnmanaged(u64, u32) = .empty;
     try names.ensureTotalCapacity(gpa, max_ui_quads);
@@ -131,7 +131,7 @@ pub fn init(
         .names = names,
         .animations = animations,
         .screen_width = @floatFromInt(screen_width),
-        .screen_heigth = @floatFromInt(screen_heigth),
+        .screen_height = @floatFromInt(screen_height),
         .default_font = undefined,
         .texture_slots = &.{},
     };
@@ -204,7 +204,7 @@ fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
         .name = if (layout.name) |node_name| key(node_name) else null,
         .layout = layout,
         .parent_id = parent_id,
-        .rect = .{ .left = 0, .top = 0, .width = 0, .heigth = 0 },
+        .rect = .{ .left = 0, .top = 0, .width = 0, .height = 0 },
         .offset = 0,
         .children_size = 0,
     });
@@ -229,13 +229,13 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
         const glyph = glyphs[index];
         metrics.width += glyph.xadvance * scale;
         metrics.top = @min(metrics.top, glyph.yoff * scale); // yoff is negative (above baseline)
-        metrics.bottom = @max(metrics.bottom, (glyph.yoff + glyph.heigth) * scale);
+        metrics.bottom = @max(metrics.bottom, (glyph.yoff + glyph.height) * scale);
     }
     return metrics;
 }
 
 pub fn worldToScreen(self: *const Ui, view_proj: nz.Mat4x4(f32), world_position: nz.Vec3(f32)) ?[2]f32 {
-    if (self.screen_width <= 0 or self.screen_heigth <= 0) return null;
+    if (self.screen_width <= 0 or self.screen_height <= 0) return null;
 
     const clip = view_proj.mulVec4(.{ world_position[0], world_position[1], world_position[2], 1 });
     if (clip[3] <= 0.001) return null;
@@ -244,14 +244,14 @@ pub fn worldToScreen(self: *const Ui, view_proj: nz.Mat4x4(f32), world_position:
     if (ndc[0] < -1 or ndc[0] > 1 or ndc[1] < -1 or ndc[1] > 1 or ndc[2] < 0 or ndc[2] > 1) return null;
     return .{
         (ndc[0] * 0.5 + 0.5) * self.screen_width,
-        (ndc[1] * 0.5 + 0.5) * self.screen_heigth,
+        (ndc[1] * 0.5 + 0.5) * self.screen_height,
     };
 }
 
 pub fn textSize(self: *const Ui, text: []const u8, size: f32) Size2D {
     const scale = size / self.default_font.size;
     const metrics = measureText(&self.default_font.glyphs, text, scale);
-    return .{ .width = metrics.width, .heigth = metrics.bottom - metrics.top };
+    return .{ .width = metrics.width, .height = metrics.bottom - metrics.top };
 }
 
 fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
@@ -271,11 +271,11 @@ fn resolveLayout(self: *Ui) void {
         switch (layout.size) {
             .fixed => |size| {
                 node.rect.width = size.width;
-                node.rect.heigth = size.heigth;
+                node.rect.height = size.height;
             },
             .percent => |percent| {
                 node.rect.width = percent.width * origin.width;
-                node.rect.heigth = percent.heigth * origin.heigth;
+                node.rect.height = percent.height * origin.height;
             },
         }
     }
@@ -289,7 +289,7 @@ fn resolveLayout(self: *Ui) void {
         const parent = &self.nodes.items[parent_id];
         parent.children_size += parent.layout.gap + switch (parent.layout.axis_align) {
             .horizontal => child.rect.width,
-            .vertical => child.rect.heigth,
+            .vertical => child.rect.height,
         };
     }
 
@@ -304,14 +304,14 @@ fn resolveLayout(self: *Ui) void {
             const child_anchor = parent.layout.child_anchor;
             if (parent.layout.axis_align == .horizontal) {
                 node.rect.left += parent.offset;
-                node.rect.top += startOffset(child_anchor.y, origin.heigth, node.rect.heigth);
+                node.rect.top += startOffset(child_anchor.y, origin.height, node.rect.height);
             } else {
                 node.rect.top += parent.offset;
                 node.rect.left += startOffset(child_anchor.x, origin.width, node.rect.width);
             }
             parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
                 .horizontal => node.rect.width,
-                .vertical => node.rect.heigth,
+                .vertical => node.rect.height,
             };
         }
 
@@ -319,13 +319,13 @@ fn resolveLayout(self: *Ui) void {
         const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
         node.offset = switch (node.layout.axis_align) {
             .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent),
-            .vertical => startOffset(node.layout.child_anchor.y, node.rect.heigth, extent),
+            .vertical => startOffset(node.layout.child_anchor.y, node.rect.height, extent),
         };
     }
 }
 
 fn screenRect(self: *const Ui) Rect {
-    return .{ .left = 0, .top = 0, .width = self.screen_width, .heigth = self.screen_heigth };
+    return .{ .left = 0, .top = 0, .width = self.screen_width, .height = self.screen_height };
 }
 
 fn pushQuads(self: *Ui) void {
@@ -337,8 +337,8 @@ fn pushQuads(self: *Ui) void {
             self.quads.appendAssumeCapacity(.{ .vertices = .{
                 .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
                 .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
-                .{ .position = .{ rect.left + rect.width, rect.top + rect.heigth }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
-                .{ .position = .{ rect.left, rect.top + rect.heigth }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.height }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top + rect.height }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
             } });
         }
         if (node.layout.text) |text| {
@@ -352,7 +352,7 @@ fn pushQuads(self: *Ui) void {
                 y: f32,
             } = .{
                 .x = node.rect.left + startOffset(anchor.x, node.rect.width, metrics.width),
-                .y = node.rect.top + startOffset(anchor.y, node.rect.heigth, metrics.bottom - metrics.top) - metrics.top,
+                .y = node.rect.top + startOffset(anchor.y, node.rect.height, metrics.bottom - metrics.top) - metrics.top,
             };
             for (text.data) |char| {
                 const index: usize = @intCast(std.math.clamp(@as(i32, char) - 32, 0, 95));
@@ -360,7 +360,7 @@ fn pushQuads(self: *Ui) void {
                 const x0 = pen.x + glyph.xoff * scale;
                 const y0 = pen.y + glyph.yoff * scale;
                 const x1 = x0 + glyph.width * scale;
-                const y1 = y0 + glyph.heigth * scale;
+                const y1 = y0 + glyph.height * scale;
                 if (self.quads.items.len == max_ui_quads) break;
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
                     .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
@@ -400,7 +400,7 @@ fn hotUpdate(self: *Ui) void {
         if (!(self.mouse_state.position.left < node.rect.left or
             self.mouse_state.position.top < node.rect.top or
             self.mouse_state.position.left >= node.rect.left + node.rect.width or
-            self.mouse_state.position.top >= node.rect.top + node.rect.heigth))
+            self.mouse_state.position.top >= node.rect.top + node.rect.height))
         {
             self.hot_item = name;
             break;

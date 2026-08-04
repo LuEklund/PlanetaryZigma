@@ -68,6 +68,6 @@ pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !voi
     rendering.advanceAnimation(&.{});
     rendering.drawAnimated();
 
-    rendering.drawUi(ui.quads.items, ui.screen_width, ui.screen_heigth);
+    rendering.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
     rendering.endFrame(world.elapsed_time);
 }

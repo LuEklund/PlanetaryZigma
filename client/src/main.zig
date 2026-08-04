@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
     ctx_zone.end();
     defer system_lib.symbols.systemDeinit(system);
 
-    var accumlated_time: f32 = 0;
+    var accumulated_time: f32 = 0;
     var fps_window_seconds: f32 = 0;
     var fps_window_frames: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
@@ -80,13 +80,13 @@ pub fn main(init: std.process.Init) !void {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
         if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
-        accumlated_time += delta_time;
+        accumulated_time += delta_time;
         fps_window_seconds += delta_time;
-        if (accumlated_time < time_step) {
+        if (accumulated_time < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
             continue;
         }
-        accumlated_time -= time_step;
+        accumulated_time -= time_step;
         world.elapsed_time += time_step;
         world.delta_time = time_step;
         fps_window_frames += 1;

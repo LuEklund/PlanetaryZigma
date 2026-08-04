@@ -66,7 +66,6 @@ pub fn redirectStderrToFile(io: std.Io, path: []const u8) void {
 }
 
 pub const teleporter = struct {
-    pub const intertact_distance: f32 = 6;
     pub const charge_distance: f32 = 12;
 
     pub const State = struct {

@@ -199,7 +199,7 @@ fn colliderGroundExtent(collider: Collider) f32 {
     return switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
             .box => |box| box.x,
-            .capsule => |capsule| capsule.half_heigth + capsule.radius,
+            .capsule => |capsule| capsule.half_height + capsule.radius,
         },
         .mesh => 0,
     };
@@ -258,8 +258,8 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
             },
             .capsule => |capsule| {
                 const cap: c.b3Capsule = .{
-                    .center1 = .{ .x = 0, .y = -capsule.half_heigth, .z = 0 },
-                    .center2 = .{ .x = 0, .y = capsule.half_heigth, .z = 0 },
+                    .center1 = .{ .x = 0, .y = -capsule.half_height, .z = 0 },
+                    .center2 = .{ .x = 0, .y = capsule.half_height, .z = 0 },
                     .radius = capsule.radius,
                 };
                 _ = c.b3CreateCapsuleShape(body_id, &shape_def, &cap);

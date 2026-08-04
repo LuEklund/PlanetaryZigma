@@ -46,11 +46,11 @@ pub fn deinit(self: *Buffer, vma: Vma) void {
 }
 
 pub fn getGPUAddress(self: *const Buffer) c.VkDeviceAddress {
-    var device_adress_info: c.VkBufferDeviceAddressInfo = .{
+    var device_address_info: c.VkBufferDeviceAddressInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .buffer = self.buffer,
     };
-    return c.vkGetBufferDeviceAddress(self.device.handle, &device_adress_info);
+    return c.vkGetBufferDeviceAddress(self.device.handle, &device_address_info);
 }
 
 pub fn copy(self: *Buffer, comptime T: type, data: []const T) void {

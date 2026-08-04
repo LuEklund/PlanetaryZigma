@@ -1,6 +1,6 @@
 const Vertex = @import("../Mesh.zig").StaticVertex;
 
-pub const verticies: []const Vertex = &.{
+pub const vertices: []const Vertex = &.{
     // Back (+Z)
     .{ .position = .{ -1, -1, 1 }, .normal = .{ 0, 0, 1 }, .color = .{ 1, 0, 0, 1 }, .uv_x = 0, .uv_y = 1 },
     .{ .position = .{ 1, -1, 1 }, .normal = .{ 0, 0, 1 }, .color = .{ 1, 0, 0, 1 }, .uv_x = 1, .uv_y = 1 },
@@ -38,7 +38,7 @@ pub const verticies: []const Vertex = &.{
     .{ .position = .{ 1, -1, 1 }, .normal = .{ 0, -1, 0 }, .color = .{ 0, 0, 0, 1 }, .uv_x = 1, .uv_y = 0 },
 };
 
-pub const indicies: []const u32 = &.{
+pub const indices: []const u32 = &.{
     // Front
     0,  1,  2,  1,  3,  2,
     // Back

@@ -35,7 +35,7 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
             .view_distance = 1,
         },
         .surface_width = @intFromFloat(ui.screen_width),
-        .surface_height = @intFromFloat(ui.screen_heigth),
+        .surface_height = @intFromFloat(ui.screen_height),
     });
 
     try rendering.animator.begin(.{
@@ -71,13 +71,13 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
             switch (collider_shape) {
-                .capsule => |capsule| appendCapsuleLines(rendering, collider_transform, capsule.half_heigth, capsule.radius),
+                .capsule => |capsule| appendCapsuleLines(rendering, collider_transform, capsule.half_height, capsule.radius),
                 .box => |box| appendBoxLines(rendering, collider_transform, box),
             }
         }
     }
 
-    rendering.drawUi(ui.quads.items, ui.screen_width, ui.screen_heigth);
+    rendering.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
     rendering.endFrame(world.elapsed_time);
 }
 
@@ -89,11 +89,11 @@ fn appendLine(rendering: *Rendering, transform: nz.Transform3D(f32), from: nz.Ve
     );
 }
 
-fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), half_heigth: f32, radius: f32) void {
+fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
     for (0..circle_segments) |segment| {
         const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / circle_segments;
         const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / circle_segments;
-        for ([2]f32{ -half_heigth, half_heigth }) |ring_y| {
+        for ([2]f32{ -half_height, half_height }) |ring_y| {
             appendLine(
                 rendering,
                 transform,
@@ -107,8 +107,8 @@ fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), hal
         appendLine(
             rendering,
             transform,
-            .{ radius * @cos(angle), -half_heigth, radius * @sin(angle) },
-            .{ radius * @cos(angle), half_heigth, radius * @sin(angle) },
+            .{ radius * @cos(angle), -half_height, radius * @sin(angle) },
+            .{ radius * @cos(angle), half_height, radius * @sin(angle) },
         );
     }
     const arc_segments = circle_segments / 2;
@@ -116,7 +116,7 @@ fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), hal
         const angle_start = std.math.pi * @as(f32, @floatFromInt(segment)) / arc_segments;
         const angle_end = std.math.pi * @as(f32, @floatFromInt(segment + 1)) / arc_segments;
         for ([2]f32{ 1, -1 }) |cap_direction| {
-            const cap_y = cap_direction * half_heigth;
+            const cap_y = cap_direction * half_height;
             appendLine(
                 rendering,
                 transform,

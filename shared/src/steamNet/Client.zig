@@ -53,7 +53,7 @@ const Browser = extern struct {
         });
     }
     fn complete(self: *Browser, request: steam.HServerListRequest, response: steam.EMatchMakingServerResponse) callconv(.c) void {
-        std.log.info("server list refresh compele: {s}", .{@tagName(response)});
+        std.log.info("server list refresh complete: {s}", .{@tagName(response)});
         const servers = steam.SteamMatchmakingServers();
         const server_count = servers.GetServerCount(request);
         std.log.info("refresh complete: {s} ({d} servers)", .{ @tagName(response), server_count });
@@ -230,15 +230,15 @@ pub fn handlePackets(self: *Client) !void {
             defer self.packet_mutex.unlock(self.io);
             self.steamPump() catch |err|
                 std.log.err("steamPump: {s}", .{@errorName(err)});
-            self.recievePackets() catch |err|
-                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.receivePackets() catch |err|
+                std.log.err("receivePackets: {s}", .{@errorName(err)});
             self.sendPackets() catch |err|
                 std.log.err("sendPackets: {s}", .{@errorName(err)});
             if (self.browser.list.refresh_state == .request) {
                 self.browser.list.refresh_state = .refreshing;
                 const servers = steam.SteamMatchmakingServers();
                 const app_id = steam.SteamUtils().GetAppID();
-                std.log.info("requsting internet server list for app {d}...", .{app_id});
+                std.log.info("requesting internet server list for app {d}...", .{app_id});
                 self.browser.request = servers.RequestInternetServerList(app_id, null, 0, @ptrCast(&self.browser));
             }
         }
@@ -288,7 +288,7 @@ fn steamPump(self: *Client) !void {
     }
 }
 
-pub fn recievePackets(self: *Client) !void {
+pub fn receivePackets(self: *Client) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;

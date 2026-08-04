@@ -261,7 +261,7 @@ pub fn actionLabel(action: Action) []const u8 {
         .aim => "Aim",
         .free_camera => "Free Camera",
         .debug_colliders => "Debug Colliders",
-        .equipment => "Use Quipment",
+        .equipment => "Use Equipment",
     };
 }
 

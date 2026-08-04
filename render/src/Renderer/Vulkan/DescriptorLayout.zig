@@ -1,4 +1,4 @@
-const DesrciptorLayout = @This();
+const DescriptorLayout = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
@@ -9,7 +9,7 @@ const check = @import("utils.zig").check;
 handle: c.VkDescriptorSetLayout,
 count: u32,
 
-pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DesrciptorLayout {
+pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, descriptor_flags: u32) !DescriptorLayout {
     var info: c.VkDescriptorSetLayoutCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pBindings = &bindings[0],
@@ -30,6 +30,6 @@ pub fn init(device: Device, bindings: []const c.VkDescriptorSetLayoutBinding, de
     };
 }
 
-pub fn deinit(self: DesrciptorLayout, device: Device) void {
+pub fn deinit(self: DescriptorLayout, device: Device) void {
     c.vkDestroyDescriptorSetLayout(device.handle, self.handle, null);
 }

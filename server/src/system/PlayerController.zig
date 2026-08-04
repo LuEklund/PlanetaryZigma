@@ -69,7 +69,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 _ = world.addHealth(player, -player.health, null);
             },
             .f7 => {
-                player.flags.invinsible = !player.flags.invinsible;
+                player.flags.invincible = !player.flags.invincible;
             },
             .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };

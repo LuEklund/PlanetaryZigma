@@ -7,7 +7,7 @@ const nz = @import("shared").numz;
 const Vma = @import("Vma.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
-const DescriptorLayout = @import("DesrciptorLayout.zig");
+const DescriptorLayout = @import("DescriptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
@@ -296,9 +296,9 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
 }
 
 fn makeBoxMesh(gpa: std.mem.Allocator, vma: Vma, device: Device, name: []const u8) !Mesh {
-    return try .init(gpa, vma, name, device, Mesh.StaticVertex, Mesh.box.verticies, Mesh.box.indicies, &.{.{
+    return try .init(gpa, vma, name, device, Mesh.StaticVertex, Mesh.box.vertices, Mesh.box.indices, &.{.{
         .index_start = 0,
-        .index_count = @intCast(Mesh.box.indicies.len),
+        .index_count = @intCast(Mesh.box.indices.len),
         .texture = .blank,
     }});
 }

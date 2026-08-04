@@ -116,7 +116,7 @@ pub const WorldPushConstant = extern struct {
 };
 pub const UiPushConstant = extern struct {
     vertex_buffer_address: VkDeviceAddress,
-    screnn_size: [2]f32,
+    screen_size: [2]f32,
 };
 pub const ParticlePushConstant = extern struct {
     emitter_buffer_address: VkDeviceAddress,

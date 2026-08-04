@@ -158,7 +158,7 @@ fn addTransition(ui: *Ui, phase: NetworkManager.Phase, phase_seconds: f32) void 
 
     ui.add(null, .{
         .name = if (covering) "transition_veil" else null,
-        .size = .{ .fixed = .{ .heigth = ui.screen_heigth, .width = ui.screen_width } },
+        .size = .{ .fixed = .{ .height = ui.screen_height, .width = ui.screen_width } },
         .offset = .{ .left = 0, .top = 0 },
         .color = .new(0, 0, 0, transition),
         .child_anchor = .{ .x = .center, .y = .center },

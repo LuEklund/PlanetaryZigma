@@ -22,7 +22,7 @@ pub const Glyph = struct {
     xoff: f32,
     yoff: f32,
     width: f32,
-    heigth: f32,
+    height: f32,
     xadvance: f32,
 };
 
@@ -53,7 +53,7 @@ pub fn bake(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
 
     var pen_x: usize = 1;
     var pen_y: usize = 1;
-    var row_heigth: usize = 0;
+    var row_height: usize = 0;
     for (&self.glyphs, 0..) |*glyph, i| {
         const codepoint: c_int = @intCast(32 + i);
         var advance: c_int = 0;
@@ -61,7 +61,7 @@ pub fn bake(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
         stbTruetype.stbtt_GetCodepointHMetrics(&info, codepoint, &advance, &left_bearing);
 
         var width: c_int = 0;
-        var heigth: c_int = 0;
+        var height: c_int = 0;
         var xoff: c_int = 0;
         var yoff: c_int = 0;
         const sdf = stbTruetype.stbtt_GetCodepointSDF(
@@ -72,19 +72,19 @@ pub fn bake(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
             on_edge,
             pixel_dist_scale,
             &width,
-            &heigth,
+            &height,
             &xoff,
             &yoff,
         );
         defer if (sdf != null) stbTruetype.stbtt_FreeSDF(sdf, null);
 
         const glyph_w: usize = @intCast(width);
-        const glyph_h: usize = @intCast(heigth);
+        const glyph_h: usize = @intCast(height);
         if (sdf != null and glyph_w > 0) {
             if (pen_x + glyph_w + 1 > atlas_width) {
                 pen_x = 1;
-                pen_y += row_heigth + 1;
-                row_heigth = 0;
+                pen_y += row_height + 1;
+                row_height = 0;
             }
             for (0..glyph_h) |row| {
                 const src = sdf[row * glyph_w ..][0..glyph_w];
@@ -101,13 +101,13 @@ pub fn bake(self: *Font, gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) 
             .xoff = @floatFromInt(xoff),
             .yoff = @floatFromInt(yoff),
             .width = @floatFromInt(glyph_w),
-            .heigth = @floatFromInt(glyph_h),
+            .height = @floatFromInt(glyph_h),
             .xadvance = @as(f32, @floatFromInt(advance)) * scale,
         };
 
         if (glyph_w > 0) {
             pen_x += glyph_w + 1;
-            row_heigth = @max(row_heigth, glyph_h);
+            row_height = @max(row_height, glyph_h);
         }
     }
 

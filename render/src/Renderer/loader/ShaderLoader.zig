@@ -6,7 +6,7 @@ const AssetServer = @import("../../AssetServer.zig");
 const Loader = AssetServer.Loader;
 const Device = @import("../Vulkan/device.zig").Logical;
 const Shader = @import("../Vulkan/Shader.zig");
-const DescriptorLayout = @import("../Vulkan/DesrciptorLayout.zig");
+const DescriptorLayout = @import("../Vulkan/DescriptorLayout.zig");
 const check = @import("../Vulkan/utils.zig").check;
 const ext = @import("../Vulkan/procs.zig").device.ProcTable;
 

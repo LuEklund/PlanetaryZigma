@@ -62,7 +62,7 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
         } else std.log.warn("vulkan layer not installed, skipping: {s}", .{requested_layer});
     }
 
-    const instane_create_info: *const c.VkInstanceCreateInfo = &.{
+    const instance_create_info: *const c.VkInstanceCreateInfo = &.{
         .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &.{
             .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -79,7 +79,7 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
     };
 
     var instance: c.VkInstance = undefined;
-    try check(c.vkCreateInstance(instane_create_info, null, @ptrCast(&instance)));
+    try check(c.vkCreateInstance(instance_create_info, null, @ptrCast(&instance)));
     return .{ .handle = instance };
 }
 
