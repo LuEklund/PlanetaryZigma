@@ -219,53 +219,29 @@ fn applyAction(self: *Controller, action: Kind, pressed: bool) void {
 pub fn bindingLabel(binding: Binding) []const u8 {
     return switch (binding) {
         .none => "Unbound",
-        .key => |key| keyLabel(key),
-        .mouse => |button| mouseLabel(button),
+        .key => |key| switch (key) {
+            inline else => |inline_key| comptime titleCase(@tagName(inline_key)),
+        },
+        .mouse => |button| switch (button) {
+            inline else => |inline_button| "Mouse " ++ comptime titleCase(@tagName(inline_button)),
+        },
     };
 }
 
-fn keyLabel(key: Window.Keyboard.Key) []const u8 {
-    return switch (key) {
-        .w => "W",
-        .s => "S",
-        .a => "A",
-        .d => "D",
-        .r => "R",
-        .e => "E",
-        .k => "K",
-        .space => "Space",
-        .left_shift => "Left Shift",
-        .right_shift => "Right Shift",
-        .left_control => "Left Ctrl",
-        .right_control => "Right Ctrl",
-        .left_alt => "Left Alt",
-        .right_alt => "Right Alt",
-        .enter => "Enter",
-        .tab => "Tab",
-        .escape => "Escape",
-        .f1 => "F1",
-        .f2 => "F2",
-        .f3 => "F3",
-        .f4 => "F4",
-        .f5 => "F5",
-        .f6 => "F6",
-        .f7 => "F7",
-        .f8 => "F8",
-        .f9 => "F9",
-        .f10 => "F10",
-        .f11 => "F11",
-        .f12 => "F12",
-        else => @tagName(key),
-    };
+fn titleCase(comptime tag: []const u8) []const u8 {
+    @setEvalBranchQuota(10_000);
+    var text: [tag.len]u8 = undefined;
+    var start_of_word = true;
+    for (tag, &text) |char, *out| {
+        if (char == '_') {
+            out.* = ' ';
+            start_of_word = true;
+            continue;
+        }
+        out.* = if (start_of_word) std.ascii.toUpper(char) else char;
+        start_of_word = false;
+    }
+    const final = text;
+    return &final;
 }
 
-fn mouseLabel(button: MouseButton) []const u8 {
-    return switch (button) {
-        .left => "Mouse Left",
-        .right => "Mouse Right",
-        .middle => "Mouse Middle",
-        .forward => "Mouse Forward",
-        .back => "Mouse Back",
-        else => @tagName(button),
-    };
-}
