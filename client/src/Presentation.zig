@@ -106,7 +106,6 @@ fn updateStates(self: *Presentation, world: *World, loader: *ModelLoader) void {
     }
     world.trigger_events.clearRetainingCapacity();
     for (world.entities.values()) |*entity| {
-        entity.stun_time = @max(0, entity.stun_time - world.delta_time);
         const instance = self.instances.getPtr(entity.id) orelse continue;
         if (instance.skeleton == null) continue;
 
@@ -135,39 +134,38 @@ fn animate(self: *Presentation, world: *World, loader: *ModelLoader) void {
         }
     }
 
-    // ponytail: still writes entity transform state; becomes a packet-side override
-    // once the View contract lands and Presentation stops seeing World.
     for (world.entities.values()) |*entity| {
         const instance = self.instances.getPtr(entity.id) orelse continue;
-        switch (entity.kind) {
-            .lootbox => {
-                if (entity.flags.is_dying and instance.deathDuration() > 0) {
-                    entity.transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.deathDuration(), 0, 1));
-                }
-            },
-            .item => {
-                if (instance.spawn_time < instance.spawnDuration()) {
-                    instance.spawn_time += world.delta_time;
-                    entity.transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawnDuration(), 0, 1)));
-                }
-                if (entity.motion.update) |*update_motion| {
-                    const spun = nz.Quat(f32).fromVec(update_motion.rotation)
-                        .mul(nz.Quat(f32).angleAxis(item_spin_speed * world.delta_time, .{ 0, 1, 0 }))
-                        .normalize();
-                    update_motion.rotation = spun.toVec();
-                }
-            },
-            else => {},
-        }
+        if (entity.kind != .item) continue;
+        instance.spawn_time = @min(instance.spawn_time + world.delta_time, instance.spawnDuration());
+        instance.spin_time += world.delta_time;
     }
 }
 
 fn appendDraws(self: *Presentation, world: *World, packet: *FramePacket) void {
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const top_matrix = entity.transform.toMat4x4().mul(model_spec.offset.toMat4x4());
-        const skeleton: ?*AnimationInstance.Skeleton = if (self.instances.getPtr(entity.id)) |instance|
-            (if (instance.skeleton) |*instance_skeleton| instance_skeleton else null)
+        const instance = self.instances.getPtr(entity.id);
+        var transform = entity.transform;
+        if (instance) |present| switch (entity.kind) {
+            .lootbox => {
+                if (entity.flags.is_dying and present.deathDuration() > 0) {
+                    transform.scale = @splat(1.0 - std.math.clamp(present.death_time / present.deathDuration(), 0, 1));
+                }
+            },
+            .item => {
+                if (present.spawnDuration() > 0) {
+                    transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(present.spawn_time / present.spawnDuration(), 0, 1)));
+                }
+                transform.rotation = transform.rotation
+                    .mul(nz.Quat(f32).angleAxis(item_spin_speed * present.spin_time, .{ 0, 1, 0 }))
+                    .normalize();
+            },
+            else => {},
+        };
+        const top_matrix = transform.toMat4x4().mul(model_spec.offset.toMat4x4());
+        const skeleton: ?*AnimationInstance.Skeleton = if (instance) |present|
+            (if (present.skeleton) |*instance_skeleton| instance_skeleton else null)
         else
             null;
         if (skeleton) |instance_skeleton| {

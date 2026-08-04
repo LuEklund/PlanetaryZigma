@@ -124,6 +124,7 @@ pub fn update(self: *System, world: *World) !void {
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush(&self.presentation);
+    for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     Emitter.update(world);
 
     extract.extract(world, &self.ui, &self.frame_packet, self.scene != .particle_lab);
