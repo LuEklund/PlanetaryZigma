@@ -1,7 +1,7 @@
 const std = @import("std");
 const Ui = @import("render").Ui;
 
-pub const Request = enum { none, resume_view, quit };
+pub const Request = enum { none, close, quit };
 
 pub fn update(ui: *Ui, player_count: usize, following: ?usize) Request {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));
@@ -19,7 +19,7 @@ pub fn update(ui: *Ui, player_count: usize, following: ?usize) Request {
         .color = .new(0, 0, 0, 0.52),
     });
     ui.add(null, .{
-        .name = "server_pause_panel",
+        .name = "server_menu_panel",
         .size = .{ .fixed = .{ .width = panel_width, .height = panel_height } },
         .offset = .{ .left = left, .top = top },
         .color = .new(0.02, 0.025, 0.025, 0.92),
@@ -27,12 +27,12 @@ pub fn update(ui: *Ui, player_count: usize, following: ?usize) Request {
         .child_anchor = .{ .x = .center, .y = .center },
         .gap = row_gap,
     });
-    ui.add("server_pause_panel", .{
+    ui.add("server_menu_panel", .{
         .size = .{ .fixed = .{ .width = panel_width, .height = title_height } },
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{ .data = "Server View", .size = 34, .color = .new(0.94, 0.96, 0.9, 1) },
     });
-    ui.add("server_pause_panel", .{
+    ui.add("server_menu_panel", .{
         .size = .{ .fixed = .{ .width = panel_width, .height = status_height } },
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
@@ -45,17 +45,17 @@ pub fn update(ui: *Ui, player_count: usize, following: ?usize) Request {
         },
     });
 
-    addButton(ui, "server_pause_resume", "Resume", panel_width * 0.82, button_height);
-    addButton(ui, "server_pause_quit", "Quit Server", panel_width * 0.82, button_height);
+    addButton(ui, "server_menu_resume", "Resume", panel_width * 0.82, button_height);
+    addButton(ui, "server_menu_quit", "Quit Server", panel_width * 0.82, button_height);
 
-    if (ui.isActive("server_pause_resume")) return .resume_view;
-    if (ui.isActive("server_pause_quit")) return .quit;
+    if (ui.isActive("server_menu_resume")) return .close;
+    if (ui.isActive("server_menu_quit")) return .quit;
     return .none;
 }
 
 fn addButton(ui: *Ui, name: []const u8, text: []const u8, width: f32, height: f32) void {
     const hot = ui.isHot(name);
-    ui.add("server_pause_panel", .{
+    ui.add("server_menu_panel", .{
         .name = name,
         .size = .{ .fixed = .{ .width = width, .height = height } },
         .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),

@@ -3,7 +3,7 @@ const Ui = @This();
 const std = @import("std");
 const nz = @import("shared").numz;
 const Font = @import("asset/Font.zig");
-const Texture = @import("shared").Texture;
+const Texture = @import("Texture.zig");
 
 pub const max_ui_quads: usize = 2048;
 

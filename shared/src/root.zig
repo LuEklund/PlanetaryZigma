@@ -16,7 +16,6 @@ pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
 
 pub const entity = @import("entity.zig");
-pub const Texture = @import("Texture.zig");
 
 pub const version: []const u8 = "0.1.0";
 

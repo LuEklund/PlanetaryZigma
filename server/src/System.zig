@@ -11,9 +11,9 @@ const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
-pub const Viewer = if (build_options.render) @import("system/Viewer.zig") else void;
-pub const Window = if (build_options.render) @import("Window") else void;
-pub const AssetServer = if (build_options.render) @import("render").AssetServer else void;
+pub const Viewer = if (build_options.viewer) @import("system/Viewer.zig") else void;
+pub const Window = if (build_options.viewer) @import("Window") else void;
+pub const AssetServer = if (build_options.viewer) @import("render").AssetServer else void;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
@@ -36,8 +36,8 @@ pub const Data = struct {
     world: *World,
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
-    window: if (build_options.render) *Window else void,
-    asset_server: if (build_options.render) *AssetServer else void,
+    window: if (build_options.viewer) *Window else void,
+    asset_server: if (build_options.viewer) *AssetServer else void,
 };
 
 pub fn init(self: *System, data: *const Data) !void {
@@ -52,20 +52,20 @@ pub fn init(self: *System, data: *const Data) !void {
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();
     self.viewer = undefined;
-    if (build_options.render) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world);
-    errdefer if (build_options.render) self.viewer.deinit(self.gpa, self.io);
+    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world);
+    errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
     try self.world.loadPlace(.ship, &self.physics);
 }
 
 pub fn deinit(self: *System) !void {
-    if (build_options.render) self.viewer.deinit(self.gpa, self.io);
+    if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
     try self.network_manager.deinit();
 }
 
 fn draw(self: *System, world: *World) !void {
-    if (!build_options.render) return;
+    if (!build_options.viewer) return;
     if (try self.viewer.draw(world, self.io)) self.request_exit = true;
 }
 

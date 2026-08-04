@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
 
     var window: Window = undefined;
     var asset_server: System.AssetServer = undefined;
-    if (build_options.render) {
+    if (build_options.viewer) {
         try window.open(gpa, init.minimal, .{
             .app_id = "planetary_zigma_server",
             .title = "PlanetaryZigma — server view",
@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
         });
         asset_server = try .init(gpa, io);
     }
-    defer if (build_options.render) {
+    defer if (build_options.viewer) {
         asset_server.deinit();
         window.close();
     };
@@ -84,8 +84,8 @@ pub fn main(init: std.process.Init) !void {
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
-        .window = if (build_options.render) &window else {},
-        .asset_server = if (build_options.render) &asset_server else {},
+        .window = if (build_options.viewer) &window else {},
+        .asset_server = if (build_options.viewer) &asset_server else {},
     })) return error.SystemInit;
 
     defer system_lib.symbols.systemDeinit(&system_instance);

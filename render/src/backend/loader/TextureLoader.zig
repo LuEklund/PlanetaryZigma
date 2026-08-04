@@ -9,6 +9,7 @@ const Loader = AssetServer.Loader;
 const Image = @import("../Vulkan/Image.zig");
 const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
+const Texture = @import("../../Texture.zig");
 
 
 
@@ -17,9 +18,9 @@ slots: []u32,
 interface: Loader,
 
 pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, slots: []u32) !void {
-    var path_buffer: [shared.Texture.paths_capacity][]const u8 = undefined;
-    const texture_paths = shared.Texture.paths(&path_buffer);
-    std.debug.assert(slots.len == shared.Texture.reserved + texture_paths.len);
+    var path_buffer: [Texture.paths_capacity][]const u8 = undefined;
+    const texture_paths = Texture.paths(&path_buffer);
+    std.debug.assert(slots.len == Texture.reserved + texture_paths.len);
     const files = try gpa.alloc([]const u8, texture_paths.len);
     @memcpy(files, texture_paths);
     @memset(slots, @intFromEnum(Image.Handle.material_not_found));
@@ -72,7 +73,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     var decoded = try decodeFile(gpa, loader.io, file);
     defer decoded.deinit();
 
-    if (shared.Texture.reserved + index == shared.Texture.slot(.skybox_cubemap)) return self.loadSkybox(gpa, decoded);
+    if (Texture.reserved + index == Texture.slot(.skybox_cubemap)) return self.loadSkybox(gpa, decoded);
 
     var image: Image = try .init(
         table.vma,
@@ -89,7 +90,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 
     var path_buffer: [512]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buffer, "textures/{s}", .{loader.files[index]});
-    self.slots[shared.Texture.reserved + index] = @intFromEnum(try table.allocSlot(gpa, image, table.samplers.items[0], path));
+    self.slots[Texture.reserved + index] = @intFromEnum(try table.allocSlot(gpa, image, table.samplers.items[0], path));
 }
 
 fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !void {
@@ -141,7 +142,7 @@ fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !vo
 fn unload(loader: *Loader, index: usize) void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
     const missing = @intFromEnum(Image.Handle.material_not_found);
-    const slot = &self.slots[shared.Texture.reserved + index];
+    const slot = &self.slots[Texture.reserved + index];
     if (slot.* == missing) return;
     self.table.freeSlot(loader.gpa, @enumFromInt(slot.*));
     slot.* = missing;

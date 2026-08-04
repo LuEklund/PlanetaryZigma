@@ -4,7 +4,6 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const View = @import("View.zig");
 const Model = @import("asset/Model.zig");
 const Node = @import("asset/Node.zig");
 const AnimationClip = @import("asset/AnimationClip.zig");
@@ -29,10 +28,30 @@ fn easeOutBack(x: f32) f32 {
     return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
 }
 
+pub const Frame = struct {
+    delta_time: f32,
+    elapsed_time: f32,
+    local_entity: shared.entity.Id,
+    camera_pitch: f32,
+    camera_yaw_rotation: nz.Quat(f32),
+};
+
+/// One entity as the animator sees it — deliberately wire-shaped, so a server-side
+/// producer fills it from the sim and a client one from replicated state.
+pub const Entity = struct {
+    id: shared.entity.Id,
+    kind: shared.entity.Kind,
+    transform: nz.Transform3D(f32),
+    velocity: nz.Vec3(f32),
+    is_dying: bool,
+    stun_time: f32,
+    state_override: ?shared.entity.State,
+};
+
 gpa: std.mem.Allocator,
 instances: std.AutoHashMap(shared.entity.Id, Instance),
 retiring: std.ArrayList(shared.entity.Id),
-frame: View.Frame,
+frame: Frame,
 
 pub fn init(gpa: std.mem.Allocator) !Animator {
     return .{
@@ -54,7 +73,7 @@ fn resolveModel(loader: *ModelTable, instance: *const Instance) ?*Model {
     return loader.modelPtr(instance.model_handle orelse return null);
 }
 
-pub fn begin(self: *Animator, frame: View.Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
+pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.seen = false;
@@ -66,7 +85,7 @@ pub fn begin(self: *Animator, frame: View.Frame, deaths: []const shared.entity.I
     try self.applyReloads(loader);
 }
 
-pub fn observe(self: *Animator, entity: View.Entity, loader: *ModelTable) !void {
+pub fn observe(self: *Animator, entity: Entity, loader: *ModelTable) !void {
     if (shared.entity.modelSpec(entity.kind) == null) return;
     if (!self.instances.contains(entity.id)) {
         const handle = ModelTable.handleForKind(entity.kind);
@@ -226,7 +245,7 @@ fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void
     }
 }
 
-fn playAnimation(frame: View.Frame, id: shared.entity.Id, instance: *Instance, model: *Model) void {
+fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *Model) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
     const clip_index = model.state_clips.get(instance.state);
     if (clip_index) |index| {

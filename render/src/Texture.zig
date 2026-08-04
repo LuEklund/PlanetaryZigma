@@ -1,5 +1,5 @@
 const std = @import("std");
-const Item = @import("Item.zig");
+const Item = @import("shared").Item;
 
 pub const Kind = union(enum) {
     blank,

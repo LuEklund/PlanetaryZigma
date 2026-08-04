@@ -13,9 +13,9 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
     if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const render_enable = b.option(bool, "render", "Build the server with its own render window (default off)") orelse false;
+    const viewer_enable = b.option(bool, "viewer", "Build the server with its own render window (default off)") orelse false;
 
-    const artifacts = addServerArtifacts(b, target, optimize, tracy_enable, render_enable);
+    const artifacts = addServerArtifacts(b, target, optimize, tracy_enable, viewer_enable);
     installServerArtifacts(b, b.getInstallStep(), artifacts, target, tracy_enable);
 
     const windows_step = b.step("windows", "Build Windows server artifacts used by the hosted client");
@@ -37,16 +37,16 @@ fn addServerArtifacts(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     tracy_enable: bool,
-    render_enable: bool,
+    viewer_enable: bool,
 ) ServerArtifacts {
     const build_options = b.addOptions();
-    build_options.addOption(bool, "render", render_enable);
+    build_options.addOption(bool, "viewer", viewer_enable);
     const build_options_module = build_options.createModule();
     const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const ztracy = ztracy_dep.module("ztracy");
 
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
-    const render_dep: ?*std.Build.Dependency = if (render_enable)
+    const render_dep: ?*std.Build.Dependency = if (viewer_enable)
         b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable })
     else
         null;

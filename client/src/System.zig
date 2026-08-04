@@ -7,7 +7,7 @@ const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("render").AssetServer;
-const Rendering = @import("render").Rendering;
+const Renderer = @import("render").Renderer;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const DrawList = @import("render").DrawList;
@@ -38,7 +38,7 @@ io: std.Io,
 window: *Window,
 steam_client: *shared.SteamNet.Client,
 asset_server: *AssetServer,
-rendering: Rendering,
+renderer: Renderer,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
@@ -61,15 +61,15 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.steam_client = data.steam_client;
     self.asset_server = data.asset_server;
-    try self.rendering.init(.{
+    try self.renderer.init(.{
         .gpa = data.gpa,
         .io = data.io,
         .window = data.window,
         .asset_server = data.asset_server,
     });
-    errdefer self.rendering.deinit(data.gpa, data.io);
+    errdefer self.renderer.deinit(data.gpa, data.io);
 
-    try self.hud.init(data.gpa, data.window.size, &self.rendering);
+    try self.hud.init(data.gpa, data.window.size, &self.renderer);
     errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     errdefer self.network_manager.deinit();
@@ -81,12 +81,12 @@ pub fn init(self: *System, data: Data) !void {
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.hud.deinit(self.gpa);
-    self.rendering.deinit(self.gpa, self.io);
+    self.renderer.deinit(self.gpa, self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clearSession();
-    self.rendering.clear();
+    self.renderer.clear();
     self.hud.resetScreen();
     switch (next) {
         .menu => menu_world.populate(world),
@@ -105,7 +105,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
-    if (self.scene == .particle_lab) particle_lab.update(world, &self.rendering);
+    if (self.scene == .particle_lab) particle_lab.update(world, &self.renderer);
     switch (try self.hud.update(world, self.scene, &self.network_manager, &self.hud.ui, &world.controller, &self.options)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -121,8 +121,8 @@ pub fn update(self: *System, world: *World) !void {
     try world.flush();
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
-    try extract.frame(world, &self.rendering, &self.hud.ui, self.scene != .particle_lab);
-    self.rendering.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
+    try extract.frame(world, &self.renderer, &self.hud.ui, self.scene != .particle_lab);
+    self.renderer.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

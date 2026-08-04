@@ -1,9 +1,10 @@
 const std = @import("std");
 const Window = @import("Window");
-const Vulkan = @import("Renderer/Vulkan.zig");
+const Vulkan = @import("backend/Vulkan.zig");
 const DrawList = @import("DrawList.zig");
 const AssetServer = @import("AssetServer.zig");
 const Font = @import("asset/Font.zig");
+const Texture = @import("Texture.zig");
 pub const ModelTable = @import("asset/ModelTable.zig");
 const shared = @import("shared");
 
@@ -16,7 +17,7 @@ pub const Data = struct {
     asset_server: *AssetServer,
     fonts: *[Font.count]Font,
     models: *ModelTable,
-    texture_slots: *[shared.Texture.count()]u32,
+    texture_slots: *[Texture.count()]u32,
     window: *Window,
 };
 

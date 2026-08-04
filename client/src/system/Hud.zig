@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Ui = @import("render").Ui;
-const Rendering = @import("render").Rendering;
+const Renderer = @import("render").Renderer;
 const Window = @import("Window");
 const Font = @import("render").Font;
 const NetworkManager = @import("NetworkManager.zig");
@@ -53,10 +53,10 @@ popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
 
 ui: Ui,
 
-pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size, rendering: *Rendering) !void {
+pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size, renderer: *Renderer) !void {
     hud.* = .{ .ui = try .init(gpa, size.width, size.height) };
-    hud.ui.default_font = &rendering.fonts[0];
-    hud.ui.texture_slots = &rendering.texture_slots;
+    hud.ui.default_font = &renderer.fonts[0];
+    hud.ui.texture_slots = &renderer.texture_slots;
 }
 
 pub fn deinit(hud: *Hud, gpa: std.mem.Allocator) void {

@@ -3,15 +3,15 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("render").Ui;
-const Rendering = @import("render").Rendering;
+const Renderer = @import("render").Renderer;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
-pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !void {
+pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void {
     const planet_entity = world.getPtr(world.planet_id);
 
-    rendering.beginFrame(.{
+    renderer.beginFrame(.{
         .camera = .{
             .position = world.camera.transform.position,
             .rotation = world.camera.transform.rotation,
@@ -31,20 +31,20 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
         .surface_height = @intFromFloat(ui.screen_height),
     });
 
-    try rendering.animator.begin(.{
+    try renderer.animator.begin(.{
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = world.player_id,
         .camera_pitch = world.camera.pitch,
         .camera_yaw_rotation = world.camera.yaw_rotation,
-    }, world.deaths.items, &rendering.models);
+    }, world.deaths.items, &renderer.models);
     world.deaths.clearRetainingCapacity();
 
-    for (world.effects.items) |request| rendering.spawnEffect(request, world.elapsed_time);
+    for (world.effects.items) |request| renderer.spawnEffect(request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
 
     for (world.entities.values()) |*entity| {
-        try rendering.animator.observe(.{
+        try renderer.animator.observe(.{
             .id = entity.id,
             .kind = entity.kind,
             .transform = entity.transform,
@@ -52,11 +52,11 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
             .is_dying = entity.flags.is_dying,
             .stun_time = entity.stun_time,
             .state_override = entity.override_animation_state,
-        }, &rendering.models);
+        }, &renderer.models);
     }
-    rendering.advanceAnimation(world.trigger_events.items);
+    renderer.advanceAnimation(world.trigger_events.items);
     world.trigger_events.clearRetainingCapacity();
-    rendering.drawAnimated();
+    renderer.drawAnimated();
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {
@@ -64,31 +64,31 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
             switch (collider_shape) {
-                .capsule => |capsule| appendCapsuleLines(rendering, collider_transform, capsule.half_height, capsule.radius),
-                .box => |box| appendBoxLines(rendering, collider_transform, box),
+                .capsule => |capsule| appendCapsuleLines(renderer, collider_transform, capsule.half_height, capsule.radius),
+                .box => |box| appendBoxLines(renderer, collider_transform, box),
             }
         }
     }
 
-    rendering.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    rendering.endFrame(world.elapsed_time);
+    renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
+    renderer.endFrame(world.elapsed_time);
 }
 
-fn appendLine(rendering: *Rendering, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
-    rendering.drawLine(
+fn appendLine(renderer: *Renderer, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
+    renderer.drawLine(
         transform.position + transform.rotation.rotateVec(from),
         transform.position + transform.rotation.rotateVec(to),
         collider_color,
     );
 }
 
-fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
+fn appendCapsuleLines(renderer: *Renderer, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
     for (0..circle_segments) |segment| {
         const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / circle_segments;
         const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / circle_segments;
         for ([2]f32{ -half_height, half_height }) |ring_y| {
             appendLine(
-                rendering,
+                renderer,
                 transform,
                 .{ radius * @cos(angle_start), ring_y, radius * @sin(angle_start) },
                 .{ radius * @cos(angle_end), ring_y, radius * @sin(angle_end) },
@@ -98,7 +98,7 @@ fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), hal
     for (0..4) |quarter| {
         const angle = std.math.tau * @as(f32, @floatFromInt(quarter)) / 4;
         appendLine(
-            rendering,
+            renderer,
             transform,
             .{ radius * @cos(angle), -half_height, radius * @sin(angle) },
             .{ radius * @cos(angle), half_height, radius * @sin(angle) },
@@ -111,13 +111,13 @@ fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), hal
         for ([2]f32{ 1, -1 }) |cap_direction| {
             const cap_y = cap_direction * half_height;
             appendLine(
-                rendering,
+                renderer,
                 transform,
                 .{ radius * @cos(angle_start), cap_y + cap_direction * radius * @sin(angle_start), 0 },
                 .{ radius * @cos(angle_end), cap_y + cap_direction * radius * @sin(angle_end), 0 },
             );
             appendLine(
-                rendering,
+                renderer,
                 transform,
                 .{ 0, cap_y + cap_direction * radius * @sin(angle_start), radius * @cos(angle_start) },
                 .{ 0, cap_y + cap_direction * radius * @sin(angle_end), radius * @cos(angle_end) },
@@ -126,7 +126,7 @@ fn appendCapsuleLines(rendering: *Rendering, transform: nz.Transform3D(f32), hal
     }
 }
 
-fn appendBoxLines(rendering: *Rendering, transform: nz.Transform3D(f32), box: shared.entity.ColliderShape.HalfBoxExtent) void {
+fn appendBoxLines(renderer: *Renderer, transform: nz.Transform3D(f32), box: shared.entity.ColliderShape.HalfBoxExtent) void {
     const bottom_corners = [4]nz.Vec3(f32){
         .{ -box.x, -box.y, -box.z },
         .{ box.x, -box.y, -box.z },
@@ -138,8 +138,8 @@ fn appendBoxLines(rendering: *Rendering, transform: nz.Transform3D(f32), box: sh
 
     for (0..4) |corner_index| {
         const next_corner_index = (corner_index + 1) % 4;
-        appendLine(rendering, transform, bottom_corners[corner_index], bottom_corners[next_corner_index]);
-        appendLine(rendering, transform, top_corners[corner_index], top_corners[next_corner_index]);
-        appendLine(rendering, transform, bottom_corners[corner_index], top_corners[corner_index]);
+        appendLine(renderer, transform, bottom_corners[corner_index], bottom_corners[next_corner_index]);
+        appendLine(renderer, transform, top_corners[corner_index], top_corners[next_corner_index]);
+        appendLine(renderer, transform, bottom_corners[corner_index], top_corners[corner_index]);
     }
 }
