@@ -14,13 +14,9 @@ const DrawList = @import("render").DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
-pub const Options = @import("Options.zig");
 
-pub const Camera = @import("system/Camera.zig");
 pub const Chat = @import("system/Chat.zig");
-pub const Controller = @import("system/Controller.zig");
-pub const Hud = @import("system/Hud.zig");
-pub const Ui = @import("render").Ui;
+const Hud = @import("system/Hud.zig");
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
@@ -41,7 +37,6 @@ renderer: Renderer,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
-options: Options,
 request_exit: bool = false,
 
 pub const Data = struct {
@@ -71,7 +66,6 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
     errdefer self.network_manager.deinit();
-    self.options = .{};
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
 }
@@ -83,7 +77,7 @@ pub fn deinit(self: *System) void {
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
-    world.clearSession();
+    world.clear();
     self.renderer.clear();
     self.hud.resetScreen();
     switch (next) {
@@ -104,7 +98,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
     if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -126,7 +120,7 @@ pub fn update(self: *System, world: *World) !void {
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
 
-    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &self.options);
+    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &world.options);
     world.controller.resetMouseDelta();
     world.controller.mouse_wheel = 0;
 }
@@ -187,9 +181,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
 }
 
 fn applyOptions(self: *System, world: *World) !void {
-    if (self.scene == .game) world.camera.fov_rad = self.options.fov_rad;
-    world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
-    try self.window.setFullscreen(self.options.fullscreen);
+    try self.window.setFullscreen(world.options.fullscreen);
     const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
     const was_locked = self.window.pointer.constraint == .locked;
     if (wants_cursor_lock) {

@@ -447,8 +447,8 @@ fn handleCommand(
         },
         .chat_message => |chat_message| {
             const sender = world.getPtr(chat_message.id);
-            const name = if (sender != null and sender.?.player_name.len != 0)
-                sender.?.player_name
+            const name = if (sender != null and sender.?.player_name.slice().len != 0)
+                sender.?.player_name.slice()
             else
                 shared.default_player_name;
             world.chat.push(name, chat_message.text, world.elapsed_time);

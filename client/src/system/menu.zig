@@ -6,7 +6,6 @@ const World = @import("../World.zig");
 const planet_id: shared.entity.Id = @enumFromInt(1);
 const bozo_id: shared.entity.Id = @enumFromInt(2);
 
-const camera_fov_rad: f32 = 1.25;
 
 const planet_mesh_radius: u32 = 18;
 const planet_position: nz.Vec3(f32) = .{ 4.6, -16.1, -60 };
@@ -17,7 +16,7 @@ const bozo_surface_offset: f32 = 3.5;
 const bozo_scale: f32 = 4.4;
 
 pub fn populate(world: *World) void {
-    world.camera = .{ .transform = .{}, .fov_rad = camera_fov_rad };
+    world.camera = .{ .transform = .{} };
 
     world.pending_spawn.appendAssumeCapacity(.{
         .id = planet_id,

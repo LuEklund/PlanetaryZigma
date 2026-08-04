@@ -6,6 +6,7 @@ const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
+const Options = @import("Options.zig");
 const Emitter = @import("render").Emitter;
 const DrawList = @import("render").DrawList;
 
@@ -27,6 +28,7 @@ trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
 deaths: std.ArrayList(shared.entity.Id) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
+options: Options = .{},
 camera: Camera = .{},
 controller: Controller = .{},
 chat: Chat = .{},
@@ -39,13 +41,12 @@ delta_time: f32 = 0,
 fps: f32 = 0,
 go_again_pending: bool = false,
 stage: u32 = 0,
-chunk_view_distance: i32 = 1,
 prng: std.Random.DefaultPrng,
 
 pub const Entity = struct {
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
-    player_name: []const u8 = "",
+    player_name: shared.net.PlayerName = .copy(""),
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
     health: f32 = 0,
@@ -74,12 +75,6 @@ pub const Entity = struct {
         return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
 
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (self.player_name.len != 0) {
-            gpa.free(self.player_name);
-            self.player_name = "";
-        }
-    }
 };
 
 pub fn init(gpa: std.mem.Allocator) !World {
@@ -99,9 +94,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
 }
 
 pub fn deinit(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        entity.deinit(self.gpa);
-    }
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
@@ -114,11 +106,8 @@ pub fn deinit(self: *World) void {
     self.damage_events.deinit(self.gpa);
 }
 
-pub fn clearSession(self: *World) void {
+pub fn clear(self: *World) void {
     self.go_again_pending = false;
-    for (self.entities.values()) |*entity| {
-        entity.deinit(self.gpa);
-    }
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
     self.pending_spawn.clearRetainingCapacity();
@@ -167,7 +156,7 @@ pub fn flush(self: *World) !void {
         switch (entity_info.kind) {
             .player => {
                 if (entity_info.data == .player_name) {
-                    try self.setPlayerName(entity, entity_info.data.player_name.slice());
+                    setPlayerName(entity, entity_info.data.player_name.slice());
                 }
                 if (entity_info.id == self.player_id) {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
@@ -256,15 +245,9 @@ pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn setPlayerName(self: *World, entity: *Entity, name: []const u8) !void {
+pub fn setPlayerName(entity: *Entity, name: []const u8) void {
     var name_buffer: [shared.max_player_name_len]u8 = undefined;
-    const sanitized = sanitizePlayerName(&name_buffer, name);
-    if (std.mem.eql(u8, entity.player_name, sanitized)) return;
-    if (entity.player_name.len != 0) {
-        self.gpa.free(entity.player_name);
-        entity.player_name = "";
-    }
-    entity.player_name = if (sanitized.len == 0) "" else try self.gpa.dupe(u8, sanitized);
+    entity.player_name = .copy(sanitizePlayerName(&name_buffer, name));
 }
 
 fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
@@ -279,6 +262,5 @@ fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) 
 }
 
 pub fn despawn(self: *World, id: shared.entity.Id) bool {
-    if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
 }

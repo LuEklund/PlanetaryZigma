@@ -10,7 +10,6 @@ const Options = @import("../Options.zig");
 const Vec3 = nz.Vec3(f32);
 const Quat = nz.quat.Hamiltonian(f32);
 
-fov_rad: f32 = 1.5,
 transform: nz.Transform3D(f32) = .{},
 
 yaw_rotation: Quat = .identity,
@@ -25,12 +24,12 @@ pub const arm_ease_speed: f32 = 4;
 pub const near: f32 = 0.01;
 pub const far: f32 = 1000;
 
-pub fn viewProj(self: *const Camera, aspect: f32) nz.Mat4x4(f32) {
+pub fn viewProj(self: *const Camera, fov_rad: f32, aspect: f32) nz.Mat4x4(f32) {
     const inv_rotation = self.transform.rotation.conjugate().toMat4x4();
     const inv_translation = nz.Mat4x4(f32).translate(-self.transform.position);
     const view = inv_rotation.mul(inv_translation);
 
-    const f = 1.0 / std.math.tan(self.fov_rad / 2.0);
+    const f = 1.0 / std.math.tan(fov_rad / 2.0);
     const proj: nz.Mat4x4(f32) = .new(.{
         f / aspect, 0, 0, 0,
         0, -f, 0,                           0, // flip Y for Vulkan

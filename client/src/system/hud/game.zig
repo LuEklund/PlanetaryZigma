@@ -426,7 +426,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
     const bar_height: f32 = 4;
     const bar_reference_distance: f32 = 20;
     const camera_position = world.camera.transform.position;
-    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_height);
+    const view_proj = world.camera.viewProj(world.options.fov_rad, ui.screen_width / ui.screen_height);
     for (world.entities.values()) |*entity| {
         var bar_min_scale: f32 = 0.35;
         var bar_max_scale: f32 = 1;
@@ -462,7 +462,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
 }
 
 fn addDamagePopups(world: *World, ui: *Ui, damage_popups: *const DamagePopup.List) void {
-    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_height);
+    const view_proj = world.camera.viewProj(world.options.fov_rad, ui.screen_width / ui.screen_height);
     for (damage_popups.items()) |popup| {
         const up = shared.planet.up(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
@@ -486,13 +486,13 @@ fn addNameTags(world: *World, ui: *Ui) void {
     const label_size: f32 = 18;
     const padding_x: f32 = 8;
     const padding_y: f32 = 3;
-    const view_proj = world.camera.viewProj(ui.screen_width / ui.screen_height);
+    const view_proj = world.camera.viewProj(world.options.fov_rad, ui.screen_width / ui.screen_height);
 
     for (world.entities.values()) |*entity| {
         if (entity.kind != .player or entity.id == world.player_id) continue;
 
-        const name = if (entity.player_name.len != 0)
-            entity.player_name
+        const name = if (entity.player_name.slice().len != 0)
+            entity.player_name.slice()
         else
             ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
 
