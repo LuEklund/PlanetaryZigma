@@ -69,11 +69,11 @@ pub fn deinit(self: *Animator) void {
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(loader: *ModelTable, instance: *const Instance) ?*Model {
-    return loader.modelPtr(instance.model_handle orelse return null);
+fn resolveModel(models: *ModelTable, instance: *const Instance) ?*Model {
+    return models.modelPtr(instance.model_handle orelse return null);
 }
 
-pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, loader: *ModelTable) !void {
+pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *ModelTable) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.seen = false;
@@ -82,14 +82,14 @@ pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, lo
         instance.is_dying = true;
         instance.state = .death;
     }
-    try self.applyReloads(loader);
+    try self.applyReloads(models);
 }
 
-pub fn observe(self: *Animator, entity: Entity, loader: *ModelTable) !void {
+pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
     if (shared.entity.modelSpec(entity.kind) == null) return;
     if (!self.instances.contains(entity.id)) {
         const handle = ModelTable.handleForKind(entity.kind);
-        const model = if (handle) |model_handle| loader.modelPtr(model_handle) else null;
+        const model = if (handle) |model_handle| models.modelPtr(model_handle) else null;
         if (model) |file_model| if (file_model.isEmpty()) {
             std.log.err("model not loaded for {s}", .{@tagName(entity.kind)});
         };
@@ -109,12 +109,12 @@ pub fn observe(self: *Animator, entity: Entity, loader: *ModelTable) !void {
     instance.state = state;
 }
 
-pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
+pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *ModelTable) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    self.applyTriggers(triggers, loader);
-    self.animate(loader);
+    self.applyTriggers(triggers, models);
+    self.animate(models);
 }
 
 pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
@@ -125,9 +125,9 @@ pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
     self.retire();
 }
 
-fn applyReloads(self: *Animator, loader: *ModelTable) !void {
-    for (loader.reloaded.items) |file_index| {
-        const reloaded_model = &loader.models[file_index];
+fn applyReloads(self: *Animator, models: *ModelTable) !void {
+    for (models.reloaded.items) |file_index| {
+        const reloaded_model = &models.models[file_index];
         var instance_iterator = self.instances.valueIterator();
         while (instance_iterator.next()) |instance| {
             const handle = instance.model_handle orelse continue;
@@ -138,7 +138,7 @@ fn applyReloads(self: *Animator, loader: *ModelTable) !void {
             instance.death_duration = reloaded_model.death_duration;
         }
     }
-    loader.reloaded.clearRetainingCapacity();
+    models.reloaded.clearRetainingCapacity();
 }
 
 pub fn clear(self: *Animator) void {
@@ -162,17 +162,17 @@ fn retire(self: *Animator) void {
     }
 }
 
-fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, loader: *ModelTable) void {
+fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *ModelTable) void {
     for (triggers) |trigger| {
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = resolveModel(loader, instance) orelse continue;
+        const model = resolveModel(models, instance) orelse continue;
         const clip_index = model.state_clips.get(trigger.state) orelse continue;
         skeleton.playOverlay(model, clip_index);
     }
 }
 
-fn animate(self: *Animator, loader: *ModelTable) void {
+fn animate(self: *Animator, models: *ModelTable) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
@@ -185,12 +185,12 @@ fn animate(self: *Animator, loader: *ModelTable) void {
             instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawn_duration);
             instance.spin_time += self.frame.delta_time;
         }
-        const model = resolveModel(loader, instance) orelse continue;
+        const model = resolveModel(models, instance) orelse continue;
         playAnimation(self.frame, entry.key_ptr.*, instance, model);
     }
 }
 
-fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void {
+fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
@@ -220,12 +220,12 @@ fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void
         if (instance.skeleton) |*instance_skeleton| {
             var skin_offsets: [max_skins]u32 = undefined;
             for (instance_skeleton.joint_matrices, 0..) |matrices, skin_index| {
-                skin_offsets[skin_index] = @intCast(packet.joint_matrices.items.len);
-                packet.joint_matrices.appendSliceAssumeCapacity(matrices);
+                skin_offsets[skin_index] = @intCast(list.joint_matrices.items.len);
+                list.joint_matrices.appendSliceAssumeCapacity(matrices);
             }
             for (instance_skeleton.nodes) |node| {
                 const mesh_id = node.mesh_id orelse continue;
-                packet.draw_models.appendAssumeCapacity(.{
+                list.draw_models.appendAssumeCapacity(.{
                     .kind = instance.kind,
                     .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
                     .position = instance.transform.position,
@@ -234,7 +234,7 @@ fn appendDraws(self: *Animator, packet: *DrawList, emitters: *Emitter.List) void
                 });
             }
         } else {
-            packet.draw_models.appendAssumeCapacity(.{
+            list.draw_models.appendAssumeCapacity(.{
                 .kind = instance.kind,
                 .model_matrix = top_matrix,
                 .position = instance.transform.position,

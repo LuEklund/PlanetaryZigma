@@ -19,7 +19,7 @@ draw_sky: bool,
 draw_models: std.ArrayList(DrawModel),
 joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
-emitters: std.ArrayList(PacketEmitter),
+emitters: std.ArrayList(DrawEmitter),
 ui: UiLayer,
 planet: ?PlanetState,
 surface_width: u32,
@@ -45,7 +45,7 @@ pub const Line = struct {
     color: [4]f32,
 };
 
-pub const PacketEmitter = struct {
+pub const DrawEmitter = struct {
     effect: Shader.Kind,
     origin: nz.Vec3(f32),
     target: nz.Vec3(f32),

@@ -188,7 +188,7 @@ pub fn flush(self: *World) !void {
     self.pending_healths.clearRetainingCapacity();
 
     for (self.pending_inventory.items) |command| {
-        if (self.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
+        if (self.getPtr(command.id)) |entity| applyInventory(entity, command);
     }
     self.pending_inventory.clearRetainingCapacity();
 
@@ -204,6 +204,14 @@ pub fn flush(self: *World) !void {
         }
         _ = self.despawn(id);
     }
+}
+
+pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
+    self.pending_spawn.appendAssumeCapacity(spawn_entity);
+}
+
+pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {
+    entity.inventory.set(command.item_kind, command.set);
 }
 
 pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {

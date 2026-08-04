@@ -371,7 +371,7 @@ fn handleCommand(
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
             world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            try queueSpawn(world, .{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
+            world.queueSpawn(.{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
             world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -382,7 +382,7 @@ fn handleCommand(
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            try queueSpawn(world, spawn_entity);
+            world.queueSpawn(spawn_entity);
         },
         .despawn_entity => |despawn_entity| {
             world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
@@ -438,7 +438,7 @@ fn handleCommand(
                 world.pending_inventory.appendAssumeCapacity(inventory);
                 return;
             };
-            entity.inventory.set(inventory.item_kind, inventory.set);
+            World.applyInventory(entity, inventory);
         },
         .set_currency => |set_currency| {
             if (world.getPtr(set_currency.id)) |entity| {
@@ -456,9 +456,4 @@ fn handleCommand(
     }
 }
 
-fn queueSpawn(world: *World, spawn_entity: shared.net.SpawnEntity) !void {
-    if (world.pending_spawn.items.len >= world.pending_spawn.capacity) return error.PendingSpawnFull;
-
-    world.pending_spawn.appendAssumeCapacity(spawn_entity);
-}
 

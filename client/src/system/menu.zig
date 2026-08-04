@@ -18,7 +18,7 @@ const bozo_scale: f32 = 4.4;
 pub fn populate(world: *World) void {
     world.camera = .{ .transform = .{} };
 
-    world.pending_spawn.appendAssumeCapacity(.{
+    world.queueSpawn(.{
         .id = planet_id,
         .kind = .planet,
         .position = planet_position,
@@ -26,7 +26,7 @@ pub fn populate(world: *World) void {
     });
 
     const stand_height = @as(f32, @floatFromInt(planet_mesh_radius)) * planet_scale + bozo_surface_offset;
-    world.pending_spawn.appendAssumeCapacity(.{
+    world.queueSpawn(.{
         .id = bozo_id,
         .kind = .player,
         .position = planet_position + nz.Vec3(f32){ 0, stand_height, 0 },

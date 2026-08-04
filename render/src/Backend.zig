@@ -30,7 +30,7 @@ const Context = struct {
 pub const Table = struct {
     renderInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     renderDeinit: *const fn (*anyopaque) callconv(.c) void,
-    renderUpdate: *const fn (*anyopaque, packet: *DrawList) callconv(.c) void,
+    renderUpdate: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
     renderReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
@@ -78,9 +78,9 @@ pub const ffi = struct {
         context.vulkan.rebindProcs();
     }
 
-    pub export fn renderUpdate(handle: *anyopaque, packet: *DrawList) void {
+    pub export fn renderUpdate(handle: *anyopaque, list: *DrawList) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.update(packet) catch |err| {
+        context.vulkan.update(list) catch |err| {
             std.log.err("render update: {s}", .{@errorName(err)});
         };
     }
