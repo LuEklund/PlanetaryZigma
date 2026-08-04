@@ -136,8 +136,10 @@ pub fn update(self: *Vulkan, packet: *const DrawList) !void {
         try self.resize(self.gpa, packet.surface_width, packet.surface_height);
     }
 
-    try self.planet.collect(self.gpa, self.vma, self.device, packet.planet.anchor_position, packet.planet.view_distance, self.current_frame_inflight);
-    try self.planet.update(self.gpa, packet.planet.anchor_position, packet.planet.view_distance);
+    if (packet.planet) |planet_state| {
+        try self.planet.collect(self.gpa, self.vma, self.device, planet_state.anchor_position, planet_state.view_distance, self.current_frame_inflight);
+        try self.planet.update(self.gpa, planet_state.anchor_position, planet_state.view_distance);
+    }
 
     const current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
     const cmd_buffer = current_frame.command_buffer;
@@ -306,7 +308,6 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
 
     ext.vkCmdSetViewportWithCountEXT(cmd, 1, &viewport);
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);
-    // const tmp: i32 = @intFromFloat(elapsed_time);
     if (false) {
         ext.vkCmdSetPolygonModeEXT(cmd, c.VK_POLYGON_MODE_LINE);
         c.vkCmdSetLineWidth(cmd, 1);
@@ -555,8 +556,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawStatic(self, cmd, handle, draw_model.model_matrix);
     }
 
-    if (packet.planet.id != .none) {
-        for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, packet.planet.transform);
+    if (packet.planet) |planet_state| {
+        for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, planet_state.transform);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
@@ -877,9 +878,9 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     };
 }
 
-fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
+fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, requested: ?DrawList.PlanetState) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
-    if (state.id == .none) return self.planet.remove(gpa, self.planet.planet_id, self.current_frame_inflight);
+    const state = requested orelse return self.planet.remove(gpa, self.planet.planet_id, self.current_frame_inflight);
     if (state.id == self.planet.planet_id and state.radius == self.planet.radius) return;
     try self.planet.build(gpa, state.id, state.radius, self.current_frame_inflight);
 }

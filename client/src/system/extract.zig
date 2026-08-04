@@ -26,13 +26,7 @@ pub fn frame(world: *World, rendering: *Rendering, ui: *Ui, draw_sky: bool) !voi
             .radius = @intFromFloat(world.planet_radius),
             .anchor_position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position,
             .view_distance = @max(world.chunk_view_distance, 1),
-        } else .{
-            .id = .none,
-            .transform = .identity,
-            .radius = 0,
-            .anchor_position = @splat(0),
-            .view_distance = 1,
-        },
+        } else null,
         .surface_width = @intFromFloat(ui.screen_width),
         .surface_height = @intFromFloat(ui.screen_height),
     });

@@ -29,17 +29,18 @@ pub fn HotLib(
             self.watcher.deinit(io);
         }
 
-        pub fn rewound(self: *const Self) bool {
+        fn rewound(self: *const Self) bool {
             return self.current_generation != 0;
         }
 
-        /// A newer build is on disk, and we are not deliberately running an old one.
-        pub fn hasNewBuild(self: *Self, io: std.Io) bool {
+        fn hasNewBuild(self: *Self, io: std.Io) bool {
             if (self.rewound()) return false;
             return self.watcher.changed(io);
         }
 
-        pub fn swap(self: *Self, io: std.Io, handle: Handle) !void {
+        /// Runs the newest build if there is one. Does nothing while rewound.
+        pub fn trySwap(self: *Self, io: std.Io, handle: Handle) !void {
+            if (!self.hasNewBuild(io)) return;
             if (!try self.watcher.reload(io)) return;
             try self.commit(handle, &self.watcher.dynlib.?, 0);
         }

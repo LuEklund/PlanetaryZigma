@@ -72,7 +72,7 @@ pub const Frame = struct {
     elapsed_time: f32,
     light_color: [4]f32,
     draw_sky: bool,
-    planet: DrawList.PlanetState,
+    planet: ?DrawList.PlanetState,
     surface_width: u32,
     surface_height: u32,
 };
@@ -145,6 +145,5 @@ pub fn endFrame(self: *Rendering, elapsed_time: f32) void {
 }
 
 pub fn reloadIfChanged(self: *Rendering, io: std.Io) !void {
-    if (!self.lib.hasNewBuild(io)) return;
-    try self.lib.swap(io, self.handle);
+    try self.lib.trySwap(io, self.handle);
 }

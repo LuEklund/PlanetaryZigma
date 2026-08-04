@@ -31,13 +31,7 @@ pub fn frame(world: *World, rendering: *Rendering, camera: Camera, ui: *Ui) !voi
             .radius = @intFromFloat(world.planet_radius),
             .anchor_position = camera_position,
             .view_distance = 4,
-        } else .{
-            .id = .none,
-            .transform = .identity,
-            .radius = 0,
-            .anchor_position = @splat(0),
-            .view_distance = 1,
-        },
+        } else null,
         .surface_width = rendering.window.size.width,
         .surface_height = rendering.window.size.height,
     });

@@ -98,8 +98,8 @@ pub fn main(init: std.process.Init) !void {
 
         if (requestedGeneration(window.keyboard)) |generation| {
             system_lib.rewind(generation, system) catch |err| std.log.err("system rewind: {s}", .{@errorName(err)});
-        } else if (system_lib.hasNewBuild(io)) {
-            system_lib.swap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        } else {
+            system_lib.trySwap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
         }
     }
 }
