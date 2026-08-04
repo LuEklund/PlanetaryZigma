@@ -96,20 +96,13 @@ pub fn main(init: std.process.Init) !void {
 
         if (system_lib.symbols.systemUpdate(system, &world)) break;
 
-        if (requestedGeneration(window.keyboard)) |generation| {
+        const keypad_0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
+        for (0..10) |generation| {
+            if (window.keyboard.get(@enumFromInt(keypad_0 + generation)) != .release) continue;
             system_lib.rewind(generation, system) catch |err| std.log.err("system rewind: {s}", .{@errorName(err)});
-        } else {
-            system_lib.trySwap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
-        }
+            break;
+        } else system_lib.trySwap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
-}
-
-fn requestedGeneration(keyboard: Window.Keyboard) ?usize {
-    const keypad_0_code = @intFromEnum(Window.Keyboard.Key.keypad_0);
-    for (0..10) |generation| {
-        if (keyboard.get(@enumFromInt(keypad_0_code + generation)) == .release) return generation;
-    }
-    return null;
 }
 
 pub fn getDeltaTime(io: std.Io) f32 {
