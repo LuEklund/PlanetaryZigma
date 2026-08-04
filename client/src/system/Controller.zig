@@ -10,9 +10,6 @@ pub const MouseButton = std.meta.FieldEnum(Window.Pointer.Buttons);
 pub const Action = struct {
     id: @EnumLiteral(),
     default: Binding,
-    /// Set while held. The action's own tag names the wire bit, so there is nothing
-    /// to keep in sync — actions with no matching bit leave this false.
-    sends_input: bool = false,
     /// Sent once on press. Server-only slots; ignored outside dev mode.
     dev_command: ?shared.net.DevCommand = null,
     /// null means hard-bound: the default stands, and the options menu never lists it.
@@ -45,17 +42,17 @@ pub const Binding = union(enum) {
 };
 
 pub const actions: []const Action = &.{
-    .{ .id = .move_forward, .default = .{ .key = .w }, .sends_input = true, .bindable = .{ .label = "Move Forward" } },
-    .{ .id = .move_backward, .default = .{ .key = .s }, .sends_input = true, .bindable = .{ .label = "Move Backward" } },
-    .{ .id = .move_left, .default = .{ .key = .a }, .sends_input = true, .bindable = .{ .label = "Move Left" } },
-    .{ .id = .move_right, .default = .{ .key = .d }, .sends_input = true, .bindable = .{ .label = "Move Right" } },
-    .{ .id = .jump, .default = .{ .key = .space }, .sends_input = true, .bindable = .{ .label = "Jump" } },
-    .{ .id = .move_down, .default = .{ .key = .left_shift }, .sends_input = true, .bindable = .{ .label = "Move Down" } },
-    .{ .id = .reload, .default = .{ .key = .r }, .sends_input = true, .bindable = .{ .label = "Reload" } },
-    .{ .id = .interact, .default = .{ .key = .e }, .sends_input = true, .bindable = .{ .label = "Interact" } },
-    .{ .id = .attack, .default = .{ .mouse = .left }, .sends_input = true, .bindable = .{ .label = "Attack" } },
-    .{ .id = .aim, .default = .{ .mouse = .right }, .sends_input = true, .bindable = .{ .label = "Aim" } },
-    .{ .id = .use_equipment, .default = .{ .key = .q }, .sends_input = true, .bindable = .{ .label = "Use Equipment" } },
+    .{ .id = .move_forward, .default = .{ .key = .w }, .bindable = .{ .label = "Move Forward" } },
+    .{ .id = .move_backward, .default = .{ .key = .s }, .bindable = .{ .label = "Move Backward" } },
+    .{ .id = .move_left, .default = .{ .key = .a }, .bindable = .{ .label = "Move Left" } },
+    .{ .id = .move_right, .default = .{ .key = .d }, .bindable = .{ .label = "Move Right" } },
+    .{ .id = .jump, .default = .{ .key = .space }, .bindable = .{ .label = "Jump" } },
+    .{ .id = .move_down, .default = .{ .key = .left_shift }, .bindable = .{ .label = "Move Down" } },
+    .{ .id = .reload, .default = .{ .key = .r }, .bindable = .{ .label = "Reload" } },
+    .{ .id = .interact, .default = .{ .key = .e }, .bindable = .{ .label = "Interact" } },
+    .{ .id = .attack, .default = .{ .mouse = .left }, .bindable = .{ .label = "Attack" } },
+    .{ .id = .aim, .default = .{ .mouse = .right }, .bindable = .{ .label = "Aim" } },
+    .{ .id = .use_equipment, .default = .{ .key = .q }, .bindable = .{ .label = "Use Equipment" } },
     .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
     .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
     .{ .id = .dev_f1, .default = .{ .key = .f1 }, .dev_command = .f1 },
@@ -216,7 +213,8 @@ fn applyAction(self: *Controller, action: Kind, pressed: bool) void {
         },
         inline else => |inline_action| {
             const spec = comptime get(inline_action);
-            if (spec.sends_input) @field(self.input_map.keys, @tagName(inline_action)) = pressed;
+            const Keys = @FieldType(shared.net.Input, "keys");
+            if (@hasField(Keys, @tagName(inline_action))) @field(self.input_map.keys, @tagName(inline_action)) = pressed;
             if (spec.dev_command) |command| if (pressed) {
                 self.input_map.dev_command = command;
             };
