@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
     if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const viewer_enable = b.option(bool, "viewer", "Build the server with its own render window (default off)") orelse false;
+    const viewer_enable = b.option(bool, "viewer", "Build the server with its own render window (default ON for dev; ship passes -Dviewer=false)") orelse true;
 
     const artifacts = addServerArtifacts(b, target, optimize, tracy_enable, viewer_enable);
     installServerArtifacts(b, b.getInstallStep(), artifacts, target, tracy_enable);

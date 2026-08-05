@@ -107,20 +107,20 @@ pub fn build(b: *std.Build) void {
 
 fn compileShaders(b: *std.Build) *std.Build.Step {
     const io = b.graph.io;
-    var dir = b.build_root.handle.openDir(io, "assets/shaders", .{ .iterate = true }) catch @panic("assets/shaders not found");
+    var dir = b.build_root.handle.openDir(io, "../assets/shaders", .{ .iterate = true }) catch @panic("../assets/shaders not found");
     defer dir.close(io);
     const usf = b.addUpdateSourceFiles();
-    var walker = dir.walk(b.allocator) catch @panic("walk assets/shaders");
+    var walker = dir.walk(b.allocator) catch @panic("walk ../assets/shaders");
     defer walker.deinit();
-    while (walker.next(io) catch @panic("walk assets/shaders")) |entry| {
+    while (walker.next(io) catch @panic("walk ../assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
         const cmd = b.addSystemCommand(&.{"slangc"});
-        cmd.addFileArg(b.path(b.fmt("assets/shaders/{s}", .{entry.path})));
+        cmd.addFileArg(b.path(b.fmt("../assets/shaders/{s}", .{entry.path})));
         cmd.addArgs(&.{ "-target", "spirv" });
         cmd.addArg("-o");
         const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
-        usf.addCopyFileToSource(spv, b.fmt("assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
+        usf.addCopyFileToSource(spv, b.fmt("../assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
     return &usf.step;

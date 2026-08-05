@@ -10,11 +10,15 @@ pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void 
     // The wire carries the client's real camera; `Entity.camera` holds only the yaw
     // the sim needs for movement.
     const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
-    const camera_position: nz.Vec3(f32) = if (followed) |player| player.controller.input.camera_position else camera.position;
-    const camera_rotation: nz.quat.Hamiltonian(f32) = if (followed) |player|
-        .fromVec(player.controller.input.camera_rotation)
-    else
-        camera.rotation();
+    var camera_position: nz.Vec3(f32) = camera.position;
+    var camera_rotation: nz.quat.Hamiltonian(f32) = camera.rotation();
+    if (followed) |player| {
+        const planet_up = shared.Planet.up(player.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+        const player_back = nz.vec.scale(player.transform.forward(), -1);
+        camera_position = player.transform.position + nz.vec.scale(planet_up, 6) + nz.vec.scale(player_back, 10);
+        const look_target = player.transform.position + nz.vec.scale(planet_up, 2);
+        camera_rotation = .lookAt(nz.vec.normalize(look_target - camera_position), planet_up);
+    }
 
     renderer.beginFrame(.{
         .camera = .{
@@ -58,6 +62,66 @@ pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void 
     renderer.advanceAnimation(&.{});
     renderer.drawAnimated();
 
+    appendNavmeshArrows(world, renderer);
+    appendChunkBorders(world, renderer);
+
     renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
     renderer.endFrame(world.elapsed_time);
+}
+
+const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };
+const navmesh_arrow_budget: usize = 100000;
+
+fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
+    const navmesh = &world.navmesh;
+    const active = navmesh.internal.active;
+    var budget: usize = navmesh_arrow_budget;
+    for (navmesh.internal.chunks.values()) |*nav_chunk| {
+        const positions = nav_chunk.graph.cells.values();
+        for (nav_chunk.next[active], 0..) |next_slot, node_index| {
+            if (next_slot == 255) continue;
+            const from = positions[node_index];
+            const neighbor = nav_chunk.graph.neighbors[node_index * shared.Planet.Chunk.NavGraph.max_neighbor_count + next_slot];
+            const to = switch (neighbor) {
+                .none => continue,
+                .boundary_edge => to: {
+                    const cell = nav_chunk.graph.cells.keys()[node_index] + shared.Planet.Chunk.NavGraph.neighbor_offsets[next_slot];
+                    const chunk_coord: shared.Planet.Chunk.Coord = .{ .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))) };
+                    const neighbor_chunk = navmesh.internal.chunks.getPtr(chunk_coord) orelse continue;
+                    const neighbor_index = neighbor_chunk.graph.cells.getIndex(cell) orelse continue;
+                    break :to neighbor_chunk.graph.cells.values()[neighbor_index];
+                },
+                _ => positions[@intFromEnum(neighbor)],
+            };
+            const lift = nz.vec.scale(nz.vec.normalize(from), 0.2);
+            renderer.drawLine(from + lift, to + lift, navmesh_arrow_color);
+            budget -= 1;
+            if (budget == 0) return;
+        }
+    }
+}
+
+const chunk_border_color: [4]f32 = .{ 1.0, 0.6, 0.1, 1 };
+
+fn appendChunkBorders(world: *World, renderer: *Renderer) void {
+    for (world.navmesh.internal.chunks.keys()) |coord| {
+        const low: nz.Vec3(f32) = @floatFromInt(shared.Planet.Chunk.min(coord));
+        const high: nz.Vec3(f32) = @floatFromInt(shared.Planet.Chunk.max(coord));
+        const corners = [8]nz.Vec3(f32){
+            .{ low[0], low[1], low[2] },
+            .{ high[0], low[1], low[2] },
+            .{ low[0], high[1], low[2] },
+            .{ high[0], high[1], low[2] },
+            .{ low[0], low[1], high[2] },
+            .{ high[0], low[1], high[2] },
+            .{ low[0], high[1], high[2] },
+            .{ high[0], high[1], high[2] },
+        };
+        const edges = [12][2]usize{
+            .{ 0, 1 }, .{ 2, 3 }, .{ 4, 5 }, .{ 6, 7 },
+            .{ 0, 2 }, .{ 1, 3 }, .{ 4, 6 }, .{ 5, 7 },
+            .{ 0, 4 }, .{ 1, 5 }, .{ 2, 6 }, .{ 3, 7 },
+        };
+        for (edges) |edge| renderer.drawLine(corners[edge[0]], corners[edge[1]], chunk_border_color);
+    }
 }

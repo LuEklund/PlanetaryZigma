@@ -406,6 +406,9 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland
             self.pointer_enter_serial = enter.serial;
 
             if (self.pointer_visible) {
+                if (self.cursor_shape_device == null) {
+                    if (self.cursor_shape_manager) |manager| self.cursor_shape_device = manager.getPointer(pointer) catch null;
+                }
                 if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.setShape(
                     enter.serial,
                     .default,
