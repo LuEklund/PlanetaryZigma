@@ -47,13 +47,6 @@ pub const DensityGrid = struct {
     resolution: usize,
     values: []f32,
 
-    pub fn init(gpa: std.mem.Allocator, planet_radius: f32, bound: f32) !DensityGrid {
-        const min_coordinate: i32 = -@as(i32, @intFromFloat(bound));
-        const origin: nz.Vec3(i32) = .{ min_coordinate, min_coordinate, min_coordinate };
-        const max_coordinate: i32 = @as(i32, @intFromFloat(bound));
-        return initRegion(gpa, planet_radius, origin, .{ max_coordinate, max_coordinate, max_coordinate });
-    }
-
     pub fn initRegion(gpa: std.mem.Allocator, planet_radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
@@ -95,7 +88,6 @@ pub const DensityGrid = struct {
     pub fn isSolidAt(self: *const DensityGrid, grid_point: nz.Vec3(i32)) bool {
         return self.densityAt(grid_point) < 0;
     }
-
 };
 
 // Extracts all density-zero surfaces: exterior terrain, caves, and tunnels.
@@ -103,17 +95,6 @@ pub const surface_nodes = struct {
     const Node = struct {
         cell: nz.Vec3(i32),
         centroid: nz.Vec3(f32),
-    };
-
-    const SliceTask = struct {
-        gpa: std.mem.Allocator,
-        density: *const DensityGrid,
-        planet_radius: f32,
-        bound: f32,
-        x_start: f32,
-        x_end: f32,
-        nodes: std.ArrayList(Node),
-        err: ?std.mem.Allocator.Error,
     };
 
     const cube_corner_offsets = [_]nz.Vec3(i32){
@@ -126,41 +107,6 @@ pub const surface_nodes = struct {
         .{ 1, 5 }, .{ 2, 3 }, .{ 2, 6 }, .{ 3, 7 },
         .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
     };
-
-    pub fn build(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, planet_radius: f32, bound: f32) !void {
-        const total_steps: usize = @intFromFloat(@ceil(2 * bound));
-        const cpu_count = std.Thread.getCpuCount() catch 1;
-        const worker_count = @max(1, @min(total_steps, cpu_count));
-
-        const tasks = try gpa.alloc(SliceTask, worker_count);
-        defer gpa.free(tasks);
-
-        const base = total_steps / worker_count;
-        const remainder = total_steps % worker_count;
-        var step_offset: usize = 0;
-        for (tasks, 0..) |*task, index| {
-            const steps = base + @as(usize, @intFromBool(index < remainder));
-            task.* = .{
-                .gpa = gpa,
-                .density = density,
-                .planet_radius = planet_radius,
-                .bound = bound,
-                .x_start = -bound + @as(f32, @floatFromInt(step_offset)),
-                .x_end = -bound + @as(f32, @floatFromInt(step_offset + steps)),
-                .nodes = .empty,
-                .err = null,
-            };
-            step_offset += steps;
-        }
-        defer for (tasks) |*task| task.nodes.deinit(gpa);
-
-        try runParallelTasks(gpa, tasks, buildSlice);
-
-        for (tasks) |*task| {
-            if (task.err) |err| return err;
-            for (task.nodes.items) |node| try node_map.put(gpa, node.cell, node.centroid);
-        }
-    }
 
     pub fn buildRegion(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
         const tracy_scope = tracy.zone(@src());
@@ -175,57 +121,6 @@ pub const surface_nodes = struct {
                 }
             }
         }
-    }
-
-    fn buildSlice(task: *SliceTask) void {
-        var x = task.x_start;
-        while (x < task.x_end) : (x += 1) {
-            var y = -task.bound;
-            while (y < task.bound) : (y += 1) {
-                var z = -task.bound;
-                while (z < task.bound) : (z += 1) {
-                    scanCell(task, x, y, z);
-                }
-            }
-        }
-    }
-
-    fn scanCell(task: *SliceTask, x: f32, y: f32, z: f32) void {
-        const cell_position: nz.Vec3(f32) = .{ x, y, z };
-        const cell_center = cell_position + @as(nz.Vec3(f32), @splat(0.5));
-        if (nz.vec.length(cell_center) > task.bound) return;
-        const cell: nz.Vec3(i32) = @intFromFloat(cell_position);
-        var checksum: u8 = 0;
-        var corners: [8]nz.Vec3(f32) = undefined;
-        var corner_sdf: [8]f32 = undefined;
-        for (0..8) |i| {
-            const corner_cell = cell + cube_corner_offsets[i];
-            corners[i] = @floatFromInt(corner_cell);
-            corner_sdf[i] = task.density.densityAt(corner_cell);
-            if (corner_sdf[i] < 0) checksum += 1;
-        }
-        if (checksum == 0 or checksum == 8) return;
-
-        var crossing_count: f32 = 0;
-        var crossing_sum: nz.Vec3(f32) = @splat(0);
-        for (cube_edges) |edge| {
-            const start_distance = corner_sdf[edge[0]];
-            const end_distance = corner_sdf[edge[1]];
-            if ((start_distance < 0.0) != (end_distance < 0.0)) {
-                crossing_count += 1;
-                const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
-                const start_weight: f32 = 1.0 - crossing_fraction;
-                const end_weight: f32 = crossing_fraction;
-                const start_corner = corners[edge[0]];
-                const end_corner = corners[edge[1]];
-                crossing_sum += nz.vec.scale(start_corner, start_weight) + nz.vec.scale(end_corner, end_weight);
-            }
-        }
-        const centroid = nz.vec.scale(crossing_sum, 1 / crossing_count);
-        task.nodes.append(task.gpa, .{ .cell = cell, .centroid = centroid }) catch |err| {
-            task.err = err;
-            return;
-        };
     }
 
     fn scanRegionCell(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell: nz.Vec3(i32)) !void {
@@ -257,22 +152,6 @@ pub const surface_nodes = struct {
         try node_map.put(gpa, cell, centroid);
     }
 };
-
-fn runParallelTasks(gpa: std.mem.Allocator, tasks: anytype, comptime worker: anytype) !void {
-    std.debug.assert(tasks.len > 0);
-    if (tasks.len == 1) {
-        worker(&tasks[0]);
-        return;
-    }
-
-    const threads = try gpa.alloc(std.Thread, tasks.len);
-    defer gpa.free(threads);
-    var spawned: usize = 0;
-    errdefer for (threads[0..spawned]) |thread| thread.join();
-    while (spawned < tasks.len) : (spawned += 1)
-        threads[spawned] = try std.Thread.spawn(.{}, worker, .{&tasks[spawned]});
-    for (threads) |thread| thread.join();
-}
 
 const grad3 = [12][3]f32{
     .{ 1, 1, 0 }, .{ -1, 1, 0 }, .{ 1, -1, 0 }, .{ -1, -1, 0 },

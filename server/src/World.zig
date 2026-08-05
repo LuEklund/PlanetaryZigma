@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Physics = @import("system/Physics.zig");
+const Navmesh = @import("system/Navmesh.zig");
 const nz = shared.numz;
 
 gpa: std.mem.Allocator,
@@ -13,6 +14,7 @@ teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet: shared.Planet,
+navmesh: Navmesh,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
@@ -162,6 +164,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
             .uploads = .empty,
             .removes = .empty,
         },
+        .navmesh = .empty,
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -184,6 +187,7 @@ pub fn deinit(self: *World) void {
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
     self.planet.deinit(self.gpa);
+    self.navmesh.deinit(self.gpa);
 }
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };

@@ -19,17 +19,17 @@ removes: std.ArrayList(Chunk.Coord),
 
 pub const Entry = struct {
     raw: Chunk.Raw,
-    mesh: Chunk.Mesh(.renderable),
+    mesh: Chunk.Mesh,
 };
 
 pub const Upload = struct {
     coord: Chunk.Coord,
-    vertices: []const Chunk.Mesh(.renderable).Vertex,
+    vertices: []const Chunk.Mesh.Vertex,
     indices: []const u32,
 };
 
 const RunningJob = struct {
-    job: Chunk.Job(.renderable),
+    job: Chunk.Job,
     planet_radius: u32,
 };
 
@@ -114,8 +114,10 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
         }
         const slot = try self.chunks.getOrPut(gpa, result.coord);
         if (slot.found_existing) {
-            slot.value_ptr.raw.deinit(gpa);
-            slot.value_ptr.mesh.deinit(gpa);
+            result.raw.deinit(gpa);
+            gpa.free(result.vertices);
+            gpa.free(result.indices);
+            continue;
         }
         slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices } };
         if (result.indices.len != 0) {
