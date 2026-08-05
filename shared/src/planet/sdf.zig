@@ -5,22 +5,22 @@ const tracy = @import("ztracy");
 pub const noise_frequency = 0.03;
 pub const noise_amplitude = 5;
 
-pub fn sdf(position: nz.Vec3(f32), radius: f32) f32 {
+pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
     const sample = nz.vec.scale(position, noise_frequency);
     const noise = simplex3(sample[0], sample[1], sample[2]) * noise_amplitude;
-    return nz.vec.length(position) - radius + noise;
+    return nz.vec.length(position) - planet_radius + noise;
 }
 
-pub fn gradient(position: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
+pub fn gradient(position: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
     const epsilon: f32 = 0.05;
     return .{
-        (sdf(position + nz.Vec3(f32){ epsilon, 0, 0 }, radius) - sdf(position - nz.Vec3(f32){ epsilon, 0, 0 }, radius)) / (2 * epsilon),
-        (sdf(position + nz.Vec3(f32){ 0, epsilon, 0 }, radius) - sdf(position - nz.Vec3(f32){ 0, epsilon, 0 }, radius)) / (2 * epsilon),
-        (sdf(position + nz.Vec3(f32){ 0, 0, epsilon }, radius) - sdf(position - nz.Vec3(f32){ 0, 0, epsilon }, radius)) / (2 * epsilon),
+        (sdf(position + nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius) - sdf(position - nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius)) / (2 * epsilon),
+        (sdf(position + nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius) - sdf(position - nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius)) / (2 * epsilon),
+        (sdf(position + nz.Vec3(f32){ 0, 0, epsilon }, planet_radius) - sdf(position - nz.Vec3(f32){ 0, 0, epsilon }, planet_radius)) / (2 * epsilon),
     };
 }
 
-pub fn sampled(position: nz.Vec3(f32), radius: f32) f32 {
+pub fn sampled(position: nz.Vec3(f32), planet_radius: f32) f32 {
     const base = @floor(position);
     const fraction = position - base;
     var values: [8]f32 = undefined;
@@ -30,7 +30,7 @@ pub fn sampled(position: nz.Vec3(f32), radius: f32) f32 {
             @floatFromInt((corner >> 1) & 1),
             @floatFromInt((corner >> 2) & 1),
         };
-        value.* = sdf(base + offset, radius);
+        value.* = sdf(base + offset, planet_radius);
     }
     const y0z0 = std.math.lerp(values[0], values[1], fraction[0]);
     const y1z0 = std.math.lerp(values[2], values[3], fraction[0]);
@@ -47,14 +47,14 @@ pub const DensityGrid = struct {
     resolution: usize,
     values: []f32,
 
-    pub fn init(gpa: std.mem.Allocator, radius: f32, bound: f32) !DensityGrid {
+    pub fn init(gpa: std.mem.Allocator, planet_radius: f32, bound: f32) !DensityGrid {
         const min_coordinate: i32 = -@as(i32, @intFromFloat(bound));
         const origin: nz.Vec3(i32) = .{ min_coordinate, min_coordinate, min_coordinate };
         const max_coordinate: i32 = @as(i32, @intFromFloat(bound));
-        return initRegion(gpa, radius, origin, .{ max_coordinate, max_coordinate, max_coordinate });
+        return initRegion(gpa, planet_radius, origin, .{ max_coordinate, max_coordinate, max_coordinate });
     }
 
-    pub fn initRegion(gpa: std.mem.Allocator, radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
+    pub fn initRegion(gpa: std.mem.Allocator, planet_radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const origin = cell_min;
@@ -72,7 +72,7 @@ pub const DensityGrid = struct {
                 for (0..resolution) |z| {
                     const z_coord: i32 = origin[2] + @as(i32, @intCast(z));
                     const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
-                    values[(x * resolution + y) * resolution + z] = sdf(position, radius);
+                    values[(x * resolution + y) * resolution + z] = sdf(position, planet_radius);
                 }
             }
         }
@@ -108,7 +108,7 @@ pub const surface_nodes = struct {
     const SliceTask = struct {
         gpa: std.mem.Allocator,
         density: *const DensityGrid,
-        radius: f32,
+        planet_radius: f32,
         bound: f32,
         x_start: f32,
         x_end: f32,
@@ -127,7 +127,7 @@ pub const surface_nodes = struct {
         .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
     };
 
-    pub fn build(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, radius: f32, bound: f32) !void {
+    pub fn build(gpa: std.mem.Allocator, node_map: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, planet_radius: f32, bound: f32) !void {
         const total_steps: usize = @intFromFloat(@ceil(2 * bound));
         const cpu_count = std.Thread.getCpuCount() catch 1;
         const worker_count = @max(1, @min(total_steps, cpu_count));
@@ -143,7 +143,7 @@ pub const surface_nodes = struct {
             task.* = .{
                 .gpa = gpa,
                 .density = density,
-                .radius = radius,
+                .planet_radius = planet_radius,
                 .bound = bound,
                 .x_start = -bound + @as(f32, @floatFromInt(step_offset)),
                 .x_end = -bound + @as(f32, @floatFromInt(step_offset + steps)),

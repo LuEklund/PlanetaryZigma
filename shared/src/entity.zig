@@ -122,11 +122,6 @@ pub fn spec(kind: Kind) Spec {
             .primary_range = 10,
             .currency = 100,
         },
-        .planet => .{
-            .collider = null,
-            .model = null,
-            .has_health = false,
-        },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
             .model = .{ .path = "objects/pillar.glb", .clip_names = null },
@@ -251,11 +246,11 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
-const all_kind_count: usize = 9 + EnemyKind.count + Item.items.len;
+const all_kind_count: usize = 8 + EnemyKind.count + Item.items.len;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;
-    kinds[0..9].* = .{ .unknown, .player, .planet, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };
-    var kind_index: usize = 9;
+    kinds[0..8].* = .{ .unknown, .player, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };
+    var kind_index: usize = 8;
     for (std.enums.values(EnemyKind)) |enemy_kind| {
         kinds[kind_index] = .{ .enemy = enemy_kind };
         kind_index += 1;
@@ -274,7 +269,6 @@ pub const Kind = union(enum) {
     enemy: EnemyKind,
     item: Item.Kind,
 
-    planet,
     teleporter,
     lootbox,
     platform,

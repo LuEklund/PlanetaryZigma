@@ -73,7 +73,7 @@ pub const Frame = struct {
     elapsed_time: f32,
     light_color: [4]f32,
     draw_sky: bool,
-    planet: ?DrawList.PlanetState,
+    planet: DrawList.PlanetState,
     surface_width: u32,
     surface_height: u32,
 };

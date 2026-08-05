@@ -1,158 +1,200 @@
+const Planet = @This();
+
 const std = @import("std");
 const nz = @import("numz");
-pub const sdf = @import("sdf.zig");
 const tracy = @import("ztracy");
-
-pub const cell_margin = 1;
+const sdf_math = @import("sdf.zig");
 
 pub const Chunk = @import("Chunk.zig");
 
+pub const cell_margin = 1;
 pub const radius_min: u32 = 15;
 pub const dev_radius_min: u32 = 1000;
 
-pub const PlanetKind = enum {
-    logical,
-    renderable,
+planet_radius: u32,
+chunks: std.AutoArrayHashMapUnmanaged(Chunk.Coord, Entry),
+job: ?RunningJob,
+uploads: std.ArrayList(Upload),
+removes: std.ArrayList(Chunk.Coord),
+
+pub const Entry = struct {
+    raw: Chunk.Raw,
+    mesh: Chunk.Mesh(.renderable),
 };
 
-pub fn Planet(kind: PlanetKind) type {
-    return struct {
-        vertices: []Vertex,
-        indices: []u32,
+pub const Upload = struct {
+    coord: Chunk.Coord,
+    vertices: []const Chunk.Mesh(.renderable).Vertex,
+    indices: []const u32,
+};
 
-        const CellRegion = struct {
-            min: nz.Vec3(i32),
-            max: nz.Vec3(i32),
+const RunningJob = struct {
+    job: Chunk.Job(.renderable),
+    planet_radius: u32,
+};
 
-            fn contains(self: CellRegion, cell: nz.Vec3(i32)) bool {
-                return @reduce(.And, cell >= self.min) and @reduce(.And, cell < self.max);
-            }
-        };
+const job_batch_max: usize = 16;
 
-        pub const Vertex = switch (kind) {
-            .logical => [4]f32,
-            .renderable => @import("../vertex.zig").StaticVertex,
-        };
+pub const empty: Planet = .{
+    .planet_radius = 0,
+    .chunks = .empty,
+    .job = null,
+    .uploads = .empty,
+    .removes = .empty,
+};
 
-        pub fn init(gpa: std.mem.Allocator, radius: u32) !@This() {
-            const radius_float: f32 = @floatFromInt(radius);
+pub fn deinit(self: *Planet, gpa: std.mem.Allocator) void {
+    if (self.job) |running| running.job.join();
+    for (self.chunks.values()) |*chunk_entry| {
+        chunk_entry.raw.deinit(gpa);
+        chunk_entry.mesh.deinit(gpa);
+    }
+    self.chunks.deinit(gpa);
+    self.uploads.deinit(gpa);
+    self.removes.deinit(gpa);
+}
 
-            var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
-            defer node_map.deinit(gpa);
-            const bound: f32 = @ceil(radius_float + sdf.noise_amplitude + cell_margin);
-            var density = try sdf.DensityGrid.init(gpa, radius_float, bound);
-            defer density.deinit(gpa);
+pub fn radiusFloat(self: *const Planet) f32 {
+    return @floatFromInt(self.planet_radius);
+}
 
-            try sdf.surface_nodes.build(gpa, &node_map, &density, radius_float, bound);
+pub fn sync(self: *Planet, gpa: std.mem.Allocator, planet_radius: u32) !void {
+    if (planet_radius == self.planet_radius) return;
+    try self.dropAllChunks(gpa);
+    self.planet_radius = planet_radius;
+}
 
-            return try buildMesh(gpa, &node_map, &density, radius_float, null);
+pub fn update(self: *Planet, gpa: std.mem.Allocator, planet_radius: u32, anchor: nz.Vec3(f32), view_distance: i32) !void {
+    self.uploads.clearRetainingCapacity();
+    self.removes.clearRetainingCapacity();
+    try self.sync(gpa, planet_radius);
+    if (self.planet_radius == 0) return;
+
+    try self.collectJob(gpa);
+
+    const anchor_chunk: Chunk.Coord = .fromPosition(anchor);
+    const small = self.planet_radius <= @as(u32, @intCast(Chunk.dim));
+
+    if (!small) {
+        var chunk_index: usize = self.chunks.count();
+        while (chunk_index > 0) {
+            chunk_index -= 1;
+            const coord = self.chunks.keys()[chunk_index];
+            if (coord.within(anchor_chunk, view_distance)) continue;
+            try self.removes.append(gpa, coord);
+            var chunk_entry = self.chunks.values()[chunk_index];
+            chunk_entry.raw.deinit(gpa);
+            chunk_entry.mesh.deinit(gpa);
+            self.chunks.swapRemoveAt(chunk_index);
         }
+    }
 
-        pub fn initChunk(gpa: std.mem.Allocator, radius: u32, chunk: Chunk.Coord) !@This() {
-            const tracy_scope = tracy.zone(@src());
-            defer tracy_scope.end();
-            const radius_float: f32 = @floatFromInt(radius);
-            const cell_min = Chunk.min(chunk);
-            const cell_max = Chunk.max(chunk);
-            const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
+    if (self.job == null) try self.startJob(gpa, anchor_chunk, view_distance, small);
+}
 
-            var density = try sdf.DensityGrid.initRegion(gpa, radius_float, apron_min, cell_max);
-            defer density.deinit(gpa);
+fn collectJob(self: *Planet, gpa: std.mem.Allocator) !void {
+    const running = self.job orelse return;
+    var results = running.job.collect() orelse return;
+    self.job = null;
+    defer results.deinit(gpa);
 
-            var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
-            defer node_map.deinit(gpa);
-            try sdf.surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, cell_max);
-
-            return try buildMesh(gpa, &node_map, &density, radius_float, .{ .min = cell_min, .max = cell_max });
+    const stale = running.planet_radius != self.planet_radius;
+    for (results.items) |*result| {
+        if (stale) {
+            result.raw.deinit(gpa);
+            gpa.free(result.vertices);
+            gpa.free(result.indices);
+            continue;
         }
-
-        fn buildMesh(gpa: std.mem.Allocator, node_map: *const std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const sdf.DensityGrid, radius: f32, owned_region: ?CellRegion) !@This() {
-            const tracy_scope = tracy.zone(@src());
-            defer tracy_scope.end();
-            var vertices: std.ArrayList(Vertex) = .empty;
-            var indices: std.ArrayList(u32) = .empty;
-
-            if (kind == .logical) {
-                for (node_map.values()) |centroid|
-                    try vertices.append(gpa, .{ centroid[0], centroid[1], centroid[2], 1 });
-            }
-
-            const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
-                .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
-                .{ .edge_axis = .{ 0, 1, 0 }, .perp_b = .{ 0, 0, 1 }, .perp_c = .{ 1, 0, 0 } },
-                .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
-            };
-            for (node_map.keys()) |cell| {
-                if (owned_region) |region| if (!region.contains(cell)) continue;
-                for (quad_axes) |quad_axis| {
-                    const edge_start_solid = density.isSolidAt(cell);
-                    const edge_end_solid = density.isSolidAt(cell + quad_axis.edge_axis);
-                    if (edge_start_solid == edge_end_solid) continue;
-
-                    const index_at_cell: u32 = @intCast(node_map.getIndex(cell) orelse continue);
-                    const index_minus_b: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b) orelse continue);
-                    const index_minus_c: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_c) orelse continue);
-                    const index_minus_bc: u32 = @intCast(node_map.getIndex(cell - quad_axis.perp_b - quad_axis.perp_c) orelse continue);
-
-                    switch (kind) {
-                        .renderable => {
-                            const centroids = node_map.values();
-                            const base_vertex_index: u32 = @intCast(vertices.items.len);
-                            try vertices.append(gpa, makeVertex(centroids[index_at_cell], .{ 0, 0 }, radius));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_b], .{ 1, 0 }, radius));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_c], .{ 0, 1 }, radius));
-                            try vertices.append(gpa, makeVertex(centroids[index_minus_bc], .{ 1, 1 }, radius));
-
-                            if (edge_start_solid) {
-                                try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
-                            } else {
-                                try indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 1, base_vertex_index + 0, base_vertex_index + 2, base_vertex_index + 3 });
-                            }
-                        },
-                        .logical => {
-                            if (edge_start_solid)
-                                try indices.appendSlice(gpa, &.{ index_at_cell, index_minus_b, index_minus_bc, index_at_cell, index_minus_bc, index_minus_c })
-                            else
-                                try indices.appendSlice(gpa, &.{ index_at_cell, index_minus_bc, index_minus_b, index_at_cell, index_minus_c, index_minus_bc });
-                        },
-                    }
-                }
-            }
-
-            const owned_vertices = try vertices.toOwnedSlice(gpa);
-            errdefer gpa.free(owned_vertices);
-            const owned_indices = try indices.toOwnedSlice(gpa);
-            return .{
-                .vertices = owned_vertices,
-                .indices = owned_indices,
-            };
+        const slot = try self.chunks.getOrPut(gpa, result.coord);
+        if (slot.found_existing) {
+            slot.value_ptr.raw.deinit(gpa);
+            slot.value_ptr.mesh.deinit(gpa);
         }
-
-        pub fn deinit(self: @This(), gpa: std.mem.Allocator) void {
-            gpa.free(self.vertices);
-            gpa.free(self.indices);
+        slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices } };
+        if (result.indices.len != 0) {
+            try self.uploads.append(gpa, .{ .coord = result.coord, .vertices = result.vertices, .indices = result.indices });
         }
+    }
+}
 
-        fn makeVertex(position: nz.Vec3(f32), uv: [2]f32, radius: f32) Vertex {
-            //logical planet: build navmesh nodes from node_map (reuse the cells + neighbours), don't generate triangles like renderable
-            return switch (kind) {
-                .logical => .{ position[0], position[1], position[2], 1 },
-                .renderable => blk: {
-                    const height = nz.vec.length(position);
-                    const height_fraction = std.math.clamp((height - radius) / 30, 0, 1);
-                    const low_color: nz.Vec3(f32) = .{ 1, 0.35, 0.2 };
-                    const high_color: nz.Vec3(f32) = .{ 0.1, 0.75, 0.6 };
-                    const color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
-                    break :blk .{
-                        .position = position,
-                        .normal = nz.vec.normalize(sdf.gradient(position, radius)),
-                        .color = .{ color[0], color[1], color[2], 1 },
-                        .uv_x = uv[0],
-                        .uv_y = uv[1],
-                    };
-                },
-            };
-        }
+fn startJob(self: *Planet, gpa: std.mem.Allocator, anchor_chunk: Chunk.Coord, view_distance: i32, small: bool) !void {
+    const clamp: ?Chunk.Box = if (small) null else .{
+        .min = anchor_chunk.offset(@splat(-view_distance)),
+        .max = anchor_chunk.offset(@splat(view_distance)),
+    };
+    const window_coords = try Chunk.coords(gpa, self.planet_radius, clamp);
+    defer gpa.free(window_coords);
+
+    var missing: std.ArrayList(Chunk.Coord) = .empty;
+    errdefer missing.deinit(gpa);
+    for (window_coords) |coord| {
+        if (!self.chunks.contains(coord)) try missing.append(gpa, coord);
+    }
+    if (missing.items.len == 0) {
+        missing.deinit(gpa);
+        return;
+    }
+    if (missing.items.len > job_batch_max) {
+        std.sort.pdq(Chunk.Coord, missing.items, anchor_chunk, closerToAnchor);
+        missing.shrinkRetainingCapacity(job_batch_max);
+    }
+    self.job = .{
+        .job = try .start(gpa, self.planet_radius, try missing.toOwnedSlice(gpa)),
+        .planet_radius = self.planet_radius,
+    };
+}
+
+fn closerToAnchor(anchor_chunk: Chunk.Coord, a: Chunk.Coord, b: Chunk.Coord) bool {
+    const delta_a = a.position - anchor_chunk.position;
+    const delta_b = b.position - anchor_chunk.position;
+    return @reduce(.Add, delta_a * delta_a) < @reduce(.Add, delta_b * delta_b);
+}
+
+fn dropAllChunks(self: *Planet, gpa: std.mem.Allocator) !void {
+    for (self.chunks.keys(), self.chunks.values()) |coord, *chunk_entry| {
+        try self.removes.append(gpa, coord);
+        chunk_entry.raw.deinit(gpa);
+        chunk_entry.mesh.deinit(gpa);
+    }
+    self.chunks.clearRetainingCapacity();
+}
+
+pub fn sdf(self: *const Planet, position: nz.Vec3(f32)) f32 {
+    return sdf_math.sdf(position, self.radiusFloat());
+}
+
+pub fn sample(self: *const Planet, position: nz.Vec3(f32)) f32 {
+    return sdf_math.sampled(position, self.radiusFloat());
+}
+
+pub fn gradient(self: *const Planet, position: nz.Vec3(f32)) nz.Vec3(f32) {
+    return sdf_math.gradient(position, self.radiusFloat());
+}
+
+pub fn surfacePoint(self: *const Planet, direction: nz.Vec3(f32)) nz.Vec3(f32) {
+    return surfacePointRadius(direction, self.radiusFloat());
+}
+
+pub fn surfacePointNear(self: *const Planet, direction: nz.Vec3(f32), min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
+    return surfacePointNearRadius(direction, self.radiusFloat(), min_distance, max_distance, random);
+}
+
+pub fn surfaceTransform(self: *const Planet, direction: nz.Vec3(f32), hover: f32) nz.Transform3D(f32) {
+    const surface = self.surfacePoint(direction);
+    const surface_up = up(surface) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
+    const dot = std.math.clamp(nz.vec.dot(default_up, surface_up), -1.0, 1.0);
+    const rotation: nz.quat.Hamiltonian(f32) = if (dot >= 0.9999) .identity else rot: {
+        const axis = if (dot > -0.9999)
+            nz.vec.normalize(nz.vec.cross(default_up, surface_up))
+        else
+            nz.Vec3(f32){ 1, 0, 0 };
+        break :rot .angleAxis(std.math.acos(dot), axis);
+    };
+    return .{
+        .position = surface + nz.vec.scale(surface_up, hover),
+        .rotation = rotation,
     };
 }
 
@@ -174,79 +216,18 @@ pub fn surfaceLaunch(position: nz.Vec3(f32), direction: nz.Vec3(f32), angle: f32
     return nz.vec.scale(launch, speed);
 }
 
-pub fn surfaceTransform(direction: nz.Vec3(f32), radius: f32, hover: f32) nz.Transform3D(f32) {
-    const surface = surfacePoint(direction, radius);
-    const surface_up = up(surface) orelse nz.Vec3(f32){ 0, 1, 0 };
-    const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
-    const dot = std.math.clamp(nz.vec.dot(default_up, surface_up), -1.0, 1.0);
-    const rotation: nz.quat.Hamiltonian(f32) = if (dot >= 0.9999) .identity else rot: {
-        const axis = if (dot > -0.9999)
-            nz.vec.normalize(nz.vec.cross(default_up, surface_up))
-        else
-            nz.Vec3(f32){ 1, 0, 0 };
-        break :rot .angleAxis(std.math.acos(dot), axis);
-    };
-    return .{
-        .position = surface + nz.vec.scale(surface_up, hover),
-        .rotation = rotation,
-    };
-}
-
-test "a surface chunk builds logical nodes" {
-    const chunk: Chunk.Coord = .{ .position = .{ 0, 0, 0 } };
-    const planet = try Planet(.logical).initChunk(std.testing.allocator, 18, chunk);
-    defer planet.deinit(std.testing.allocator);
-    try std.testing.expect(planet.vertices.len > 0);
-}
-
-test "tiled chunks emit the monolith's surface index count" {
-    const radius = 18;
-    const monolith = try Planet(.renderable).init(std.testing.allocator, radius);
-    defer monolith.deinit(std.testing.allocator);
-
-    var chunk_index_count: usize = 0;
-    const range = Chunk.range(radius);
-    var x = range.min;
-    while (x <= range.max) : (x += 1) {
-        var y = range.min;
-        while (y <= range.max) : (y += 1) {
-            var z = range.min;
-            while (z <= range.max) : (z += 1) {
-                const chunk = try Planet(.renderable).initChunk(std.testing.allocator, radius, .{ .position = .{ x, y, z } });
-                defer chunk.deinit(std.testing.allocator);
-                chunk_index_count += chunk.indices.len;
-            }
-        }
-    }
-    try std.testing.expectEqual(monolith.indices.len, chunk_index_count);
-}
-
-pub fn surfacePoint(direction: nz.Vec3(f32), radius: f32) nz.Vec3(f32) {
+fn surfacePointRadius(direction: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
     const unit_direction = nz.vec.normalize(direction);
-    var inner: f32 = @max(radius - sdf.noise_amplitude - cell_margin, 0);
-    var outer: f32 = radius + sdf.noise_amplitude + cell_margin;
+    var inner: f32 = @max(planet_radius - sdf_math.noise_amplitude - cell_margin, 0);
+    var outer: f32 = planet_radius + sdf_math.noise_amplitude + cell_margin;
     for (0..24) |_| {
         const middle = (inner + outer) * 0.5;
-        if (sdf.sdf(nz.vec.scale(unit_direction, middle), radius) < 0) inner = middle else outer = middle;
+        if (sdf_math.sdf(nz.vec.scale(unit_direction, middle), planet_radius) < 0) inner = middle else outer = middle;
     }
     return nz.vec.scale(unit_direction, (inner + outer) * 0.5);
 }
 
-test surfacePoint {
-    var prng = std.Random.DefaultPrng.init(1);
-    const random = prng.random();
-    for ([_]f32{ 8, 15, 60, 100 }) |radius| {
-        for (0..50) |_| {
-            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            const point = surfacePoint(direction, radius);
-            try std.testing.expect(@abs(sdf.sdf(point, radius)) < 0.001);
-            const near = surfacePointNear(direction, radius, 15, 25, random);
-            try std.testing.expect(@abs(sdf.sdf(near, radius)) < 0.001);
-        }
-    }
-}
-
-pub fn surfacePointNear(direction: nz.Vec3(f32), radius: f32, min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
+fn surfacePointNearRadius(direction: nz.Vec3(f32), planet_radius: f32, min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
     const unit_direction = nz.vec.normalize(direction);
     const reference: nz.Vec3(f32) = if (@abs(unit_direction[1]) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
     const tangent_a = nz.vec.normalize(nz.vec.cross(unit_direction, reference));
@@ -254,7 +235,21 @@ pub fn surfacePointNear(direction: nz.Vec3(f32), radius: f32, min_distance: f32,
     const spin = random.float(f32) * std.math.tau;
     const tangent = nz.vec.scale(tangent_a, @cos(spin)) + nz.vec.scale(tangent_b, @sin(spin));
     const distance = min_distance + random.float(f32) * (max_distance - min_distance);
-    const angle = distance / radius;
+    const angle = distance / planet_radius;
     const tilted = nz.vec.scale(unit_direction, @cos(angle)) + nz.vec.scale(tangent, @sin(angle));
-    return surfacePoint(tilted, radius);
+    return surfacePointRadius(tilted, planet_radius);
+}
+
+test surfacePoint {
+    var prng = std.Random.DefaultPrng.init(1);
+    const random = prng.random();
+    for ([_]f32{ 8, 15, 60, 100 }) |planet_radius| {
+        for (0..50) |_| {
+            const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
+            const point = surfacePointRadius(direction, planet_radius);
+            try std.testing.expect(@abs(sdf_math.sdf(point, planet_radius)) < 0.001);
+            const near = surfacePointNearRadius(direction, planet_radius, 15, 25, random);
+            try std.testing.expect(@abs(sdf_math.sdf(near, planet_radius)) < 0.001);
+        }
+    }
 }

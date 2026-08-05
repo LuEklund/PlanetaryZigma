@@ -43,7 +43,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 }
             },
             .f4 => if (world.getPtr(world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 const random = world.prng.random();
                 _ = world.spawn(.{
                     .kind = .{ .item = random.enumValue(shared.Item.Kind) },
@@ -51,7 +51,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
                         .rotation = teleporter.transform.rotation,
                     },
-                    .spawn_impulse = shared.planet.surfaceLaunch(
+                    .spawn_impulse = shared.Planet.surfaceLaunch(
                         teleporter.transform.position,
                         nz.vec.randomUnitVector(nz.Vec3(f32), world.prng.random()),
                         system.World.item_launch_angle,
@@ -69,7 +69,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                 player.flags.invincible = !player.flags.invincible;
             },
             .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
+                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
                 Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, 10));
             },
             .f9 => world.start_round_requested = true,
@@ -117,7 +117,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                     const random = world.prng.random();
                     var item_kind = random.enumValue(shared.Item.Kind);
                     if (item_kind == .lightning) item_kind = .oxygen_tank;
-                    const chest_up = shared.planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                    const chest_up = shared.Planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = try world.spawn(.{
                         .kind = .{ .item = item_kind },
                         .transform = .{
@@ -135,7 +135,7 @@ pub fn update(world: *World, physics: *Physics) !void {
                         teleporter.state = .active;
                         world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                        const boss_surface = shared.planet.surfacePointNear(entity.transform.position, world.planet_radius, 15, 25, world.prng.random());
+                        const boss_surface = world.planet.surfacePointNear(entity.transform.position, 15, 25, world.prng.random());
                         _ = try world.spawn(.{
                             .kind = .{ .enemy = .bloorp_lord },
                             .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
@@ -192,7 +192,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             player.last_attack = world.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = aimPoint(physics, world.planet_radius, transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(physics, &world.planet, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = player.stat(.rocket_chance);
             const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
@@ -217,7 +217,7 @@ pub fn update(world: *World, physics: *Physics) !void {
     }
 }
 
-fn aimPoint(physics: *Physics, planet_radius: f32, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(physics: *Physics, planet: *const shared.Planet, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
@@ -228,7 +228,7 @@ fn aimPoint(physics: *Physics, planet_radius: f32, player_position: nz.Vec3(f32)
     var traveled: f32 = 0;
     for (0..128) |_| {
         const sample = ray_start + nz.vec.scale(camera_forward, traveled);
-        const distance = shared.planet.sdf.sampled(sample, planet_radius);
+        const distance = planet.sample(sample);
         if (distance < 0.05) {
             terrain_distance = traveled;
             break;

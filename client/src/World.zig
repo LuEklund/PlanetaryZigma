@@ -34,8 +34,8 @@ controller: Controller = .{},
 chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
-planet_id: shared.entity.Id = .none,
 planet_radius: f32 = 0,
+planet: shared.Planet = .empty,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
 fps: f32 = 0,
@@ -103,6 +103,7 @@ pub fn deinit(self: *World) void {
     self.deaths.deinit(self.gpa);
     self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
+    self.planet.deinit(self.gpa);
 }
 
 pub fn clear(self: *World) void {
@@ -126,7 +127,6 @@ pub fn clear(self: *World) void {
     self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
-    self.planet_id = .none;
     self.planet_radius = 0;
     self.stage = 0;
 }
@@ -161,12 +161,6 @@ pub fn flush(self: *World) !void {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
                     self.controller.free_camera = false;
                 }
-            },
-            .planet => {
-                const radius: u32 = entity_info.data.planet_radius;
-                self.planet_id = entity.id;
-                self.planet_radius = @floatFromInt(radius);
-                std.log.info("SPAWNED: Planet {d}", .{radius});
             },
             .projectile_cube => entity.transform.scale = @splat(0.3),
             .projectile_rocket => entity.transform.scale = @splat(0.9),

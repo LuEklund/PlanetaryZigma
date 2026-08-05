@@ -9,8 +9,6 @@ const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
 pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void {
-    const planet_entity = world.getPtr(world.planet_id);
-
     renderer.beginFrame(.{
         .camera = .{
             .position = world.camera.transform.position,
@@ -20,13 +18,10 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
         .elapsed_time = world.elapsed_time,
         .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 },
         .draw_sky = draw_sky,
-        .planet = if (planet_entity) |planet| .{
-            .id = planet.id,
-            .transform = planet.transform.toMat4x4(),
-            .radius = @intFromFloat(world.planet_radius),
-            .anchor_position = if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position,
-            .view_distance = @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
-        } else null,
+        .planet = .{
+            .uploads = world.planet.uploads.items,
+            .removes = world.planet.removes.items,
+        },
         .surface_width = @intFromFloat(ui.screen_width),
         .surface_height = @intFromFloat(ui.screen_height),
     });

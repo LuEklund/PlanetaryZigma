@@ -46,8 +46,7 @@ pub fn updateDirector(world: *World) !void {
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {
-                const radius_float = world.planet_radius;
-                const surface = shared.planet.surfacePointNear(player.transform.position, radius_float, enemy_min_spawn_distance, enemy_max_spawn_distance, random);
+                const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, enemy_max_spawn_distance, random);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (world.spawn(.{
                     .kind = .{ .enemy = enemy_kind },
@@ -106,14 +105,14 @@ pub fn updateEnemies(world: *World) !void {
         const distance_to_player = nz.vec.length(to_player);
 
         if (distance_to_player > enemy_max_spawn_distance * 1.7) {
-            const surface = shared.planet.surfacePointNear(player.transform.position, world.planet_radius, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
+            const surface = world.planet.surfacePointNear(player.transform.position, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
             const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
             enemy.transform.position = leash_position;
             Physics.setPosition(body_id, leash_position);
             continue;
         }
 
-        const planet_up = shared.planet.up(enemy.transform.position) orelse continue;
+        const planet_up = shared.Planet.up(enemy.transform.position) orelse continue;
 
         const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
         if (nz.vec.length(fwd_proj) > 0.0001) {
@@ -159,7 +158,7 @@ pub fn updateEnemies(world: *World) !void {
             },
             .bloorp_lord => {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(enemy, chase_dir, speed, world.planet_radius, 14, world.delta_time);
+                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 14, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     _ = world.spawn(.{
                         .kind = .{ .enemy = .tubloid },
@@ -184,7 +183,7 @@ pub fn updateEnemies(world: *World) !void {
             },
             .blooploid => {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(enemy, chase_dir, speed, world.planet_radius, 7, world.delta_time);
+                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -228,7 +227,7 @@ pub fn updateProjectiles(world: *World, physics: *Physics) void {
     for (world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
         entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
         const travel = entity.transform.position - previous_position;
 
@@ -239,7 +238,7 @@ pub fn updateProjectiles(world: *World, physics: *Physics) void {
             Physics.c.b3DefaultQueryFilter(),
         );
         if (!ray_hit.hit) {
-            if (shared.planet.sdf.sampled(entity.transform.position, world.planet_radius) < 0) {
+            if (world.planet.sample(entity.transform.position) < 0) {
                 if (world.getPtr(entity.owner_id)) |owner_entity| {
                     switch (projectile_kind) {
                         .cube => {},

@@ -98,7 +98,7 @@ pub fn update(self: *Camera, world: *World, options: *const Options) void {
         const pivot = player.transform.position + self.yaw_rotation.rotateVec(.{ self.boom_offset[0], self.boom_offset[1], 0 });
         const arm_direction = final_rotation.rotateVec(.{ 0, 0, 1 });
 
-        const clear_length = traceArm(pivot, arm_direction, self.boom_offset[2], world.planet_radius);
+        const clear_length = traceArm(pivot, arm_direction, self.boom_offset[2], &world.planet);
         if (clear_length < self.arm_length) {
             self.arm_length = clear_length;
         } else {
@@ -112,12 +112,12 @@ pub fn update(self: *Camera, world: *World, options: *const Options) void {
     controller.input_map.camera_position = self.transform.position;
 }
 
-fn traceArm(pivot: Vec3, direction: Vec3, max_length: f32, planet_radius: f32) f32 {
-    if (planet_radius <= 0) return max_length;
+fn traceArm(pivot: Vec3, direction: Vec3, max_length: f32, planet: *const shared.Planet) f32 {
+    if (planet.planet_radius == 0) return max_length;
     var distance: f32 = 0;
     for (0..32) |_| {
         if (distance >= max_length) return max_length;
-        const clearance = shared.planet.sdf.sdf(pivot + nz.vec.scale(direction, distance), planet_radius) - camera_padding;
+        const clearance = planet.sdf(pivot + nz.vec.scale(direction, distance)) - camera_padding;
         if (clearance <= 0.01) return distance;
         distance += clearance;
     }
