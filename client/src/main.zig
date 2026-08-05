@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
         accumulated_time += delta_time;
         fps_window_seconds += delta_time;
         if (accumulated_time < time_step) {
-            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
+            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch |err| std.log.err("main loop sleep: {s}", .{@errorName(err)});
             continue;
         }
         accumulated_time -= time_step;
