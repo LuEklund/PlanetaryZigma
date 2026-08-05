@@ -29,7 +29,7 @@ pub const Kind = enum {
 pub fn Product(kind: Kind) type {
     return switch (kind) {
         .mesh => Mesh,
-        .navmesh => Navmesh,
+        .navmesh => NavGraph,
     };
 }
 
@@ -45,7 +45,7 @@ pub fn generate(comptime kind: Kind, gpa: std.mem.Allocator, raw: *const Raw, pl
         mesh_vertices.deinit(gpa);
         mesh_indices.deinit(gpa);
     };
-    var nav: Navmesh = if (kind == .navmesh) try Navmesh.prepare(gpa, raw, owned) else undefined;
+    var nav: NavGraph = if (kind == .navmesh) try NavGraph.prepare(gpa, raw, owned) else undefined;
     errdefer if (kind == .navmesh) nav.deinit(gpa);
 
     for (raw.node_map.keys()) |anchor| {
@@ -127,85 +127,67 @@ fn makeVertex(position: nz.Vec3(f32), uv: [2]f32, planet_radius: f32) Mesh.Verte
     };
 }
 
-pub const Navmesh = struct {
-    cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), void),
-    positions: []nz.Vec3(f32),
-    neighbors: []u16,
+pub const NavGraph = struct {
+    cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
+    neighbors: []Neighbor,
     weights: []f32,
-    cost: [2][]f32,
-    next: [2][]u8,
 
-    pub const no_next: u8 = 255;
+    pub const Neighbor = enum(u16) {
+        boundary_edge = 0xFFFE,
+        none = 0xFFFF,
+        _,
+    };
 
-    pub const slot_count: usize = 12;
-    pub const no_neighbor: u16 = 0xFFFF;
-    pub const cross_neighbor: u16 = 0xFFFE;
+    pub const max_neighbor_count: usize = 12;
 
-    pub const neighbor_offsets = [slot_count]nz.Vec3(i32){
+    pub const neighbor_offsets = [max_neighbor_count]nz.Vec3(i32){
         .{ 1, 0, 0 }, .{ -1, 0, 0 },  .{ 0, 1, 0 }, .{ 0, -1, 0 },
         .{ 0, 0, 1 }, .{ 0, 0, -1 },  .{ 1, 1, 0 }, .{ -1, -1, 0 },
         .{ 0, 1, 1 }, .{ 0, -1, -1 }, .{ 1, 0, 1 }, .{ -1, 0, -1 },
     };
 
-    fn prepare(gpa: std.mem.Allocator, raw: *const Raw, owned: CellRegion) !Navmesh {
-        var cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), void) = .empty;
+    fn prepare(gpa: std.mem.Allocator, raw: *const Raw, owned: CellRegion) !NavGraph {
+        var cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
         errdefer cells.deinit(gpa);
-        for (raw.node_map.keys()) |cell| {
-            if (owned.contains(cell)) try cells.put(gpa, cell, {});
+        for (raw.node_map.keys(), raw.node_map.values()) |cell, position| {
+            if (owned.contains(cell)) try cells.put(gpa, cell, position);
         }
         const node_count = cells.count();
-        const positions = try gpa.alloc(nz.Vec3(f32), node_count);
-        errdefer gpa.free(positions);
-        for (cells.keys(), positions) |cell, *position| position.* = raw.node_map.get(cell).?;
-        const neighbors = try gpa.alloc(u16, node_count * slot_count);
+        const neighbors = try gpa.alloc(Neighbor, node_count * max_neighbor_count);
         errdefer gpa.free(neighbors);
-        @memset(neighbors, no_neighbor);
-        const weights = try gpa.alloc(f32, node_count * slot_count);
+        @memset(neighbors, .none);
+        const weights = try gpa.alloc(f32, node_count * max_neighbor_count);
         errdefer gpa.free(weights);
         @memset(weights, 0);
 
-        var cost: [2][]f32 = undefined;
-        var next: [2][]u8 = undefined;
-        inline for (0..2) |buffer| {
-            cost[buffer] = try gpa.alloc(f32, node_count);
-            errdefer gpa.free(cost[buffer]);
-            @memset(cost[buffer], std.math.inf(f32));
-            next[buffer] = try gpa.alloc(u8, node_count);
-            errdefer gpa.free(next[buffer]);
-            @memset(next[buffer], no_next);
-        }
-
-        return .{ .cells = cells, .positions = positions, .neighbors = neighbors, .weights = weights, .cost = cost, .next = next };
+        return .{ .cells = cells, .neighbors = neighbors, .weights = weights };
     }
 
-    pub fn deinit(self: *Navmesh, gpa: std.mem.Allocator) void {
+    pub fn deinit(self: *NavGraph, gpa: std.mem.Allocator) void {
         self.cells.deinit(gpa);
-        gpa.free(self.positions);
         gpa.free(self.neighbors);
         gpa.free(self.weights);
-        for (self.cost) |buffer| gpa.free(buffer);
-        for (self.next) |buffer| gpa.free(buffer);
     }
 
-    fn link(self: *Navmesh, raw: *const Raw, cell_a: nz.Vec3(i32), cell_b: nz.Vec3(i32)) void {
+    fn link(self: *NavGraph, raw: *const Raw, cell_a: nz.Vec3(i32), cell_b: nz.Vec3(i32)) void {
         self.linkDirected(raw, cell_a, cell_b);
         self.linkDirected(raw, cell_b, cell_a);
     }
 
-    fn linkDirected(self: *Navmesh, raw: *const Raw, from_cell: nz.Vec3(i32), to_cell: nz.Vec3(i32)) void {
+    fn linkDirected(self: *NavGraph, raw: *const Raw, from_cell: nz.Vec3(i32), to_cell: nz.Vec3(i32)) void {
         const from_index = self.cells.getIndex(from_cell) orelse return;
         const offset = to_cell - from_cell;
         const slot = for (neighbor_offsets, 0..) |candidate, candidate_slot| {
             if (@reduce(.And, candidate == offset)) break candidate_slot;
         } else unreachable;
-        const entry_index = from_index * slot_count + slot;
-        if (self.neighbors[entry_index] != no_neighbor) return;
-        const from_position = self.positions[from_index];
+        const entry_index = from_index * max_neighbor_count + slot;
+        if (self.neighbors[entry_index] != .none) return;
+        const from_position = self.cells.values()[from_index];
         const to_position = raw.node_map.get(to_cell).?;
         const step = from_position - to_position;
         const distance = nz.vec.length(step);
         const slope = nz.vec.dot(nz.vec.scale(step, 1.0 / distance), nz.vec.normalize(to_position));
-        self.neighbors[entry_index] = if (self.cells.getIndex(to_cell)) |to_index| @intCast(to_index) else cross_neighbor;
+        self.neighbors[entry_index] = if (self.cells.getIndex(to_cell)) |to_index| @enumFromInt(to_index) else .boundary_edge;
         self.weights[entry_index] = distance * (1 + @max(0, slope));
     }
 };

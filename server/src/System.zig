@@ -119,6 +119,7 @@ pub fn update(self: *System, world: *World) !void {
         anchor_count += 1;
     }
     try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], nav_reach);
+    try world.navmesh.update(world);
     try self.draw(world);
 }
 
