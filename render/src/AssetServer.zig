@@ -38,8 +38,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !AssetServer {
     const asset_paths: []const [:0]const u8 = &.{
         "assets",
         "../assets",
-        "../../assets",
-        "../client/assets",
+        "../../../assets",
     };
 
     const assets_path: [:0]const u8 = path: for (asset_paths) |path| {
