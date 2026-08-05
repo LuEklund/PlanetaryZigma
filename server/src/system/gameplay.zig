@@ -40,7 +40,8 @@ pub fn updateDirector(world: *World) !void {
             // 61...75 => .hunkloid,
             // 76...90 => .blooploid,
             // else => .bloorp_lord,
-            else => .acorn,
+            0...50 => .tubloid,
+            else => .healer,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -204,19 +205,40 @@ pub fn updateEnemies(world: *World) !void {
                 Physics.faceOnPlanet(enemy, -to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
-                // for (world.entities.values()) |*acorn| {
-                //     if (acorn.kind != .enemy or acorn.kind.enemy != .acorn or acorn.id == enemy.id) continue;
-                //     if (nz.vec.distance(acorn.transform.position, enemy.transform.position) > 2) continue;
-                //     if (nz.vec.dot(enemy.transform.scale, enemy.transform.scale) >= nz.vec.dot(acorn.transform.scale, acorn.transform.scale)) {
-                //         world.queueDespawn(acorn.id);
-                //         acorn.flags.is_dead = true;
-                //         enemy.transform.scale += acorn.transform.scale;
-                //     } else {
-                //         world.queueDespawn(enemy.id);
-                //         enemy.flags.is_dead = true;
-                //         acorn.transform.scale += enemy.transform.scale;
-                //     }
-                // }
+                if (world.elapsed_time > 5) {
+                    _ = world.spawn(.{ .kind = .{ .enemy = .grass1 }, .transform = enemy.transform }) catch continue;
+                    _ = world.removeHealth(enemy, enemy.stat(.health), null);
+                }
+            },
+            .grass1 => {
+                Physics.faceOnPlanet(enemy, to_player);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                if (attackLands(world, enemy, player, .attack)) {
+                    _ = world.removeHealth(player, damage, enemy);
+                }
+            },
+            .healer => {
+                Physics.faceOnPlanet(enemy, to_player);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
+                if (attackLands(world, enemy, player, .attack)) {
+                    //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
+                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
+                    _ = try world.spawn(.{
+                        .kind = .projectile_cube,
+                        .owner_id = enemy.id,
+                        .transform = .{
+                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                        },
+                        .replicated_velocity = muzzle_velocity,
+                        .lifetime = 2,
+                        .damage = damage,
+                    });
+                }
             },
         }
     }
