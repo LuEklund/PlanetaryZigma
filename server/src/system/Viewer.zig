@@ -43,7 +43,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     try window.poll(.{ .text = null });
 
     if (window.keyboard.get(.escape) == .press) self.menu_open = !self.menu_open;
-    if (self.menu_open or !window.focused) {
+    if (self.menu_open or !window.focused or !window.pointer.buttons.right) {
         try window.setPointerRelative(false);
         try window.setPointerConstraint(.none);
         try window.setPointerVisible(true);
@@ -51,8 +51,8 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         try window.setPointerVisible(false);
         try window.setPointerConstraint(.locked);
         try window.setPointerRelative(true);
-        self.camera.update(window, world.delta_time, world.players.items);
     }
+    if (!self.menu_open and window.focused) self.camera.update(window, world.delta_time, world.players.items);
 
     self.ui.screen_width = @floatFromInt(window.size.width);
     self.ui.screen_height = @floatFromInt(window.size.height);

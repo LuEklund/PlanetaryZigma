@@ -127,6 +127,12 @@ fn reload(self: *System, pre_reload: bool) !void {
     // The fresh .so has its own copy of shared's globals, so without this every log
     // line after a swap comes out of a null io and loses its timestamp.
     if (!pre_reload) shared.log_io = self.io;
+    if (pre_reload) {
+        if (self.world.navmesh.worker) |thread| {
+            thread.join();
+            self.world.navmesh.worker = null;
+        }
+    }
     try self.physics.reload(pre_reload, self.world);
 }
 

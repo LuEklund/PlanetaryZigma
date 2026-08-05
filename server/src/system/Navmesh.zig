@@ -192,7 +192,7 @@ fn collectSeeds(self: *const Navmesh, planet: *const shared.Planet, out: *[share
 }
 
 fn needsRebuild(self: *Navmesh, world: *World) bool {
-    if (self.internal.chunks.count() == 0 and world.planet.chunks.count() != 0) return true;
+    if (self.internal.chunks.count() != world.planet.chunks.count()) return true;
     var player_index: usize = 0;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
