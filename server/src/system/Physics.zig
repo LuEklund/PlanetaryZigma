@@ -302,6 +302,16 @@ pub fn setLinearVelocity(body_id: c.b3BodyId, velocity: nz.Vec3(f32)) void {
     c.b3Body_SetLinearVelocity(body_id, toB3(velocity));
 }
 
+pub fn faceOnPlanet(entity: *system.Entity, direction: nz.Vec3(f32)) void {
+    const body_id = entity.collider.body_id orelse return;
+    const planet_up = nz.vec.normalize(entity.transform.position);
+    const forward_projected = direction - nz.vec.scale(planet_up, nz.vec.dot(direction, planet_up));
+    if (nz.vec.length(forward_projected) <= 0.0001) return;
+    const forward = nz.vec.normalize(forward_projected);
+    const rotation = nz.quat.Hamiltonian(f32).lookAt(forward, planet_up).normalize();
+    setRotation(body_id, rotation);
+}
+
 pub fn moveOnPlanet(entity: *system.Entity, dir: nz.Vec3(f32), speed: f32, delta_time: f32) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
