@@ -14,7 +14,10 @@ pub const EnemyKind = enum(u16) {
     bloorp_lord,
     hunkloid,
     blooploid,
+
     acorn,
+    grass1,
+    healer,
     pub const count: usize = @typeInfo(EnemyKind).@"enum".fields.len;
 };
 
@@ -77,7 +80,6 @@ pub const ModelSpec = struct {
 };
 
 const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-const player_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 
 pub fn modelSpec(kind: Kind) ?ModelSpec {
@@ -104,10 +106,10 @@ pub fn spec(kind: Kind) Spec {
             .has_health = false,
         },
         .player => .{
-            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
                 .path = "objects/BenBozo.glb",
-                .offset = player_model_offset,
+                .offset = .{ .position = .{ 0, -0.5, 0 }, .rotation = face_camera },
                 .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Run",
@@ -233,6 +235,26 @@ pub fn spec(kind: Kind) Spec {
                 .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),
                 .primary_range = 2,
                 .currency = 5,
+            },
+            .grass1 => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.45, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/grass1.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
+                    .idle = "Idle",
+                    .walk = "Walk",
+                    .attack = "Attack",
+                }) },
+                .has_health = true,
+                .base_stats = .initDefault(0, .{ .health = 30, .speed = 3, .damage = 10, .primary_cooldown = 0.75 }),
+                .primary_range = 2,
+                .currency = 25,
+            },
+            .healer => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Healer.glb", .offset = enemy_model_offset, .clip_names = null },
+                .has_health = true,
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
+                .primary_range = 15,
+                .currency = 7,
             },
         },
         .item => |item_kind| .{

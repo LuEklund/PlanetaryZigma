@@ -90,7 +90,6 @@ pub fn main(init: std.process.Init) !void {
         fps_window_frames += 1;
         if (fps_window_seconds >= 0.5) {
             world.fps = @as(f32, @floatFromInt(fps_window_frames)) / fps_window_seconds;
-            std.log.debug("fps {d:.0}", .{world.fps});
             fps_window_frames = 0;
             fps_window_seconds = 0;
         }
