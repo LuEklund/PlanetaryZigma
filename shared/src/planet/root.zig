@@ -102,6 +102,9 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
     defer results.deinit(gpa);
 
     const stale = running.planet_radius != self.planet_radius;
+    var inserted: usize = 0;
+    var freed: usize = 0;
+    defer std.log.debug("planet collectJob: inserted {d} freed {d}", .{ inserted, freed });
     for (results.items) |*result| {
         const in_window = small or for (anchors) |anchor| {
             if (result.coord.within(.fromPosition(anchor), view_distance)) break true;
@@ -110,6 +113,7 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             result.raw.deinit(gpa);
             gpa.free(result.vertices);
             gpa.free(result.indices);
+            freed += 1;
             continue;
         }
         const slot = try self.chunks.getOrPut(gpa, result.coord);
@@ -117,9 +121,11 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             result.raw.deinit(gpa);
             gpa.free(result.vertices);
             gpa.free(result.indices);
+            freed += 1;
             continue;
         }
         slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices } };
+        inserted += 1;
         if (result.indices.len != 0) {
             try self.uploads.append(gpa, .{ .coord = result.coord, .vertices = result.vertices, .indices = result.indices });
         }
@@ -162,6 +168,7 @@ fn startJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32)
         std.sort.pdq(Chunk.Coord, missing.items, anchors, closerToAnchors);
         missing.shrinkRetainingCapacity(job_batch_max);
     }
+    std.log.debug("planet startJob: {d} coords", .{missing.items.len});
     self.job = .{
         .job = try .start(gpa, self.planet_radius, try missing.toOwnedSlice(gpa)),
         .planet_radius = self.planet_radius,

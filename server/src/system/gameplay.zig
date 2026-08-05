@@ -114,19 +114,13 @@ pub fn updateEnemies(world: *World) !void {
 
         const planet_up = shared.Planet.up(enemy.transform.position) orelse continue;
 
-        const fwd_proj = to_player - nz.vec.scale(planet_up, nz.vec.dot(to_player, planet_up));
-        if (nz.vec.length(fwd_proj) > 0.0001) {
-            const forward = nz.vec.normalize(fwd_proj);
-            const rot = nz.quat.Hamiltonian(f32).lookAt(forward, planet_up).normalize();
-            Physics.setRotation(body_id, rot);
-        }
-
         const forward_dir = enemy.transform.forward();
         const speed = enemy.stat(.speed);
         const damage = enemy.stat(.damage);
         const range = shared.entity.spec(enemy.kind).primary_range;
         switch (enemy.kind.enemy) {
             .tubloida => {
+                Physics.faceOnPlanet(enemy, to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
@@ -148,6 +142,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .tubloid => {
+                Physics.faceOnPlanet(enemy, to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
@@ -157,6 +152,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .bloorp_lord => {
+                Physics.faceOnPlanet(enemy, to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 14, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
@@ -168,6 +164,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .hunkloid => {
+                Physics.faceOnPlanet(enemy, to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 const utility_range = shared.entity.spec(enemy.kind).utility_range;
@@ -182,6 +179,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .blooploid => {
+                Physics.faceOnPlanet(enemy, to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
@@ -203,8 +201,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .acorn => {
+                Physics.faceOnPlanet(enemy, -to_player);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
-                Physics.moveOnPlanet(enemy, -chase_dir, speed, world.delta_time);
+                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 // for (world.entities.values()) |*acorn| {
                 //     if (acorn.kind != .enemy or acorn.kind.enemy != .acorn or acorn.id == enemy.id) continue;
                 //     if (nz.vec.distance(acorn.transform.position, enemy.transform.position) > 2) continue;
