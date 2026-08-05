@@ -247,12 +247,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
         c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
     );
-    var depth_image_barrier: Image.Barrier = .init(cmd, self.swapchain.depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
-    depth_image_barrier.transition(
-        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-    );
+
     setDefaultRenderState(self, cmd);
 
     uploadSceneData(self, current_frame, list);

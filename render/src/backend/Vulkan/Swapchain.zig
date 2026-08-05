@@ -68,7 +68,14 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
     );
-
+    const cmd = try device.beginImmediateCommand();
+    var depth_image_barrier: Image.Barrier = .init(cmd, depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    depth_image_barrier.transition(
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    );
+    try device.endImmediateCommand(cmd);
     return .{
         .swapchain = swapchain,
         .present_mode = present_mode,
@@ -185,6 +192,14 @@ pub fn recreate(
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
     );
+    const cmd = try device.beginImmediateCommand();
+    var depth_image_barrier: Image.Barrier = .init(cmd, self.depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    depth_image_barrier.transition(
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    );
+    try device.endImmediateCommand(cmd);
 }
 
 fn getPresentMode(gpa: std.mem.Allocator, physical_device: PhysicalDevice, surface: Surface) !c.VkPresentModeKHR {
