@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Physics = @import("system/Physics.zig");
+const Navmesh = @import("system/Navmesh.zig");
 const nz = shared.numz;
 
 gpa: std.mem.Allocator,
@@ -12,8 +13,8 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
-planet_radius: f32,
-planet_id: shared.entity.Id,
+planet: shared.Planet,
+navmesh: Navmesh,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
@@ -34,6 +35,7 @@ world_unstun_at: f32 = 0,
 
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
+pub const ship_planet_radius: u32 = 26;
 
 pub const item_throw_speed: f32 = 18;
 
@@ -60,6 +62,7 @@ pub const ClientUpdate = union(enum) {
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
     currency: shared.net.SetCurrency,
+    spawn_planet: u32,
 };
 
 pub const Camera = struct {
@@ -154,8 +157,14 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
-        .planet_radius = 100,
-        .planet_id = .none,
+        .planet = .{
+            .planet_radius = ship_planet_radius,
+            .chunks = .empty,
+            .job = null,
+            .uploads = .empty,
+            .removes = .empty,
+        },
+        .navmesh = .empty,
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -177,6 +186,8 @@ pub fn deinit(self: *World) void {
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
+    self.planet.deinit(self.gpa);
+    self.navmesh.deinit(self.gpa);
 }
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
@@ -302,14 +313,14 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
 fn dropBossReward(self: *World, entity: *Entity) void {
     if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, entity.id) == null) return;
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
-    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
     _ = self.spawn(.{
         .kind = .{ .item = .lightning },
         .transform = .{
             .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
             .rotation = teleporter.transform.rotation,
         },
-        .spawn_impulse = shared.planet.surfaceLaunch(
+        .spawn_impulse = shared.Planet.surfaceLaunch(
             teleporter.transform.position,
             nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
             item_launch_angle,
@@ -319,13 +330,13 @@ fn dropBossReward(self: *World, entity: *Entity) void {
 }
 
 pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
-    return nz.Vec3(f32){ 0, self.planet_radius * ship_room_altitude_factor, 0 };
+    return nz.Vec3(f32){ 0, self.planet.radiusFloat() * ship_room_altitude_factor, 0 };
 }
 
 pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
     return switch (self.place) {
         .ship => self.shipRoomPosition() + nz.Vec3(f32){ 0, ship_room_stand_height, 0 },
-        .planet => shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 },
+        .planet => self.planet.surfacePoint(.{ 0, 1, 0 }) + nz.Vec3(f32){ 0, 2, 0 },
     };
 }
 
@@ -337,19 +348,18 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     try self.flush(physics);
     const random = self.prng.random();
     self.teleporter_id = .none;
-    if (place == .planet) {
-        self.stage += 1;
-        self.planet_radius = @floatFromInt(if (self.dev_mode)
-            random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
+    if (place == .planet) self.stage += 1;
+    const spawn_planet_radius: u32 = switch (place) {
+        .ship => ship_planet_radius,
+        .planet => if (self.dev_mode)
+            random.intRangeAtMost(u32, shared.Planet.dev_radius_min, shared.Planet.dev_radius_min + 1)
         else
-            shared.planet.radius_min + (self.stage - 1) * 9);
-    }
+            shared.Planet.radius_min + (self.stage - 1) * 9,
+    };
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
-    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
-    self.planet_id = (try self.spawn(.{
-        .kind = .planet,
-        .transform = .{},
-    })).id;
+    self.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
+    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
+    try self.planet.sync(self.gpa, spawn_planet_radius);
     try self.flush(physics);
 
     switch (place) {
@@ -403,13 +413,13 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 nz.Vec3(f32){ 0, 1, 0 }
             else
                 nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            const teleporter_position = shared.planet.surfacePoint(teleporter_direction, self.planet_radius);
+            const teleporter_position = self.planet.surfacePoint(teleporter_direction);
             for (0..25) |_| {
                 const vector_direction = if (self.dev_mode)
-                    nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
+                    nz.vec.normalize(self.planet.surfacePointNear(teleporter_position, 5, 10, random))
                 else
                     nz.vec.randomUnitVector(nz.Vec3(f32), random);
-                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, 0.2);
+                const transform = self.planet.surfaceTransform(vector_direction, 0.2);
                 _ = try self.spawn(.{
                     .kind = .lootbox,
                     .transform = transform,

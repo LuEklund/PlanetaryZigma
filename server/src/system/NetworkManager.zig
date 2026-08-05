@@ -279,6 +279,8 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         const did_full_sync = client.needs_full_sync;
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
+            const full_sync_planet_radius: u32 = world.planet.planet_radius;
+            try client.sendCommand(writer, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
@@ -302,6 +304,10 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                 try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
+            },
+            .spawn_planet => |planet_radius| {
+                if (did_full_sync) continue;
+                try client.sendCommand(writer, .{ .spawn_planet = planet_radius }, .reliable);
             },
             .despawned => |id| {
                 try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
@@ -361,7 +367,6 @@ fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.
 }
 
 fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
-    if (entity.kind == .planet) std.log.debug("send planet {d}", .{world.planet_radius});
     return .{
         .id = entity.id,
         .kind = entity.kind,
@@ -371,7 +376,6 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
         .tick = world.tick,
         .currency = entity.currency,
         .data = switch (entity.kind) {
-            .planet => .{ .planet_radius = @intFromFloat(world.planet_radius) },
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
             .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform, .target_dummy => .none,

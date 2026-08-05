@@ -11,7 +11,8 @@ const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
 const ribbon_target: nz.Vec3(f32) = .{ 3, 20, 3 };
 const camera_position: nz.Vec3(f32) = .{ 0, 21, 8 };
 
-pub fn populate(world: *World) void {
+pub fn populate(world: *World) !void {
+    try world.planet.sync(world.gpa, 0);
     world.camera = .{ .transform = .{ .position = camera_position } };
 }
 

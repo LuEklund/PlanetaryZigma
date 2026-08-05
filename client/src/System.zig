@@ -81,9 +81,9 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     self.renderer.clear();
     self.hud.resetScreen();
     switch (next) {
-        .menu => menu_world.populate(world),
+        .menu => try menu_world.populate(world),
         .game => {},
-        .particle_lab => particle_lab.populate(world),
+        .particle_lab => try particle_lab.populate(world),
     }
     self.scene = next;
 }
@@ -91,12 +91,13 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+    world.planet.clearOutboxes();
     var text_buffer: [64]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
-    if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
+    if (self.scene == .menu) menu_world.update(world);
     if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
     switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
         .none => {},
@@ -113,6 +114,11 @@ pub fn update(self: *System, world: *World) !void {
     try world.flush();
     for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
 
+    try world.planet.update(
+        world.gpa,
+        &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
+        @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
+    );
     try extract.frame(world, &self.renderer, &self.hud.ui, self.scene != .particle_lab);
     self.renderer.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();

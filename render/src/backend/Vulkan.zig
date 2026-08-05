@@ -139,11 +139,6 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
         try self.resize(self.gpa, list.surface_width, list.surface_height);
     }
 
-    if (list.planet) |planet_state| {
-        try self.planet.collect(self.gpa, self.vma, self.device, planet_state.anchor_position, planet_state.view_distance, self.current_frame_inflight);
-        try self.planet.update(self.gpa, planet_state.anchor_position, planet_state.view_distance);
-    }
-
     const current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
     const cmd_buffer = current_frame.command_buffer;
 
@@ -554,9 +549,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawStatic(self, cmd, handle, draw_model.model_matrix);
     }
 
-    if (list.planet) |planet_state| {
-        for (self.planet.meshes.values()) |*maybe_mesh| if (maybe_mesh.*) |*mesh| try drawPlanetChunk(self, cmd, mesh, planet_state.transform);
-    }
+    for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, .identity);
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
     for (list.draw_models.items) |draw_model| {
@@ -876,9 +869,8 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
     };
 }
 
-fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, requested: ?DrawList.PlanetState) !void {
+fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
-    const state = requested orelse return self.planet.remove(gpa, self.planet.planet_id, self.current_frame_inflight);
-    if (state.id == self.planet.planet_id and state.radius == self.planet.radius) return;
-    try self.planet.build(gpa, state.id, state.radius, self.current_frame_inflight);
+    for (state.removes) |coord| try self.planet.remove(gpa, coord, self.current_frame_inflight);
+    for (state.uploads) |command| try self.planet.upload(gpa, self.vma, self.device, command, self.current_frame_inflight);
 }

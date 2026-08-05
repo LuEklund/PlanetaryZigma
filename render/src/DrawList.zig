@@ -21,7 +21,7 @@ joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
 ui: UiLayer,
-planet: ?PlanetState,
+planet: PlanetState,
 surface_width: u32,
 surface_height: u32,
 
@@ -59,11 +59,8 @@ pub const UiLayer = struct {
 };
 
 pub const PlanetState = struct {
-    id: shared.entity.Id,
-    transform: nz.Mat4x4(f32),
-    radius: u32,
-    anchor_position: nz.Vec3(f32),
-    view_distance: i32,
+    uploads: []const shared.Planet.Upload,
+    removes: []const shared.Planet.Chunk.Coord,
 };
 
 pub fn init(gpa: std.mem.Allocator) !DrawList {
@@ -79,7 +76,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_width = 0,
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
-        .planet = null,
+        .planet = .{ .uploads = &.{}, .removes = &.{} },
     };
 }
 

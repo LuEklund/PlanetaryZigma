@@ -441,7 +441,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
             bar_max_scale = 4;
         }
 
-        const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.Planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const bar_position = entity.transform.position + nz.vec.scale(up, 1.3 * entity.transform.scale[1]);
         const screen = ui.worldToScreen(view_proj, bar_position) orelse continue;
 
@@ -464,7 +464,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
 fn addDamagePopups(world: *World, ui: *Ui, damage_popups: *const DamagePopup.List) void {
     const view_proj = world.camera.viewProj(world.options.fov_rad, ui.screen_width / ui.screen_height);
     for (damage_popups.items()) |popup| {
-        const up = shared.planet.up(popup.position) orelse .{ 0, 1, 0 };
+        const up = shared.Planet.up(popup.position) orelse .{ 0, 1, 0 };
         const world_position = popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6);
         const screen = ui.worldToScreen(view_proj, world_position) orelse continue;
         const alpha = 1 - popup.age / DamagePopup.lifetime;
@@ -496,7 +496,7 @@ fn addNameTags(world: *World, ui: *Ui) void {
         else
             ui.print("{s} {d}", .{ shared.default_player_name, @intFromEnum(entity.id) });
 
-        const up = shared.planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
+        const up = shared.Planet.up(entity.transform.position) orelse entity.transform.rotation.rotateVec(.{ 0, 1, 0 });
         const tag_position = entity.transform.position + nz.vec.scale(up, 1.6);
         const screen = ui.worldToScreen(view_proj, tag_position) orelse continue;
         const text_size = ui.textSize(name, label_size);
@@ -526,7 +526,7 @@ fn addNameTags(world: *World, ui: *Ui) void {
     }
 }
 
-fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet_radius: f32) bool {
+fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32), planet: *const shared.Planet) bool {
     const surface_epsilon: f32 = 0.2;
     const step_safety: f32 = 0.7;
     const max_steps: usize = 48;
@@ -539,7 +539,7 @@ fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32),
     var travelled: f32 = surface_epsilon;
     for (0..max_steps) |_| {
         if (travelled >= distance_to_tag - surface_epsilon) return false;
-        const value = shared.planet.sdf.sampled(camera_position + nz.vec.scale(direction, travelled), planet_radius);
+        const value = planet.sample(camera_position + nz.vec.scale(direction, travelled));
         if (value < 0) return true;
         travelled += @max(value * step_safety, surface_epsilon);
     }

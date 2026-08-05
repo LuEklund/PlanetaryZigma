@@ -29,6 +29,7 @@ pub const ClientPacket = union(enum) {
 pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
+    spawn_planet: u32,
     despawn_entity: DespawnEntity,
     update_motion: UpdateMotion,
     server_tick: u32,
@@ -135,7 +136,6 @@ pub const SpawnEntity = struct {
 
 pub const SpawnEntityData = union(enum) {
     none: void,
-    planet_radius: u32,
     is_teleporter_boss: void,
     player_name: PlayerName,
 };

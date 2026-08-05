@@ -17,6 +17,8 @@ pub const AssetServer = if (build_options.viewer) @import("render").AssetServer 
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
+
+const nav_reach: i32 = 4;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
 
@@ -52,7 +54,7 @@ pub fn init(self: *System, data: *const Data) !void {
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();
     self.viewer = undefined;
-    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world.planet_radius);
+    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
     try data.world.loadPlace(.ship, &self.physics);
@@ -72,6 +74,7 @@ fn draw(self: *System, world: *World) !void {
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+    world.planet.clearOutboxes();
 
     switch (try self.network_manager.update(world)) {
         .running => {},
@@ -107,6 +110,15 @@ pub fn update(self: *System, world: *World) !void {
     gameplay.updateLifetimes(world);
     gameplay.playerRegen(world);
     try world.flush(&self.physics);
+
+    var anchor_buffer: [shared.max_players]nz.Vec3(f32) = undefined;
+    var anchor_count: usize = 0;
+    for (world.players.items) |player_id| {
+        const player = world.getPtr(player_id) orelse continue;
+        anchor_buffer[anchor_count] = player.transform.position;
+        anchor_count += 1;
+    }
+    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], nav_reach);
     try self.draw(world);
 }
 

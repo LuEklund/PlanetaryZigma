@@ -25,13 +25,10 @@ pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void 
         .elapsed_time = world.elapsed_time,
         .light_color = .{ 1, 1, 1, 1 },
         .draw_sky = true,
-        .planet = if (world.place == .planet) .{
-            .id = world.planet_id,
-            .transform = .identity,
-            .radius = @intFromFloat(world.planet_radius),
-            .anchor_position = camera_position,
-            .view_distance = 4,
-        } else null,
+        .planet = .{
+            .uploads = world.planet.uploads.items,
+            .removes = world.planet.removes.items,
+        },
         .surface_width = renderer.window.size.width,
         .surface_height = renderer.window.size.height,
     });
@@ -41,7 +38,7 @@ pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void 
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
         .camera_pitch = if (followed) |player| pitch: {
-            const planet_up = shared.planet.up(player.transform.position) orelse break :pitch 0;
+            const planet_up = shared.Planet.up(player.transform.position) orelse break :pitch 0;
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
