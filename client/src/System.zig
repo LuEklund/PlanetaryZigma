@@ -81,9 +81,9 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     self.renderer.clear();
     self.hud.resetScreen();
     switch (next) {
-        .menu => menu_world.populate(world),
+        .menu => try menu_world.populate(world),
         .game => {},
-        .particle_lab => particle_lab.populate(world),
+        .particle_lab => try particle_lab.populate(world),
     }
     self.scene = next;
 }
@@ -91,6 +91,7 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+    world.planet.clearOutboxes();
     var text_buffer: [64]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
@@ -115,8 +116,7 @@ pub fn update(self: *System, world: *World) !void {
 
     try world.planet.update(
         world.gpa,
-        @intFromFloat(world.planet_radius),
-        if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position,
+        &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     try extract.frame(world, &self.renderer, &self.hud.ui, self.scene != .particle_lab);

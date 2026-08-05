@@ -11,10 +11,10 @@ const camera_position: nz.Vec3(f32) = .{ -6.1, 21.5, 80 };
 const bozo_surface_offset: f32 = 4.7;
 const bozo_scale: f32 = 4.4;
 
-pub fn populate(world: *World) void {
+pub fn populate(world: *World) !void {
     world.camera = .{ .transform = .{ .position = camera_position } };
     world.controller.free_camera = false;
-    world.planet_radius = planet_radius;
+    try world.planet.sync(world.gpa, planet_radius);
 
     world.queueSpawn(.{
         .id = bozo_id,

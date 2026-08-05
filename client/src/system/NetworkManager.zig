@@ -385,7 +385,7 @@ fn handleCommand(
             world.queueSpawn(spawn_entity);
         },
         .spawn_planet => |radius| {
-            world.planet_radius = @floatFromInt(radius);
+            try world.planet.sync(world.gpa, radius);
         },
         .despawn_entity => |despawn_entity| {
             world.pending_despawn.appendAssumeCapacity(despawn_entity.id);

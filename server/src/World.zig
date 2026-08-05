@@ -12,7 +12,6 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
-planet_radius: f32,
 planet: shared.Planet,
 place: Place,
 director: Director,
@@ -34,6 +33,7 @@ world_unstun_at: f32 = 0,
 
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
+pub const ship_planet_radius: u32 = 26;
 
 pub const item_throw_speed: f32 = 18;
 
@@ -155,8 +155,13 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
-        .planet_radius = 100,
-        .planet = .empty,
+        .planet = .{
+            .planet_radius = ship_planet_radius,
+            .chunks = .empty,
+            .job = null,
+            .uploads = .empty,
+            .removes = .empty,
+        },
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -321,7 +326,7 @@ fn dropBossReward(self: *World, entity: *Entity) void {
 }
 
 pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
-    return nz.Vec3(f32){ 0, self.planet_radius * ship_room_altitude_factor, 0 };
+    return nz.Vec3(f32){ 0, self.planet.radiusFloat() * ship_room_altitude_factor, 0 };
 }
 
 pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
@@ -339,20 +344,17 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     try self.flush(physics);
     const random = self.prng.random();
     self.teleporter_id = .none;
-    if (place == .planet) {
-        self.stage += 1;
-        self.planet_radius = @floatFromInt(if (self.dev_mode)
+    if (place == .planet) self.stage += 1;
+    const spawn_planet_radius: u32 = switch (place) {
+        .ship => ship_planet_radius,
+        .planet => if (self.dev_mode)
             random.intRangeAtMost(u32, shared.Planet.dev_radius_min, shared.Planet.dev_radius_min + 1)
         else
-            shared.Planet.radius_min + (self.stage - 1) * 9);
-    }
-    const spawn_planet_radius: u32 = switch (place) {
-        .ship => 0,
-        .planet => @intFromFloat(self.planet_radius),
+            shared.Planet.radius_min + (self.stage - 1) * 9,
     };
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
     self.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
-    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
+    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
     try self.planet.sync(self.gpa, spawn_planet_radius);
     try self.flush(physics);
 

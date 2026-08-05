@@ -34,7 +34,6 @@ controller: Controller = .{},
 chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
-planet_radius: f32 = 0,
 planet: shared.Planet = .empty,
 elapsed_time: f32 = 0,
 delta_time: f32 = 0,
@@ -127,7 +126,6 @@ pub fn clear(self: *World) void {
     self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
-    self.planet_radius = 0;
     self.stage = 0;
 }
 

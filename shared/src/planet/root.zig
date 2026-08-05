@@ -64,23 +64,26 @@ pub fn sync(self: *Planet, gpa: std.mem.Allocator, planet_radius: u32) !void {
     self.planet_radius = planet_radius;
 }
 
-pub fn update(self: *Planet, gpa: std.mem.Allocator, planet_radius: u32, anchor: nz.Vec3(f32), view_distance: i32) !void {
+pub fn clearOutboxes(self: *Planet) void {
     self.uploads.clearRetainingCapacity();
     self.removes.clearRetainingCapacity();
-    try self.sync(gpa, planet_radius);
+}
+
+pub fn update(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
     if (self.planet_radius == 0) return;
 
-    try self.collectJob(gpa);
-
-    const anchor_chunk: Chunk.Coord = .fromPosition(anchor);
     const small = self.planet_radius <= @as(u32, @intCast(Chunk.dim));
+    try self.collectJob(gpa, anchors, view_distance, small);
 
     if (!small) {
         var chunk_index: usize = self.chunks.count();
         while (chunk_index > 0) {
             chunk_index -= 1;
             const coord = self.chunks.keys()[chunk_index];
-            if (coord.within(anchor_chunk, view_distance)) continue;
+            const kept = for (anchors) |anchor| {
+                if (coord.within(.fromPosition(anchor), view_distance)) break true;
+            } else false;
+            if (kept) continue;
             try self.removes.append(gpa, coord);
             var chunk_entry = self.chunks.values()[chunk_index];
             chunk_entry.raw.deinit(gpa);
@@ -89,10 +92,10 @@ pub fn update(self: *Planet, gpa: std.mem.Allocator, planet_radius: u32, anchor:
         }
     }
 
-    if (self.job == null) try self.startJob(gpa, anchor_chunk, view_distance, small);
+    if (self.job == null) try self.startJob(gpa, anchors, view_distance, small);
 }
 
-fn collectJob(self: *Planet, gpa: std.mem.Allocator) !void {
+fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32, small: bool) !void {
     const running = self.job orelse return;
     var results = running.job.collect() orelse return;
     self.job = null;
@@ -100,7 +103,10 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator) !void {
 
     const stale = running.planet_radius != self.planet_radius;
     for (results.items) |*result| {
-        if (stale) {
+        const in_window = small or for (anchors) |anchor| {
+            if (result.coord.within(.fromPosition(anchor), view_distance)) break true;
+        } else false;
+        if (stale or !in_window) {
             result.raw.deinit(gpa);
             gpa.free(result.vertices);
             gpa.free(result.indices);
@@ -118,25 +124,40 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator) !void {
     }
 }
 
-fn startJob(self: *Planet, gpa: std.mem.Allocator, anchor_chunk: Chunk.Coord, view_distance: i32, small: bool) !void {
-    const clamp: ?Chunk.Box = if (small) null else .{
-        .min = anchor_chunk.offset(@splat(-view_distance)),
-        .max = anchor_chunk.offset(@splat(view_distance)),
-    };
-    const window_coords = try Chunk.coords(gpa, self.planet_radius, clamp);
-    defer gpa.free(window_coords);
-
+fn startJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32, small: bool) !void {
     var missing: std.ArrayList(Chunk.Coord) = .empty;
     errdefer missing.deinit(gpa);
-    for (window_coords) |coord| {
-        if (!self.chunks.contains(coord)) try missing.append(gpa, coord);
+
+    if (small) {
+        const window_coords = try Chunk.coords(gpa, self.planet_radius, null);
+        defer gpa.free(window_coords);
+        for (window_coords) |coord| {
+            if (!self.chunks.contains(coord)) try missing.append(gpa, coord);
+        }
+    } else for (anchors) |anchor| {
+        const anchor_chunk: Chunk.Coord = .fromPosition(anchor);
+        const clamp: Chunk.Box = .{
+            .min = anchor_chunk.offset(@splat(-view_distance)),
+            .max = anchor_chunk.offset(@splat(view_distance)),
+        };
+        const window_coords = try Chunk.coords(gpa, self.planet_radius, clamp);
+        defer gpa.free(window_coords);
+        for (window_coords) |coord| {
+            if (self.chunks.contains(coord)) continue;
+            const seen = for (missing.items) |queued| {
+                if (queued.eql(coord)) break true;
+            } else false;
+            if (seen) continue;
+            try missing.append(gpa, coord);
+        }
     }
+
     if (missing.items.len == 0) {
         missing.deinit(gpa);
         return;
     }
     if (missing.items.len > job_batch_max) {
-        std.sort.pdq(Chunk.Coord, missing.items, anchor_chunk, closerToAnchor);
+        std.sort.pdq(Chunk.Coord, missing.items, anchors, closerToAnchors);
         missing.shrinkRetainingCapacity(job_batch_max);
     }
     self.job = .{
@@ -145,10 +166,18 @@ fn startJob(self: *Planet, gpa: std.mem.Allocator, anchor_chunk: Chunk.Coord, vi
     };
 }
 
-fn closerToAnchor(anchor_chunk: Chunk.Coord, a: Chunk.Coord, b: Chunk.Coord) bool {
-    const delta_a = a.position - anchor_chunk.position;
-    const delta_b = b.position - anchor_chunk.position;
-    return @reduce(.Add, delta_a * delta_a) < @reduce(.Add, delta_b * delta_b);
+fn closerToAnchors(anchors: []const nz.Vec3(f32), a: Chunk.Coord, b: Chunk.Coord) bool {
+    return anchorDistanceSquared(anchors, a) < anchorDistanceSquared(anchors, b);
+}
+
+fn anchorDistanceSquared(anchors: []const nz.Vec3(f32), coord: Chunk.Coord) i32 {
+    var best: i32 = std.math.maxInt(i32);
+    for (anchors) |anchor| {
+        const anchor_chunk: Chunk.Coord = .fromPosition(anchor);
+        const delta = coord.position - anchor_chunk.position;
+        best = @min(best, @reduce(.Add, delta * delta));
+    }
+    return best;
 }
 
 fn dropAllChunks(self: *Planet, gpa: std.mem.Allocator) !void {
@@ -173,11 +202,28 @@ pub fn gradient(self: *const Planet, position: nz.Vec3(f32)) nz.Vec3(f32) {
 }
 
 pub fn surfacePoint(self: *const Planet, direction: nz.Vec3(f32)) nz.Vec3(f32) {
-    return surfacePointRadius(direction, self.radiusFloat());
+    const planet_radius = self.radiusFloat();
+    const unit_direction = nz.vec.normalize(direction);
+    var inner: f32 = @max(planet_radius - sdf_math.noise_amplitude - cell_margin, 0);
+    var outer: f32 = planet_radius + sdf_math.noise_amplitude + cell_margin;
+    for (0..24) |_| {
+        const middle = (inner + outer) * 0.5;
+        if (sdf_math.sdf(nz.vec.scale(unit_direction, middle), planet_radius) < 0) inner = middle else outer = middle;
+    }
+    return nz.vec.scale(unit_direction, (inner + outer) * 0.5);
 }
 
 pub fn surfacePointNear(self: *const Planet, direction: nz.Vec3(f32), min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
-    return surfacePointNearRadius(direction, self.radiusFloat(), min_distance, max_distance, random);
+    const unit_direction = nz.vec.normalize(direction);
+    const reference: nz.Vec3(f32) = if (@abs(unit_direction[1]) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
+    const tangent_a = nz.vec.normalize(nz.vec.cross(unit_direction, reference));
+    const tangent_b = nz.vec.cross(unit_direction, tangent_a);
+    const spin = random.float(f32) * std.math.tau;
+    const tangent = nz.vec.scale(tangent_a, @cos(spin)) + nz.vec.scale(tangent_b, @sin(spin));
+    const distance = min_distance + random.float(f32) * (max_distance - min_distance);
+    const angle = distance / self.radiusFloat();
+    const tilted = nz.vec.scale(unit_direction, @cos(angle)) + nz.vec.scale(tangent, @sin(angle));
+    return self.surfacePoint(tilted);
 }
 
 pub fn surfaceTransform(self: *const Planet, direction: nz.Vec3(f32), hover: f32) nz.Transform3D(f32) {
@@ -216,40 +262,19 @@ pub fn surfaceLaunch(position: nz.Vec3(f32), direction: nz.Vec3(f32), angle: f32
     return nz.vec.scale(launch, speed);
 }
 
-fn surfacePointRadius(direction: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
-    const unit_direction = nz.vec.normalize(direction);
-    var inner: f32 = @max(planet_radius - sdf_math.noise_amplitude - cell_margin, 0);
-    var outer: f32 = planet_radius + sdf_math.noise_amplitude + cell_margin;
-    for (0..24) |_| {
-        const middle = (inner + outer) * 0.5;
-        if (sdf_math.sdf(nz.vec.scale(unit_direction, middle), planet_radius) < 0) inner = middle else outer = middle;
-    }
-    return nz.vec.scale(unit_direction, (inner + outer) * 0.5);
-}
-
-fn surfacePointNearRadius(direction: nz.Vec3(f32), planet_radius: f32, min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
-    const unit_direction = nz.vec.normalize(direction);
-    const reference: nz.Vec3(f32) = if (@abs(unit_direction[1]) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
-    const tangent_a = nz.vec.normalize(nz.vec.cross(unit_direction, reference));
-    const tangent_b = nz.vec.cross(unit_direction, tangent_a);
-    const spin = random.float(f32) * std.math.tau;
-    const tangent = nz.vec.scale(tangent_a, @cos(spin)) + nz.vec.scale(tangent_b, @sin(spin));
-    const distance = min_distance + random.float(f32) * (max_distance - min_distance);
-    const angle = distance / planet_radius;
-    const tilted = nz.vec.scale(unit_direction, @cos(angle)) + nz.vec.scale(tangent, @sin(angle));
-    return surfacePointRadius(tilted, planet_radius);
-}
-
 test surfacePoint {
     var prng = std.Random.DefaultPrng.init(1);
     const random = prng.random();
-    for ([_]f32{ 8, 15, 60, 100 }) |planet_radius| {
+    for ([_]u32{ 8, 15, 60, 100 }) |planet_radius| {
+        var test_planet: Planet = .empty;
+        test_planet.planet_radius = planet_radius;
+        const radius_float = test_planet.radiusFloat();
         for (0..50) |_| {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            const point = surfacePointRadius(direction, planet_radius);
-            try std.testing.expect(@abs(sdf_math.sdf(point, planet_radius)) < 0.001);
-            const near = surfacePointNearRadius(direction, planet_radius, 15, 25, random);
-            try std.testing.expect(@abs(sdf_math.sdf(near, planet_radius)) < 0.001);
+            const point = test_planet.surfacePoint(direction);
+            try std.testing.expect(@abs(sdf_math.sdf(point, radius_float)) < 0.001);
+            const near = test_planet.surfacePointNear(direction, 15, 25, random);
+            try std.testing.expect(@abs(sdf_math.sdf(near, radius_float)) < 0.001);
         }
     }
 }

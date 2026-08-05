@@ -279,10 +279,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         const did_full_sync = client.needs_full_sync;
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
-            const full_sync_planet_radius: u32 = switch (world.place) {
-                .ship => 0,
-                .planet => @intFromFloat(world.planet_radius),
-            };
+            const full_sync_planet_radius: u32 = world.planet.planet_radius;
             try client.sendCommand(writer, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
