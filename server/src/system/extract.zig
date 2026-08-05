@@ -101,7 +101,7 @@ fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
     }
 }
 
-const chunk_border_color: [4]f32 = .{ 1.0, 0.6, 0.1, 1 };
+const chunk_border_color: [4]f32 = .{ 1.0, 0.0, 0.1, 1 };
 
 fn appendChunkBorders(world: *World, renderer: *Renderer) void {
     for (world.navmesh.internal.chunks.keys()) |coord| {
