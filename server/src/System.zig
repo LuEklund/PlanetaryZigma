@@ -102,7 +102,6 @@ pub fn update(self: *System, world: *World) !void {
     gameplay.updateProjectiles(world, &self.physics);
     try gameplay.updateItems(world);
     if (world.place == .planet) gameplay.updateTeleporter(world);
-    gameplay.updateLifetimes(world);
     gameplay.playerRegen(world);
     try world.flush(&self.physics);
 
@@ -110,6 +109,7 @@ pub fn update(self: *System, world: *World) !void {
     var anchor_count: usize = 0;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
+        if (player.flags.is_dead) continue;
         anchor_buffer[anchor_count] = player.transform.position;
         anchor_count += 1;
     }

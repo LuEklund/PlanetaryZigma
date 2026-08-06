@@ -92,7 +92,7 @@ pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     world.planet.clearOutboxes();
-    var text_buffer: [64]u8 = undefined;
+    var text_buffer: [1024]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     try self.handleInput(world, text_buffer[0..text_writer.end]);
@@ -112,7 +112,9 @@ pub fn update(self: *System, world: *World) !void {
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     try world.flush();
-    for (world.entities.values()) |*entity| entity.stun_time = @max(0, entity.stun_time - world.delta_time);
+    for (world.entities.values()) |*entity| {
+        entity.stun_time = @max(0, entity.stun_time - world.delta_time);
+    }
 
     try world.planet.update(
         world.gpa,

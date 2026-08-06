@@ -109,7 +109,8 @@ pub fn update(world: *World, physics: *Physics) !void {
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
         }
 
-        if (player.controller.input.keys.interact) if (world.getPtr(player.interacting)) |entity| {
+        if (player.controller.input.keys.interact and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) if (world.getPtr(player.interacting)) |entity| {
+            player.last_attack = world.elapsed_time;
             switch (entity.kind) {
                 .lootbox => if (player.currency >= entity.currency) {
                     world.queueDespawn(entity.id);
@@ -147,6 +148,10 @@ pub fn update(world: *World, physics: *Physics) !void {
                             world.next_stage_requested = true;
                         }
                     }
+                },
+                .item => |item_kind| {
+                    _ = world.giveItem(player, item_kind, 1) orelse continue;
+                    world.queueDespawn(entity.id);
                 },
                 else => {},
             }
@@ -189,6 +194,7 @@ pub fn update(world: *World, physics: *Physics) !void {
         }
 
         if (input.keys.attack and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
+            // _ = try world.spawn(.{ .kind = .{ .enemy = .healer }, .transform = player.transform });
             player.last_attack = world.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);

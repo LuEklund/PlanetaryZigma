@@ -102,7 +102,7 @@ pub const Entity = struct {
     },
     controller: Controller = .{},
     camera: Camera = .{},
-    lifetime: ?f32 = null,
+    lifetime: f32 = 0,
     currency: u32 = 0,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
@@ -219,7 +219,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const kind_spec = shared.entity.spec(entity.kind);
     if (kind_spec.base_stats != null) {
         entity.max_health = entity.stat(.health);
-        if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
+        if (entity.kind == .enemy) {
             entity.max_health *= @as(f32, @floatFromInt(self.stage));
         }
         entity.health = entity.max_health;
@@ -242,6 +242,8 @@ pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
 }
 
 pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
+    const entity = self.getPtr(id) orelse return;
+    entity.flags.is_dead = true;
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = false });
 }
 
@@ -277,11 +279,11 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
 
         if (random.float(f32) < entity.stat(.block_chance)) new_amount = 0;
 
-        if (random.float(f32) < source_entity.stat(.stun_chance)) {
-            const stun_duration: f32 = 2;
-            entity.un_stun_at = self.elapsed_time + stun_duration;
-            self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
-        }
+        // if (random.float(f32) < source_entity.stat(.stun_chance)) {
+        //     const stun_duration: f32 = 2;
+        //     entity.un_stun_at = self.elapsed_time + stun_duration;
+        //     self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
+        // }
     }
     return self.addHealth(entity, -new_amount, source);
 }
@@ -494,7 +496,6 @@ pub fn flush(self: *World, physics: *Physics) !void {
             entity.collider.body_id = null;
         }
         if (entity.kind == .player and !despawn.remove) {
-            entity.flags.is_dead = true;
             entity.replicated_velocity = .{ 0, 0, 0 };
             continue;
         } else {

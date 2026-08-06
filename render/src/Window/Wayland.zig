@@ -232,6 +232,8 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
     const count: usize = @intCast((now_ms - self.repeat_key.next_time_ms) / interval_ms + 1);
 
     const text = self.repeat_key.buffer[0..self.repeat_key.text_len];
+    std.log.debug("len: {d}", .{text.len});
+    std.log.debug("bytes: {any}", .{text});
 
     var data = [_][]const u8{text};
     try writer.writeSplatAll(&data, count);
@@ -521,7 +523,16 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             if (self.poll_options.text) |writer| switch (key.state) {
                 .pressed => {
                     var buffer: [8]u8 = undefined;
-                    const len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+                    var len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+
+                    var write: usize = 0;
+                    for (buffer[0..len]) |c| {
+                        if (!std.ascii.isControl(c)) {
+                            buffer[write] = c;
+                            write += 1;
+                        }
+                    }
+                    len = write;
 
                     if (len > 0) {
                         writer.writeAll(buffer[0..len]) catch {};
