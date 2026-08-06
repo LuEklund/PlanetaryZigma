@@ -19,6 +19,7 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
         .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 },
         .draw_sky = draw_sky,
         .planet = .{
+            .radius = world.planet.radiusFloat(),
             .uploads = world.planet.uploads.items,
             .removes = world.planet.removes.items,
         },
