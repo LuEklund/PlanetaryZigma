@@ -79,6 +79,10 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;
+    self.ui.addText(null, self.ui.print("debug vertices {d}/{d}", .{
+        (self.arrow_lines.items.len + self.border_lines.items.len) * 2,
+        DrawList.max_lines * 2,
+    }), 16, 8, 8);
     self.ui.end();
 
     if (world.options.draw_flow_field and self.arrow_lines_field != world.navmesh.internal.active) {

@@ -92,7 +92,7 @@ pub fn update(self: *Navmesh, world: *World) !void {
     }
     for (planet.chunks.keys(), planet.chunks.values()) |coord, *chunk_entry| {
         if (self.internal.chunks.contains(coord)) continue;
-        try self.internal.chunks.put(gpa, coord, try NavChunk.init(gpa, try shared.Planet.Chunk.generate(.navmesh, gpa, &chunk_entry.raw, planet.planet_radius)));
+        try self.internal.chunks.put(gpa, coord, try NavChunk.init(gpa, try chunk_entry.nav.clone(gpa)));
     }
 
     self.player_seed_count = 0;

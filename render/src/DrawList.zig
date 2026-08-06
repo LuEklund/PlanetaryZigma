@@ -8,7 +8,7 @@ const Emitter = @import("Emitter.zig");
 const Ui = @import("Ui.zig");
 
 pub const max_joint_matrices: u32 = 16384;
-pub const max_lines: u32 = 131072;
+pub const max_lines: u32 = 262144;
 pub const max_draw_models: u32 = shared.max_entities * 8;
 
 camera: Camera,

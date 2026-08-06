@@ -140,6 +140,14 @@ pub const NavGraph = struct {
 
     pub const max_neighbor_count: usize = 12;
 
+    pub fn clone(self: *const NavGraph, gpa: std.mem.Allocator) !NavGraph {
+        var cells = try self.cells.clone(gpa);
+        errdefer cells.deinit(gpa);
+        const neighbors = try gpa.dupe(Neighbor, self.neighbors);
+        errdefer gpa.free(neighbors);
+        return .{ .cells = cells, .neighbors = neighbors, .weights = try gpa.dupe(f32, self.weights) };
+    }
+
     pub const neighbor_offsets = [max_neighbor_count]nz.Vec3(i32){
         .{ 1, 0, 0 }, .{ -1, 0, 0 },  .{ 0, 1, 0 }, .{ 0, -1, 0 },
         .{ 0, 0, 1 }, .{ 0, 0, -1 },  .{ 1, 1, 0 }, .{ -1, -1, 0 },
@@ -332,6 +340,7 @@ pub const Job = struct {
         raw: Raw,
         vertices: []Mesh.Vertex,
         indices: []u32,
+        nav: NavGraph,
     };
 
     pub const State = struct {
@@ -365,6 +374,7 @@ pub const Job = struct {
             result.raw.deinit(self.state.gpa);
             self.state.gpa.free(result.vertices);
             self.state.gpa.free(result.indices);
+            result.nav.deinit(self.state.gpa);
         }
         self.state.results.deinit(self.state.gpa);
         self.state.gpa.free(self.state.coords);
@@ -380,9 +390,15 @@ pub const Job = struct {
                 raw.deinit(state.gpa);
                 continue;
             };
-            state.results.append(state.gpa, .{ .coord = coord, .raw = raw, .vertices = chunk_mesh.vertices, .indices = chunk_mesh.indices }) catch {
+            var nav = generate(.navmesh, state.gpa, &raw, state.planet_radius) catch {
                 raw.deinit(state.gpa);
                 chunk_mesh.deinit(state.gpa);
+                continue;
+            };
+            state.results.append(state.gpa, .{ .coord = coord, .raw = raw, .vertices = chunk_mesh.vertices, .indices = chunk_mesh.indices, .nav = nav }) catch {
+                raw.deinit(state.gpa);
+                chunk_mesh.deinit(state.gpa);
+                nav.deinit(state.gpa);
             };
         }
         state.done.store(true, .release);

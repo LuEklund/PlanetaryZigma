@@ -20,6 +20,7 @@ removes: std.ArrayList(Chunk.Coord),
 pub const Entry = struct {
     raw: Chunk.Raw,
     mesh: Chunk.Mesh,
+    nav: Chunk.NavGraph,
 };
 
 pub const Upload = struct {
@@ -48,6 +49,7 @@ pub fn deinit(self: *Planet, gpa: std.mem.Allocator) void {
     for (self.chunks.values()) |*chunk_entry| {
         chunk_entry.raw.deinit(gpa);
         chunk_entry.mesh.deinit(gpa);
+        chunk_entry.nav.deinit(gpa);
     }
     self.chunks.deinit(gpa);
     self.uploads.deinit(gpa);
@@ -88,6 +90,7 @@ pub fn update(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             var chunk_entry = self.chunks.values()[chunk_index];
             chunk_entry.raw.deinit(gpa);
             chunk_entry.mesh.deinit(gpa);
+            chunk_entry.nav.deinit(gpa);
             self.chunks.swapRemoveAt(chunk_index);
         }
     }
@@ -113,6 +116,7 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             result.raw.deinit(gpa);
             gpa.free(result.vertices);
             gpa.free(result.indices);
+            result.nav.deinit(gpa);
             freed += 1;
             continue;
         }
@@ -121,10 +125,11 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             result.raw.deinit(gpa);
             gpa.free(result.vertices);
             gpa.free(result.indices);
+            result.nav.deinit(gpa);
             freed += 1;
             continue;
         }
-        slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices } };
+        slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices }, .nav = result.nav };
         inserted += 1;
         if (result.indices.len != 0) {
             try self.uploads.append(gpa, .{ .coord = result.coord, .vertices = result.vertices, .indices = result.indices });
@@ -194,6 +199,7 @@ fn dropAllChunks(self: *Planet, gpa: std.mem.Allocator) !void {
         try self.removes.append(gpa, coord);
         chunk_entry.raw.deinit(gpa);
         chunk_entry.mesh.deinit(gpa);
+        chunk_entry.nav.deinit(gpa);
     }
     self.chunks.clearRetainingCapacity();
 }

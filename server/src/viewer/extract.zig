@@ -75,7 +75,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };
-const navmesh_arrow_budget: usize = 100000;
+const navmesh_arrow_budget: usize = 200000;
 
 pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.ArrayList(DrawList.Line)) !void {
     lines.clearRetainingCapacity();
