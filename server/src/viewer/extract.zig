@@ -35,6 +35,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         .light_color = .{ 1, 1, 1, 1 },
         .draw_sky = true,
         .planet = .{
+            .radius = world.planet.radiusFloat(),
             .uploads = world.planet.uploads.items,
             .removes = world.planet.removes.items,
         },

@@ -1,13 +1,4 @@
-struct SceneData {
-    float4x4 proj_view;
-    float4x4 inverse_proj_rotation;
-    float3 global_light_direction;
-    float time;
-    float4 camera_position;
-    float4 light_color;
-    float4 camera_up;
-};
-[[vk::binding(0, 0)]] ConstantBuffer<SceneData> scene_data;
+import scene;
 
 [[vk::binding(0, 1)]] SamplerCube sky_cube;
 
@@ -32,7 +23,7 @@ float4 fragment(VertexOutput input) : SV_Target {
 
     float3 base_color = sky_cube.Sample(direction).rgb;
 
-    float sun = max(dot(direction, normalize(scene_data.global_light_direction)), 0.0);
+    float sun = max(dot(direction, normalize(scene_data.to_sun)), 0.0);
     float3 glow = float3(1.0, 0.8, 0.5) * pow(sun, 8.0) * 0.3;
     float3 disc = float3(1.0, 0.95, 0.85) * pow(sun, 2000.0);
 

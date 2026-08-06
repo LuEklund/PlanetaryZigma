@@ -9,6 +9,7 @@ const FrameData = @import("Vulkan/FrameData.zig");
 
 meshes: std.AutoArrayHashMapUnmanaged(shared.Planet.Chunk.Coord, Mesh),
 retired: std.ArrayList(RetiredChunk),
+radius: f32,
 
 const RetiredChunk = struct {
     mesh: Mesh,
@@ -19,6 +20,7 @@ pub fn init() Planet {
     return .{
         .meshes = .empty,
         .retired = .empty,
+        .radius = 1,
     };
 }
 

@@ -1,13 +1,4 @@
-struct SceneData {
-    float4x4 proj_view;
-    float4x4 inverse_proj_rotation;
-    float3 global_light_direction;
-    float time;
-    float4 camera_position;
-    float4 light_color;
-    float4 camera_up;
-};
-[[vk::binding(0, 0)]] ConstantBuffer<SceneData> scene_data;
+import scene;
 
 struct Emitter {
     float3 origin;

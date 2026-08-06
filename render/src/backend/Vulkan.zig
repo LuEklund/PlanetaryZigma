@@ -349,8 +349,9 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawLi
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
-        .global_light_direction = lightDirection(list.time),
+        .to_sun = lightDirection(list.time),
         .time = list.time,
+        .planet_radius = self.planet.radius,
         .camera_position = camera_transform.position,
         .light_color = list.light_color,
         .camera_up = up: {
@@ -871,6 +872,7 @@ fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
 
 fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
+    self.planet.radius = state.radius;
     for (state.removes) |coord| try self.planet.remove(gpa, coord, self.current_frame_inflight);
     for (state.uploads) |command| try self.planet.upload(gpa, self.vma, self.device, command, self.current_frame_inflight);
 }

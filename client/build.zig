@@ -115,9 +115,11 @@ fn compileShaders(b: *std.Build) *std.Build.Step {
     while (walker.next(io) catch @panic("walk ../assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
+        if (std.mem.eql(u8, entry.basename, "scene.slang")) continue;
         const cmd = b.addSystemCommand(&.{"slangc"});
         cmd.addFileArg(b.path(b.fmt("../assets/shaders/{s}", .{entry.path})));
         cmd.addArgs(&.{ "-target", "spirv" });
+        cmd.addPrefixedDirectoryArg("-I", b.path("../assets/shaders"));
         cmd.addArg("-o");
         const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
         usf.addCopyFileToSource(spv, b.fmt("../assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));

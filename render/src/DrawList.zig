@@ -58,6 +58,7 @@ pub const UiLayer = struct {
 };
 
 pub const PlanetState = struct {
+    radius: f32,
     uploads: []const shared.Planet.Upload,
     removes: []const shared.Planet.Chunk.Coord,
 };
@@ -75,7 +76,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_width = 0,
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
-        .planet = .{ .uploads = &.{}, .removes = &.{} },
+        .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
     };
 }
 
