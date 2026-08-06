@@ -6,17 +6,22 @@ const Window = @import("Window");
 const Renderer = @import("render").Renderer;
 const AssetServer = @import("render").AssetServer;
 const Ui = @import("render").Ui;
+const DrawList = @import("render").DrawList;
 const World = @import("../World.zig");
 const Quat = shared.numz.quat.Hamiltonian(f32);
 const nz = shared.numz;
 const extract = @import("extract.zig");
-pub const Camera = @import("viewer_camera.zig");
+pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
 renderer: Renderer,
 camera: Camera,
 ui: Ui,
 menu_open: bool,
+arrow_lines: std.ArrayList(DrawList.Line),
+border_lines: std.ArrayList(DrawList.Line),
+arrow_lines_field: ?u1,
+border_lines_field: ?u1,
 
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
     try self.renderer.init(.{
@@ -30,9 +35,15 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
     self.menu_open = false;
+    self.arrow_lines = .empty;
+    self.border_lines = .empty;
+    self.arrow_lines_field = null;
+    self.border_lines_field = null;
 }
 
 pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
+    self.arrow_lines.deinit(gpa);
+    self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
     self.renderer.deinit(gpa, io);
 }
@@ -66,14 +77,20 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .right_click = window.pointer.buttons.right,
     }, &self.renderer.fonts[0], &self.renderer.texture_slots, world.delta_time);
     var quit = window.should_close;
-    if (self.menu_open) switch (menu.update(&self.ui, world.players.items.len, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow))) {
-        .none => {},
-        .close => self.menu_open = false,
-        .quit => quit = true,
-    };
+    if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
+        quit = true;
     self.ui.end();
 
-    try extract.frame(world, &self.renderer, self.camera, &self.ui);
+    if (world.options.draw_flow_field and self.arrow_lines_field != world.navmesh.internal.active) {
+        try extract.collectNavmeshArrows(world, world.gpa, &self.arrow_lines);
+        self.arrow_lines_field = world.navmesh.internal.active;
+    }
+    if (world.options.draw_chunk_borders and self.border_lines_field != world.navmesh.internal.active) {
+        try extract.collectChunkBorders(world, world.gpa, &self.border_lines);
+        self.border_lines_field = world.navmesh.internal.active;
+    }
+
+    try extract.frame(world, self);
     try self.renderer.reloadIfChanged(io);
     return quit;
 }

@@ -11,7 +11,7 @@ const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
-pub const Viewer = if (build_options.viewer) @import("system/Viewer.zig") else void;
+pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
 pub const Window = if (build_options.viewer) @import("Window") else void;
 pub const AssetServer = if (build_options.viewer) @import("render").AssetServer else void;
 
@@ -66,11 +66,6 @@ pub fn deinit(self: *System) !void {
     try self.network_manager.deinit();
 }
 
-fn draw(self: *System, world: *World) !void {
-    if (!build_options.viewer) return;
-    if (try self.viewer.draw(world, self.io)) self.request_exit = true;
-}
-
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -120,7 +115,9 @@ pub fn update(self: *System, world: *World) !void {
     }
     try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], nav_reach);
     try world.navmesh.update(world);
-    try self.draw(world);
+    if (build_options.viewer) {
+        if (try self.viewer.draw(world, self.io)) self.request_exit = true;
+    }
 }
 
 fn reload(self: *System, pre_reload: bool) !void {

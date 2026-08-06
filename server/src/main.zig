@@ -95,7 +95,7 @@ pub fn main(init: std.process.Init) !void {
     while (true) {
         if (system_instance.request_exit) break;
         const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
+        if (delta_time > 0.1) std.log.warn("server main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;
         if (loop_time_tracker < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};

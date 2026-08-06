@@ -99,6 +99,10 @@ pub fn drawLine(self: *Renderer, a: nz.Vec3(f32), b: nz.Vec3(f32), color: [4]f32
     self.list.draw_lines.appendAssumeCapacity(.{ .a = a, .b = b, .color = color });
 }
 
+pub fn drawLines(self: *Renderer, lines: []const DrawList.Line) void {
+    self.list.draw_lines.appendSliceAssumeCapacity(lines);
+}
+
 pub fn spawnEffect(self: *Renderer, request: Emitter.Spawn, elapsed_time: f32) void {
     Emitter.spawn(&self.emitters, request, elapsed_time);
 }
