@@ -51,7 +51,9 @@ const NavChunk = struct {
 
 const no_next: u8 = 255;
 
-const rebuild_distance: f32 = 8;
+pub const nav_reach: i32 = 2;
+
+pub const rebuild_distance: f32 = 8;
 
 pub const empty: Navmesh = .{
     .internal = .{
@@ -119,39 +121,31 @@ fn floodWorker(self: *Navmesh, gpa: std.mem.Allocator) void {
         @memset(nav_chunk.next[generating][0..nav_chunk.next[generating].len], no_next);
     }
 
-    var queue: std.Deque(Node) = .empty;
+    var queue: std.Deque(NodeRef) = .empty;
     defer queue.deinit(gpa);
 
-    var flood_seeds: [shared.max_players]Node = undefined;
+    var flood_seeds: [shared.max_players]NodeRef = undefined;
     const flood_seed_count = self.collectSeeds(&flood_seeds);
     for (flood_seeds[0..flood_seed_count]) |seed| {
-        const nav_chunk = self.internal.chunks.getPtr(seed.chunk_coord) orelse continue;
-        nav_chunk.cost[generating][seed.chunk_cell_index] = 0;
+        seed.chunk.cost[generating][seed.index] = 0;
         queue.pushBack(gpa, seed) catch return;
     }
 
     while (queue.popFront()) |current| {
-        const current_chunk = self.internal.chunks.getPtr(current.chunk_coord).?;
-        const current_ref: NodeRef = .{ .chunk = current_chunk, .coord = current.chunk_coord, .index = current.chunk_cell_index };
-        const current_cost = current_chunk.cost[generating][current.chunk_cell_index];
-        const slot_base = @as(usize, current.chunk_cell_index) * shared.Planet.Chunk.NavGraph.max_neighbor_count;
+        const current_cost = current.chunk.cost[generating][current.index];
+        const slot_base = @as(usize, current.index) * shared.Planet.Chunk.NavGraph.max_neighbor_count;
 
         for (0..shared.Planet.Chunk.NavGraph.max_neighbor_count) |slot| {
-            const neighbor = self.neighborNode(current_ref, slot) orelse continue;
-            const new_cost = current_cost + current_chunk.graph.weights[slot_base + slot];
+            const neighbor = self.neighborNode(current, slot) orelse continue;
+            const new_cost = current_cost + current.chunk.graph.weights[slot_base + slot];
             if (new_cost >= neighbor.chunk.cost[generating][neighbor.index]) continue;
             neighbor.chunk.cost[generating][neighbor.index] = new_cost;
             neighbor.chunk.next[generating][neighbor.index] = @intCast(slot ^ 1);
-            queue.pushBack(gpa, .{ .chunk_coord = neighbor.coord, .chunk_cell_index = neighbor.index }) catch return;
+            queue.pushBack(gpa, neighbor) catch return;
         }
     }
     self.internal.building.store(false, .release);
 }
-
-pub const Node = struct {
-    chunk_coord: shared.Planet.Chunk.Coord,
-    chunk_cell_index: u16,
-};
 
 const NodeRef = struct {
     chunk: *NavChunk,
@@ -203,14 +197,14 @@ fn nodeNearCell(self: *const Navmesh, cell: nz.Vec3(i32), position: nz.Vec3(f32)
     return null;
 }
 
-fn collectSeeds(self: *const Navmesh, out: *[shared.max_players]Node) usize {
+fn collectSeeds(self: *const Navmesh, out: *[shared.max_players]NodeRef) usize {
     var count: usize = 0;
     for (self.player_seeds[0..self.player_seed_count]) |seed| {
         const node = self.nodeNearCell(seed.cell, seed.position) orelse {
             std.log.err("navmesh: no start node for player {d} at {d:.1} {d:.1} {d:.1}", .{ @intFromEnum(seed.id), seed.position[0], seed.position[1], seed.position[2] });
             continue;
         };
-        out[count] = .{ .chunk_coord = node.coord, .chunk_cell_index = node.index };
+        out[count] = node;
         count += 1;
     }
     return count;

@@ -7,6 +7,7 @@ const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
+const Navmesh = @import("system/Navmesh.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
@@ -18,7 +19,6 @@ pub const AssetServer = if (build_options.viewer) @import("render").AssetServer 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
 
-const nav_reach: i32 = 4;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
 
@@ -113,7 +113,7 @@ pub fn update(self: *System, world: *World) !void {
         anchor_buffer[anchor_count] = player.transform.position;
         anchor_count += 1;
     }
-    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], nav_reach);
+    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], Navmesh.nav_reach);
     try world.navmesh.update(world);
     if (build_options.viewer) {
         if (try self.viewer.draw(world, self.io)) self.request_exit = true;

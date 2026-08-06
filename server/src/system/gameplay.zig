@@ -4,6 +4,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../System.zig");
 const Physics = @import("Physics.zig");
+const Navmesh = @import("Navmesh.zig");
 const World = system.World;
 
 const rocket_damage_multiplier: f32 = 1.5;
@@ -34,14 +35,15 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            // 0...10 => .acorn,
-            // 11...40 => .tubloid,
-            // 41...60 => .tubloida,
-            // 61...75 => .hunkloid,
-            // 76...90 => .blooploid,
-            // else => .bloorp_lord,
-            0...50 => .tubloid,
-            else => .healer,
+            0...10 => .acorn,
+            // 6..
+            11...40 => .tubloid,
+            41...60 => .tubloida,
+            61...75 => .hunkloid,
+            76...90 => .blooploid,
+            else => .bloorp_lord,
+            // 0...50 => .tubloid,
+            // else => .healer,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -59,6 +61,30 @@ pub fn updateDirector(world: *World) !void {
             }
         }
     }
+}
+
+const heading_blend_seconds: f32 = 0.15;
+
+fn steer(
+    navmesh: *const Navmesh,
+    planet: *const shared.Planet,
+    enemy_position: nz.Vec3(f32),
+    enemy_forward: nz.Vec3(f32),
+    player_position: nz.Vec3(f32),
+    delta_time: f32,
+) nz.Vec3(f32) {
+    const to_player = player_position - enemy_position;
+    const goal = if (nz.vec.dot(to_player, to_player) < Navmesh.rebuild_distance * Navmesh.rebuild_distance)
+        to_player
+    else
+        navmesh.direction(planet, enemy_position) orelse to_player;
+    const up = shared.Planet.up(enemy_position) orelse return enemy_forward;
+    const goal_tangent = goal - nz.vec.scale(up, nz.vec.dot(goal, up));
+    if (nz.vec.dot(goal_tangent, goal_tangent) <= 0.000001) return enemy_forward;
+    const forward_tangent = enemy_forward - nz.vec.scale(up, nz.vec.dot(enemy_forward, up));
+    const heading = forward_tangent + nz.vec.scale(nz.vec.normalize(goal_tangent) - forward_tangent, 1 - @exp(-delta_time / heading_blend_seconds));
+    if (nz.vec.dot(heading, heading) <= 0.000001) return nz.vec.normalize(goal_tangent);
+    return nz.vec.normalize(heading);
 }
 
 fn attackLands(world: *World, attacker: *system.Entity, target: *const system.Entity, attack: shared.entity.State) bool {
@@ -121,8 +147,9 @@ pub fn updateEnemies(world: *World) !void {
         const range = shared.entity.spec(enemy.kind).primary_range;
         switch (enemy.kind.enemy) {
             .tubloida => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
@@ -143,8 +170,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .tubloid => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     if (distance_to_player < range) {
@@ -165,8 +193,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .hunkloid => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 const utility_range = shared.entity.spec(enemy.kind).utility_range;
                 if (distance_to_player > utility_range * 0.75 and attackLands(world, enemy, player, .utility)) {
@@ -211,8 +240,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .grass1 => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     _ = world.removeHealth(player, damage, enemy);
