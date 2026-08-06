@@ -99,7 +99,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             device,
             vma,
             DebugVertex,
-            DrawList.max_debug_vertices,
+            DrawList.max_lines * 2,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,

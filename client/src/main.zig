@@ -77,7 +77,7 @@ pub fn main(init: std.process.Init) !void {
     while (!window.should_close) {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
+        if (delta_time > 0.1) std.log.warn("client main loop stalled {d:.0}ms", .{delta_time * 1000});
         accumulated_time += delta_time;
         fps_window_seconds += delta_time;
         if (accumulated_time < time_step) {

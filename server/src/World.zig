@@ -15,6 +15,7 @@ new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet: shared.Planet,
 navmesh: Navmesh,
+options: Options,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
@@ -47,6 +48,11 @@ pub const PendingDespawn = struct {
 };
 
 pub const Place = enum { ship, planet };
+
+pub const Options = struct {
+    draw_flow_field: bool,
+    draw_chunk_borders: bool,
+};
 
 pub const Director = struct {
     credits: u32,
@@ -165,6 +171,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
             .removes = .empty,
         },
         .navmesh = .empty,
+        .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,

@@ -371,6 +371,115 @@ fn pushQuads(self: *Ui) void {
     }
 }
 
+pub fn addText(self: *Ui, parent: ?[]const u8, text: []const u8, size: f32, left: f32, top: f32) void {
+    self.add(parent, .{
+        .size = .{ .fixed = self.textSize(text, size) },
+        .offset = .{ .left = left, .top = top },
+        .text = .{ .data = text, .size = size, .color = .new(0.94, 0.96, 0.9, 1) },
+    });
+}
+
+pub fn addButton(self: *Ui, parent: ?[]const u8, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32) void {
+    const hot = self.isHot(name);
+    self.add(parent, .{
+        .name = name,
+        .size = .{ .fixed = .{ .width = width, .height = height } },
+        .offset = .{ .left = left, .top = top },
+        .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{
+            .data = text,
+            .size = std.math.clamp(height * 0.52, @as(f32, 21), @as(f32, 27)),
+            .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+        },
+    });
+}
+
+pub fn addToggle(self: *Ui, parent: ?[]const u8, name: []const u8, label: []const u8, value: bool, left: f32, top: f32, width: f32, height: f32) bool {
+    const box_side = height - 10;
+    const hot = self.isHot(name);
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = width, .height = height } },
+        .offset = .{ .left = left, .top = top },
+        .color = .new(0.035, 0.04, 0.038, 0.82),
+        .child_anchor = .{ .x = .start, .y = .center },
+        .children = &.{
+            .{
+                .size = .{ .fixed = .{ .width = width - box_side - 24, .height = height } },
+                .offset = .{ .left = 14, .top = 0 },
+                .child_anchor = .{ .x = .start, .y = .center },
+                .text = .{ .data = label, .size = 22, .color = .new(0.9, 0.93, 0.86, 1) },
+            },
+            .{
+                .name = name,
+                .size = .{ .fixed = .{ .width = box_side, .height = box_side } },
+                .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+                .child_anchor = .{ .x = .center, .y = .center },
+                .text = if (value) .{
+                    .data = "x",
+                    .size = box_side * 0.7,
+                    .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+                } else null,
+            },
+        },
+    });
+    return self.isClicked(name);
+}
+
+pub fn addSlider(self: *Ui, parent: ?[]const u8, name: []const u8, label: []const u8, value: f32, min: f32, max: f32, left: f32, top: f32, width: f32, height: f32, value_text: []const u8) ?f32 {
+    const value_width = std.math.clamp(width * 0.2, @as(f32, 82), @as(f32, 130));
+    const label_width = std.math.clamp(width * 0.28, @as(f32, 160), @as(f32, 230));
+    const track_left = left + label_width + 16;
+    const track_width = width - label_width - value_width - 34;
+    const track_height = @max(@as(f32, 8), height * 0.24);
+    const track_top = top + (height - track_height) * 0.5;
+    const normalized = std.math.clamp((value - min) / (max - min), @as(f32, 0), @as(f32, 1));
+
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = width, .height = height } },
+        .offset = .{ .left = left, .top = top },
+        .color = .new(0.035, 0.04, 0.038, 0.82),
+    });
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = label_width, .height = height } },
+        .offset = .{ .left = left + 14, .top = top },
+        .child_anchor = .{ .x = .start, .y = .center },
+        .text = .{ .data = label, .size = 20, .color = .new(0.9, 0.93, 0.86, 1) },
+    });
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = track_width, .height = track_height } },
+        .offset = .{ .left = track_left, .top = track_top },
+        .color = .new(0.09, 0.1, 0.095, 1),
+    });
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = track_width * normalized, .height = track_height } },
+        .offset = .{ .left = track_left, .top = track_top },
+        .color = .new(0.88, 0.55, 0.08, 0.96),
+    });
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = 10, .height = height - 10 } },
+        .offset = .{ .left = track_left + track_width * normalized - 5, .top = top + 5 },
+        .color = .new(0.94, 0.96, 0.9, 1),
+    });
+    self.add(parent, .{
+        .size = .{ .fixed = .{ .width = value_width, .height = height - 8 } },
+        .offset = .{ .left = left + width - value_width, .top = top + 4 },
+        .color = .new(0.06, 0.065, 0.055, 0.96),
+        .child_anchor = .{ .x = .center, .y = .center },
+        .text = .{ .data = value_text, .size = 20, .color = .new(0.94, 0.96, 0.9, 1) },
+    });
+    self.add(parent, .{
+        .name = name,
+        .size = .{ .fixed = .{ .width = track_width, .height = height } },
+        .offset = .{ .left = track_left, .top = top },
+        .color = .new(0, 0, 0, 0),
+    });
+
+    if (!self.isActive(name) and !self.isDragging(name)) return null;
+    const mouse_x = std.math.clamp(self.mouse_state.position.left, track_left, track_left + track_width);
+    return min + ((mouse_x - track_left) / track_width) * (max - min);
+}
+
 pub fn isHot(self: *Ui, name: []const u8) bool {
     return self.hot_item == key(name);
 }

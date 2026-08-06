@@ -7,18 +7,18 @@ const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Physics = @import("system/Physics.zig");
+const Navmesh = @import("system/Navmesh.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
-pub const Viewer = if (build_options.viewer) @import("system/Viewer.zig") else void;
+pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
 pub const Window = if (build_options.viewer) @import("Window") else void;
 pub const AssetServer = if (build_options.viewer) @import("render").AssetServer else void;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
 
-const nav_reach: i32 = 4;
 pub const Camera = World.Camera;
 pub const Controller = World.Controller;
 
@@ -64,11 +64,6 @@ pub fn deinit(self: *System) !void {
     if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
     try self.network_manager.deinit();
-}
-
-fn draw(self: *System, world: *World) !void {
-    if (!build_options.viewer) return;
-    if (try self.viewer.draw(world, self.io)) self.request_exit = true;
 }
 
 pub fn update(self: *System, world: *World) !void {
@@ -118,9 +113,11 @@ pub fn update(self: *System, world: *World) !void {
         anchor_buffer[anchor_count] = player.transform.position;
         anchor_count += 1;
     }
-    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], nav_reach);
+    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], Navmesh.nav_reach);
     try world.navmesh.update(world);
-    try self.draw(world);
+    if (build_options.viewer) {
+        if (try self.viewer.draw(world, self.io)) self.request_exit = true;
+    }
 }
 
 fn reload(self: *System, pre_reload: bool) !void {

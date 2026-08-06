@@ -3,10 +3,15 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Renderer = @import("render").Renderer;
-const Camera = @import("viewer_camera.zig");
+const Camera = @import("camera.zig");
 const Ui = @import("render").Ui;
+const DrawList = @import("render").DrawList;
+const Viewer = @import("Viewer.zig");
 
-pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void {
+pub fn frame(world: *World, viewer: *Viewer) !void {
+    const renderer = &viewer.renderer;
+    const camera = viewer.camera;
+    const ui = &viewer.ui;
     // The wire carries the client's real camera; `Entity.camera` holds only the yaw
     // the sim needs for movement.
     const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
@@ -62,17 +67,18 @@ pub fn frame(world: *World, renderer: *Renderer, camera: Camera, ui: *Ui) !void 
     renderer.advanceAnimation(&.{});
     renderer.drawAnimated();
 
-    appendNavmeshArrows(world, renderer);
-    appendChunkBorders(world, renderer);
+    if (world.options.draw_flow_field) renderer.drawLines(viewer.arrow_lines.items);
+    if (world.options.draw_chunk_borders) renderer.drawLines(viewer.border_lines.items);
 
     renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
     renderer.endFrame(world.elapsed_time);
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };
-const navmesh_arrow_budget: usize = 100000;
+const navmesh_arrow_budget: usize = 200000;
 
-fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
+pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.ArrayList(DrawList.Line)) !void {
+    lines.clearRetainingCapacity();
     const navmesh = &world.navmesh;
     const active = navmesh.internal.active;
     var budget: usize = navmesh_arrow_budget;
@@ -85,7 +91,7 @@ fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
             const to = switch (neighbor) {
                 .none => continue,
                 .boundary_edge => to: {
-                    const cell = nav_chunk.graph.cells.keys()[node_index] + shared.Planet.Chunk.NavGraph.neighbor_offsets[next_slot];
+                    const cell = nav_chunk.graph.neighborCell(node_index, next_slot);
                     const chunk_coord: shared.Planet.Chunk.Coord = .{ .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))) };
                     const neighbor_chunk = navmesh.internal.chunks.getPtr(chunk_coord) orelse continue;
                     const neighbor_index = neighbor_chunk.graph.cells.getIndex(cell) orelse continue;
@@ -94,7 +100,7 @@ fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
                 _ => positions[@intFromEnum(neighbor)],
             };
             const lift = nz.vec.scale(nz.vec.normalize(from), 0.2);
-            renderer.drawLine(from + lift, to + lift, navmesh_arrow_color);
+            try lines.append(gpa, .{ .a = from + lift, .b = to + lift, .color = navmesh_arrow_color });
             budget -= 1;
             if (budget == 0) return;
         }
@@ -103,7 +109,8 @@ fn appendNavmeshArrows(world: *World, renderer: *Renderer) void {
 
 const chunk_border_color: [4]f32 = .{ 1.0, 0.0, 0.1, 1 };
 
-fn appendChunkBorders(world: *World, renderer: *Renderer) void {
+pub fn collectChunkBorders(world: *World, gpa: std.mem.Allocator, lines: *std.ArrayList(DrawList.Line)) !void {
+    lines.clearRetainingCapacity();
     for (world.navmesh.internal.chunks.keys()) |coord| {
         const low: nz.Vec3(f32) = @floatFromInt(shared.Planet.Chunk.min(coord));
         const high: nz.Vec3(f32) = @floatFromInt(shared.Planet.Chunk.max(coord));
@@ -122,6 +129,6 @@ fn appendChunkBorders(world: *World, renderer: *Renderer) void {
             .{ 0, 2 }, .{ 1, 3 }, .{ 4, 6 }, .{ 5, 7 },
             .{ 0, 4 }, .{ 1, 5 }, .{ 2, 6 }, .{ 3, 7 },
         };
-        for (edges) |edge| renderer.drawLine(corners[edge[0]], corners[edge[1]], chunk_border_color);
+        for (edges) |edge| try lines.append(gpa, .{ .a = corners[edge[0]], .b = corners[edge[1]], .color = chunk_border_color });
     }
 }
