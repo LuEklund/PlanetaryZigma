@@ -230,6 +230,7 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .path = "objects/acorn.glb", .offset = .{ .position = .{ 0, -0.4, 0 }, .rotation = face_camera }, .clip_names = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Run",
+                    .utility = "Planted",
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),

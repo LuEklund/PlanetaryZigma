@@ -102,7 +102,6 @@ pub fn update(self: *System, world: *World) !void {
     gameplay.updateProjectiles(world, &self.physics);
     try gameplay.updateItems(world);
     if (world.place == .planet) gameplay.updateTeleporter(world);
-    gameplay.updateLifetimes(world);
     gameplay.playerRegen(world);
     try world.flush(&self.physics);
 

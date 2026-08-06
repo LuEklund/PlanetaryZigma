@@ -35,15 +35,15 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...10 => .acorn,
+            // 0...10 => .acorn,
             // 6..
-            11...40 => .tubloid,
-            41...60 => .tubloida,
-            61...75 => .hunkloid,
-            76...90 => .blooploid,
-            else => .bloorp_lord,
+            // 11...40 => .tubloid,
+            // 41...60 => .tubloida,
+            // 61...75 => .hunkloid,
+            // 76...90 => .blooploid,
+            // else => .bloorp_lord,
             // 0...50 => .tubloid,
-            // else => .healer,
+            else => .acorn,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -235,10 +235,21 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .acorn => {
-                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, true);
-                Physics.faceOnPlanet(enemy, heading);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                if (distance_to_player < 10) {
+                    const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, true);
+                    Physics.faceOnPlanet(enemy, heading);
+                    const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
+                    Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                    enemy.lifetime = 0;
+                } else {
+                    if (enemy.lifetime > 3)
+                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .utility } } });
+                    enemy.lifetime += world.delta_time;
+                    // std.log.debug("should plant", .{});
+                    // const new_pos = enemy.transform.position - nz.vec.normalize(enemy.transform.position);
+                    // Physics.setPosition(body_id, new_pos);
+                    continue;
+                }
                 // if (world.elapsed_time > 5) {
                 //     _ = world.spawn(.{ .kind = .{ .enemy = .grass1 }, .transform = enemy.transform }) catch continue;
                 //     _ = world.removeHealth(enemy, enemy.stat(.health), null);
@@ -287,6 +298,12 @@ pub fn updateProjectiles(world: *World, physics: *Physics) void {
         entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
         entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
         const travel = entity.transform.position - previous_position;
+
+        entity.lifetime = world.delta_time;
+        if (entity.lifetime <= 0) {
+            world.queueDespawn(entity.id);
+            continue;
+        }
 
         const ray_hit = Physics.c.b3World_CastRayClosest(
             physics.world,
@@ -465,15 +482,6 @@ pub fn updateTeleporter(world: *World) void {
     }
     if (old_teleporter_charge != teleporter.charged) {
         world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
-    }
-}
-
-pub fn updateLifetimes(world: *World) void {
-    for (world.entities.values()) |*entity| {
-        if (entity.lifetime) |*lifetime| {
-            lifetime.* -= world.delta_time;
-            if (lifetime.* <= 0) world.queueDespawn(entity.id);
-        }
     }
 }
 
