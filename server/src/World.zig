@@ -279,11 +279,11 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
 
         if (random.float(f32) < entity.stat(.block_chance)) new_amount = 0;
 
-        // if (random.float(f32) < source_entity.stat(.stun_chance)) {
-        //     const stun_duration: f32 = 2;
-        //     entity.un_stun_at = self.elapsed_time + stun_duration;
-        //     self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
-        // }
+        if (random.float(f32) < source_entity.stat(.stun_chance)) {
+            const stun_duration: f32 = 2;
+            entity.un_stun_at = self.elapsed_time + stun_duration;
+            self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
+        }
     }
     return self.addHealth(entity, -new_amount, source);
 }
