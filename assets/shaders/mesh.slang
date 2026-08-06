@@ -123,12 +123,20 @@ float shadowFactor(float3 world_position, float3 normal) {
 [shader("fragment")]
 float4 mesh_frag(VertexOutput input) : SV_Target {
     const float ambient = 0.4;
+
     const float3 norm_to_sun = normalize(scene_data.to_sun);
     const float t = dot(-input.world_position, norm_to_sun);
     const float d = sqrt(dot(input.world_position, input.world_position) - t * t);
-    const float sun_visibility = (t > 0) ? moothstep(scene_data.planet_radius -   6, scene_data.planet_radius + 6, d) : 1;
+    const float sun_visibility = (t > 0) ? smoothstep(scene_data.planet_radius - 8, scene_data.planet_radius - 5, d) : 1;
     float direct = max(dot(normalize(input.normal), norm_to_sun), 0.0) * sun_visibility;
     float shading = ambient + (direct > 0.0 ? (1.0 - ambient) * direct * shadowFactor(input.world_position, input.normal) : 0.0);
+
+    float dist = distance(scene_data.camera_position.xyz, input.world_position);
+    float fog = (1 - exp(-dist * 0.005));
+    float3 fog_color = float3(0.75, 0.55, 0.4);
+
     float4 texel = textures[push_constant.texture_index].Sample(input.uv);
-    return float4((texel.xyz * input.color.xyz * shading) * scene_data.light_color.xyz, texel.a * input.color.a);
+    float3 lit = (texel.xyz * input.color.xyz * shading) * scene_data.light_color.xyz;
+    lit = lerp(lit, fog_color, fog);
+    return float4(lit, texel.a * input.color.a);
 }
