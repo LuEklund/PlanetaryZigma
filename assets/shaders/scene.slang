@@ -10,3 +10,5 @@ public struct SceneData {
 };
 [[vk::binding(0, 0)]]
 public ConstantBuffer<SceneData> scene_data;
+
+public static const float3 fog_color = float3(0.75, 0.55, 0.4);

@@ -133,7 +133,6 @@ float4 mesh_frag(VertexOutput input) : SV_Target {
 
     float dist = distance(scene_data.camera_position.xyz, input.world_position);
     float fog = (1 - exp(-dist * 0.005));
-    float3 fog_color = float3(0.75, 0.55, 0.4);
 
     float4 texel = textures[push_constant.texture_index].Sample(input.uv);
     float3 lit = (texel.xyz * input.color.xyz * shading) * scene_data.light_color.xyz;
