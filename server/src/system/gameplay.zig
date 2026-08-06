@@ -35,21 +35,21 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            // 0...10 => .acorn,
+            0...10 => .grass1,
             // 6..
-            // 11...40 => .tubloid,
-            // 41...60 => .tubloida,
-            // 61...75 => .hunkloid,
-            // 76...90 => .blooploid,
-            // else => .bloorp_lord,
+            11...40 => .tubloid,
+            41...60 => .tubloida,
+            61...75 => .hunkloid,
+            76...90 => .blooploid,
+            else => .bloorp_lord,
             // 0...50 => .tubloid,
-            else => .acorn,
+            // else => .acorn,
         };
         const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {
-                const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, enemy_max_spawn_distance, random);
+                const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, world.planet.radiusFloat(), random);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (world.spawn(.{
                     .kind = .{ .enemy = enemy_kind },
@@ -113,7 +113,7 @@ pub fn updateEnemies(world: *World) !void {
     for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy or enemy.flags.is_dead) continue;
         if (enemy.un_stun_at > world.elapsed_time) continue;
-        const body_id = enemy.collider.body_id orelse continue;
+        // const body_id = enemy.collider.body_id orelse continue;
 
         var closest_player: ?*system.Entity = null;
         var closest_distance: f32 = std.math.floatMax(f32);
@@ -133,13 +133,13 @@ pub fn updateEnemies(world: *World) !void {
         const to_player = player.transform.position - enemy.transform.position;
         const distance_to_player = nz.vec.length(to_player);
 
-        if (distance_to_player > enemy_max_spawn_distance * 1.7) {
-            const surface = world.planet.surfacePointNear(player.transform.position, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
-            const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
-            enemy.transform.position = leash_position;
-            Physics.setPosition(body_id, leash_position);
-            continue;
-        }
+        // if (distance_to_player > enemy_max_spawn_distance * 1.7) {
+        //     const surface = world.planet.surfacePointNear(player.transform.position, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
+        //     const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
+        //     enemy.transform.position = leash_position;
+        //     Physics.setPosition(body_id, leash_position);
+        //     continue;
+        // }
 
         const planet_up = shared.Planet.up(enemy.transform.position) orelse continue;
 
@@ -187,13 +187,30 @@ pub fn updateEnemies(world: *World) !void {
                 Physics.faceOnPlanet(enemy, heading);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 14, world.delta_time);
+
                 if (attackLands(world, enemy, player, .attack)) {
-                    _ = world.spawn(.{
-                        .kind = .{ .enemy = .tubloid },
-                        .transform = .{ .position = enemy.transform.position },
-                        .last_attack = world.elapsed_time,
-                    }) catch {};
+                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
+                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
+                    _ = try world.spawn(.{
+                        .kind = .projectile_cube,
+                        .owner_id = enemy.id,
+                        .transform = .{
+                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                        },
+                        .replicated_velocity = muzzle_velocity,
+                        .lifetime = 2,
+                        .damage = damage,
+                    });
                 }
+                // if (attackLands(world, enemy, player, .attack)) {
+                //     _ = world.spawn(.{
+                //         .kind = .{ .enemy = .tubloid },
+                //         .transform = .{ .position = enemy.transform.position },
+                //         .last_attack = world.elapsed_time,
+                //     }) catch {};
+                // }
             },
             .hunkloid => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
@@ -447,7 +464,7 @@ pub fn updateWipe(world: *World, physics: *Physics) !void {
 
 pub fn updateItems(world: *World) !void {
     for (world.entities.values()) |*entity| {
-        if (entity.kind != .item) continue;
+        if (entity.kind != .item or entity.flags.is_dead) continue;
         const item_kind = entity.kind.item;
         for (world.players.items) |player_id| {
             const player = world.getPtr(player_id) orelse return error.PlayerNotFound;

@@ -213,7 +213,7 @@ pub fn spec(kind: Kind) Spec {
                     .death = "Death",
                 }) },
                 .has_health = true,
-                .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 4 }),
+                .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.01 }),
                 .primary_range = 40,
                 .currency = 100,
             },
