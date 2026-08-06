@@ -1,5 +1,5 @@
 # PlanetaryZigma
-## Latest gameplay: [https://youtu.be/PDq2VLnh84c?t=6144](https://youtu.be/PDq2VLnh84c?t=6144)
+## Latest gameplay: [https://youtu.be/dQSKI70bBEo?t=8653](https://youtu.be/dQSKI70bBEo?t=8653)
 Making a 3D game inspired by risk of rain 2 but on planets!
 using Zig, Vulkan, Jolt, Steamworks SDK.
 the planets will be Procedualy generated. 
