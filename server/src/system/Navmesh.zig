@@ -179,8 +179,7 @@ pub fn direction(self: *const Navmesh, planet: *const shared.Planet, position: n
     const node = self.nodeNear(planet, position) orelse return null;
     const next_cell = self.nextCell(node) orelse return null;
     const next_node = self.nodeAt(next_cell) orelse return null;
-    const delta = next_node.chunk.graph.cells.values()[next_node.index] - position;
-    if (nz.vec.dot(delta, delta) <= 0.0001) return null;
+    const delta = next_node.chunk.graph.cells.values()[next_node.index] - node.chunk.graph.cells.values()[node.index];
     return nz.vec.normalize(delta);
 }
 

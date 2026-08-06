@@ -85,6 +85,7 @@ user_steam_id: u64,
 server_conn: steam.HSteamNetConnection = 0,
 own_lobby: u64 = 0,
 last_send_result: steam.EResult = .k_EResultOK,
+send_stats: SteamNet.PacketStats(@import("../net.zig").ClientPacket) = .{},
 packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
@@ -223,6 +224,7 @@ pub fn handlePackets(self: *Client) !void {
         if (@import("../SteamNet.zig").log_connection_status and self.server_conn != 0 and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
             last_status_log = now;
             @import("../SteamNet.zig").logConnectionStatus(steam.SteamNetworkingSockets_SteamAPI(), self.server_conn);
+            self.send_stats.logAndReset("client");
         }
         try self.io.checkCancel();
         {
@@ -311,6 +313,7 @@ pub fn sendPackets(self: *Client) !void {
     if (self.packets.outgoing.items.len == 0) return;
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
+        if (SteamNet.log_connection_status) self.send_stats.record(message.bytes[0..message.len]);
         var message_number: i64 = 0;
         const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
         if (result != self.last_send_result) {
