@@ -72,12 +72,14 @@ fn steer(
     enemy_forward: nz.Vec3(f32),
     player_position: nz.Vec3(f32),
     delta_time: f32,
+    flee: bool,
 ) nz.Vec3(f32) {
     const to_player = player_position - enemy_position;
-    const goal = if (nz.vec.dot(to_player, to_player) < Navmesh.rebuild_distance * Navmesh.rebuild_distance)
+    const toward = if (nz.vec.dot(to_player, to_player) < Navmesh.rebuild_distance * Navmesh.rebuild_distance)
         to_player
     else
         navmesh.direction(planet, enemy_position) orelse to_player;
+    const goal = if (flee) -toward else toward;
     const up = shared.Planet.up(enemy_position) orelse return enemy_forward;
     const goal_tangent = goal - nz.vec.scale(up, nz.vec.dot(goal, up));
     if (nz.vec.dot(goal_tangent, goal_tangent) <= 0.000001) return enemy_forward;
@@ -147,7 +149,7 @@ pub fn updateEnemies(world: *World) !void {
         const range = shared.entity.spec(enemy.kind).primary_range;
         switch (enemy.kind.enemy) {
             .tubloida => {
-                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 Physics.faceOnPlanet(enemy, heading);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
@@ -170,7 +172,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .tubloid => {
-                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 Physics.faceOnPlanet(enemy, heading);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
@@ -181,8 +183,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .bloorp_lord => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 14, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     _ = world.spawn(.{
@@ -193,7 +196,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .hunkloid => {
-                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 Physics.faceOnPlanet(enemy, heading);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
@@ -209,8 +212,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .blooploid => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
@@ -231,16 +235,17 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .acorn => {
-                Physics.faceOnPlanet(enemy, -to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, true);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
-                if (world.elapsed_time > 5) {
-                    _ = world.spawn(.{ .kind = .{ .enemy = .grass1 }, .transform = enemy.transform }) catch continue;
-                    _ = world.removeHealth(enemy, enemy.stat(.health), null);
-                }
+                // if (world.elapsed_time > 5) {
+                //     _ = world.spawn(.{ .kind = .{ .enemy = .grass1 }, .transform = enemy.transform }) catch continue;
+                //     _ = world.removeHealth(enemy, enemy.stat(.health), null);
+                // }
             },
             .grass1 => {
-                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time);
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 Physics.faceOnPlanet(enemy, heading);
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
@@ -249,8 +254,9 @@ pub fn updateEnemies(world: *World) !void {
                 }
             },
             .healer => {
-                Physics.faceOnPlanet(enemy, to_player);
-                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) forward_dir else .{ 0, 0, 0 };
+                const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
+                Physics.faceOnPlanet(enemy, heading);
+                const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.

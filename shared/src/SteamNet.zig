@@ -41,6 +41,41 @@ pub const Event = union(enum) {
 
 pub var log_connection_status: bool = false;
 
+pub const send_warn_bytes_per_second: u64 = 131072;
+
+pub fn PacketStats(comptime Packet: type) type {
+    return struct {
+        counts: [kind_count]u32 = @splat(0),
+        bytes: [kind_count]u64 = @splat(0),
+
+        const kind_count = std.meta.fields(std.meta.Tag(Packet)).len;
+        const endian = @import("net.zig").endian;
+
+        pub fn record(self: *@This(), message_bytes: []const u8) void {
+            if (message_bytes.len < 2) return;
+            const tag = std.enums.fromInt(std.meta.Tag(Packet), std.mem.readInt(u16, message_bytes[0..2], endian)) orelse return;
+            self.counts[@intFromEnum(tag)] += 1;
+            self.bytes[@intFromEnum(tag)] += message_bytes.len;
+        }
+
+        pub fn logAndReset(self: *@This(), side: []const u8) void {
+            var buffer: [512]u8 = undefined;
+            var len: usize = 0;
+            var total_bytes: u64 = 0;
+            inline for (std.meta.fields(std.meta.Tag(Packet)), 0..) |field, kind| {
+                total_bytes += self.bytes[kind];
+                if (self.counts[kind] != 0) {
+                    const part = std.fmt.bufPrint(buffer[len..], "{s}={d}x/{d}B ", .{ field.name, self.counts[kind], self.bytes[kind] }) catch break;
+                    len += part.len;
+                }
+            }
+            std.log.info("{s} send/s: {s}total={d}B", .{ side, buffer[0..len], total_bytes });
+            if (total_bytes > send_warn_bytes_per_second) std.log.warn("{s} send rate HIGH: {d}B/s", .{ side, total_bytes });
+            self.* = .{};
+        }
+    };
+}
+
 pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.HSteamNetConnection) void {
     var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
     if (sockets.GetConnectionRealTimeStatus(conn, &status, &.{}) != .k_EResultOK) return;
