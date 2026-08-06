@@ -91,7 +91,7 @@ pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.A
             const to = switch (neighbor) {
                 .none => continue,
                 .boundary_edge => to: {
-                    const cell = nav_chunk.graph.cells.keys()[node_index] + shared.Planet.Chunk.NavGraph.neighbor_offsets[next_slot];
+                    const cell = nav_chunk.graph.neighborCell(node_index, next_slot);
                     const chunk_coord: shared.Planet.Chunk.Coord = .{ .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))) };
                     const neighbor_chunk = navmesh.internal.chunks.getPtr(chunk_coord) orelse continue;
                     const neighbor_index = neighbor_chunk.graph.cells.getIndex(cell) orelse continue;

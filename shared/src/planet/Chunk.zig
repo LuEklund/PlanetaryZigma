@@ -140,6 +140,10 @@ pub const NavGraph = struct {
 
     pub const max_neighbor_count: usize = 12;
 
+    pub fn neighborCell(self: *const NavGraph, index: usize, slot: usize) nz.Vec3(i32) {
+        return self.cells.keys()[index] + neighbor_offsets[slot];
+    }
+
     pub fn clone(self: *const NavGraph, gpa: std.mem.Allocator) !NavGraph {
         var cells = try self.cells.clone(gpa);
         errdefer cells.deinit(gpa);
