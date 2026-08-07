@@ -3,8 +3,6 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const system = @import("../System.zig");
-const Physics = @import("Physics.zig");
-const Navmesh = @import("Navmesh.zig");
 const World = system.World;
 
 const rocket_damage_multiplier: f32 = 1.5;
@@ -66,7 +64,7 @@ pub fn updateDirector(world: *World) !void {
 const heading_blend_seconds: f32 = 0.15;
 
 fn steer(
-    navmesh: *const Navmesh,
+    navmesh: *const system.Navmesh,
     planet: *const shared.Planet,
     enemy_position: nz.Vec3(f32),
     enemy_forward: nz.Vec3(f32),
@@ -75,7 +73,7 @@ fn steer(
     flee: bool,
 ) nz.Vec3(f32) {
     const to_player = player_position - enemy_position;
-    const toward = if (nz.vec.dot(to_player, to_player) < Navmesh.rebuild_distance * Navmesh.rebuild_distance)
+    const toward = if (nz.vec.dot(to_player, to_player) < system.Navmesh.rebuild_distance * system.Navmesh.rebuild_distance)
         to_player
     else
         navmesh.direction(planet, enemy_position) orelse to_player;
@@ -129,17 +127,9 @@ pub fn updateEnemies(world: *World) !void {
             continue;
         }
 
-        const player = closest_player orelse return;
+        const player = closest_player orelse continue;
         const to_player = player.transform.position - enemy.transform.position;
         const distance_to_player = nz.vec.length(to_player);
-
-        // if (distance_to_player > enemy_max_spawn_distance * 1.7) {
-        //     const surface = world.planet.surfacePointNear(player.transform.position, enemy_max_spawn_distance, enemy_max_spawn_distance, world.prng.random());
-        //     const leash_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
-        //     enemy.transform.position = leash_position;
-        //     Physics.setPosition(body_id, leash_position);
-        //     continue;
-        // }
 
         const planet_up = shared.Planet.up(enemy.transform.position) orelse continue;
 
@@ -150,9 +140,9 @@ pub fn updateEnemies(world: *World) !void {
         switch (enemy.kind.enemy) {
             .tubloida => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -173,9 +163,9 @@ pub fn updateEnemies(world: *World) !void {
             },
             .tubloid => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (attackLands(world, enemy, player, .attack)) {
                     if (distance_to_player < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
@@ -184,9 +174,9 @@ pub fn updateEnemies(world: *World) !void {
             },
             .bloorp_lord => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 14, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 14 } } });
 
                 if (attackLands(world, enemy, player, .attack)) {
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -214,12 +204,12 @@ pub fn updateEnemies(world: *World) !void {
             },
             .hunkloid => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                if (enemy.mode == .walking) Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                if (enemy.mode == .walking) world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 const utility_range = shared.entity.spec(enemy.kind).utility_range;
                 if (distance_to_player > utility_range * 0.75 and attackLands(world, enemy, player, .utility)) {
-                    Physics.arcJumpTo(enemy, player.transform.position);
+                    world.act(.{ .id = enemy.id, .verb = .{ .arc_jump = player.transform.position } });
                 }
 
                 if (attackLands(world, enemy, player, .attack)) {
@@ -230,9 +220,9 @@ pub fn updateEnemies(world: *World) !void {
             },
             .blooploid => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -254,38 +244,31 @@ pub fn updateEnemies(world: *World) !void {
             .acorn => {
                 if (distance_to_player < 10) {
                     const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, true);
-                    Physics.faceOnPlanet(enemy, heading);
+                    world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                     const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                    Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                    world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                     enemy.lifetime = 0;
                 } else {
                     if (enemy.lifetime > 3)
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = enemy.id, .state = .utility } } });
                     enemy.lifetime += world.delta_time;
-                    // std.log.debug("should plant", .{});
-                    // const new_pos = enemy.transform.position - nz.vec.normalize(enemy.transform.position);
-                    // Physics.setPosition(body_id, new_pos);
                     continue;
                 }
-                // if (world.elapsed_time > 5) {
-                //     _ = world.spawn(.{ .kind = .{ .enemy = .grass1 }, .transform = enemy.transform }) catch continue;
-                //     _ = world.removeHealth(enemy, enemy.stat(.health), null);
-                // }
             },
             .grass1 => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.moveOnPlanet(enemy, chase_dir, speed, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (attackLands(world, enemy, player, .attack)) {
                     _ = world.removeHealth(player, damage, enemy);
                 }
             },
             .healer => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
-                Physics.faceOnPlanet(enemy, heading);
+                world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
-                Physics.floatOnPlanet(enemy, chase_dir, speed, &world.planet, 7, world.delta_time);
+                world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
                 if (attackLands(world, enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -308,55 +291,43 @@ pub fn updateEnemies(world: *World) !void {
     }
 }
 
-pub fn updateProjectiles(world: *World, physics: *Physics) void {
-    for (world.entities.values()) |*entity| {
-        const projectile_kind = entity.kind.projectileKind() orelse continue;
-        const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
-        entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
-        const travel = entity.transform.position - previous_position;
-
-        entity.lifetime = world.delta_time;
-        if (entity.lifetime <= 0) {
-            world.queueDespawn(entity.id);
-            continue;
-        }
-
-        const ray_hit = Physics.Ray.cast(physics, previous_position, travel) orelse {
-            if (world.planet.sample(entity.transform.position) < 0) {
-                if (world.getPtr(entity.owner_id)) |owner_entity| {
-                    switch (projectile_kind) {
-                        .cube => {},
-                        .rocket => {
-                            damageRocketImpact(world, owner_entity, entity.transform.position);
-                            world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = entity.transform.position } } });
-                        },
-                    }
-                }
-                world.queueDespawn(entity.id);
-            }
-            continue;
-        };
-        const impact_position = ray_hit.point;
-        if (ray_hit.id == entity.owner_id) continue;
-
-        const owner_entity = world.getPtr(entity.owner_id) orelse continue;
-        const hit_entity = world.getPtr(ray_hit.id) orelse continue;
-        if (owner_entity.kind.eql(hit_entity.kind)) continue;
-
-        switch (projectile_kind) {
-            .cube => {
-                if (world.removeHealth(hit_entity, entity.damage, owner_entity) != .ignored) {
-                    tryProcLightning(world, owner_entity, hit_entity.transform.position, hit_entity);
+pub fn updateProjectiles(world: *World) void {
+    for (world.impacts.items) |impact| {
+        const projectile = world.getPtr(impact.projectile) orelse continue;
+        const projectile_kind = projectile.kind.projectileKind() orelse continue;
+        switch (impact.what) {
+            .terrain => {
+                world.queueDespawn(impact.projectile);
+                const owner_entity = world.getPtr(projectile.owner_id) orelse continue;
+                switch (projectile_kind) {
+                    .cube => {},
+                    .rocket => {
+                        damageRocketImpact(world, owner_entity, impact.point);
+                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
+                    },
                 }
             },
-            .rocket => {
-                damageRocketImpact(world, owner_entity, impact_position);
-                world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact_position } } });
+            .entity => |hit_id| {
+                const owner_entity = world.getPtr(projectile.owner_id) orelse continue;
+                const hit_entity = world.getPtr(hit_id) orelse continue;
+                if (owner_entity.kind.eql(hit_entity.kind)) continue;
+
+                switch (projectile_kind) {
+                    .cube => {
+                        if (world.removeHealth(hit_entity, projectile.damage, owner_entity) != .ignored) {
+                            tryProcLightning(world, owner_entity, hit_entity.transform.position, hit_entity);
+                        }
+                    },
+                    .rocket => {
+                        damageRocketImpact(world, owner_entity, impact.point);
+                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
+                    },
+                }
+                world.queueDespawn(impact.projectile);
             },
         }
-        world.queueDespawn(entity.id);
     }
+    world.impacts.clearRetainingCapacity();
 }
 
 fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
@@ -441,7 +412,7 @@ fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_
     tryProcLightning(world, owner_entity, impact_position, null);
 }
 
-pub fn updateWipe(world: *World, physics: *Physics) !void {
+pub fn updateWipe(world: *World) !void {
     if (world.players.items.len == 0) return;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
@@ -450,7 +421,7 @@ pub fn updateWipe(world: *World, physics: *Physics) !void {
     std.log.info("wipe: go again -> ship", .{});
     world.stage = 0;
     world.director.spawning = false;
-    try world.loadPlace(.ship, physics);
+    try world.loadPlace(.ship);
 }
 
 pub fn updateItems(world: *World) !void {
