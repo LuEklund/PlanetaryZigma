@@ -29,7 +29,7 @@ pub fn updateDirector(world: *World) !void {
     if (director.spawning) {
         if (world.elapsed_time - director.last_salary >= 1.0) {
             director.last_salary = world.elapsed_time;
-            director.credits += director.salary_per_second * 15;
+            director.credits += director.salary_per_second * 5;
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {

@@ -2,6 +2,7 @@ const std = @import("std");
 const nz = @import("numz");
 const tracy = @import("ztracy");
 const sdf = @import("sdf.zig");
+const mesh = @import("mesh.zig");
 const planet = @import("root.zig");
 
 pub const dim: i32 = 32;
@@ -231,7 +232,7 @@ pub const Box = struct { min: Coord, max: Coord };
 
 pub const Raw = struct {
     node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
-    density: sdf.DensityGrid,
+    density: mesh.DensityGrid,
     coord: Coord,
 
     pub fn init(gpa: std.mem.Allocator, planet_radius: u32, chunk: Coord) !Raw {
@@ -243,12 +244,12 @@ pub const Raw = struct {
         const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
         const apron_max = cell_max + @as(nz.Vec3(i32), @splat(1));
 
-        var density = try sdf.DensityGrid.initRegion(gpa, radius_float, apron_min, apron_max);
+        var density = try mesh.DensityGrid.initRegion(gpa, radius_float, apron_min, apron_max);
         errdefer density.deinit(gpa);
 
         var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
         errdefer node_map.deinit(gpa);
-        try sdf.surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, apron_max);
+        try mesh.surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, apron_max);
 
         return .{ .node_map = node_map, .density = density, .coord = chunk };
     }

@@ -17,7 +17,8 @@ fn wtf16Path(buf: *[std.fs.max_path_bytes]u16, path: []const u8) ![:0]const u16 
 
 /// Dir.copyFile picks its copy strategy by matching error values from the io
 /// vtable, which misfires across the exe/library boundary and panics — Windows
-/// goes through the OS directly, like fileExists.
+/// goes through the OS directly, like fileExists; POSIX hand-copies with pure
+/// `try` propagation for the same reason.
 fn copyFile(source_path: []const u8, copy_path: []const u8, io: std.Io) !void {
     if (is_windows) {
         var src_buf: [std.fs.max_path_bytes]u16 = undefined;
@@ -26,7 +27,19 @@ fn copyFile(source_path: []const u8, copy_path: []const u8, io: std.Io) !void {
         const dst_w = try wtf16Path(&dst_buf, copy_path);
         if (CopyFileW(src_w.ptr, dst_w.ptr, .FALSE) == .FALSE) return error.CopyFailed;
     } else {
-        try std.Io.Dir.cwd().copyFile(source_path, .cwd(), copy_path, io, .{});
+        const source = try std.Io.Dir.cwd().openFile(io, source_path, .{});
+        defer source.close(io);
+        const copy = try std.Io.Dir.cwd().createFile(io, copy_path, .{});
+        defer copy.close(io);
+        var offset: u64 = 0;
+        var buffer: [64 * 1024]u8 = undefined;
+        while (true) {
+            const read_len = try source.readPositionalAll(io, &buffer, offset);
+            if (read_len == 0) break;
+            try copy.writePositionalAll(io, buffer[0..read_len], offset);
+            offset += read_len;
+            if (read_len < buffer.len) break;
+        }
     }
 }
 
