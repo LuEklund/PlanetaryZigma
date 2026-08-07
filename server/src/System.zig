@@ -6,8 +6,8 @@ const NetworkManager = @import("system/NetworkManager.zig");
 const gameplay = @import("system/gameplay.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const Physics = @import("system/Physics.zig");
-const Navmesh = @import("system/Navmesh.zig");
+pub const Physics = @import("system/Physics.zig");
+pub const Navmesh = @import("system/Navmesh.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
@@ -53,11 +53,12 @@ pub fn init(self: *System, data: *const Data) !void {
     errdefer self.network_manager.deinit() catch {};
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();
+    data.world.physics = &self.physics;
     self.viewer = undefined;
     if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try data.world.loadPlace(.ship, &self.physics);
+    try data.world.loadPlace(.ship);
 }
 
 pub fn deinit(self: *System) !void {
@@ -84,26 +85,26 @@ pub fn update(self: *System, world: *World) !void {
     }
     if (world.next_stage_requested) {
         world.next_stage_requested = false;
-        try world.loadPlace(.planet, &self.physics);
+        try world.loadPlace(.planet);
     }
     if (world.start_round_requested) {
         world.start_round_requested = false;
-        try world.loadPlace(.planet, &self.physics);
+        try world.loadPlace(.planet);
     }
     if (world.go_again_requested) {
         world.go_again_requested = false;
-        try gameplay.updateWipe(world, &self.physics);
+        try gameplay.updateWipe(world);
     }
 
-    try PlayerController.update(world, &self.physics);
+    try PlayerController.update(world);
     if (world.place == .planet) try gameplay.updateEnemies(world);
     if (world.place == .planet) try gameplay.updateDirector(world);
     try self.physics.update(world);
-    gameplay.updateProjectiles(world, &self.physics);
+    gameplay.updateProjectiles(world);
     try gameplay.updateItems(world);
     if (world.place == .planet) gameplay.updateTeleporter(world);
     gameplay.playerRegen(world);
-    try world.flush(&self.physics);
+    try world.flush();
 
     var anchor_buffer: [shared.max_players]nz.Vec3(f32) = undefined;
     var anchor_count: usize = 0;

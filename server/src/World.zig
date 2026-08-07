@@ -15,10 +15,13 @@ new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet: shared.Planet,
 navmesh: Navmesh,
+physics: *Physics,
 options: Options,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
+physics_commands: std.ArrayList(Physics.Command),
+impacts: std.ArrayList(Physics.Impact),
 next_stage_requested: bool,
 go_again_requested: bool,
 start_round_requested: bool,
@@ -157,6 +160,8 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
+        .physics_commands = try .initCapacity(gpa, shared.max_entities * 4),
+        .impacts = try .initCapacity(gpa, shared.max_entities),
         .next_stage_requested = false,
         .go_again_requested = false,
         .start_round_requested = false,
@@ -171,6 +176,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
             .removes = .empty,
         },
         .navmesh = .empty,
+        .physics = undefined,
         .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
@@ -193,6 +199,8 @@ pub fn deinit(self: *World) void {
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
+    self.physics_commands.deinit(self.gpa);
+    self.impacts.deinit(self.gpa);
     self.planet.deinit(self.gpa);
     self.navmesh.deinit(self.gpa);
 }
@@ -251,6 +259,14 @@ pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
+pub fn act(self: *World, command: Physics.Command) void {
+    self.physics_commands.appendAssumeCapacity(command);
+}
+
+pub fn rayCast(self: *World, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Physics.Ray.Hit {
+    return Physics.Ray.cast(self.physics, start, translation);
+}
+
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8) ?u8 {
     if (player.inventory.get(item) >= 255) return null;
     const item_count = player.inventory.add(item, count);
@@ -279,11 +295,11 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
 
         if (random.float(f32) < entity.stat(.block_chance)) new_amount = 0;
 
-        // if (random.float(f32) < source_entity.stat(.stun_chance)) {
-        //     const stun_duration: f32 = 2;
-        //     entity.un_stun_at = self.elapsed_time + stun_duration;
-        //     self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
-        // }
+        if (random.float(f32) < source_entity.stat(.stun_chance)) {
+            const stun_duration: f32 = 2;
+            entity.un_stun_at = self.elapsed_time + stun_duration;
+            self.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
+        }
     }
     return self.addHealth(entity, -new_amount, source);
 }
@@ -349,12 +365,12 @@ pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
     };
 }
 
-pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
+pub fn loadPlace(self: *World, place: Place) !void {
     self.place = place;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
-    try self.flush(physics);
+    try self.flush();
     const random = self.prng.random();
     self.teleporter_id = .none;
     if (place == .planet) self.stage += 1;
@@ -369,7 +385,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
     self.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
     try self.planet.sync(self.gpa, spawn_planet_radius);
-    try self.flush(physics);
+    try self.flush();
 
     switch (place) {
         .ship => {
@@ -414,7 +430,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
             portal.teleporter.state = .active;
             portal.teleporter.charged = portal.teleporter.max_charge;
             self.teleporter_id = portal.id;
-            try self.flush(physics);
+            try self.flush();
         },
         .planet => {
             self.director.spawning = true;
@@ -461,16 +477,16 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
             player.health = player.max_health;
-            try physics.createBody(player);
+            try self.physics.createBody(player);
             self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.max_health) } } });
-        } else if (player.collider.body_id) |body_id| {
-            Physics.setPosition(body_id, player_spawn_position);
-            Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
+        } else {
+            self.act(.{ .id = player.id, .verb = .{ .teleport = player_spawn_position } });
+            self.act(.{ .id = player.id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
         }
     }
 }
 
-pub fn flush(self: *World, physics: *Physics) !void {
+pub fn flush(self: *World) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.entity.hasCollider(entity.kind)) {
@@ -481,7 +497,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
                     .object_layer = kind_collider.layer,
                 };
             }
-            try physics.createBody(entity);
+            try self.physics.createBody(entity);
         }
         self.client_updates.appendAssumeCapacity(.{ .spawned = id });
     }
@@ -492,7 +508,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
         const entity = self.getPtr(despawn.id) orelse continue;
 
         if (entity.collider.body_id) |body_id| {
-            physics.destroyBody(body_id);
+            self.physics.destroyBody(body_id);
             entity.collider.body_id = null;
         }
         if (entity.kind == .player and !despawn.remove) {

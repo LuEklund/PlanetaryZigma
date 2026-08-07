@@ -2,7 +2,6 @@ const std = @import("std");
 const shared = @import("shared");
 const system = @import("../System.zig");
 const World = system.World;
-const Physics = @import("Physics.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
@@ -12,7 +11,7 @@ const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
 
-pub fn update(world: *World, physics: *Physics) !void {
+pub fn update(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -70,7 +69,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             },
             .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
-                Physics.setPosition(player.collider.body_id.?, teleporter.transform.position + nz.vec.scale(teleporter_up, 10));
+                world.act(.{ .id = player_id, .verb = .{ .teleport = teleporter.transform.position + nz.vec.scale(teleporter_up, 10) } });
             },
             .f9 => world.start_round_requested = true,
 
@@ -82,17 +81,7 @@ pub fn update(world: *World, physics: *Physics) !void {
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
         const ray_position_end = nz.vec.scale(camera_forward, 5);
-        const ray_hit = Physics.c.b3World_CastRayClosest(
-            physics.world,
-            .{ .x = ray_position_start[0], .y = ray_position_start[1], .z = ray_position_start[2] },
-            .{ .x = ray_position_end[0], .y = ray_position_end[1], .z = ray_position_end[2] },
-            Physics.c.b3DefaultQueryFilter(),
-        );
-        var hit_id: shared.entity.Id = .none;
-        if (ray_hit.hit) {
-            const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
-            hit_id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
-        }
+        const hit_id: shared.entity.Id = if (world.rayCast(ray_position_start, ray_position_end)) |hit| hit.id else .none;
         if (player.interacting != hit_id) {
             player.interacting = hit_id;
             const interact_id: shared.entity.Id = if (world.getPtr(hit_id)) |hit_entity|
@@ -165,29 +154,25 @@ pub fn update(world: *World, physics: *Physics) !void {
         const move_right = nz.vec.normalize(nz.vec.cross(move_fwd, planet_up));
         camera.yaw_rotation = .lookAt(move_fwd, planet_up);
 
-        if (player.collider.body_id) |id| {
-            var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
-            if (input.keys.move_forward) dir += move_fwd;
-            if (input.keys.move_backward) dir -= move_fwd;
-            if (input.keys.move_right) dir += move_right;
-            if (input.keys.move_left) dir -= move_right;
+        var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
+        if (input.keys.move_forward) dir += move_fwd;
+        if (input.keys.move_backward) dir -= move_fwd;
+        if (input.keys.move_right) dir += move_right;
+        if (input.keys.move_left) dir -= move_right;
 
-            const speed = player.stat(.speed);
+        if (input.keys.jump and player.mode == .walking) world.act(.{ .id = player_id, .verb = .{ .jump = 20 } });
 
-            if (input.keys.jump and player.mode == .walking) Physics.jump(player, 20);
+        world.act(.{ .id = player_id, .verb = .{ .walk = .{ .direction = dir, .speed = player.stat(.speed) } } });
 
-            Physics.moveOnPlanet(player, dir, speed, world.delta_time);
+        world.act(.{ .id = player_id, .verb = .{ .set_rotation = camera.yaw_rotation } });
+        transform.rotation = camera.yaw_rotation;
 
-            Physics.setRotation(id, camera.yaw_rotation);
-            transform.rotation = camera.yaw_rotation;
-
-            if (input.keys.reload) {
-                camera.* = .{};
-                transform.* = .{};
-                Physics.setLinearVelocity(id, .{ 0, 0, 0 });
-                Physics.setPosition(id, .{ 0, 0, 0 });
-                Physics.setRotation(id, transform.rotation);
-            }
+        if (input.keys.reload) {
+            camera.* = .{};
+            transform.* = .{};
+            world.act(.{ .id = player_id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
+            world.act(.{ .id = player_id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
+            world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
         if (input.keys.use_equipment and player.inventory.get(.freezer) > 0) {
             world.world_unstun_at = world.elapsed_time + 10;
@@ -198,7 +183,7 @@ pub fn update(world: *World, physics: *Physics) !void {
             player.last_attack = world.elapsed_time;
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = aimPoint(physics, &world.planet, transform.position, input.camera_position, camera_forward);
+            const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
             const rocket_chance = player.stat(.rocket_chance);
             const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
@@ -223,18 +208,17 @@ pub fn update(world: *World, physics: *Physics) !void {
     }
 }
 
-fn aimPoint(physics: *Physics, planet: *const shared.Planet, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(world: *World, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
-    const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
-    const entity_distance: f32 = if (result.hit) nz.vec.length(Physics.toVec(result.point) - ray_start) else aim_range;
+    const entity_distance: f32 = if (world.rayCast(ray_start, translation)) |hit| nz.vec.length(hit.point - ray_start) else aim_range;
 
     var terrain_distance: f32 = aim_range;
     var traveled: f32 = 0;
     for (0..128) |_| {
         const sample = ray_start + nz.vec.scale(camera_forward, traveled);
-        const distance = planet.sample(sample);
+        const distance = world.planet.sample(sample);
         if (distance < 0.05) {
             terrain_distance = traveled;
             break;
