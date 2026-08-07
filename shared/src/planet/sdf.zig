@@ -3,17 +3,20 @@ const nz = @import("numz");
 const noise = @import("../noise.zig");
 const Field = @import("Field.zig");
 
-pub const noise_frequency = 0.03;
 pub const noise_amplitude = Field.max_height;
 
+const full_height_radius = 100;
+
 pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
+    const surface_point = nz.vec.scale(nz.vec.normalize(position), planet_radius);
+    const height_scale = @min(planet_radius / full_height_radius, 1);
     var height: f32 = 0;
     inline for (Field.fields, 0..) |field, index| {
         const shift: f32 = planet_radius * 137 + @as(f32, @floatFromInt(index)) * 512;
-        const sample = nz.vec.scale(position, noise_frequency) + @as(nz.Vec3(f32), @splat(shift));
+        const sample = nz.vec.scale(surface_point, field.frequency) + @as(nz.Vec3(f32), @splat(shift));
         height += field.evaluate(noise.simplex3(sample[0], sample[1], sample[2]));
     }
-    return nz.vec.length(position) - planet_radius - height;
+    return nz.vec.length(position) - planet_radius - height * height_scale;
 }
 
 pub fn gradient(position: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {

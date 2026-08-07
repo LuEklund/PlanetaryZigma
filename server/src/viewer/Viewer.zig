@@ -34,7 +34,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
-    self.menu_open = false;
+    self.menu_open = true;
     self.arrow_lines = .empty;
     self.border_lines = .empty;
     self.arrow_lines_field = null;

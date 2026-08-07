@@ -3,12 +3,13 @@ const Field = @This();
 const std = @import("std");
 
 id: @EnumLiteral(),
+frequency: f32,
 points: []const [2]f32,
 
 pub const fields: []const Field = &.{
-    .{ .id = .hills, .points = &.{ .{ -1, -5 }, .{ 1, 5 } } },
-    // .{ .id = .mountain, .points = &.{ .{ -1, 0 }, .{ 0.4, 0 }, .{ 1, 40 } } },
-    // .{ .id = .ravine, .points = &.{ .{ -1, -25 }, .{ -0.55, 0 }, .{ 1, 0 } } },
+    .{ .id = .hills, .frequency = 0.03, .points = &.{ .{ -1, -5 }, .{ 1, 5 } } },
+    .{ .id = .mountain, .frequency = 0.008, .points = &.{ .{ -1, 0 }, .{ 0.5, 0 }, .{ 0.7, 10 }, .{ 1, 12 } } },
+    .{ .id = .crater, .frequency = 0.03, .points = &.{ .{ -1, -2 }, .{ -0.9, -4 }, .{ -0.75, -4 }, .{ -0.6, 0 }, .{ 1, 0 } } },
 };
 
 pub const max_height: comptime_int = blk: {
