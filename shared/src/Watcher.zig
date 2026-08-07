@@ -28,10 +28,7 @@ pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const 
         "./",
     };
     const found_path: []const u8 = path: for (search_paths) |path| {
-        std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
-            error.FileNotFound => continue,
-            else => return err,
-        };
+        std.Io.Dir.cwd().access(io, path, .{}) catch continue;
 
         const dir = try std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true });
         defer dir.close(io);
@@ -65,8 +62,6 @@ pub fn load(self: *Watcher, io: std.Io) !void {
 
     const stat = try std.Io.Dir.cwd().statFile(io, source_path, .{});
 
-    // Two processes on one machine (a client and a --render server, or two clients)
-    // must not overwrite each other's /tmp copies mid-run.
     if (self.copy_id == 0) self.copy_id = @intCast(@mod(std.Io.Timestamp.zero.durationTo(.now(io, .real)).nanoseconds, 1_000_000_000));
     self.copy_id += 1;
     var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -75,7 +70,19 @@ pub fn load(self: *Watcher, io: std.Io) !void {
     else
         try std.fmt.bufPrint(&copy_buf, "/tmp/{s}.{d}", .{ self.source_name, self.copy_id });
 
-    try std.Io.Dir.cwd().copyFile(source_path, .cwd(), copy_path, io, .{});
+    const source = try std.Io.Dir.cwd().openFile(io, source_path, .{});
+    defer source.close(io);
+    const copy = try std.Io.Dir.cwd().createFile(io, copy_path, .{});
+    defer copy.close(io);
+    var offset: u64 = 0;
+    var buffer: [64 * 1024]u8 = undefined;
+    while (true) {
+        const read_len = try source.readPositionalAll(io, &buffer, offset);
+        if (read_len == 0) break;
+        try copy.writePositionalAll(io, buffer[0..read_len], offset);
+        offset += read_len;
+        if (read_len < buffer.len) break;
+    }
 
     var dynlib = DynLib.open(copy_path) catch |err| {
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
@@ -89,8 +96,6 @@ pub fn load(self: *Watcher, io: std.Io) !void {
         return error.ProbeSymbolNotFound;
     }
 
-    // Debug keeps the copy on disk: an unlinked file has no DWARF for the panic
-    // unwinder, which is why in-lib frames print as "??? in ???".
     if (builtin.mode != .Debug) std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
 
     self.dynlib = dynlib;
@@ -99,8 +104,6 @@ pub fn load(self: *Watcher, io: std.Io) !void {
     self.version_count += 1;
 }
 
-/// Indexing the raw slot instead made generation 0 mean "25 builds ago" once the ring
-/// wrapped, silently adopting live state into a stale library.
 pub fn buildAt(self: *Watcher, generations_back: usize) ?*DynLib {
     if (generations_back >= self.versions.len or generations_back >= self.version_count) return null;
     const slot = (self.version_count - 1 - generations_back) % self.versions.len;
