@@ -16,7 +16,7 @@ pub fn HotLib(
         current_generation: usize,
 
         pub fn init(comptime library_name: []const u8, io: std.Io) !Self {
-            var watcher: Watcher = try .init(library_name, probe_symbol, io);
+            var watcher: Watcher = try .init(library_name, probe_symbol);
             try watcher.load(io);
             return .{
                 .watcher = watcher,
