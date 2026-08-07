@@ -6,6 +6,46 @@ const DynLib = @import("DynLib.zig").DynLib;
 
 const is_windows = builtin.os.tag == .windows;
 
+extern "kernel32" fn CopyFileW(existing: [*:0]const u16, new: [*:0]const u16, fail_if_exists: std.os.windows.BOOL) callconv(.winapi) std.os.windows.BOOL;
+extern "kernel32" fn GetFileAttributesW(path: [*:0]const u16) callconv(.winapi) std.os.windows.DWORD;
+
+fn wtf16Path(buf: *[std.fs.max_path_bytes]u16, path: []const u8) ![:0]const u16 {
+    const len = try std.unicode.utf8ToUtf16Le(buf[0 .. buf.len - 1], path);
+    buf[len] = 0;
+    return buf[0..len :0];
+}
+
+/// Dir.copyFile picks its copy strategy by matching error values from the io
+/// vtable, which misfires across the exe/library boundary and panics — Windows
+/// goes through the OS directly, like fileExists.
+fn copyFile(source_path: []const u8, copy_path: []const u8, io: std.Io) !void {
+    if (is_windows) {
+        var src_buf: [std.fs.max_path_bytes]u16 = undefined;
+        var dst_buf: [std.fs.max_path_bytes]u16 = undefined;
+        const src_w = try wtf16Path(&src_buf, source_path);
+        const dst_w = try wtf16Path(&dst_buf, copy_path);
+        if (CopyFileW(src_w.ptr, dst_w.ptr, .FALSE) == .FALSE) return error.CopyFailed;
+    } else {
+        try std.Io.Dir.cwd().copyFile(source_path, .cwd(), copy_path, io, .{});
+    }
+}
+
+/// Probes through the OS instead of `io`: error values are numbered per
+/// compilation, so errors from the host exe's io vtable arrive scrambled
+/// inside a hot-reloaded library and cannot be told apart.
+fn fileExists(path: []const u8) bool {
+    if (is_windows) {
+        var buf: [std.fs.max_path_bytes]u16 = undefined;
+        const path_w = wtf16Path(&buf, path) catch return false;
+        return GetFileAttributesW(path_w.ptr) != std.os.windows.INVALID_FILE_ATTRIBUTES;
+    }
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    if (path.len >= buf.len) return false;
+    @memcpy(buf[0..path.len], path);
+    buf[path.len] = 0;
+    return std.c.access(buf[0..path.len :0], std.c.F_OK) == 0;
+}
+
 dynlib: ?DynLib = null,
 old_dynlib: ?DynLib = null,
 dir_path: []const u8,
@@ -17,7 +57,7 @@ copy_id: u64,
 versions: [25]?DynLib,
 version_count: u64,
 
-pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const u8, io: std.Io) !Watcher {
+pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const u8) !Watcher {
     const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
     const search_paths: []const [:0]const u8 = &.{
         "../lib/",
@@ -27,19 +67,10 @@ pub fn init(comptime library_name: []const u8, comptime probe_symbol: [:0]const 
         "client/zig-out/bin/",
         "./",
     };
-    const found_path: []const u8 = path: for (search_paths) |path| {
-        std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
-            error.FileNotFound => continue,
-            else => return err,
-        };
-
-        const dir = try std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true });
-        defer dir.close(io);
-        var it = dir.iterate();
-        while (try it.next(io)) |entry| {
-            if (entry.kind != .file) continue;
-            if (std.mem.eql(u8, entry.name, source_name)) break :path path;
-        }
+    const found_path: []const u8 = for (search_paths) |path| {
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const full_path = std.fmt.bufPrint(&buf, "{s}{s}", .{ path, source_name }) catch continue;
+        if (fileExists(full_path)) break path;
     } else return error.NoLibraryPathFound;
 
     return .{
@@ -75,7 +106,7 @@ pub fn load(self: *Watcher, io: std.Io) !void {
     else
         try std.fmt.bufPrint(&copy_buf, "/tmp/{s}.{d}", .{ self.source_name, self.copy_id });
 
-    try std.Io.Dir.cwd().copyFile(source_path, .cwd(), copy_path, io, .{});
+    try copyFile(source_path, copy_path, io);
 
     var dynlib = DynLib.open(copy_path) catch |err| {
         std.Io.Dir.cwd().deleteFile(io, copy_path) catch {};
