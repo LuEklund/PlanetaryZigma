@@ -39,8 +39,8 @@
         },
 
         .zgltf = .{
-            .url = "git+https://github.com/LuEklund/zgltf.git#82765fa577fece6febcc5ce2b0e83864ca6ea5fe",
-            .hash = "zgltf-0.6.0-i6Tcb00kAQAGE6vERq4z6PxP4hdlKR6kb-TFhAO-6_ad",
+            .url = "git+https://github.com/LuEklund/zgltf.git#551aac1c241370e32fc26c288bec6da71413a937",
+            .hash = "zgltf-0.6.1-i6Tcb2QkAQAmIT81AQPl4bt5EBllj_AzLlDA37kY4b9U",
         },
         .stb = .{
             .url = "git+https://github.com/nothings/stb#fede005abaf93d9d7f3a679d1999b2db341b360f",
