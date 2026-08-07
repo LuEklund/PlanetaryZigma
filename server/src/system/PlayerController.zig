@@ -82,17 +82,7 @@ pub fn update(world: *World, physics: *Physics) !void {
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
         const ray_position_end = nz.vec.scale(camera_forward, 5);
-        const ray_hit = Physics.c.b3World_CastRayClosest(
-            physics.world,
-            .{ .x = ray_position_start[0], .y = ray_position_start[1], .z = ray_position_start[2] },
-            .{ .x = ray_position_end[0], .y = ray_position_end[1], .z = ray_position_end[2] },
-            Physics.c.b3DefaultQueryFilter(),
-        );
-        var hit_id: shared.entity.Id = .none;
-        if (ray_hit.hit) {
-            const hit_body = Physics.c.b3Shape_GetBody(ray_hit.shapeId);
-            hit_id = @enumFromInt(@as(u32, @intCast(@intFromPtr(Physics.c.b3Body_GetUserData(hit_body)))));
-        }
+        const hit_id: shared.entity.Id = if (Physics.Ray.cast(physics, ray_position_start, ray_position_end)) |hit| hit.id else .none;
         if (player.interacting != hit_id) {
             player.interacting = hit_id;
             const interact_id: shared.entity.Id = if (world.getPtr(hit_id)) |hit_entity|
@@ -227,8 +217,7 @@ fn aimPoint(physics: *Physics, planet: *const shared.Planet, player_position: nz
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
-    const result = Physics.c.b3World_CastRayClosest(physics.world, Physics.toB3(ray_start), Physics.toB3(translation), Physics.c.b3DefaultQueryFilter());
-    const entity_distance: f32 = if (result.hit) nz.vec.length(Physics.toVec(result.point) - ray_start) else aim_range;
+    const entity_distance: f32 = if (Physics.Ray.cast(physics, ray_start, translation)) |hit| nz.vec.length(hit.point - ray_start) else aim_range;
 
     var terrain_distance: f32 = aim_range;
     var traveled: f32 = 0;

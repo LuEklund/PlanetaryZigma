@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-pub const c = @import("box3d");
+const c = @import("box3d");
 
 pub const gravity_accel: f32 = 50;
 const move_accel: f32 = 400;
@@ -46,11 +46,11 @@ pub const Collider = struct {
     object_layer: ObjectLayer,
 };
 
-pub fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
+fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
     return .{ v.x, v.y, v.z };
 }
 
-pub fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
+fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
     return .{ .x = v[0], .y = v[1], .z = v[2] };
 }
 
@@ -289,6 +289,23 @@ pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {
     _ = self;
     c.b3DestroyBody(body_id);
 }
+
+pub const Ray = struct {
+    pub const Hit = struct {
+        id: shared.entity.Id,
+        point: nz.Vec3(f32),
+    };
+
+    pub fn cast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Hit {
+        const ray = c.b3World_CastRayClosest(physics.world, toB3(start), toB3(translation), c.b3DefaultQueryFilter());
+        if (!ray.hit) return null;
+        const body = c.b3Shape_GetBody(ray.shapeId);
+        return .{
+            .id = @enumFromInt(@as(u32, @intCast(@intFromPtr(c.b3Body_GetUserData(body))))),
+            .point = toVec(ray.point),
+        };
+    }
+};
 
 pub fn setRotation(body_id: c.b3BodyId, rotation: nz.quat.Hamiltonian(f32)) void {
     c.b3Body_SetTransform(body_id, c.b3Body_GetPosition(body_id), quatToB3(rotation));
