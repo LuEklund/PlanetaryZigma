@@ -501,6 +501,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
             drawStatic(self, cmd, handle, cascade_vp.mul(draw_model.model_matrix));
         }
+        for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, cascade_vp);
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_skinned));
         for (list.draw_models.items) |draw_model| {
             const mesh_id = draw_model.mesh_id orelse continue;
@@ -550,7 +551,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawStatic(self, cmd, handle, draw_model.model_matrix);
     }
 
-    for (self.planet.meshes.values()) |*mesh| try drawPlanetChunk(self, cmd, mesh, .identity);
+    for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, .identity);
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
     for (list.draw_models.items) |draw_model| {
@@ -838,7 +839,7 @@ fn drawMeshNode(
     emitNode(self, cmd, mesh, &push);
 }
 
-fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) !void {
+fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) void {
     var push: Shader.WorldPushConstant = .{
         .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
         .model_matrix = transform.d,

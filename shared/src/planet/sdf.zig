@@ -12,7 +12,7 @@ pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
     const height_scale = @min(planet_radius / full_height_radius, 1);
     var height: f32 = 0;
     inline for (Field.fields, 0..) |field, index| {
-        const shift: f32 = planet_radius * 137 + @as(f32, @floatFromInt(index)) * 512;
+        const shift: f32 = @mod(planet_radius * 137, 1024) + @as(f32, @floatFromInt(index)) * 512;
         const sample = nz.vec.scale(surface_point, field.frequency) + @as(nz.Vec3(f32), @splat(shift));
         height += field.evaluate(noise.simplex3(sample[0], sample[1], sample[2]));
     }
