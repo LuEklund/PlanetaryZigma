@@ -256,6 +256,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     beginRendering(self, cmd);
     renderWorldPass(self, cmd, current_frame, list);
     if (list.draw_sky) renderSkyPass(self, cmd, current_frame);
+    renderHighlightPass(self, cmd, current_frame, list);
     renderParticlePass(self, cmd, current_frame, list, particle_batches);
     if (list.draw_lines.items.len != 0) renderDebugPass(self, cmd, current_frame, list);
     renderUiPass(self, cmd, current_frame, list);
@@ -599,6 +600,60 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
         ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline_layout_handle, 1, 1, &buf_idx_1, &off_1);
     }
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
+}
+
+fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+    var mask_barrier: Image.Barrier = .init(cmd, self.swapchain.mask_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    mask_barrier.transition(c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+
+    var mask_attachment: c.VkRenderingAttachmentInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = self.swapchain.mask_image.vk_imageview,
+        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } },
+    };
+    var mask_render_info: c.VkRenderingInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &mask_attachment,
+    };
+    ext.vkCmdBeginRendering(cmd, &mask_render_info);
+
+    ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
+    const color_blend_enables: c.VkBool32 = c.VK_FALSE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+    const mask_viewport: c.VkViewport = .{ .width = @floatFromInt(self.swapchain.extent.width), .height = @floatFromInt(self.swapchain.extent.height), .maxDepth = 1 };
+    const mask_scissor: c.VkRect2D = .{ .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } };
+    ext.vkCmdSetViewportWithCountEXT(cmd, 1, &mask_viewport);
+    ext.vkCmdSetScissorWithCountEXT(cmd, 1, &mask_scissor);
+
+    self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
+
+    bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_static));
+    bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
+    for (list.draw_models.items) |draw_model| {
+        if (!draw_model.highlight or draw_model.mesh_id != null) continue;
+        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
+        drawStatic(self, cmd, handle, draw_model.model_matrix);
+    }
+
+    bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_skinned));
+    bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
+    for (list.draw_models.items) |draw_model| {
+        const mesh_id = draw_model.mesh_id orelse continue;
+        if (!draw_model.highlight) continue;
+        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
+        const entry = fileEntry(self, handle) orelse continue;
+        drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, draw_model.model_matrix);
+    }
+
+    ext.vkCmdEndRendering(cmd);
+    mask_barrier.transition(c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, c.VK_ACCESS_SHADER_READ_BIT);
 }
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };

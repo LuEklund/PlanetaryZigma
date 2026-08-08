@@ -36,6 +36,7 @@ pub const DrawModel = struct {
     position: nz.Vec3(f32),
     mesh_id: ?u32,
     palette_offset: ?u32,
+    highlight: bool = false,
 };
 
 pub const Line = struct {

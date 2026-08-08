@@ -231,6 +231,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
                     .position = instance.transform.position,
                     .mesh_id = @intCast(mesh_id),
                     .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
+                    .highlight = instance.kind == .teleporter,
                 });
             }
         } else {
@@ -240,6 +241,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
                 .position = instance.transform.position,
                 .mesh_id = null,
                 .palette_offset = null,
+                .highlight = instance.kind == .teleporter,
             });
         }
     }

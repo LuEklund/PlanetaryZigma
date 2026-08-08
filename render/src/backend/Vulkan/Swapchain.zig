@@ -19,6 +19,7 @@ format: c.VkFormat,
 extent: c.VkExtent3D,
 draw_image: Image,
 depth_image: Image,
+mask_image: Image,
 
 pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !Swapchain {
     const present_mode = try getPresentMode(gpa, physical_device, surface);
@@ -68,6 +69,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
     );
+
     const cmd = try device.beginImmediateCommand();
     var depth_image_barrier: Image.Barrier = .init(cmd, depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     depth_image_barrier.transition(
@@ -76,6 +78,17 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     );
     try device.endImmediateCommand(cmd);
+
+    const mask_image: Image = try .init(
+        vma,
+        device,
+        c.VK_FORMAT_R8_UNORM,
+        extent_3d,
+        .@"2d",
+        c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
     return .{
         .swapchain = swapchain,
         .present_mode = present_mode,
@@ -86,12 +99,14 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .extent = extent_3d,
         .depth_image = depth_image,
         .draw_image = draw_image,
+        .mask_image = mask_image,
     };
 }
 
 pub fn deinit(self: *Swapchain, vma: Vma, device: Device) void {
     self.draw_image.deinit(vma, device);
     self.depth_image.deinit(vma, device);
+    self.mask_image.deinit(vma, device);
 
     for (0..self.image_count) |i| {
         c.vkDestroySemaphore(device.handle, self.render_semaphores[i], null);
