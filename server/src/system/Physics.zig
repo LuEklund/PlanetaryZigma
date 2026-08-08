@@ -376,7 +376,6 @@ pub const Impact = struct {
     point: nz.Vec3(f32),
 };
 
-
 fn setRotation(body_id: c.b3BodyId, rotation: nz.quat.Hamiltonian(f32)) void {
     c.b3Body_SetTransform(body_id, c.b3Body_GetPosition(body_id), quatToB3(rotation));
 }

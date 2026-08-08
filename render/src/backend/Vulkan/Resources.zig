@@ -114,7 +114,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
             descriptor_layouts.get(.textures).handle,
             descriptor_layouts.get(.shadow).handle,
         }),
-        .sky = try .init(device, @sizeOf(Shader.WorldPushConstant), c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, &.{
+        .sky = try .init(device, 0, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, &.{
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),

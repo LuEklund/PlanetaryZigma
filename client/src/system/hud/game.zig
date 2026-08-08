@@ -58,7 +58,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         });
 
         const inventory_width: f32 = ui.screen_width * 0.6;
-        const inventory_height: f32 = 60;
         ui.add(null, .{
             .name = "HUD",
             .axis_align = .horizontal,
@@ -66,18 +65,37 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .size = .{ .percent = .{ .height = 1, .width = 1 } },
         });
 
+        const currency_text = ui.print("$: {d}", .{player.currency});
         ui.add("HUD", .{
-            .size = .{ .percent = .{ .height = 1, .width = 0.2 } },
-            .text = .{ .data = ui.print("$: {d}", .{player.currency}) },
+            .name = "currency",
+            .size = .{ .fixed = .{ .width = ui.screen_width * 0.2 - 10, .height = 8 * 2 + 24 } },
+            .color = .new(0, 0, 0, 0.35),
+            .axis_align = .vertical,
+            .gap = 0,
+        });
+        ui.add("currency", .{
+            .size = .{ .fixed = ui.textSize(currency_text, 24) },
+            .offset = .{ .left = 8, .top = 8 },
+            .text = .{ .data = currency_text, .size = 24 },
         });
 
+        const icon_size: f32 = @max(40, ui.screen_width / 26);
+        const icon_gap: f32 = icon_size / 6;
+        const icons_per_row: usize = @intFromFloat(inventory_width / (icon_size + icon_gap));
+        var shown_icons: usize = 0;
+        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+            if (player.inventory.get(item_kind) > 0 and !shared.Item.get(item_kind).is_equipment) shown_icons += 1;
+        }
+        const row_count = (shown_icons + icons_per_row - 1) / icons_per_row;
+        const rows_height: f32 = @floatFromInt(row_count);
         ui.add("HUD", .{
             .name = "inventory",
-            .size = .{ .fixed = .{ .width = inventory_width, .height = inventory_height } },
+            .size = .{ .fixed = .{ .width = inventory_width, .height = if (row_count == 0) 0 else rows_height * (icon_size + icon_gap) - icon_gap } },
             .color = .new(0.5, 0.5, 0.5, 0.2),
-            .axis_align = .horizontal,
-            .gap = 10,
+            .axis_align = .vertical,
+            .gap = icon_gap,
         });
+        var icon_index: usize = 0;
         inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const equipment_size: Ui.Size2D = .{ .height = 100, .width = 100 };
             const amount = player.inventory.get(item_kind);
@@ -105,10 +123,19 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         }},
                     });
                 } else {
-                    ui.add("inventory", .{
+                    const row_name = ui.print("inventory_row_{d}", .{icon_index / icons_per_row});
+                    if (icon_index % icons_per_row == 0) {
+                        ui.add("inventory", .{
+                            .name = row_name,
+                            .size = .{ .fixed = .{ .width = inventory_width, .height = icon_size } },
+                            .axis_align = .horizontal,
+                            .gap = icon_gap,
+                        });
+                    }
+                    ui.add(row_name, .{
                         .size = .{ .fixed = .{
-                            .height = inventory_height,
-                            .width = inventory_height,
+                            .height = icon_size,
+                            .width = icon_size,
                         } },
 
                         .color = .new(1, 1, 1, 1),
@@ -123,9 +150,11 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                             },
                         }},
                     });
+                    icon_index += 1;
                 }
             }
         }
+        addObjectivePanel(world, ui);
         inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount > 0 and ui.isHot(ui.print("{t}", .{item_kind}))) {
@@ -169,38 +198,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                 });
             }
         }
-        ui.add(
-            "HUD",
-            .{
-                .name = "world",
-                .axis_align = .vertical,
-                .size = .{ .percent = .{ .height = 1, .width = 0.2 } },
-            },
-        );
-        const stage_text = ui.print("stage: {d}", .{world.stage});
-
-        ui.add(
-            "world",
-            .{
-                .name = "stage",
-                .size = .{ .fixed = ui.textSize(stage_text, 18) },
-                .text = .{ .data = stage_text, .size = 18 },
-            },
-        );
-        if (world.getPtr(world.teleporter_id)) |entity| {
-            const teleporter = entity.teleporter;
-            ui.add(
-                "world",
-                .{
-                    .size = .{ .percent = .{ .height = 1, .width = 1 } },
-                    .text = .{
-                        .data = ui.print("Teleport Charge: {d:.2}", .{teleporter.charged}),
-                        .size = 18,
-                    },
-                },
-            );
-        }
-
         if (options.show_crosshair) {
             ui.add(null, .{
                 .name = "crosshair",
@@ -349,6 +346,65 @@ fn addWipeButton(ui: *Ui, name: []const u8, text: []const u8, width: f32, height
             .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
+}
+
+fn addObjectivePanel(world: *World, ui: *Ui) void {
+    var lines: [2][]const u8 = undefined;
+    var line_count: usize = 0;
+    if (world.getPtr(world.teleporter_id)) |teleporter_entity| {
+        const teleporter = teleporter_entity.teleporter;
+        const boss_alive = world.teleporter_bosses.items.len > 0;
+        if (teleporter.state == .idle) {
+            lines[line_count] = "Find the teleporter";
+            line_count += 1;
+        } else {
+            if (teleporter.charged < teleporter.max_charge) {
+                lines[line_count] = ui.print("Charge the teleporter {d:.0}%", .{100 * teleporter.charged / teleporter.max_charge});
+                line_count += 1;
+            }
+            if (boss_alive) {
+                lines[line_count] = "Defeat the boss";
+                line_count += 1;
+            }
+            if (!boss_alive and teleporter.charged >= teleporter.max_charge) {
+                lines[line_count] = "Enter the teleporter";
+                line_count += 1;
+            }
+        }
+    }
+
+    const panel_width: f32 = ui.screen_width * 0.2 - 10;
+    const line_size: f32 = 24;
+    const stage_size: f32 = 18;
+    const padding: f32 = 8;
+    const line_count_float: f32 = @floatFromInt(line_count);
+    const title_size: f32 = 28;
+    const title_spacing: f32 = 10;
+    ui.add("HUD", .{
+        .name = "objective_panel",
+        .size = .{ .fixed = .{ .width = panel_width, .height = padding * 2 + stage_size + title_spacing + title_size + 4 + (line_size + 4) * line_count_float } },
+        .color = .new(0, 0, 0, 0.35),
+        .axis_align = .vertical,
+        .gap = 4,
+    });
+    const stage_text = ui.print("Stage {d}", .{world.stage});
+    ui.add("objective_panel", .{
+        .size = .{ .fixed = ui.textSize(stage_text, stage_size) },
+        .offset = .{ .left = padding, .top = padding },
+        .text = .{ .data = stage_text, .size = stage_size, .color = .new(0.7, 0.7, 0.7, 1) },
+    });
+    ui.add("objective_panel", .{
+        .size = .{ .fixed = ui.textSize("Objective", title_size) },
+        .offset = .{ .left = padding, .top = title_spacing },
+        .text = .{ .data = "Objective", .size = title_size, .color = .new(0.7, 0.7, 0.7, 1) },
+    });
+    for (lines[0..line_count]) |line| {
+        ui.add("objective_panel", .{
+            .size = .{ .fixed = ui.textSize(line, line_size) },
+            .offset = .{ .left = padding, .top = 0 },
+            .text = .{ .data = line, .size = line_size, .color = .new(0.95, 0.85, 0.25, 1) },
+        });
+    }
 }
 
 fn addChat(world: *World, ui: *Ui) void {

@@ -19,7 +19,7 @@ pub fn init(device: Device, push_constant_size: u32, stage_flags: c.VkShaderStag
         .pSetLayouts = descriptor_set_layouts.ptr,
         .setLayoutCount = @intCast(descriptor_set_layouts.len),
         .pPushConstantRanges = &ranges,
-        .pushConstantRangeCount = 1,
+        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
     };
 
     var layout: c.VkPipelineLayout = undefined;

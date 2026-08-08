@@ -89,6 +89,7 @@ pub fn update(world: *World) !void {
                     .lootbox, .item => hit_id,
                     .teleporter => switch (hit_entity.teleporter.state) {
                         .active => .none,
+                        .completed => if (world.teleport_bosses.items.len > 0) .none else hit_id,
                         else => hit_id,
                     },
                     else => .none,

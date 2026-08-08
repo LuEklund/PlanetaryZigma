@@ -38,7 +38,7 @@ pub fn updateDirector(world: *World) !void {
             11...40 => .tubloid,
             41...60 => .tubloida,
             61...75 => .hunkloid,
-            76...90 => .blooploid,
+            76...90 => .healer,
             else => .bloorp_lord,
             // 0...50 => .tubloid,
             // else => .acorn,
@@ -47,7 +47,7 @@ pub fn updateDirector(world: *World) !void {
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {
-                const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, world.planet.radiusFloat(), random);
+                const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, enemy_max_spawn_distance + 30, random);
                 const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
                 if (world.spawn(.{
                     .kind = .{ .enemy = enemy_kind },
