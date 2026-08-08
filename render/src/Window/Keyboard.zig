@@ -220,7 +220,7 @@ pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State)
 }
 
 pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
-    const scancode: u32 = (@as(u32, @intCast(lParam)) >> 16) & 0xFF;
+    const scancode: u32 = (@as(u32, @truncate(@as(usize, @bitCast(lParam)))) >> 16) & 0xFF;
     const extended: bool = ((lParam >> 24) & 1) != 0;
 
     const key: win32.VIRTUAL_KEY = @enumFromInt(@as(u16, @truncate(wParam)));

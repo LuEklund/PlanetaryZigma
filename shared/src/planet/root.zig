@@ -18,7 +18,7 @@ uploads: std.ArrayList(Upload),
 removes: std.ArrayList(Chunk.Coord),
 
 pub const Entry = struct {
-    raw: Chunk.Raw,
+    chunk: Chunk,
     mesh: Chunk.Mesh,
     nav: Chunk.NavGraph,
 };
@@ -47,7 +47,7 @@ pub const empty: Planet = .{
 pub fn deinit(self: *Planet, gpa: std.mem.Allocator) void {
     if (self.job) |running| running.job.join();
     for (self.chunks.values()) |*chunk_entry| {
-        chunk_entry.raw.deinit(gpa);
+        chunk_entry.chunk.deinit(gpa);
         chunk_entry.mesh.deinit(gpa);
         chunk_entry.nav.deinit(gpa);
     }
@@ -74,31 +74,28 @@ pub fn clearOutboxes(self: *Planet) void {
 pub fn update(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
     if (self.planet_radius == 0) return;
 
-    const small = self.planet_radius <= @as(u32, @intCast(Chunk.dim));
-    try self.collectJob(gpa, anchors, view_distance, small);
+    try self.collectJob(gpa, anchors, view_distance);
 
-    if (!small) {
-        var chunk_index: usize = self.chunks.count();
-        while (chunk_index > 0) {
-            chunk_index -= 1;
-            const coord = self.chunks.keys()[chunk_index];
-            const kept = for (anchors) |anchor| {
-                if (coord.within(.fromPosition(anchor), view_distance)) break true;
-            } else false;
-            if (kept) continue;
-            try self.removes.append(gpa, coord);
-            var chunk_entry = self.chunks.values()[chunk_index];
-            chunk_entry.raw.deinit(gpa);
-            chunk_entry.mesh.deinit(gpa);
-            chunk_entry.nav.deinit(gpa);
-            self.chunks.swapRemoveAt(chunk_index);
-        }
+    var chunk_index: usize = self.chunks.count();
+    while (chunk_index > 0) {
+        chunk_index -= 1;
+        const coord = self.chunks.keys()[chunk_index];
+        const kept = for (anchors) |anchor| {
+            if (coord.within(.fromPosition(anchor), view_distance)) break true;
+        } else false;
+        if (kept) continue;
+        try self.removes.append(gpa, coord);
+        var chunk_entry = self.chunks.values()[chunk_index];
+        chunk_entry.chunk.deinit(gpa);
+        chunk_entry.mesh.deinit(gpa);
+        chunk_entry.nav.deinit(gpa);
+        self.chunks.swapRemoveAt(chunk_index);
     }
 
-    if (self.job == null) try self.startJob(gpa, anchors, view_distance, small);
+    if (self.job == null) try self.startJob(gpa, anchors, view_distance);
 }
 
-fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32, small: bool) !void {
+fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
     const running = self.job orelse return;
     var results = running.job.collect() orelse return;
     self.job = null;
@@ -109,45 +106,37 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
     var freed: usize = 0;
     defer std.log.debug("planet collectJob: inserted {d} freed {d}", .{ inserted, freed });
     for (results.items) |*result| {
-        const in_window = small or for (anchors) |anchor| {
-            if (result.coord.within(.fromPosition(anchor), view_distance)) break true;
+        const in_window = for (anchors) |anchor| {
+            if (result.chunk.coord.within(.fromPosition(anchor), view_distance)) break true;
         } else false;
         if (stale or !in_window) {
-            result.raw.deinit(gpa);
-            gpa.free(result.vertices);
-            gpa.free(result.indices);
+            result.chunk.deinit(gpa);
+            result.mesh.deinit(gpa);
             result.nav.deinit(gpa);
             freed += 1;
             continue;
         }
-        const slot = try self.chunks.getOrPut(gpa, result.coord);
+        const slot = try self.chunks.getOrPut(gpa, result.chunk.coord);
         if (slot.found_existing) {
-            result.raw.deinit(gpa);
-            gpa.free(result.vertices);
-            gpa.free(result.indices);
+            result.chunk.deinit(gpa);
+            result.mesh.deinit(gpa);
             result.nav.deinit(gpa);
             freed += 1;
             continue;
         }
-        slot.value_ptr.* = .{ .raw = result.raw, .mesh = .{ .vertices = result.vertices, .indices = result.indices }, .nav = result.nav };
+        slot.value_ptr.* = .{ .chunk = result.chunk, .mesh = result.mesh, .nav = result.nav };
         inserted += 1;
-        if (result.indices.len != 0) {
-            try self.uploads.append(gpa, .{ .coord = result.coord, .vertices = result.vertices, .indices = result.indices });
+        if (result.mesh.indices.items.len != 0) {
+            try self.uploads.append(gpa, .{ .coord = result.chunk.coord, .vertices = result.mesh.vertices.items, .indices = result.mesh.indices.items });
         }
     }
 }
 
-fn startJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32, small: bool) !void {
+fn startJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
     var missing: std.ArrayList(Chunk.Coord) = .empty;
     errdefer missing.deinit(gpa);
 
-    if (small) {
-        const window_coords = try Chunk.coords(gpa, self.planet_radius, null);
-        defer gpa.free(window_coords);
-        for (window_coords) |coord| {
-            if (!self.chunks.contains(coord)) try missing.append(gpa, coord);
-        }
-    } else for (anchors) |anchor| {
+    for (anchors) |anchor| {
         const anchor_chunk: Chunk.Coord = .fromPosition(anchor);
         const clamp: Chunk.Box = .{
             .min = anchor_chunk.offset(@splat(-view_distance)),
@@ -197,7 +186,7 @@ fn anchorDistanceSquared(anchors: []const nz.Vec3(f32), coord: Chunk.Coord) i32 
 fn dropAllChunks(self: *Planet, gpa: std.mem.Allocator) !void {
     for (self.chunks.keys(), self.chunks.values()) |coord, *chunk_entry| {
         try self.removes.append(gpa, coord);
-        chunk_entry.raw.deinit(gpa);
+        chunk_entry.chunk.deinit(gpa);
         chunk_entry.mesh.deinit(gpa);
         chunk_entry.nav.deinit(gpa);
     }

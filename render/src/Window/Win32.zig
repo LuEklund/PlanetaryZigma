@@ -103,7 +103,7 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 .height = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
             },
             win32.WM_USER + win32.WM_GETMINMAXINFO => {
-                const info: *win32.MINMAXINFO = @ptrFromInt(@as(usize, @intCast(msg.lParam)));
+                const info: *win32.MINMAXINFO = @ptrFromInt(@as(usize, @bitCast(msg.lParam)));
 
                 if (window.max_size) |size| {
                     info.ptMaxTrackSize.x = @intCast(size.width);
@@ -131,8 +131,8 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
             },
 
             win32.WM_MOUSEMOVE => if (!pointer.is_relative) {
-                const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam)))));
-                const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam >> 16)))));
+                const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @bitCast(msg.lParam)))));
+                const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @bitCast(msg.lParam)) >> 16)));
 
                 pointer.movement = .{ .position = .{ .x = x, .y = y } };
             },
@@ -141,7 +141,7 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 var input: win32.RAWINPUT = undefined;
 
                 check(win32.GetRawInputData(
-                    @ptrFromInt(@as(usize, @intCast(msg.lParam))),
+                    @ptrFromInt(@as(usize, @bitCast(msg.lParam))),
                     win32.RID_INPUT,
                     &input,
                     &size,

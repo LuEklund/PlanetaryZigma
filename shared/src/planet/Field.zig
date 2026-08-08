@@ -12,14 +12,14 @@ pub const fields: []const Field = &.{
     .{ .id = .crater, .frequency = 0.03, .points = &.{ .{ -1, -2 }, .{ -0.9, -4 }, .{ -0.75, -4 }, .{ -0.6, 0 }, .{ 1, 0 } } },
 };
 
-pub const max_height: comptime_int = blk: {
+pub const max_height: comptime_int = height: {
     var total: f32 = 0;
     for (fields) |field| {
         var biggest: f32 = 0;
         for (field.points) |point| biggest = @max(biggest, @abs(point[1]));
         total += biggest;
     }
-    break :blk @intFromFloat(@ceil(total));
+    break :height @intFromFloat(@ceil(total));
 };
 
 pub fn evaluate(self: Field, x: f32) f32 {
