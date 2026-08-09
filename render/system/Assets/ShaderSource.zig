@@ -16,17 +16,23 @@ const Loader = AssetServer.Loader;
 gpa: std.mem.Allocator,
 /// One owned buffer per kind, kept so a reload can free the previous bytes.
 spirv: [Shader.Kind.count]?[]align(4) u8,
-pending: std.ArrayList(DrawList.ShaderUpload),
+/// The frame's upload queue, owned by Assets. Sources append; nobody keeps a private one.
+pending: *std.ArrayList(DrawList.AssetUpload),
 interface: Loader,
 
-pub fn init(self: *ShaderSource, gpa: std.mem.Allocator, asset_server: *AssetServer) !void {
+pub fn init(
+    self: *ShaderSource,
+    gpa: std.mem.Allocator,
+    asset_server: *AssetServer,
+    pending: *std.ArrayList(DrawList.AssetUpload),
+) !void {
     const files = try gpa.alloc([]const u8, Shader.Kind.count);
     for (std.enums.values(Shader.Kind), files) |kind, *file| file.* = Shader.get(kind).path;
 
     self.* = .{
         .gpa = gpa,
         .spirv = @splat(null),
-        .pending = .empty,
+        .pending = pending,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -40,17 +46,7 @@ pub fn init(self: *ShaderSource, gpa: std.mem.Allocator, asset_server: *AssetSer
 
 pub fn deinit(self: *ShaderSource) void {
     for (&self.spirv) |*slot| if (slot.*) |bytes| self.gpa.free(bytes);
-    self.pending.deinit(self.gpa);
     self.gpa.free(self.interface.files);
-}
-
-/// Valid until the next `consumed()`; the backend reads these during renderUpdate.
-pub fn uploads(self: *const ShaderSource) []const DrawList.ShaderUpload {
-    return self.pending.items;
-}
-
-pub fn consumed(self: *ShaderSource) void {
-    self.pending.clearRetainingCapacity();
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -67,21 +63,18 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     errdefer self.gpa.free(bytes);
     try reader.interface.readSliceAll(bytes);
 
-    // A reload before the backend drained the previous bytes would leave a stale pointer
-    // in `pending`, so replace that row rather than appending a second one.
-    if (self.spirv[index]) |old| {
-        for (self.pending.items) |*upload| {
-            if (upload.spirv.ptr != old.ptr) continue;
-            upload.spirv = bytes;
-            break;
-        }
-        self.gpa.free(old);
-    }
+    if (self.spirv[index]) |old| self.gpa.free(old);
     self.spirv[index] = bytes;
 
+    // A reload before the backend drained the queue would leave the freed bytes in an
+    // undrained row, so rewrite that row rather than appending a second one for this kind.
     const kind: Shader.Kind = @enumFromInt(index);
-    for (self.pending.items) |upload| if (upload.kind == kind) return;
-    try self.pending.append(self.gpa, .{ .kind = kind, .spirv = bytes });
+    for (self.pending.items) |*upload| {
+        if (upload.* != .shader or upload.shader.kind != kind) continue;
+        upload.shader.spirv = bytes;
+        return;
+    }
+    try self.pending.append(self.gpa, .{ .shader = .{ .kind = kind, .spirv = bytes } });
 }
 
 fn unload(loader: *Loader, index: usize) void {

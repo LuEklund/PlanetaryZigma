@@ -23,10 +23,7 @@ ui: UiLayer,
 planet: PlanetState,
 /// Asset bytes read above the boundary; the backend creates GPU objects from them and
 /// keeps nothing. Owned by the producer, valid only for this frame's renderUpdate.
-shader_uploads: []const ShaderUpload,
-texture_uploads: []const TextureUpload,
-font_uploads: []const FontUpload,
-model_uploads: []const ModelUpload,
+asset_uploads: []const AssetUpload,
 surface_width: u32,
 surface_height: u32,
 
@@ -73,6 +70,15 @@ pub const UiLayer = struct {
     quads: std.ArrayList(Ui.Quad),
     screen_width: f32,
     screen_height: f32,
+};
+
+/// One queue, in arrival order. The backend drains it with one switch, so adding an asset
+/// kind is one variant here and one arm there.
+pub const AssetUpload = union(enum) {
+    shader: ShaderUpload,
+    texture: TextureUpload,
+    font: FontUpload,
+    model: ModelUpload,
 };
 
 pub const ShaderUpload = struct {
@@ -152,10 +158,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
         .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
-        .shader_uploads = &.{},
-        .texture_uploads = &.{},
-        .font_uploads = &.{},
-        .model_uploads = &.{},
+        .asset_uploads = &.{},
     };
 }
 

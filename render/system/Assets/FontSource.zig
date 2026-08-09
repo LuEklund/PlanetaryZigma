@@ -17,10 +17,16 @@ const Loader = AssetServer.Loader;
 gpa: std.mem.Allocator,
 fonts: []Font,
 coverage: [Font.count]?[]u8,
-pending: std.ArrayList(DrawList.FontUpload),
+pending: *std.ArrayList(DrawList.AssetUpload),
 interface: Loader,
 
-pub fn init(self: *FontSource, gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font) !void {
+pub fn init(
+    self: *FontSource,
+    gpa: std.mem.Allocator,
+    asset_server: *AssetServer,
+    fonts: []Font,
+    pending: *std.ArrayList(DrawList.AssetUpload),
+) !void {
     std.debug.assert(fonts.len == Font.files.len);
     @memset(fonts, .empty);
 
@@ -28,7 +34,7 @@ pub fn init(self: *FontSource, gpa: std.mem.Allocator, asset_server: *AssetServe
         .gpa = gpa,
         .fonts = fonts,
         .coverage = @splat(null),
-        .pending = .empty,
+        .pending = pending,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -42,15 +48,6 @@ pub fn init(self: *FontSource, gpa: std.mem.Allocator, asset_server: *AssetServe
 
 pub fn deinit(self: *FontSource) void {
     for (&self.coverage) |*slot| if (slot.*) |bytes| self.gpa.free(bytes);
-    self.pending.deinit(self.gpa);
-}
-
-pub fn uploads(self: *const FontSource) []const DrawList.FontUpload {
-    return self.pending.items;
-}
-
-pub fn consumed(self: *FontSource) void {
-    self.pending.clearRetainingCapacity();
 }
 
 fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
@@ -60,20 +57,17 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const coverage = try bake(&self.fonts[index], self.gpa, loader.io, file);
     errdefer self.gpa.free(coverage);
 
-    if (self.coverage[index]) |old| {
-        // Retarget a row the backend has not drained yet rather than leaving it dangling.
-        for (self.pending.items) |*upload| {
-            if (upload.coverage.ptr != old.ptr) continue;
-            upload.coverage = coverage;
-            break;
-        }
-        self.gpa.free(old);
-    }
+    if (self.coverage[index]) |old| self.gpa.free(old);
     self.coverage[index] = coverage;
 
+    // Rewrite a row the backend has not drained yet rather than leaving freed bytes in it.
     const slot: u32 = @intCast(index);
-    for (self.pending.items) |upload| if (upload.index == slot) return;
-    try self.pending.append(self.gpa, .{ .index = slot, .coverage = coverage });
+    for (self.pending.items) |*upload| {
+        if (upload.* != .font or upload.font.index != slot) continue;
+        upload.font.coverage = coverage;
+        return;
+    }
+    try self.pending.append(self.gpa, .{ .font = .{ .index = slot, .coverage = coverage } });
 }
 
 fn unload(loader: *Loader, index: usize) void {

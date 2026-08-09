@@ -37,10 +37,16 @@ owned: []?Parsed,
 /// Descriptor arrays for the pending uploads; they point INTO `owned`, so they are freed
 /// together with it and never outlive the parse they describe.
 descriptors: []?Descriptors,
-pending: std.ArrayList(DrawList.ModelUpload),
+pending: *std.ArrayList(DrawList.AssetUpload),
 interface: Loader,
 
-pub fn init(self: *ModelSource, gpa: std.mem.Allocator, asset_server: *AssetServer, models: *ModelTable) !void {
+pub fn init(
+    self: *ModelSource,
+    gpa: std.mem.Allocator,
+    asset_server: *AssetServer,
+    models: *ModelTable,
+    pending: *std.ArrayList(DrawList.AssetUpload),
+) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
     const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
     std.debug.assert(model_paths.len <= contract.max_models);
@@ -57,7 +63,7 @@ pub fn init(self: *ModelSource, gpa: std.mem.Allocator, asset_server: *AssetServ
         .kinds = kinds,
         .owned = try gpa.alloc(?Parsed, model_paths.len),
         .descriptors = try gpa.alloc(?Descriptors, model_paths.len),
-        .pending = .empty,
+        .pending = pending,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -76,16 +82,7 @@ pub fn deinit(self: *ModelSource) void {
     self.gpa.free(self.owned);
     self.gpa.free(self.descriptors);
     self.gpa.free(self.kinds);
-    self.pending.deinit(self.gpa);
     self.gpa.free(self.interface.files);
-}
-
-pub fn uploads(self: *const ModelSource) []const DrawList.ModelUpload {
-    return self.pending.items;
-}
-
-pub fn consumed(self: *ModelSource) void {
-    self.pending.clearRetainingCapacity();
 }
 
 fn release(self: *ModelSource, slot: *?Parsed, described: *?Descriptors) void {
@@ -197,14 +194,13 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
         .images = described.images,
         .samplers = described.samplers,
     };
+    try self.models.reloaded.append(gpa, @intCast(index));
     for (self.pending.items) |*upload| {
-        if (upload.index != index) continue;
-        upload.* = row;
-        try self.models.reloaded.append(gpa, @intCast(index));
+        if (upload.* != .model or upload.model.index != index) continue;
+        upload.model = row;
         return;
     }
-    try self.pending.append(gpa, row);
-    try self.models.reloaded.append(gpa, @intCast(index));
+    try self.pending.append(gpa, .{ .model = row });
 }
 
 fn unload(loader: *Loader, index: usize) void {

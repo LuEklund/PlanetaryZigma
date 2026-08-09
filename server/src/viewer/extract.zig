@@ -2,7 +2,6 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Renderer = @import("render_system").Renderer;
 const render_system = @import("render_system");
 const Emitter = @import("shared").Emitter;
 const ModelTable = @import("assets").ModelTable;
@@ -12,7 +11,7 @@ const DrawList = @import("render").DrawList;
 const Viewer = @import("Viewer.zig");
 
 pub fn frame(world: *World, viewer: *Viewer) !void {
-    const renderer = &viewer.renderer;
+    const list = &viewer.draw_list;
     const camera = viewer.camera;
     const ui = &viewer.ui;
     // The wire carries the client's real camera; `Entity.camera` holds only the yaw
@@ -28,23 +27,22 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         camera_rotation = .lookAt(nz.vec.normalize(look_target - camera_position), planet_up);
     }
 
-    renderer.beginFrame(.{
-        .camera = .{
-            .position = camera_position,
-            .rotation = camera_rotation,
-            .fov_rad = 1.5,
-        },
-        .elapsed_time = world.elapsed_time,
-        .light_color = .{ 1, 1, 1, 1 },
-        .draw_sky = true,
-        .planet = .{
-            .radius = world.planet.radiusFloat(),
-            .uploads = world.planet.uploads.items,
-            .removes = world.planet.removes.items,
-        },
-        .surface_width = renderer.window.size.width,
-        .surface_height = renderer.window.size.height,
-    });
+    list.clear();
+    list.camera = .{
+        .position = camera_position,
+        .rotation = camera_rotation,
+        .fov_rad = 1.5,
+    };
+    list.time = world.elapsed_time;
+    list.light_color = .{ 1, 1, 1, 1 };
+    list.draw_sky = true;
+    list.planet = .{
+        .radius = world.planet.radiusFloat(),
+        .uploads = world.planet.uploads.items,
+        .removes = world.planet.removes.items,
+    };
+    list.surface_width = viewer.window.size.width;
+    list.surface_height = viewer.window.size.height;
 
     try viewer.animator.begin(.{
         .delta_time = world.delta_time,
@@ -79,14 +77,27 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         }, &viewer.assets.models);
     }
     viewer.animator.advance(&.{}, &viewer.assets.models);
-    viewer.animator.draw(&renderer.list, &viewer.emitters, &viewer.assets.models);
+    viewer.animator.draw(list, &viewer.emitters, &viewer.assets.models);
 
-    if (world.options.draw_flow_field) renderer.drawLines(viewer.arrow_lines.items);
-    if (world.options.draw_chunk_borders) renderer.drawLines(viewer.border_lines.items);
+    if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
+    if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);
 
-    renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    viewer.assets.publish(&renderer.list);
-    renderer.endFrame(&viewer.emitters, world.elapsed_time);
+    list.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
+    list.ui.screen_width = ui.screen_width;
+    list.ui.screen_height = ui.screen_height;
+
+    for (&viewer.emitters) |emitter| {
+        if (!emitter.alive(world.elapsed_time)) continue;
+        list.emitters.appendAssumeCapacity(.{
+            .effect = emitter.effect,
+            .origin = emitter.origin,
+            .target = emitter.target,
+            .spawn_time = emitter.spawn_time,
+        });
+    }
+
+    viewer.assets.publish(list);
+    viewer.render_lib.symbols.renderUpdate(viewer.render_handle, list);
     viewer.assets.consumed();
 }
 

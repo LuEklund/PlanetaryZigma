@@ -139,10 +139,12 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    for (list.shader_uploads) |upload| try self.resources.shader_loader.apply(upload.kind, upload.spirv);
-    for (list.texture_uploads) |upload| try self.resources.texture_loader.apply(upload);
-    for (list.font_uploads) |upload| try self.resources.font_loader.apply(upload.index, upload.coverage);
-    for (list.model_uploads) |upload| try self.resources.model_loader.apply(upload);
+    for (list.asset_uploads) |upload| switch (upload) {
+        .shader => |shader| try self.resources.shader_loader.apply(shader.kind, shader.spirv),
+        .texture => |texture| try self.resources.texture_loader.apply(texture),
+        .font => |font| try self.resources.font_loader.apply(font.index, font.coverage),
+        .model => |model| try self.resources.model_loader.apply(model),
+    };
 
     try self.syncPlanet(self.gpa, list.planet);
     if (list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {

@@ -7,11 +7,11 @@ const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("assets").AssetServer;
-const Renderer = @import("render_system").Renderer;
 const render_system = @import("render_system");
 const Emitter = @import("shared").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
+const render = @import("render");
 const DrawList = @import("render").DrawList;
 
 const menu_world = @import("system/menu.zig");
@@ -35,7 +35,9 @@ gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
 asset_server: *AssetServer,
-renderer: Renderer,
+render_lib: shared.HotLib(render.Table, *anyopaque, "renderInit", "renderReload"),
+render_handle: *anyopaque,
+draw_list: DrawList,
 assets: render_system.Assets,
 animator: render_system.Animator,
 emitters: Emitter.List,
@@ -65,15 +67,20 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
-    try self.renderer.init(.{
+    self.render_lib = try .init("render", data.io);
+    errdefer self.render_lib.deinit(data.io);
+    self.render_handle = self.render_lib.symbols.renderInit(&render.Data{
         .gpa = data.gpa,
         .io = data.io,
         .window = data.window,
         .fonts = &self.assets.fonts,
-    });
-    errdefer self.renderer.deinit(data.gpa, data.io);
+    }) orelse return error.RenderInit;
+    errdefer self.render_lib.symbols.renderDeinit(self.render_handle);
 
-    // Renderer is up, so parsing can start; the uploads drain on the first frame.
+    self.draw_list = try .init(data.gpa);
+    errdefer self.draw_list.deinit(data.gpa);
+
+    // render.so is up, so parsing can start; the uploads drain on the first frame.
     try data.asset_server.load();
 
     try self.hud.init(data.gpa, data.window.size);
@@ -87,7 +94,9 @@ pub fn init(self: *System, data: Data) !void {
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.hud.deinit(self.gpa);
-    self.renderer.deinit(self.gpa, self.io);
+    self.draw_list.deinit(self.gpa);
+    self.render_lib.symbols.renderDeinit(self.render_handle);
+    self.render_lib.deinit(self.io);
     self.animator.deinit();
     self.assets.deinit(self.gpa);
 }
@@ -138,8 +147,8 @@ pub fn update(self: *System, world: *World) !void {
         &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
-    try extract.frame(world, &self.renderer, &self.assets, &self.animator, &self.emitters, &self.hud.ui, self.scene != .particle_lab);
-    self.renderer.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
+    try extract.frame(self, world, self.scene != .particle_lab);
+    self.render_lib.trySwap(self.io, self.render_handle) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

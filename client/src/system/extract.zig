@@ -3,7 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("shared").Ui;
-const Renderer = @import("render_system").Renderer;
+const System = @import("../System.zig");
+const DrawList = @import("render").DrawList;
 const render_system = @import("render_system");
 const Emitter = @import("shared").Emitter;
 const ModelTable = @import("assets").ModelTable;
@@ -11,32 +12,29 @@ const ModelTable = @import("assets").ModelTable;
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
-pub fn frame(
-    world: *World,
-    renderer: *Renderer,
-    scene_assets: *render_system.Assets,
-    animator: *render_system.Animator,
-    emitters: *Emitter.List,
-    ui: *Ui,
-    draw_sky: bool,
-) !void {
-    renderer.beginFrame(.{
-        .camera = .{
-            .position = world.camera.transform.position,
-            .rotation = world.camera.transform.rotation,
-            .fov_rad = world.options.fov_rad,
-        },
-        .elapsed_time = world.elapsed_time,
-        .light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 },
-        .draw_sky = draw_sky,
-        .planet = .{
-            .radius = world.planet.radiusFloat(),
-            .uploads = world.planet.uploads.items,
-            .removes = world.planet.removes.items,
-        },
-        .surface_width = @intFromFloat(ui.screen_width),
-        .surface_height = @intFromFloat(ui.screen_height),
-    });
+pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
+    const scene_assets = &system.assets;
+    const animator = &system.animator;
+    const emitters = &system.emitters;
+    const ui = &system.hud.ui;
+    const list = &system.draw_list;
+
+    list.clear();
+    list.camera = .{
+        .position = world.camera.transform.position,
+        .rotation = world.camera.transform.rotation,
+        .fov_rad = world.options.fov_rad,
+    };
+    list.time = world.elapsed_time;
+    list.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
+    list.draw_sky = draw_sky;
+    list.planet = .{
+        .radius = world.planet.radiusFloat(),
+        .uploads = world.planet.uploads.items,
+        .removes = world.planet.removes.items,
+    };
+    list.surface_width = @intFromFloat(ui.screen_width);
+    list.surface_height = @intFromFloat(ui.screen_height);
 
     try animator.begin(.{
         .delta_time = world.delta_time,
@@ -73,7 +71,7 @@ pub fn frame(
     }
     animator.advance(world.trigger_events.items, &scene_assets.models);
     world.trigger_events.clearRetainingCapacity();
-    animator.draw(&renderer.list, emitters, &scene_assets.models);
+    animator.draw(list, emitters, &scene_assets.models);
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {
@@ -81,33 +79,46 @@ pub fn frame(
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
             switch (collider_shape) {
-                .capsule => |capsule| appendCapsuleLines(renderer, collider_transform, capsule.half_height, capsule.radius),
-                .box => |box| appendBoxLines(renderer, collider_transform, box),
+                .capsule => |capsule| appendCapsuleLines(list, collider_transform, capsule.half_height, capsule.radius),
+                .box => |box| appendBoxLines(list, collider_transform, box),
             }
         }
     }
 
-    renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    scene_assets.publish(&renderer.list);
-    renderer.endFrame(emitters, world.elapsed_time);
+    list.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
+    list.ui.screen_width = ui.screen_width;
+    list.ui.screen_height = ui.screen_height;
+
+    for (emitters) |emitter| {
+        if (!emitter.alive(world.elapsed_time)) continue;
+        list.emitters.appendAssumeCapacity(.{
+            .effect = emitter.effect,
+            .origin = emitter.origin,
+            .target = emitter.target,
+            .spawn_time = emitter.spawn_time,
+        });
+    }
+
+    scene_assets.publish(list);
+    system.render_lib.symbols.renderUpdate(system.render_handle, list);
     scene_assets.consumed();
 }
 
-fn appendLine(renderer: *Renderer, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
-    renderer.drawLine(
-        transform.position + transform.rotation.rotateVec(from),
-        transform.position + transform.rotation.rotateVec(to),
-        collider_color,
-    );
+fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
+    list.draw_lines.appendAssumeCapacity(.{
+        .a = transform.position + transform.rotation.rotateVec(from),
+        .b = transform.position + transform.rotation.rotateVec(to),
+        .color = collider_color,
+    });
 }
 
-fn appendCapsuleLines(renderer: *Renderer, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
+fn appendCapsuleLines(list: *DrawList, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
     for (0..circle_segments) |segment| {
         const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / circle_segments;
         const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / circle_segments;
         for ([2]f32{ -half_height, half_height }) |ring_y| {
             appendLine(
-                renderer,
+                list,
                 transform,
                 .{ radius * @cos(angle_start), ring_y, radius * @sin(angle_start) },
                 .{ radius * @cos(angle_end), ring_y, radius * @sin(angle_end) },
@@ -117,7 +128,7 @@ fn appendCapsuleLines(renderer: *Renderer, transform: nz.Transform3D(f32), half_
     for (0..4) |quarter| {
         const angle = std.math.tau * @as(f32, @floatFromInt(quarter)) / 4;
         appendLine(
-            renderer,
+            list,
             transform,
             .{ radius * @cos(angle), -half_height, radius * @sin(angle) },
             .{ radius * @cos(angle), half_height, radius * @sin(angle) },
@@ -130,13 +141,13 @@ fn appendCapsuleLines(renderer: *Renderer, transform: nz.Transform3D(f32), half_
         for ([2]f32{ 1, -1 }) |cap_direction| {
             const cap_y = cap_direction * half_height;
             appendLine(
-                renderer,
+                list,
                 transform,
                 .{ radius * @cos(angle_start), cap_y + cap_direction * radius * @sin(angle_start), 0 },
                 .{ radius * @cos(angle_end), cap_y + cap_direction * radius * @sin(angle_end), 0 },
             );
             appendLine(
-                renderer,
+                list,
                 transform,
                 .{ 0, cap_y + cap_direction * radius * @sin(angle_start), radius * @cos(angle_start) },
                 .{ 0, cap_y + cap_direction * radius * @sin(angle_end), radius * @cos(angle_end) },
@@ -145,7 +156,7 @@ fn appendCapsuleLines(renderer: *Renderer, transform: nz.Transform3D(f32), half_
     }
 }
 
-fn appendBoxLines(renderer: *Renderer, transform: nz.Transform3D(f32), box: shared.entity.ColliderShape.HalfBoxExtent) void {
+fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.entity.ColliderShape.HalfBoxExtent) void {
     const bottom_corners = [4]nz.Vec3(f32){
         .{ -box.x, -box.y, -box.z },
         .{ box.x, -box.y, -box.z },
@@ -157,8 +168,8 @@ fn appendBoxLines(renderer: *Renderer, transform: nz.Transform3D(f32), box: shar
 
     for (0..4) |corner_index| {
         const next_corner_index = (corner_index + 1) % 4;
-        appendLine(renderer, transform, bottom_corners[corner_index], bottom_corners[next_corner_index]);
-        appendLine(renderer, transform, top_corners[corner_index], top_corners[next_corner_index]);
-        appendLine(renderer, transform, bottom_corners[corner_index], top_corners[corner_index]);
+        appendLine(list, transform, bottom_corners[corner_index], bottom_corners[next_corner_index]);
+        appendLine(list, transform, top_corners[corner_index], top_corners[next_corner_index]);
+        appendLine(list, transform, bottom_corners[corner_index], top_corners[corner_index]);
     }
 }

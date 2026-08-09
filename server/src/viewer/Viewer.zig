@@ -3,7 +3,7 @@ const Viewer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const Renderer = @import("render_system").Renderer;
+const render = @import("render");
 const render_system = @import("render_system");
 const Emitter = @import("shared").Emitter;
 const AssetServer = @import("assets").AssetServer;
@@ -16,7 +16,10 @@ const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-renderer: Renderer,
+render_lib: shared.HotLib(render.Table, *anyopaque, "renderInit", "renderReload"),
+render_handle: *anyopaque,
+draw_list: DrawList,
+window: *Window,
 assets: render_system.Assets,
 animator: render_system.Animator,
 emitters: Emitter.List,
@@ -35,13 +38,19 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
-    try self.renderer.init(.{
+    self.window = window;
+    self.render_lib = try .init("render", io);
+    errdefer self.render_lib.deinit(io);
+    self.render_handle = self.render_lib.symbols.renderInit(&render.Data{
         .gpa = gpa,
         .io = io,
         .window = window,
         .fonts = &self.assets.fonts,
-    });
-    errdefer self.renderer.deinit(gpa, io);
+    }) orelse return error.RenderInit;
+    errdefer self.render_lib.symbols.renderDeinit(self.render_handle);
+
+    self.draw_list = try .init(gpa);
+    errdefer self.draw_list.deinit(gpa);
 
     try asset_server.load();
 
@@ -58,14 +67,16 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.arrow_lines.deinit(gpa);
     self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
-    self.renderer.deinit(gpa, io);
+    self.draw_list.deinit(gpa);
+    self.render_lib.symbols.renderDeinit(self.render_handle);
+    self.render_lib.deinit(io);
     self.animator.deinit();
     self.assets.deinit(gpa);
 }
 
 /// Returns true when the window asks the server to stop.
 pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
-    const window = self.renderer.window;
+    const window = self.window;
     try window.poll(.{ .text = null });
 
     if (window.keyboard.get(.escape) == .press) self.menu_open = !self.menu_open;
@@ -110,6 +121,6 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     }
 
     try extract.frame(world, self);
-    try self.renderer.reloadIfChanged(io);
+    try self.render_lib.trySwap(io, self.render_handle);
     return quit;
 }

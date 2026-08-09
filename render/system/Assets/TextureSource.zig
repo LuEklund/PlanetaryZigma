@@ -22,10 +22,15 @@ const Owned = struct {
 
 gpa: std.mem.Allocator,
 owned: [Texture.paths_capacity]?Owned,
-pending: std.ArrayList(DrawList.TextureUpload),
+pending: *std.ArrayList(DrawList.AssetUpload),
 interface: Loader,
 
-pub fn init(self: *TextureSource, gpa: std.mem.Allocator, asset_server: *AssetServer) !void {
+pub fn init(
+    self: *TextureSource,
+    gpa: std.mem.Allocator,
+    asset_server: *AssetServer,
+    pending: *std.ArrayList(DrawList.AssetUpload),
+) !void {
     var path_buffer: [Texture.paths_capacity][]const u8 = undefined;
     const texture_paths = Texture.paths(&path_buffer);
     const files = try gpa.alloc([]const u8, texture_paths.len);
@@ -34,7 +39,7 @@ pub fn init(self: *TextureSource, gpa: std.mem.Allocator, asset_server: *AssetSe
     self.* = .{
         .gpa = gpa,
         .owned = @splat(null),
-        .pending = .empty,
+        .pending = pending,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -48,16 +53,7 @@ pub fn init(self: *TextureSource, gpa: std.mem.Allocator, asset_server: *AssetSe
 
 pub fn deinit(self: *TextureSource) void {
     for (&self.owned) |*slot| if (slot.*) |owned| self.free(owned);
-    self.pending.deinit(self.gpa);
     self.gpa.free(self.interface.files);
-}
-
-pub fn uploads(self: *const TextureSource) []const DrawList.TextureUpload {
-    return self.pending.items;
-}
-
-pub fn consumed(self: *TextureSource) void {
-    self.pending.clearRetainingCapacity();
 }
 
 fn free(self: *const TextureSource, owned: Owned) void {
@@ -103,24 +99,16 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     else
         try wholeImage(gpa, decoded);
 
-    if (self.owned[index]) |old| {
-        // A second reload before the backend drained the first would leave a freed pointer
-        // in `pending`, so retarget that row instead of appending another.
-        for (self.pending.items) |*upload| {
-            if (upload.faces.ptr != old.faces.ptr) continue;
-            upload.faces = owned.faces;
-            break;
-        }
-        self.free(old);
-    }
+    if (self.owned[index]) |old| self.free(old);
     self.owned[index] = owned;
 
+    const row: DrawList.TextureUpload = .{ .slot = slot, .width = width, .height = height, .faces = owned.faces };
     for (self.pending.items) |*upload| {
-        if (upload.slot != slot) continue;
-        upload.* = .{ .slot = slot, .width = width, .height = height, .faces = owned.faces };
+        if (upload.* != .texture or upload.texture.slot != slot) continue;
+        upload.texture = row;
         return;
     }
-    try self.pending.append(gpa, .{ .slot = slot, .width = width, .height = height, .faces = owned.faces });
+    try self.pending.append(gpa, .{ .texture = row });
     std.log.debug("texture slot {d}: textures/{s}", .{ slot, loader.files[index] });
 }
 
@@ -128,12 +116,13 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 /// is exempt: a 2D fallback cannot stand in for a cube view.
 fn pushFallback(self: *TextureSource, slot: u32) !void {
     if (slot == Texture.slot(.skybox_cubemap)) return;
+    const row: DrawList.TextureUpload = .{ .slot = slot, .width = 0, .height = 0, .faces = &.{} };
     for (self.pending.items) |*upload| {
-        if (upload.slot != slot) continue;
-        upload.* = .{ .slot = slot, .width = 0, .height = 0, .faces = &.{} };
+        if (upload.* != .texture or upload.texture.slot != slot) continue;
+        upload.texture = row;
         return;
     }
-    try self.pending.append(self.gpa, .{ .slot = slot, .width = 0, .height = 0, .faces = &.{} });
+    try self.pending.append(self.gpa, .{ .texture = row });
 }
 
 fn wholeImage(gpa: std.mem.Allocator, decoded: Bitmap) !struct { Owned, u32, u32 } {
