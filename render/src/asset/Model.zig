@@ -126,7 +126,6 @@ pub fn parseGlb(
             const mesh_id = node.mesh_id orelse continue;
             try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = node.model_matrix });
         }
-        for (self.nodes.items) |*node| node.deinit(gpa);
         self.nodes.clearAndFree(gpa);
     }
 
@@ -154,7 +153,6 @@ pub fn computeMatrices(nodes: []Node) void {
 }
 
 pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
-    for (self.nodes.items) |*node| node.deinit(gpa);
     self.nodes.clearAndFree(gpa);
     for (self.clips) |*clip| clip.deinit(gpa);
     gpa.free(self.clips);

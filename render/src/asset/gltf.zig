@@ -384,12 +384,9 @@ pub fn parseScene(
         }
     }
     for (0..gltf_nodes.len) |gltf_index| {
-        const gltf_node = gltf_nodes[gltf_index];
-        const gltf_children = gltf_node.children orelse continue;
+        const gltf_children = gltf_nodes[gltf_index].children orelse continue;
         const sorted_index = node_map[gltf_index];
-        const scene_node = &out_nodes.items[sorted_index];
         for (gltf_children) |gltf_child_index| {
-            try scene_node.children.append(gpa, node_map[gltf_child_index]);
             out_nodes.items[node_map[gltf_child_index]].parent = sorted_index;
         }
     }

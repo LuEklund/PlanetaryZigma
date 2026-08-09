@@ -7,7 +7,6 @@ const Model = @import("../asset/Model.zig");
 const Shader = @import("shared").Shader;
 const Node = @import("../asset/Node.zig");
 
-model_handle: ?Model.Handle,
 model: Model.Handle,
 offset: nz.Transform3D(f32),
 highlight: bool,
@@ -27,6 +26,13 @@ skeleton: ?Skeleton,
 
 pub const fade_duration: f32 = 0.15;
 
+const block_align: u29 = @max(
+    @alignOf(nz.Mat4x4(f32)),
+    @alignOf(Node),
+    @alignOf(JointTransform),
+    @alignOf(u32),
+);
+
 pub const Player = struct {
     current_time: f32 = 0,
     active: usize = 0,
@@ -39,41 +45,63 @@ pub const JointTransform = struct {
 };
 
 pub const Skeleton = struct {
+    /// The single allocation the slices below point into. Freed as one.
+    block: []align(block_align) u8,
     nodes: []Node,
     fade_joints: []JointTransform,
     fade_time: f32,
-    joint_matrices: [][]nz.Mat4x4(f32),
+    /// One block for every skin's palette, contiguous so the draw walk is a single memcpy.
+    /// `skin_starts[i]` is where skin i begins; `skin_starts[skins.len]` is the total.
+    joints: []nz.Mat4x4(f32),
+    skin_starts: []u32,
     player: Player,
     overlay: ?Player,
 
     pub fn init(gpa: std.mem.Allocator, model: *Model) !Skeleton {
-        const nodes = try gpa.alloc(Node, model.nodes.items.len);
-        for (model.nodes.items, nodes) |source, *node| {
-            node.* = source;
-            node.children = try source.children.clone(gpa);
+        const node_count = model.nodes.items.len;
+        var joint_count: u32 = 0;
+        for (model.skins) |skin| joint_count += @intCast(skin.inverse_bind_matrices.?.len);
+
+        // ONE allocation for the whole pose: an instance is 1 alloc / 1 free, so entities
+        // spawning and dying cannot fragment the heap with four differently-sized blocks.
+        // Regions are ordered by descending alignment and carved by offset.
+        const joints_bytes = @sizeOf(nz.Mat4x4(f32)) * joint_count;
+        const nodes_at = std.mem.alignForward(usize, joints_bytes, @alignOf(Node));
+        const fade_at = std.mem.alignForward(usize, nodes_at + @sizeOf(Node) * node_count, @alignOf(JointTransform));
+        const starts_at = std.mem.alignForward(usize, fade_at + @sizeOf(JointTransform) * node_count, @alignOf(u32));
+        const total_bytes = starts_at + @sizeOf(u32) * (model.skins.len + 1);
+
+        const block = try gpa.alignedAlloc(u8, .fromByteUnits(block_align), total_bytes);
+        errdefer gpa.free(block);
+
+        const joints: []nz.Mat4x4(f32) = @alignCast(std.mem.bytesAsSlice(nz.Mat4x4(f32), block[0..joints_bytes]));
+        const nodes: []Node = @alignCast(std.mem.bytesAsSlice(Node, block[nodes_at..][0 .. @sizeOf(Node) * node_count]));
+        const fade_joints: []JointTransform = @alignCast(std.mem.bytesAsSlice(JointTransform, block[fade_at..][0 .. @sizeOf(JointTransform) * node_count]));
+        const skin_starts: []u32 = @alignCast(std.mem.bytesAsSlice(u32, block[starts_at..][0 .. @sizeOf(u32) * (model.skins.len + 1)]));
+
+        @memcpy(nodes, model.nodes.items);
+        @memset(joints, .identity);
+        var running: u32 = 0;
+        for (model.skins, 0..) |skin, skin_index| {
+            skin_starts[skin_index] = running;
+            running += @intCast(skin.inverse_bind_matrices.?.len);
         }
-        const fade_joints = try gpa.alloc(JointTransform, model.nodes.items.len);
-        const joint_matrices = try gpa.alloc([]nz.Mat4x4(f32), model.skins.len);
-        for (model.skins, joint_matrices) |skin, *matrices| {
-            matrices.* = try gpa.alloc(nz.Mat4x4(f32), skin.inverse_bind_matrices.?.len);
-            @memset(matrices.*, .identity);
-        }
+        skin_starts[model.skins.len] = running;
+
         return .{
+            .block = block,
             .nodes = nodes,
             .fade_joints = fade_joints,
             .fade_time = 0,
-            .joint_matrices = joint_matrices,
+            .joints = joints,
+            .skin_starts = skin_starts,
             .player = .{},
             .overlay = null,
         };
     }
 
     pub fn deinit(self: *Skeleton, gpa: std.mem.Allocator) void {
-        for (self.nodes) |*node| node.deinit(gpa);
-        gpa.free(self.nodes);
-        gpa.free(self.fade_joints);
-        for (self.joint_matrices) |matrices| gpa.free(matrices);
-        gpa.free(self.joint_matrices);
+        gpa.free(self.block);
     }
 
     pub fn startFade(self: *Skeleton) void {
@@ -102,7 +130,6 @@ pub const Skeleton = struct {
 
 pub fn init(gpa: std.mem.Allocator, model_handle: Model.Handle, model: ?*Model) !Instance {
     return .{
-        .model_handle = model_handle,
         .model = model_handle,
         .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },
         .highlight = false,

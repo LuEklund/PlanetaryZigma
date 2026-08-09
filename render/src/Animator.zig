@@ -45,10 +45,9 @@ pub const Entity = struct {
     transform: nz.Transform3D(f32),
     /// Applied after `transform`; comes from the caller's model spec.
     offset: nz.Transform3D(f32),
-    velocity: nz.Vec3(f32),
     is_dying: bool,
-    stun_time: f32,
-    state_override: ?shared.entity.State,
+    /// Which clip to play. Derived by the caller (shared.entity.animationState).
+    state: shared.entity.State,
     /// Presentation, decided by the caller — these used to be `switch (kind)` arms here.
     highlight: bool,
     spin_speed: f32,
@@ -78,7 +77,7 @@ pub fn deinit(self: *Animator) void {
 }
 
 fn resolveModel(models: *ModelTable, instance: *const Instance) ?*Model {
-    return models.modelPtr(instance.model_handle orelse return null);
+    return models.modelPtr(instance.model);
 }
 
 pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *ModelTable) !void {
@@ -112,12 +111,7 @@ pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
     instance.transform = entity.transform;
     instance.is_dying = entity.is_dying;
     if (instance.skeleton == null) return;
-
-    var state: shared.entity.State = if (nz.vec.length(entity.velocity) > 0.5) .walk else .idle;
-    state = if (entity.stun_time > 0) .stun else state;
-    state = if (entity.is_dying) .death else state;
-    if (entity.state_override) |override| state = override;
-    instance.state = state;
+    instance.state = entity.state;
 }
 
 pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *ModelTable) void {
@@ -141,7 +135,7 @@ fn applyReloads(self: *Animator, models: *ModelTable) !void {
         const reloaded_model = &models.models[file_index];
         var instance_iterator = self.instances.valueIterator();
         while (instance_iterator.next()) |instance| {
-            const handle = instance.model_handle orelse continue;
+            const handle = instance.model;
             if (handle != .file or handle.file != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
@@ -224,9 +218,10 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
         const top_matrix = transform.toMat4x4().mul(instance.offset.toMat4x4());
         if (instance.skeleton) |*instance_skeleton| {
             var skin_offsets: [max_skins]u32 = undefined;
-            for (instance_skeleton.joint_matrices, 0..) |matrices, skin_index| {
-                skin_offsets[skin_index] = @intCast(list.joint_matrices.items.len);
-                list.joint_matrices.appendSliceAssumeCapacity(matrices);
+            const palette_base: u32 = @intCast(list.joint_matrices.items.len);
+            list.joint_matrices.appendSliceAssumeCapacity(instance_skeleton.joints);
+            for (0..instance_skeleton.skin_starts.len - 1) |skin_index| {
+                skin_offsets[skin_index] = palette_base + instance_skeleton.skin_starts[skin_index];
             }
             const file_index = switch (instance.model) {
                 .file => |index| index,
@@ -347,7 +342,8 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
             skeleton.nodes[node_index].rotation = saved_look_rotations[saved_index];
         }
     }
-    for (model.skins, skeleton.joint_matrices) |skin, joint_matrices| {
+    for (model.skins, 0..) |skin, skin_index| {
+        const joint_matrices = skeleton.joints[skeleton.skin_starts[skin_index]..skeleton.skin_starts[skin_index + 1]];
         for (skin.joints, skin.inverse_bind_matrices.?, joint_matrices) |node_index, inverse_bind_matrix, *joint_matrix| {
             joint_matrix.* = skeleton.nodes[node_index].model_matrix.mul(inverse_bind_matrix);
         }
