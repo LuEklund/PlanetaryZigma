@@ -16,8 +16,8 @@ const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-render_lib: shared.HotLib(render.Table, *anyopaque, "renderInit", "renderReload"),
-render_handle: *anyopaque,
+render_lib: shared.HotLib(render.Renderer.VTable, *anyopaque, "init", "reload"),
+renderer: render.Renderer,
 draw_list: DrawList,
 window: *Window,
 assets: render_system.Assets,
@@ -32,7 +32,7 @@ arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
-    try self.assets.init(gpa, asset_server);
+    try self.assets.init(gpa, asset_server, &self.renderer);
     errdefer self.assets.deinit(gpa);
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
@@ -41,18 +41,21 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.window = window;
     self.render_lib = try .init("render", io);
     errdefer self.render_lib.deinit(io);
-    self.render_handle = self.render_lib.symbols.renderInit(&render.Data{
-        .gpa = gpa,
-        .io = io,
-        .window = window,
-        .fonts = &self.assets.fonts,
-    }) orelse return error.RenderInit;
-    errdefer self.render_lib.symbols.renderDeinit(self.render_handle);
+    self.renderer = .{
+        .vtable = &self.render_lib.symbols,
+        .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
+            .gpa = gpa,
+            .io = io,
+            .window = window,
+        }) orelse return error.RenderInit,
+    };
+    errdefer self.renderer.vtable.deinit(self.renderer.userdata);
 
     self.draw_list = try .init(gpa);
     errdefer self.draw_list.deinit(gpa);
 
     try asset_server.load();
+    self.assets.uploadGenerated(&self.renderer);
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
@@ -68,10 +71,11 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
     self.draw_list.deinit(gpa);
-    self.render_lib.symbols.renderDeinit(self.render_handle);
-    self.render_lib.deinit(io);
     self.animator.deinit();
+    // Before the renderer: freeing a model's images is a call INTO render.so.
     self.assets.deinit(gpa);
+    self.renderer.vtable.deinit(self.renderer.userdata);
+    self.render_lib.deinit(io);
 }
 
 /// Returns true when the window asks the server to stop.
@@ -121,6 +125,6 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     }
 
     try extract.frame(world, self);
-    try self.render_lib.trySwap(io, self.render_handle);
+    try self.render_lib.trySwap(io, self.renderer.userdata);
     return quit;
 }

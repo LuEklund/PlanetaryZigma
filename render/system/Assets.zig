@@ -2,14 +2,16 @@
 //! current. The system owns this — the renderer is a door you push uploads through, not a
 //! place to keep your models.
 //!
-//! `publish` is the only thing that touches the frame packet, and it hands over slices that
-//! stay valid until `consumed`.
+//! Nothing rides the frame packet any more: every asset goes over as a call and comes back
+//! as a handle or a slot.
 
 const Assets = @This();
 
 const std = @import("std");
 const assets = @import("assets");
 const Font = @import("shared").Font;
+const Texture = @import("shared").Texture;
+const render = @import("render");
 const DrawList = @import("render").DrawList;
 
 const ShaderSource = @import("Assets/ShaderSource.zig");
@@ -20,8 +22,6 @@ const ModelSource = @import("Assets/ModelSource.zig");
 models: assets.ModelTable,
 /// render.so fills in each atlas slot here; the memory is ours so it survives a swap.
 fonts: [Font.count]Font,
-/// Every source appends here. One queue in, one switch out.
-pending: std.ArrayList(DrawList.AssetUpload),
 shader_source: ShaderSource,
 texture_source: TextureSource,
 font_source: FontSource,
@@ -29,19 +29,23 @@ model_source: ModelSource,
 
 /// Registers the sources. Nothing is read yet: the owner calls `asset_server.load()` once
 /// the renderer exists, because the resulting uploads drain on the first frame.
-pub fn init(self: *Assets, gpa: std.mem.Allocator, asset_server: *assets.AssetServer) !void {
+pub fn init(
+    self: *Assets,
+    gpa: std.mem.Allocator,
+    asset_server: *assets.AssetServer,
+    renderer: *const render.Renderer,
+) !void {
     self.fonts = @splat(.empty);
-    self.pending = .empty;
     self.models = try .init(gpa);
     errdefer self.models.deinit(gpa);
 
-    try self.shader_source.init(gpa, asset_server, &self.pending);
+    try self.shader_source.init(gpa, asset_server, renderer);
     errdefer self.shader_source.deinit();
-    try self.texture_source.init(gpa, asset_server, &self.pending);
+    try self.texture_source.init(gpa, asset_server, renderer);
     errdefer self.texture_source.deinit();
-    try self.font_source.init(gpa, asset_server, &self.fonts, &self.pending);
+    try self.font_source.init(gpa, asset_server, &self.fonts, renderer);
     errdefer self.font_source.deinit();
-    try self.model_source.init(gpa, asset_server, &self.models, &self.pending);
+    try self.model_source.init(gpa, asset_server, &self.models, renderer);
 }
 
 pub fn deinit(self: *Assets, gpa: std.mem.Allocator) void {
@@ -49,14 +53,23 @@ pub fn deinit(self: *Assets, gpa: std.mem.Allocator) void {
     self.texture_source.deinit();
     self.font_source.deinit();
     self.model_source.deinit();
-    self.pending.deinit(gpa);
     self.models.deinit(gpa);
 }
 
-pub fn publish(self: *const Assets, list: *DrawList) void {
-    list.asset_uploads = self.pending.items;
-}
-
-pub fn consumed(self: *Assets) void {
-    self.pending.clearRetainingCapacity();
+/// The primitives are assets like any other: generated here, uploaded through the same
+/// door. Call once, after the renderer exists.
+pub fn uploadGenerated(self: *Assets, renderer: *const render.Renderer) void {
+    const surfaces = [_]render.SurfaceUpload{.{
+        .index_start = 0,
+        .index_count = @intCast(assets.box.indices.len),
+        .texture_slot = @intCast(Texture.slot(.blank)),
+    }};
+    const handle = renderer.vtable.uploadMesh(renderer.userdata, .none, &.{
+        .name = "generated",
+        .vertices = std.mem.sliceAsBytes(assets.box.vertices),
+        .skinned = false,
+        .indices = assets.box.indices,
+        .surfaces = &surfaces,
+    });
+    self.models.generated = @splat(@intFromEnum(handle));
 }

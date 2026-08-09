@@ -9,7 +9,12 @@ const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
-pub const Generated = enum { default, cube_projectile };
+pub const Generated = enum {
+    default,
+    cube_projectile,
+
+    pub const count = @typeInfo(Generated).@"enum".fields.len;
+};
 
 pub const Handle = union(enum) {
     file: u32,
@@ -17,6 +22,9 @@ pub const Handle = union(enum) {
 };
 
 surfaces: std.ArrayList(Surface),
+/// One opaque render handle per glTF mesh, filled in after upload. A plain integer on
+/// purpose: assets does not import render, and does not need to know what it means.
+mesh_handles: []usize,
 spawn_duration: f32,
 death_duration: f32,
 nodes: std.ArrayList(Node),
@@ -27,6 +35,7 @@ overlay_mask: ?[]bool,
 state_clips: std.EnumArray(shared.entity.State, ?usize),
 
 pub const empty: Model = .{
+    .mesh_handles = &.{},
     .surfaces = .empty,
     .spawn_duration = 0,
     .death_duration = 0,
@@ -153,6 +162,8 @@ pub fn computeMatrices(nodes: []Node) void {
 }
 
 pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
+    gpa.free(self.mesh_handles);
+    self.mesh_handles = &.{};
     self.nodes.clearAndFree(gpa);
     for (self.clips) |*clip| clip.deinit(gpa);
     gpa.free(self.clips);

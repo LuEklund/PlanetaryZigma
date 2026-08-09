@@ -9,22 +9,22 @@ const ShaderSource = @This();
 const std = @import("std");
 const Shader = @import("shared").Shader;
 const AssetServer = @import("assets").AssetServer;
-const DrawList = @import("render").DrawList;
+const render = @import("render");
 
 const Loader = AssetServer.Loader;
 
 gpa: std.mem.Allocator,
 /// One owned buffer per kind, kept so a reload can free the previous bytes.
 spirv: [Shader.Kind.count]?[]align(4) u8,
-/// The frame's upload queue, owned by Assets. Sources append; nobody keeps a private one.
-pending: *std.ArrayList(DrawList.AssetUpload),
+/// Read only inside `load`, which the owner runs after the renderer exists.
+renderer: *const render.Renderer,
 interface: Loader,
 
 pub fn init(
     self: *ShaderSource,
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
-    pending: *std.ArrayList(DrawList.AssetUpload),
+    renderer: *const render.Renderer,
 ) !void {
     const files = try gpa.alloc([]const u8, Shader.Kind.count);
     for (std.enums.values(Shader.Kind), files) |kind, *file| file.* = Shader.get(kind).path;
@@ -32,7 +32,7 @@ pub fn init(
     self.* = .{
         .gpa = gpa,
         .spirv = @splat(null),
-        .pending = pending,
+        .renderer = renderer,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -66,15 +66,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     if (self.spirv[index]) |old| self.gpa.free(old);
     self.spirv[index] = bytes;
 
-    // A reload before the backend drained the queue would leave the freed bytes in an
-    // undrained row, so rewrite that row rather than appending a second one for this kind.
-    const kind: Shader.Kind = @enumFromInt(index);
-    for (self.pending.items) |*upload| {
-        if (upload.* != .shader or upload.shader.kind != kind) continue;
-        upload.shader.spirv = bytes;
-        return;
-    }
-    try self.pending.append(self.gpa, .{ .shader = .{ .kind = kind, .spirv = bytes } });
+    self.renderer.vtable.uploadShader(self.renderer.userdata, @intCast(index), bytes.ptr, bytes.len);
 }
 
 fn unload(loader: *Loader, index: usize) void {

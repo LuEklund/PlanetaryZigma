@@ -1,8 +1,7 @@
 //! Bakes font atlases on THIS side of the boundary. Twin of ShaderSource/TextureSource.
 //!
-//! Glyph metrics are written straight into the caller's `fonts` array, because that array
-//! already lives above the boundary. Only the atlas slot number comes back the other way,
-//! written by the backend after it uploads the coverage bitmap.
+//! Glyph metrics AND the atlas slot land in the caller's `fonts` array: the slot is just
+//! the return value of uploadFont, so nothing of ours crosses into render.so and stays.
 
 const FontSource = @This();
 
@@ -10,14 +9,15 @@ const std = @import("std");
 const stbTruetype = @import("stb_truetype");
 const Font = @import("shared").Font;
 const AssetServer = @import("assets").AssetServer;
-const DrawList = @import("render").DrawList;
+const render = @import("render");
 
 const Loader = AssetServer.Loader;
 
 gpa: std.mem.Allocator,
 fonts: []Font,
 coverage: [Font.count]?[]u8,
-pending: *std.ArrayList(DrawList.AssetUpload),
+/// Read only inside `load`, which the owner runs after the renderer exists.
+renderer: *const render.Renderer,
 interface: Loader,
 
 pub fn init(
@@ -25,7 +25,7 @@ pub fn init(
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
     fonts: []Font,
-    pending: *std.ArrayList(DrawList.AssetUpload),
+    renderer: *const render.Renderer,
 ) !void {
     std.debug.assert(fonts.len == Font.files.len);
     @memset(fonts, .empty);
@@ -34,7 +34,7 @@ pub fn init(
         .gpa = gpa,
         .fonts = fonts,
         .coverage = @splat(null),
-        .pending = pending,
+        .renderer = renderer,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -60,14 +60,18 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     if (self.coverage[index]) |old| self.gpa.free(old);
     self.coverage[index] = coverage;
 
-    // Rewrite a row the backend has not drained yet rather than leaving freed bytes in it.
-    const slot: u32 = @intCast(index);
-    for (self.pending.items) |*upload| {
-        if (upload.* != .font or upload.font.index != slot) continue;
-        upload.font.coverage = coverage;
-        return;
+    if (self.fonts[index].atlas_texture_index != 0) {
+        self.renderer.vtable.freeImage(self.renderer.userdata, self.fonts[index].atlas_texture_index);
     }
-    try self.pending.append(self.gpa, .{ .font = .{ .index = slot, .coverage = coverage } });
+    self.fonts[index].atlas_texture_index = self.renderer.vtable.uploadImage(self.renderer.userdata, &.{
+        .width = Font.atlas_width,
+        .height = Font.atlas_height,
+        .pixels = coverage,
+        .r8 = true,
+        .mips = false,
+        .mag_linear = true,
+        .min_linear = true,
+    });
 }
 
 fn unload(loader: *Loader, index: usize) void {

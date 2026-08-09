@@ -96,9 +96,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         });
     }
 
-    viewer.assets.publish(list);
-    viewer.render_lib.symbols.renderUpdate(viewer.render_handle, list);
-    viewer.assets.consumed();
+    viewer.renderer.vtable.update(viewer.renderer.userdata, list);
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };

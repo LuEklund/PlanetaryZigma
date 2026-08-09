@@ -1,8 +1,8 @@
 //! Parses glTF on THIS side of the boundary. Twin of ShaderSource/TextureSource/FontSource.
 //!
 //! The CPU `Model` (nodes, skins, clips) is written straight into the caller-owned
-//! `ModelTable`, which already lives above the boundary; only mesh geometry and embedded
-//! images travel as an upload. The backend returns image slots by filling its own Entry.
+//! `ModelTable`, which already lives above the boundary. Geometry and embedded images go
+//! over one at a time and come back as handles, which land in `Model.mesh_handles`.
 
 const ModelSource = @This();
 
@@ -10,9 +10,10 @@ const std = @import("std");
 const shared = @import("shared");
 const entity = shared.entity;
 const AssetServer = @import("assets").AssetServer;
-const DrawList = @import("render").DrawList;
+const render = @import("render");
 const ModelTable = @import("assets").ModelTable;
-const contract = @import("render");
+const Model = @import("assets").Model;
+const Texture = @import("shared").Texture;
 
 const Loader = AssetServer.Loader;
 const gltf = @import("assets").gltf;
@@ -23,21 +24,13 @@ const Parsed = union(enum) {
     skinned: gltf.UploadData(shared.SkinnedVertex),
 };
 
-const Descriptors = struct {
-    meshes: []DrawList.MeshUpload,
-    surfaces: [][]DrawList.SurfaceUpload,
-    images: []DrawList.ImageUpload,
-    samplers: []DrawList.SamplerUpload,
-};
-
 gpa: std.mem.Allocator,
 models: *ModelTable,
 kinds: []entity.Kind,
-owned: []?Parsed,
-/// Descriptor arrays for the pending uploads; they point INTO `owned`, so they are freed
-/// together with it and never outlive the parse they describe.
-descriptors: []?Descriptors,
-pending: *std.ArrayList(DrawList.AssetUpload),
+/// Texture slots the backend handed back for this model's embedded images. Ours to free
+/// on a reload, because the backend allocated them at our request.
+image_slots: [][]u32,
+renderer: *const render.Renderer,
 interface: Loader,
 
 pub fn init(
@@ -45,11 +38,10 @@ pub fn init(
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
     models: *ModelTable,
-    pending: *std.ArrayList(DrawList.AssetUpload),
+    renderer: *const render.Renderer,
 ) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
     const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
-    std.debug.assert(model_paths.len <= contract.max_models);
     const files = try gpa.alloc([]const u8, model_paths.len);
     const kinds = try gpa.alloc(entity.Kind, model_paths.len);
     for (model_paths, kinds, files) |path, *kind, *file| {
@@ -61,9 +53,8 @@ pub fn init(
         .gpa = gpa,
         .models = models,
         .kinds = kinds,
-        .owned = try gpa.alloc(?Parsed, model_paths.len),
-        .descriptors = try gpa.alloc(?Descriptors, model_paths.len),
-        .pending = pending,
+        .image_slots = try gpa.alloc([]u32, model_paths.len),
+        .renderer = renderer,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -72,82 +63,21 @@ pub fn init(
             .vtable = &.{ .load = load, .unload = unload },
         },
     };
-    @memset(self.owned, null);
-    @memset(self.descriptors, null);
+    @memset(self.image_slots, &.{});
     try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *ModelSource) void {
-    for (self.owned, self.descriptors) |*slot, *described| self.release(slot, described);
-    self.gpa.free(self.owned);
-    self.gpa.free(self.descriptors);
+    for (0..self.image_slots.len) |index| self.releaseImages(index);
+    self.gpa.free(self.image_slots);
     self.gpa.free(self.kinds);
     self.gpa.free(self.interface.files);
 }
 
-fn release(self: *ModelSource, slot: *?Parsed, described: *?Descriptors) void {
-    if (described.*) |desc| {
-        for (desc.surfaces) |surfaces| self.gpa.free(surfaces);
-        self.gpa.free(desc.surfaces);
-        self.gpa.free(desc.meshes);
-        self.gpa.free(desc.images);
-        self.gpa.free(desc.samplers);
-        described.* = null;
-    }
-    if (slot.*) |*parsed| {
-        switch (parsed.*) {
-            inline else => |*variant| variant.deinit(self.gpa),
-        }
-        slot.* = null;
-    }
-}
-
-/// Build the contract's upload command out of whatever the parser produced. The big buffers
-/// (vertices, indices, pixels) are referenced, not copied — only the descriptors allocate.
-fn describe(self: *ModelSource, parsed: *const Parsed) !Descriptors {
-    const gpa = self.gpa;
-    return switch (parsed.*) {
-        inline else => |data, tag| blk: {
-            const samplers = try gpa.alloc(DrawList.SamplerUpload, data.samplers.len);
-            errdefer gpa.free(samplers);
-            for (data.samplers, samplers) |src, *dst| dst.* = .{ .mag_linear = src.mag_linear, .min_linear = src.min_linear };
-
-            const images = try gpa.alloc(DrawList.ImageUpload, data.images.len);
-            errdefer gpa.free(images);
-            for (data.images, data.image_sampler, images) |src, sampler_index, *dst| {
-                const width: u32 = @intCast(src.width);
-                const height: u32 = @intCast(src.height);
-                dst.* = .{
-                    .width = width,
-                    .height = height,
-                    .pixels = src.pixels[0 .. width * height * 4],
-                    .sampler_index = if (sampler_index) |value| @intCast(value) else null,
-                };
-            }
-
-            const meshes = try gpa.alloc(DrawList.MeshUpload, data.meshes.len);
-            errdefer gpa.free(meshes);
-            const surfaces = try gpa.alloc([]DrawList.SurfaceUpload, data.meshes.len);
-            errdefer gpa.free(surfaces);
-            for (data.meshes, meshes, surfaces) |src, *dst, *surface_slice| {
-                surface_slice.* = try gpa.alloc(DrawList.SurfaceUpload, src.surfaces.len);
-                for (src.surfaces, surface_slice.*) |surface_src, *surface_dst| surface_dst.* = .{
-                    .index_start = surface_src.index_start,
-                    .index_count = surface_src.index_count,
-                    .image_index = if (surface_src.image_index) |value| @intCast(value) else null,
-                    .material_missing = surface_src.material_missing,
-                };
-                dst.* = .{
-                    .name = src.name,
-                    .vertices = std.mem.sliceAsBytes(src.vertices),
-                    .skinned = tag == .skinned,
-                    .indices = src.indices,
-                    .surfaces = surface_slice.*,
-                };
-            }
-            break :blk .{ .meshes = meshes, .surfaces = surfaces, .images = images, .samplers = samplers };
-        },
-    };
+fn releaseImages(self: *ModelSource, index: usize) void {
+    for (self.image_slots[index]) |slot| self.renderer.vtable.freeImage(self.renderer.userdata, slot);
+    self.gpa.free(self.image_slots[index]);
+    self.image_slots[index] = &.{};
 }
 
 fn kindForPath(path: []const u8) entity.Kind {
@@ -174,33 +104,66 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
         .{ .skinned = try model.parseGlb(shared.SkinnedVertex, gpa, loader.io, file, kind_spec, model_spec) }
     else
         .{ .static = try model.parseGlb(shared.StaticVertex, gpa, loader.io, file, kind_spec, model_spec) };
-
-    // Replace the previous parse only once the new one is fully described, so a failure
-    // here leaves the old model intact rather than half-freed.
-    self.release(&self.owned[index], &self.descriptors[index]);
-    self.owned[index] = parsed;
-    self.descriptors[index] = self.describe(&self.owned[index].?) catch |err| {
-        switch (parsed) {
-            inline else => |*variant| variant.deinit(gpa),
-        }
-        self.owned[index] = null;
-        return err;
+    defer switch (parsed) {
+        inline else => |*variant| variant.deinit(gpa),
     };
-    const described = self.descriptors[index].?;
 
-    const row: DrawList.ModelUpload = .{
-        .index = @intCast(index),
-        .meshes = described.meshes,
-        .images = described.images,
-        .samplers = described.samplers,
-    };
+    self.releaseImages(index);
+    try self.upload(index, model, &parsed);
     try self.models.reloaded.append(gpa, @intCast(index));
-    for (self.pending.items) |*upload| {
-        if (upload.* != .model or upload.model.index != index) continue;
-        upload.model = row;
-        return;
+}
+
+/// Images first, because a surface names the slot one of them landed in.
+fn upload(self: *ModelSource, index: usize, model: *Model, parsed: *const Parsed) !void {
+    const gpa = self.gpa;
+    const renderer = self.renderer;
+
+    switch (parsed.*) {
+        inline else => |*data, tag| {
+            const slots = try gpa.alloc(u32, data.images.len);
+            errdefer gpa.free(slots);
+            for (data.images, data.image_sampler, slots) |image, sampler_index, *slot| {
+                const sampler = if (sampler_index) |sampler| data.samplers[sampler] else null;
+                const width: u32 = @intCast(image.width);
+                const height: u32 = @intCast(image.height);
+                slot.* = renderer.vtable.uploadImage(renderer.userdata, &.{
+                    .width = width,
+                    .height = height,
+                    .pixels = image.pixels[0 .. width * height * 4],
+                    .r8 = false,
+                    .mips = true,
+                    .mag_linear = if (sampler) |desc| desc.mag_linear else true,
+                    .min_linear = if (sampler) |desc| desc.min_linear else true,
+                });
+            }
+            self.image_slots[index] = slots;
+
+            const handles = try gpa.alloc(usize, data.meshes.len);
+            errdefer gpa.free(handles);
+            for (data.meshes, handles) |mesh, *handle| {
+                const surfaces = try gpa.alloc(render.SurfaceUpload, mesh.surfaces.len);
+                defer gpa.free(surfaces);
+                for (mesh.surfaces, surfaces) |src, *surface| surface.* = .{
+                    .index_start = src.index_start,
+                    .index_count = src.index_count,
+                    .texture_slot = @intCast(if (src.material_missing)
+                        Texture.slot(.missing)
+                    else if (src.image_index) |image_index|
+                        slots[image_index]
+                    else
+                        Texture.slot(.blank)),
+                };
+                handle.* = @intFromEnum(renderer.vtable.uploadMesh(renderer.userdata, .none, &.{
+                    .name = mesh.name,
+                    .vertices = std.mem.sliceAsBytes(mesh.vertices),
+                    .skinned = tag == .skinned,
+                    .indices = mesh.indices,
+                    .surfaces = surfaces,
+                }));
+            }
+            model.mesh_handles = handles;
+        },
     }
-    try self.pending.append(gpa, .{ .model = row });
 }
 
 fn unload(loader: *Loader, index: usize) void {

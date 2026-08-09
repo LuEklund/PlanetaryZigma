@@ -15,11 +15,9 @@ const Shader = @import("shared").Shader;
 const FrameData = @import("FrameData.zig");
 const Ui = @import("shared").Ui;
 const TextureTable = @import("TextureTable.zig");
-const Meshes = @import("Meshes.zig");
-const Textures = @import("Textures.zig");
+const Texture = @import("shared").Texture;
+const contract = @import("render");
 const Shaders = @import("Shaders.zig");
-const Fonts = @import("Fonts.zig");
-const Font = @import("shared").Font;
 const DrawList = @import("render").DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
 
@@ -35,15 +33,20 @@ pub const GPUCascades = extern struct {
     splits: [4]f32,
 };
 
+gpa: std.mem.Allocator,
 vma: Vma,
 device: Device,
 
 texture_table: TextureTable,
-meshes: *Meshes,
-textures: *Textures,
-shaders: *Shaders,
-fonts: *Fonts,
-generated: [DrawList.max_generated]Mesh,
+/// The GPU arrays themselves. A mesh handle is `index + 1`, so 0 stays `.none`; a texture
+/// is keyed by the descriptor slot, because that slot is the only name the producer holds.
+meshes: std.ArrayList(?Mesh),
+textures: std.AutoArrayHashMapUnmanaged(u32, Image),
+/// Bound wherever nothing has been uploaded yet, and never freed.
+blank_texture: Image,
+/// The checkerboard: a decode that failed is visible, not white and not stale.
+missing_texture: Image,
+shaders: Shaders,
 
 descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
@@ -56,7 +59,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -216,10 +219,11 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
     const self = try gpa.create(Resources);
     self.* = .{
         .texture_table = undefined,
-        .meshes = undefined,
-        .textures = undefined,
+        .meshes = .empty,
+        .textures = .empty,
+        .blank_texture = undefined,
+        .missing_texture = undefined,
         .shaders = undefined,
-        .fonts = undefined,
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
@@ -228,9 +232,9 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
         .shadow_sampler = shadow_sampler,
         .shadow_descriptor_buffers = shadow_descriptor_buffers,
         .shadow_cascade_offset = shadow_cascade_offset,
+        .gpa = gpa,
         .vma = vma,
         .device = device,
-        .generated = undefined,
     };
     self.texture_table = try .init(
         gpa,
@@ -240,36 +244,65 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
         descriptor_layouts.get(.material).handle,
         physical_device.combined_image_sampler_descriptor_size,
     );
-    self.meshes = try gpa.create(Meshes);
-    try self.meshes.init(gpa, &self.texture_table);
-    self.textures = try gpa.create(Textures);
-    try self.textures.init(gpa, &self.texture_table);
-    self.shaders = try gpa.create(Shaders);
     try self.shaders.init(gpa, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
         .material = descriptor_layouts.get(.material).handle,
         .textures = descriptor_layouts.get(.textures).handle,
         .shadow = descriptor_layouts.get(.shadow).handle,
     }));
-    self.fonts = try gpa.create(Fonts);
-    try self.fonts.init(gpa, &self.texture_table, fonts);
 
-    for (&self.generated) |*mesh| mesh.* = try makeBoxMesh(gpa, self.vma, self.device, "generated");
+var blank: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 1, .height = 1, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    var white: [4]u8 = .{ 255, 255, 255, 255 };
+    try blank.uploadDataToImage(self.vma, self.device, &white, 4, 0);
+
+    var missing: Image = try .init(
+        self.vma,
+        self.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 8, .height = 8, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    var checkerboard: [8 * 8 * 4]u8 = undefined;
+    for (0..8) |y| for (0..8) |x| {
+        const magenta: bool = (x + y) % 2 == 0;
+        checkerboard[(y * 8 + x) * 4 + 0] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 1] = 0;
+        checkerboard[(y * 8 + x) * 4 + 2] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 3] = 255;
+    };
+    try missing.uploadDataToImage(self.vma, self.device, &checkerboard, checkerboard.len, 0);
+
+    self.texture_table.registerEmpty(blank.vk_imageview, self.texture_table.samplers.items[0]);
+    self.texture_table.write(Texture.slot(.missing), missing.vk_imageview, self.texture_table.samplers.items[0]);
+
+    self.blank_texture = blank;
+    self.missing_texture = missing;
 
     return self;
 }
 
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    self.meshes.deinit();
-    gpa.destroy(self.meshes);
-    self.textures.deinit();
-    gpa.destroy(self.textures);
-    self.fonts.deinit();
-    gpa.destroy(self.fonts);
+    check(c.vkDeviceWaitIdle(device.handle)) catch {};
+    for (self.meshes.items) |*slot| if (slot.*) |*item| item.deinit(gpa, vma);
+    self.meshes.deinit(gpa);
+    for (self.textures.values()) |*image| image.deinit(vma, device);
+    self.textures.deinit(gpa);
+    self.blank_texture.deinit(vma, device);
+    self.missing_texture.deinit(vma, device);
     self.shaders.deinit();
-    gpa.destroy(self.shaders);
     self.texture_table.deinit(gpa);
-    for (&self.generated) |*mesh| mesh.deinit(gpa, self.vma);
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);
     }
@@ -292,10 +325,139 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
     );
 }
 
-fn makeBoxMesh(gpa: std.mem.Allocator, vma: Vma, device: Device, name: []const u8) !Mesh {
-    return try .init(gpa, vma, name, device, Mesh.StaticVertex, Mesh.box.vertices, Mesh.box.indices, &.{.{
-        .index_start = 0,
-        .index_count = @intCast(Mesh.box.indices.len),
-        .texture = .blank,
-    }});
+
+pub fn meshAt(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
+    const raw = @intFromEnum(handle);
+    if (raw == 0 or raw > self.meshes.items.len) return null;
+    if (self.meshes.items[raw - 1]) |*mesh| return mesh;
+    return null;
+}
+
+pub fn freeMesh(self: *Resources, handle: contract.MeshHandle) void {
+    const raw = @intFromEnum(handle);
+    if (raw == 0 or raw > self.meshes.items.len) return;
+    const slot = &self.meshes.items[raw - 1];
+    if (slot.*) |*mesh| {
+        check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
+        mesh.deinit(self.gpa, self.texture_table.vma);
+    }
+    slot.* = null;
+}
+
+/// Build the GPU half from an upload command. No parser types cross: geometry arrives as
+/// bytes and `MeshUpload.skinned` says which layout to read the bytes as.
+pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, command: *const contract.MeshUpload) !contract.MeshHandle {
+    const gpa = self.gpa;
+    const surfaces = try gpa.alloc(Mesh.GeoSurface, command.surfaces.len);
+    defer gpa.free(surfaces);
+    for (command.surfaces, surfaces) |src, *surface| surface.* = .{
+        .index_start = src.index_start,
+        .index_count = src.index_count,
+        .texture = @enumFromInt(src.texture_slot),
+    };
+
+    const mesh: Mesh = if (command.skinned)
+        try .init(gpa, self.texture_table.vma, command.name, self.texture_table.device, Mesh.SkinnedVertex, verticesAs(Mesh.SkinnedVertex, command.vertices), command.indices, surfaces)
+    else
+        try .init(gpa, self.texture_table.vma, command.name, self.texture_table.device, Mesh.StaticVertex, verticesAs(Mesh.StaticVertex, command.vertices), command.indices, surfaces);
+
+    // Reuse the old row so a reloaded mesh keeps its handle and callers need no fixup.
+    const raw = @intFromEnum(old);
+    if (raw != 0 and raw <= self.meshes.items.len) {
+        self.freeMesh(old);
+        self.meshes.items[raw - 1] = mesh;
+        return old;
+    }
+    try self.meshes.append(gpa, mesh);
+    return @enumFromInt(self.meshes.items.len);
+}
+
+pub fn freeTexture(self: *Resources, slot: u32) void {
+    const entry = self.textures.fetchSwapRemove(slot) orelse return;
+    var image = entry.value;
+    check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
+    image.deinit(self.texture_table.vma, self.texture_table.device);
+    self.texture_table.free(self.gpa, slot);
+}
+
+pub fn uploadTexture(self: *Resources, desc: TextureDesc) !u32 {
+    const table = &self.texture_table;
+    const slot: u32 = desc.slot orelse @intCast(table.alloc());
+
+    if (desc.faces.len == 0) {
+        self.dropTexture(slot);
+        table.write(slot, self.missing_texture.vk_imageview, table.samplers.items[0]);
+        return slot;
+    }
+
+    const cubemap = desc.faces.len == 6;
+    const usage: u32 = if (desc.mips)
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+    else
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    const channels: u32 = if (desc.r8) 1 else 4;
+    var image: Image = try .init(
+        table.vma,
+        table.device,
+        if (desc.r8) c.VK_FORMAT_R8_UNORM else c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = desc.width, .height = desc.height, .depth = 1 },
+        if (cubemap) .cube_map else .@"2d",
+        usage,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        desc.mips,
+    );
+    errdefer image.deinit(table.vma, table.device);
+
+    if (desc.mips) {
+        var upload_buffers: std.ArrayList(Buffer) = .empty;
+        defer {
+            for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(table.vma);
+            upload_buffers.deinit(self.gpa);
+        }
+        const cmd = try table.device.beginImmediateCommand();
+        for (desc.faces) |face| {
+            try image.recordUploadDataToImage(self.gpa, table.vma, table.device, cmd, face.ptr, 0, channels, &upload_buffers);
+        }
+        try table.device.endImmediateCommand(cmd);
+    } else {
+        for (desc.faces, 0..) |face, layer| {
+            try image.uploadDataToImage(table.vma, table.device, face.ptr, channels, @intCast(layer));
+        }
+    }
+
+    const sampler = if (desc.mag_linear and desc.min_linear)
+        table.samplers.items[0]
+    else
+        try table.addSampler(self.gpa, desc.mag_linear, desc.min_linear);
+
+    self.dropTexture(slot);
+    try self.textures.put(self.gpa, slot, image);
+    if (cubemap) table.writeSkybox(image.vk_imageview, sampler) else table.write(slot, image.vk_imageview, sampler);
+    return slot;
+}
+
+pub const TextureDesc = struct {
+    /// null asks the store to name it — that is what makes a handle a handle.
+    slot: ?u32,
+    width: u32,
+    height: u32,
+    /// Zero faces binds the checkerboard; one is a 2D image; six is a cubemap in Vulkan
+    /// face order, which goes to the skybox descriptor rather than a table slot.
+    faces: []const []const u8,
+    r8: bool,
+    mips: bool,
+    mag_linear: bool,
+    min_linear: bool,
+};
+
+/// Drop the GPU image in a slot but keep the slot: the caller is about to rewrite it.
+fn dropTexture(self: *Resources, slot: u32) void {
+    const entry = self.textures.fetchSwapRemove(slot) orelse return;
+    var image = entry.value;
+    check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
+    image.deinit(self.texture_table.vma, self.texture_table.device);
+}
+
+fn verticesAs(comptime VertexType: type, bytes: []const u8) []const VertexType {
+    return @alignCast(std.mem.bytesAsSlice(VertexType, bytes));
 }

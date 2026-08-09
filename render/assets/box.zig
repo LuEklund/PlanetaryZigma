@@ -1,4 +1,4 @@
-const Vertex = @import("../Mesh.zig").StaticVertex;
+const Vertex = @import("shared").StaticVertex;
 
 pub const vertices: []const Vertex = &.{
     .{ .position = .{ -1, -1, 1 }, .normal = .{ 0, 0, 1 }, .color = .{ 1, 0, 0, 1 }, .uv_x = 0, .uv_y = 1 },

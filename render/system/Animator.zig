@@ -227,10 +227,12 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
                 .file => |index| index,
                 .generated => continue,
             };
+            const mesh_handles = models.models[file_index].mesh_handles;
             for (instance_skeleton.nodes) |node| {
                 const mesh_id = node.mesh_id orelse continue;
+                if (mesh_id >= mesh_handles.len) continue;
                 list.draw_meshes.appendAssumeCapacity(.{
-                    .mesh = .{ .file = .{ .model = file_index, .mesh = @intCast(mesh_id) } },
+                    .mesh = @enumFromInt(mesh_handles[mesh_id]),
                     .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
                     .position = instance.transform.position,
                     .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
@@ -240,7 +242,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
             }
         } else switch (instance.model) {
             .generated => |generated| list.draw_meshes.appendAssumeCapacity(.{
-                .mesh = .{ .generated = @intFromEnum(generated) },
+                .mesh = @enumFromInt(models.generated[@intFromEnum(generated)]),
                 .model_matrix = top_matrix,
                 .position = instance.transform.position,
                 .palette_offset = null,
@@ -253,8 +255,9 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
                 const model = &models.models[file_index];
                 if (model.isEmpty() or model.isSkinned()) continue;
                 for (model.surfaces.items) |surface| {
+                    if (surface.mesh_id >= model.mesh_handles.len) continue;
                     list.draw_meshes.appendAssumeCapacity(.{
-                        .mesh = .{ .file = .{ .model = file_index, .mesh = @intCast(surface.mesh_id) } },
+                        .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
                         .model_matrix = top_matrix.mul(surface.model_matrix),
                         .position = instance.transform.position,
                         .palette_offset = null,

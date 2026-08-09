@@ -99,9 +99,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         });
     }
 
-    scene_assets.publish(list);
-    system.render_lib.symbols.renderUpdate(system.render_handle, list);
-    scene_assets.consumed();
+    system.renderer.vtable.update(system.renderer.userdata, list);
 }
 
 fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {

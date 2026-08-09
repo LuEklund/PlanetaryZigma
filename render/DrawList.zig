@@ -6,6 +6,7 @@ const nz = shared.numz;
 const Shader = @import("shared").Shader;
 const Emitter = @import("shared").Emitter;
 const Ui = @import("shared").Ui;
+const contract = @import("root.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
@@ -21,9 +22,6 @@ draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
 ui: UiLayer,
 planet: PlanetState,
-/// Asset bytes read above the boundary; the backend creates GPU objects from them and
-/// keeps nothing. Owned by the producer, valid only for this frame's renderUpdate.
-asset_uploads: []const AssetUpload,
 surface_width: u32,
 surface_height: u32,
 
@@ -33,19 +31,9 @@ pub const Camera = struct {
     fov_rad: f32,
 };
 
-/// How many built-in primitive meshes the backend keeps. The producer maps its own names
-/// onto these indices; render never learns what they mean.
-pub const max_generated: u32 = 4;
-
-/// Which GPU mesh to draw. The producer resolved this; the backend does no lookup.
-pub const MeshRef = union(enum) {
-    generated: u32,
-    file: struct { model: u32, mesh: u32 },
-};
-
 /// One row is one draw unit, which is what makes depth sorting possible above the boundary.
 pub const DrawMesh = struct {
-    mesh: MeshRef,
+    mesh: contract.MeshHandle,
     model_matrix: nz.Mat4x4(f32),
     position: nz.Vec3(f32),
     palette_offset: ?u32,
@@ -72,70 +60,12 @@ pub const UiLayer = struct {
     screen_height: f32,
 };
 
-/// One queue, in arrival order. The backend drains it with one switch, so adding an asset
-/// kind is one variant here and one arm there.
-pub const AssetUpload = union(enum) {
-    shader: ShaderUpload,
-    texture: TextureUpload,
-    font: FontUpload,
-    model: ModelUpload,
-};
-
-pub const ShaderUpload = struct {
-    kind: Shader.Kind,
-    spirv: []align(4) const u8,
-};
-
 pub const TextureUpload = struct {
     slot: u32,
     width: u32,
     height: u32,
     /// One entry is a 2D texture; six is a cubemap, in Vulkan face order.
     faces: []const []const u8,
-};
-
-pub const FontUpload = struct {
-    index: u32,
-    /// R8 coverage for the whole atlas; glyph metrics were already written producer-side.
-    coverage: []const u8,
-};
-
-/// A model upload is a plain command: geometry and pixels, no parser types. Whoever
-/// produced it (glTF today, anything tomorrow) fills these in; the backend only makes
-/// GPU objects out of them.
-pub const ModelUpload = struct {
-    index: u32,
-    meshes: []const MeshUpload,
-    images: []const ImageUpload,
-    samplers: []const SamplerUpload,
-};
-
-pub const MeshUpload = struct {
-    name: []const u8,
-    /// Raw vertex bytes; `skinned` picks the layout to reinterpret them as.
-    vertices: []const u8,
-    skinned: bool,
-    indices: []const u32,
-    surfaces: []const SurfaceUpload,
-};
-
-pub const SurfaceUpload = struct {
-    index_start: u32,
-    index_count: u32,
-    image_index: ?u32,
-    material_missing: bool,
-};
-
-pub const ImageUpload = struct {
-    width: u32,
-    height: u32,
-    pixels: []const u8,
-    sampler_index: ?u32,
-};
-
-pub const SamplerUpload = struct {
-    mag_linear: bool,
-    min_linear: bool,
 };
 
 pub const PlanetState = struct {
@@ -158,7 +88,6 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
         .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
-        .asset_uploads = &.{},
     };
 }
 

@@ -12,3 +12,4 @@ pub const Model = @import("Model.zig");
 pub const ModelTable = @import("ModelTable.zig");
 pub const Node = @import("Node.zig");
 pub const AnimationClip = @import("AnimationClip.zig");
+pub const box = @import("box.zig");

@@ -35,8 +35,8 @@ gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
 asset_server: *AssetServer,
-render_lib: shared.HotLib(render.Table, *anyopaque, "renderInit", "renderReload"),
-render_handle: *anyopaque,
+render_lib: shared.HotLib(render.Renderer.VTable, *anyopaque, "init", "reload"),
+renderer: render.Renderer,
 draw_list: DrawList,
 assets: render_system.Assets,
 animator: render_system.Animator,
@@ -62,7 +62,7 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.asset_server = data.asset_server;
 
-    try self.assets.init(data.gpa, data.asset_server);
+    try self.assets.init(data.gpa, data.asset_server, &self.renderer);
     errdefer self.assets.deinit(data.gpa);
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
@@ -70,19 +70,22 @@ pub fn init(self: *System, data: Data) !void {
 
     self.render_lib = try .init("render", data.io);
     errdefer self.render_lib.deinit(data.io);
-    self.render_handle = self.render_lib.symbols.renderInit(&render.Data{
-        .gpa = data.gpa,
-        .io = data.io,
-        .window = data.window,
-        .fonts = &self.assets.fonts,
-    }) orelse return error.RenderInit;
-    errdefer self.render_lib.symbols.renderDeinit(self.render_handle);
+    self.renderer = .{
+        .vtable = &self.render_lib.symbols,
+        .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
+            .gpa = data.gpa,
+            .io = data.io,
+            .window = data.window,
+        }) orelse return error.RenderInit,
+    };
+    errdefer self.renderer.vtable.deinit(self.renderer.userdata);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
 
     // render.so is up, so parsing can start; the uploads drain on the first frame.
     try data.asset_server.load();
+    self.assets.uploadGenerated(&self.renderer);
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
@@ -96,10 +99,11 @@ pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.hud.deinit(self.gpa);
     self.draw_list.deinit(self.gpa);
-    self.render_lib.symbols.renderDeinit(self.render_handle);
-    self.render_lib.deinit(self.io);
     self.animator.deinit();
+    // Before the renderer: freeing a model's images is a call INTO render.so.
     self.assets.deinit(self.gpa);
+    self.renderer.vtable.deinit(self.renderer.userdata);
+    self.render_lib.deinit(self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -149,7 +153,7 @@ pub fn update(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     try extract.frame(self, world, self.scene != .particle_lab);
-    self.render_lib.trySwap(self.io, self.render_handle) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
+    self.render_lib.trySwap(self.io, self.renderer.userdata) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;

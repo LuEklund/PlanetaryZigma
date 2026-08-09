@@ -9,6 +9,7 @@ const std = @import("std");
 const Texture = @import("shared").Texture;
 const AssetServer = @import("assets").AssetServer;
 const Bitmap = @import("assets").Bitmap;
+const render = @import("render");
 const DrawList = @import("render").DrawList;
 
 const Loader = AssetServer.Loader;
@@ -22,14 +23,15 @@ const Owned = struct {
 
 gpa: std.mem.Allocator,
 owned: [Texture.paths_capacity]?Owned,
-pending: *std.ArrayList(DrawList.AssetUpload),
+/// Read only inside `load`, which the owner runs after the renderer exists.
+renderer: *const render.Renderer,
 interface: Loader,
 
 pub fn init(
     self: *TextureSource,
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
-    pending: *std.ArrayList(DrawList.AssetUpload),
+    renderer: *const render.Renderer,
 ) !void {
     var path_buffer: [Texture.paths_capacity][]const u8 = undefined;
     const texture_paths = Texture.paths(&path_buffer);
@@ -39,7 +41,7 @@ pub fn init(
     self.* = .{
         .gpa = gpa,
         .owned = @splat(null),
-        .pending = pending,
+        .renderer = renderer,
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -102,13 +104,12 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     if (self.owned[index]) |old| self.free(old);
     self.owned[index] = owned;
 
-    const row: DrawList.TextureUpload = .{ .slot = slot, .width = width, .height = height, .faces = owned.faces };
-    for (self.pending.items) |*upload| {
-        if (upload.* != .texture or upload.texture.slot != slot) continue;
-        upload.texture = row;
-        return;
-    }
-    try self.pending.append(gpa, .{ .texture = row });
+    self.renderer.vtable.uploadTexture(self.renderer.userdata, &.{
+        .slot = slot,
+        .width = width,
+        .height = height,
+        .faces = owned.faces,
+    });
     std.log.debug("texture slot {d}: textures/{s}", .{ slot, loader.files[index] });
 }
 
@@ -116,13 +117,12 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 /// is exempt: a 2D fallback cannot stand in for a cube view.
 fn pushFallback(self: *TextureSource, slot: u32) !void {
     if (slot == Texture.slot(.skybox_cubemap)) return;
-    const row: DrawList.TextureUpload = .{ .slot = slot, .width = 0, .height = 0, .faces = &.{} };
-    for (self.pending.items) |*upload| {
-        if (upload.* != .texture or upload.texture.slot != slot) continue;
-        upload.texture = row;
-        return;
-    }
-    try self.pending.append(self.gpa, .{ .texture = row });
+    self.renderer.vtable.uploadTexture(self.renderer.userdata, &.{
+        .slot = slot,
+        .width = 0,
+        .height = 0,
+        .faces = &.{},
+    });
 }
 
 fn wholeImage(gpa: std.mem.Allocator, decoded: Bitmap) !struct { Owned, u32, u32 } {

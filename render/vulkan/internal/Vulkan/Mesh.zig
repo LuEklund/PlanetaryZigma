@@ -9,7 +9,6 @@ const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 const Image = @import("Image.zig");
 
-pub const box = @import("Mesh/box.zig");
 
 surfaces: std.ArrayList(GeoSurface),
 index_buffer: Buffer,
