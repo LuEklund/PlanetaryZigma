@@ -7,3 +7,4 @@
 
 pub const Renderer = @import("Renderer.zig");
 pub const Animator = @import("Animator.zig");
+pub const Assets = @import("Assets.zig");

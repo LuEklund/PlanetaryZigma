@@ -22,75 +22,37 @@ const nz = shared.numz;
 lib: shared.HotLib(contract.Table, *anyopaque, "renderInit", "renderReload"),
 handle: *anyopaque,
 list: DrawList,
-animator: Animator,
-emitters: Emitter.List,
-models: assets.ModelTable,
-shader_source: ShaderSource,
-texture_source: TextureSource,
-font_source: FontSource,
-model_source: ModelSource,
 window: *Window,
-/// render.so's loaders fill these in place, so they must outlive a swap of it.
-fonts: [Font.count]Font,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     window: *Window,
-    asset_server: *AssetServer,
+    /// Caller-owned: render.so writes atlas slots back into it, so it must outlive a swap.
+    fonts: *[Font.count]Font,
 };
 
 pub fn init(self: *Renderer, data: Data) !void {
     self.window = data.window;
-    self.fonts = @splat(.empty);
-    self.models = try .init(data.gpa);
-    errdefer self.models.deinit(data.gpa);
-
     self.lib = try .init("render", data.io);
     errdefer self.lib.deinit(data.io);
-
-    // Before renderInit: that call runs asset_server.load(), which is what fills the
-    // first frame's shader uploads.
-    try self.shader_source.init(data.gpa, data.asset_server);
-    errdefer self.shader_source.deinit();
-    try self.texture_source.init(data.gpa, data.asset_server);
-    errdefer self.texture_source.deinit();
-    try self.font_source.init(data.gpa, data.asset_server, &self.fonts);
-    errdefer self.font_source.deinit();
-    try self.model_source.init(data.gpa, data.asset_server, &self.models);
-    errdefer self.model_source.deinit();
 
     self.handle = self.lib.symbols.renderInit(&contract.Data{
         .gpa = data.gpa,
         .io = data.io,
-        .fonts = &self.fonts,
+        .fonts = data.fonts,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.lib.symbols.renderDeinit(self.handle);
 
-    // The producers above the boundary own the initial read; renderInit is pure GPU init.
-    try data.asset_server.load();
-
-    self.animator = try .init(data.gpa);
-    errdefer self.animator.deinit();
-
     self.list = try .init(data.gpa);
-    self.emitters = @splat(Emitter.free);
 }
 
 pub fn deinit(self: *Renderer, gpa: std.mem.Allocator, io: std.Io) void {
     self.list.deinit(gpa);
-    self.shader_source.deinit();
-    self.texture_source.deinit();
-    self.font_source.deinit();
-    self.model_source.deinit();
-    self.animator.deinit();
     self.lib.symbols.renderDeinit(self.handle);
     self.lib.deinit(io);
-    self.models.deinit(gpa);
 }
-
-pub const item_spin_speed: f32 = Animator.item_spin_speed;
 
 pub const Frame = struct {
     camera: DrawList.Camera,
@@ -102,11 +64,6 @@ pub const Frame = struct {
     surface_height: u32,
 };
 
-/// Scene-change reset: forget every animation instance and live effect.
-pub fn clear(self: *Renderer) void {
-    self.animator.clear();
-    self.emitters = @splat(Emitter.free);
-}
 
 pub fn beginFrame(self: *Renderer, frame: Frame) void {
     self.list.clear();
@@ -127,21 +84,9 @@ pub fn drawLines(self: *Renderer, lines: []const DrawList.Line) void {
     self.list.draw_lines.appendSliceAssumeCapacity(lines);
 }
 
-pub fn spawnEffect(self: *Renderer, request: Emitter.Spawn, elapsed_time: f32) void {
-    Emitter.spawn(&self.emitters, request, elapsed_time);
-}
 
-pub fn keepAliveEffect(self: *Renderer, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32), elapsed_time: f32) void {
-    Emitter.keepAlive(&self.emitters, effect, owner, origin, elapsed_time);
-}
 
-pub fn advanceAnimation(self: *Renderer, triggers: []const shared.net.Event.Trigger) void {
-    self.animator.advance(triggers, &self.models);
-}
 
-pub fn drawAnimated(self: *Renderer) void {
-    self.animator.draw(&self.list, &self.emitters, &self.models);
-}
 
 pub fn drawUi(self: *Renderer, quads: []const Ui.Quad, screen_width: f32, screen_height: f32) void {
     self.list.ui.quads.appendSliceAssumeCapacity(quads);
@@ -149,8 +94,9 @@ pub fn drawUi(self: *Renderer, quads: []const Ui.Quad, screen_width: f32, screen
     self.list.ui.screen_height = screen_height;
 }
 
-pub fn endFrame(self: *Renderer, elapsed_time: f32) void {
-    for (&self.emitters) |emitter| {
+/// Hand the packet to render.so. Uploads must already be published into `list`.
+pub fn endFrame(self: *Renderer, emitters: *const Emitter.List, elapsed_time: f32) void {
+    for (emitters) |emitter| {
         if (!emitter.alive(elapsed_time)) continue;
         self.list.emitters.appendAssumeCapacity(.{
             .effect = emitter.effect,
@@ -159,15 +105,7 @@ pub fn endFrame(self: *Renderer, elapsed_time: f32) void {
             .spawn_time = emitter.spawn_time,
         });
     }
-    self.list.shader_uploads = self.shader_source.uploads();
-    self.list.texture_uploads = self.texture_source.uploads();
-    self.list.font_uploads = self.font_source.uploads();
-    self.list.model_uploads = self.model_source.uploads();
     self.lib.symbols.renderUpdate(self.handle, &self.list);
-    self.shader_source.consumed();
-    self.texture_source.consumed();
-    self.font_source.consumed();
-    self.model_source.consumed();
 }
 
 pub fn reloadIfChanged(self: *Renderer, io: std.Io) !void {

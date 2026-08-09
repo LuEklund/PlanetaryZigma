@@ -8,6 +8,8 @@ const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
 pub const AssetServer = @import("assets").AssetServer;
 const Renderer = @import("render_system").Renderer;
+const render_system = @import("render_system");
+const Emitter = @import("shared").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const DrawList = @import("render").DrawList;
@@ -34,6 +36,9 @@ io: std.Io,
 window: *Window,
 asset_server: *AssetServer,
 renderer: Renderer,
+assets: render_system.Assets,
+animator: render_system.Animator,
+emitters: Emitter.List,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
@@ -54,13 +59,22 @@ pub fn init(self: *System, data: Data) !void {
     self.io = data.io;
     self.window = data.window;
     self.asset_server = data.asset_server;
+    try self.assets.init(data.gpa, data.asset_server);
+    errdefer self.assets.deinit(data.gpa);
+    self.animator = try .init(data.gpa);
+    errdefer self.animator.deinit();
+    self.emitters = @splat(Emitter.free);
+
     try self.renderer.init(.{
         .gpa = data.gpa,
         .io = data.io,
         .window = data.window,
-        .asset_server = data.asset_server,
+        .fonts = &self.assets.fonts,
     });
     errdefer self.renderer.deinit(data.gpa, data.io);
+
+    // Renderer is up, so parsing can start; the uploads drain on the first frame.
+    try data.asset_server.load();
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
@@ -74,11 +88,14 @@ pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.hud.deinit(self.gpa);
     self.renderer.deinit(self.gpa, self.io);
+    self.animator.deinit();
+    self.assets.deinit(self.gpa);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clear();
-    self.renderer.clear();
+    self.animator.clear();
+    self.emitters = @splat(Emitter.free);
     self.hud.resetScreen();
     switch (next) {
         .menu => try menu_world.populate(world),
@@ -98,8 +115,8 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world);
-    if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0])) {
+    if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets.fonts[0])) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -121,7 +138,7 @@ pub fn update(self: *System, world: *World) !void {
         &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
-    try extract.frame(world, &self.renderer, &self.hud.ui, self.scene != .particle_lab);
+    try extract.frame(world, &self.renderer, &self.assets, &self.animator, &self.emitters, &self.hud.ui, self.scene != .particle_lab);
     self.renderer.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 

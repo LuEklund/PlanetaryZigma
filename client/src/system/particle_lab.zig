@@ -16,16 +16,16 @@ pub fn populate(world: *World) !void {
     world.camera = .{ .transform = .{ .position = camera_position } };
 }
 
-pub fn update(renderer: *Renderer, elapsed_time: f32) void {
+pub fn update(emitters: *Emitter.List, elapsed_time: f32) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        renderer.keepAliveEffect(particle_kind, .none, surface_point, elapsed_time);
+        Emitter.keepAlive(emitters, particle_kind, .none, surface_point, elapsed_time);
         return;
     }
-    for (&renderer.emitters) |emitter| {
+    for (emitters) |emitter| {
         if (emitter.effect == particle_kind and emitter.alive(elapsed_time)) return;
     }
-    renderer.spawnEffect(.{
+    Emitter.spawn(emitters, .{
         .effect = particle_kind,
         .origin = surface_point,
         .target = if (particle_info.topology == .ribbon) ribbon_target else surface_point,

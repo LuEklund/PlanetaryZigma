@@ -3,6 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Renderer = @import("render_system").Renderer;
+const render_system = @import("render_system");
+const Emitter = @import("shared").Emitter;
 const ModelTable = @import("assets").ModelTable;
 const Camera = @import("camera.zig");
 const Ui = @import("shared").Ui;
@@ -44,7 +46,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         .surface_height = renderer.window.size.height,
     });
 
-    try renderer.animator.begin(.{
+    try viewer.animator.begin(.{
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
@@ -53,12 +55,12 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, &.{}, &renderer.models);
+    }, &.{}, &viewer.assets.models);
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
         const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
-        try renderer.animator.observe(.{
+        try viewer.animator.observe(.{
             .id = entity.id,
             .model = model_handle,
             .transform = entity.transform,
@@ -71,19 +73,21 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
                 null,
             ),
             .highlight = entity.kind == .teleporter,
-            .spin_speed = if (entity.kind == .item) Renderer.item_spin_speed else 0,
+            .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
-        }, &renderer.models);
+        }, &viewer.assets.models);
     }
-    renderer.advanceAnimation(&.{});
-    renderer.drawAnimated();
+    viewer.animator.advance(&.{}, &viewer.assets.models);
+    viewer.animator.draw(&renderer.list, &viewer.emitters, &viewer.assets.models);
 
     if (world.options.draw_flow_field) renderer.drawLines(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) renderer.drawLines(viewer.border_lines.items);
 
     renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    renderer.endFrame(world.elapsed_time);
+    viewer.assets.publish(&renderer.list);
+    renderer.endFrame(&viewer.emitters, world.elapsed_time);
+    viewer.assets.consumed();
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };

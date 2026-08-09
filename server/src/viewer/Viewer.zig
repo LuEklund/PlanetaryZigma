@@ -4,6 +4,8 @@ const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
 const Renderer = @import("render_system").Renderer;
+const render_system = @import("render_system");
+const Emitter = @import("shared").Emitter;
 const AssetServer = @import("assets").AssetServer;
 const Ui = @import("shared").Ui;
 const DrawList = @import("render").DrawList;
@@ -15,6 +17,9 @@ pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
 renderer: Renderer,
+assets: render_system.Assets,
+animator: render_system.Animator,
+emitters: Emitter.List,
 camera: Camera,
 ui: Ui,
 menu_open: bool,
@@ -24,13 +29,21 @@ arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
+    try self.assets.init(gpa, asset_server);
+    errdefer self.assets.deinit(gpa);
+    self.animator = try .init(gpa);
+    errdefer self.animator.deinit();
+    self.emitters = @splat(Emitter.free);
+
     try self.renderer.init(.{
         .gpa = gpa,
         .io = io,
         .window = window,
-        .asset_server = asset_server,
+        .fonts = &self.assets.fonts,
     });
     errdefer self.renderer.deinit(gpa, io);
+
+    try asset_server.load();
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
@@ -46,6 +59,8 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
     self.renderer.deinit(gpa, io);
+    self.animator.deinit();
+    self.assets.deinit(gpa);
 }
 
 /// Returns true when the window asks the server to stop.
@@ -75,7 +90,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, &self.renderer.fonts[0], world.delta_time);
+    }, &self.assets.fonts[0], world.delta_time);
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;

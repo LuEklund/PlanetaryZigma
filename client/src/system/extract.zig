@@ -4,12 +4,22 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("shared").Ui;
 const Renderer = @import("render_system").Renderer;
+const render_system = @import("render_system");
+const Emitter = @import("shared").Emitter;
 const ModelTable = @import("assets").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
-pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void {
+pub fn frame(
+    world: *World,
+    renderer: *Renderer,
+    scene_assets: *render_system.Assets,
+    animator: *render_system.Animator,
+    emitters: *Emitter.List,
+    ui: *Ui,
+    draw_sky: bool,
+) !void {
     renderer.beginFrame(.{
         .camera = .{
             .position = world.camera.transform.position,
@@ -28,22 +38,22 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
         .surface_height = @intFromFloat(ui.screen_height),
     });
 
-    try renderer.animator.begin(.{
+    try animator.begin(.{
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = world.player_id,
         .camera_pitch = world.camera.pitch,
         .camera_yaw_rotation = world.camera.yaw_rotation,
-    }, world.deaths.items, &renderer.models);
+    }, world.deaths.items, &scene_assets.models);
     world.deaths.clearRetainingCapacity();
 
-    for (world.effects.items) |request| renderer.spawnEffect(request, world.elapsed_time);
+    for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
         const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
-        try renderer.animator.observe(.{
+        try animator.observe(.{
             .id = entity.id,
             .model = model_handle,
             .transform = entity.transform,
@@ -56,14 +66,14 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
                 entity.override_animation_state,
             ),
             .highlight = entity.kind == .teleporter,
-            .spin_speed = if (entity.kind == .item) Renderer.item_spin_speed else 0,
+            .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
-        }, &renderer.models);
+        }, &scene_assets.models);
     }
-    renderer.advanceAnimation(world.trigger_events.items);
+    animator.advance(world.trigger_events.items, &scene_assets.models);
     world.trigger_events.clearRetainingCapacity();
-    renderer.drawAnimated();
+    animator.draw(&renderer.list, emitters, &scene_assets.models);
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {
@@ -78,7 +88,9 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
     }
 
     renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    renderer.endFrame(world.elapsed_time);
+    scene_assets.publish(&renderer.list);
+    renderer.endFrame(emitters, world.elapsed_time);
+    scene_assets.consumed();
 }
 
 fn appendLine(renderer: *Renderer, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
