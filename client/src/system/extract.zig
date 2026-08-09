@@ -6,6 +6,7 @@ const Ui = @import("ui");
 const System = @import("../System.zig");
 const DrawList = @import("render").DrawList;
 const render_system = @import("render_system");
+const render = @import("render");
 const Emitter = @import("render_system").Emitter;
 const ModelTable = @import("assets").ModelTable;
 
@@ -28,13 +29,42 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.time = world.elapsed_time;
     list.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
     list.draw_sky = draw_sky;
-    list.planet = .{
-        .radius = world.planet.radiusFloat(),
-        .uploads = world.planet.uploads.items,
-        .removes = world.planet.removes.items,
-    };
+    list.planet_radius = world.planet.radiusFloat();
     list.surface_width = @intFromFloat(ui.screen_width);
     list.surface_height = @intFromFloat(ui.screen_height);
+
+    // Chunks are meshes like any other: the sim publishes geometry, we hand it to the
+    // renderer and keep the handle. Before the rows, so a chunk uploaded this frame draws.
+    for (world.planet.removes.items) |removed| {
+        if (removed.mesh_handle == 0) continue;
+        system.renderer.vtable.freeMesh(system.renderer.userdata, @enumFromInt(removed.mesh_handle));
+    }
+    for (world.planet.uploads.items) |chunk_upload| {
+        const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
+        const surfaces = [_]render.SurfaceUpload{.{
+            .index_start = 0,
+            .index_count = @intCast(chunk_upload.indices.len),
+            .texture_slot = render.blank_texture,
+        }};
+        entry.mesh_handle = @intFromEnum(system.renderer.vtable.uploadMesh(system.renderer.userdata, @enumFromInt(entry.mesh_handle), &.{
+            .name = "chunk",
+            .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
+            .skinned = false,
+            .indices = chunk_upload.indices,
+            .surfaces = &surfaces,
+        }));
+    }
+    for (world.planet.chunks.keys(), world.planet.chunks.values()) |coord, entry| {
+        if (entry.mesh_handle == 0) continue;
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = @enumFromInt(entry.mesh_handle),
+            .model_matrix = .identity,
+            .position = chunkCentre(coord),
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = false,
+        });
+    }
 
     try animator.begin(.{
         .delta_time = world.delta_time,
@@ -170,4 +200,12 @@ fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.e
         appendLine(list, transform, top_corners[corner_index], top_corners[next_corner_index]);
         appendLine(list, transform, bottom_corners[corner_index], top_corners[corner_index]);
     }
+}
+
+/// Where the chunk sits, for the shadow-cascade test. Its geometry is already in world
+/// space, so the draw itself needs no transform.
+fn chunkCentre(coord: shared.Planet.Chunk.Coord) nz.Vec3(f32) {
+    const dim: f32 = @floatFromInt(shared.Planet.Chunk.dim);
+    const corner: nz.Vec3(f32) = @floatFromInt(coord.position);
+    return corner * @as(nz.Vec3(f32), @splat(dim)) + @as(nz.Vec3(f32), @splat(dim / 2));
 }

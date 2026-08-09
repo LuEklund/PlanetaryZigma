@@ -87,7 +87,7 @@ pub const ffi = struct {
 
     pub export fn uploadMesh(handle: *anyopaque, old: contract.MeshHandle, upload: *const contract.MeshUpload) contract.MeshHandle {
         const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadMesh(old, upload) catch |err| {
+        return context.vulkan.resources.uploadMesh(old, context.vulkan.current_frame_inflight, upload) catch |err| {
             std.log.err("upload mesh {s}: {s}", .{ upload.name, @errorName(err) });
             return .none;
         };
@@ -112,7 +112,7 @@ pub const ffi = struct {
 
     pub export fn freeMesh(handle: *anyopaque, mesh: contract.MeshHandle) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.freeMesh(mesh);
+        context.vulkan.resources.freeMesh(mesh, context.vulkan.current_frame_inflight);
     }
 
     pub export fn freeImage(handle: *anyopaque, slot: u32) void {

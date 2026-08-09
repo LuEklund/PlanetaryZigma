@@ -18,7 +18,6 @@ const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
-const Planet = @import("Planet.zig");
 const Shader = @import("render").Shader;
 const Shaders = @import("Vulkan/Shaders.zig");
 const procs = @import("Vulkan/procs.zig");
@@ -44,7 +43,6 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
-planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
@@ -53,7 +51,6 @@ pub fn init(data: *const contract.Renderer.InitOptions) !*Vulkan {
     const window = data.window;
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
-    self.planet = .init();
     self.current_frame_inflight = 0;
 
     self.instance = try .init(gpa, Surface.instanceExtensions(window));
@@ -91,7 +88,6 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
 
     self.resources.deinit(gpa, self.vma, self.device);
 
-    self.planet.deinit(gpa, self.vma);
 
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
@@ -135,7 +131,7 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    try self.syncPlanet(self.gpa, list.planet);
+    self.resources.drainRetiredMeshes(self.current_frame_inflight);
     if (list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
         try self.resize(self.gpa, list.surface_width, list.surface_height);
     }
@@ -353,7 +349,7 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawLi
         .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
         .to_sun = lightDirection(list.time),
         .time = list.time,
-        .planet_radius = self.planet.radius,
+        .planet_radius = list.planet_radius,
         .camera_position = camera_transform.position,
         .light_color = list.light_color,
         .camera_up = up: {
@@ -503,7 +499,6 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
             drawMeshNode(self, cmd, current_frame, mesh, null, cascade_vp.mul(row.model_matrix));
         }
-        for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, cascade_vp);
         bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
@@ -552,7 +547,6 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
     }
 
-    for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, .identity);
 
     bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
     for (list.draw_meshes.items) |row| {
@@ -860,16 +854,6 @@ fn drawMeshNode(
     emitNode(self, cmd, mesh, &push);
 }
 
-fn drawPlanetChunk(self: *Vulkan, cmd: c.VkCommandBuffer, mesh: *const Mesh, transform: nz.Mat4x4(f32)) void {
-    var push: Shader.WorldPushConstant = .{
-        .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-        .model_matrix = transform.d,
-        .joint_matrices_address = 0,
-        .texture_index = 0,
-    };
-    emitNode(self, cmd, mesh, &push);
-}
-
 fn emitNode(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
@@ -885,10 +869,3 @@ fn emitNode(
     }
 }
 
-
-fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
-    self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);
-    self.planet.radius = state.radius;
-    for (state.removes) |coord| try self.planet.remove(gpa, coord, self.current_frame_inflight);
-    for (state.uploads) |command| try self.planet.upload(gpa, self.vma, self.device, command, self.current_frame_inflight);
-}

@@ -3,7 +3,9 @@ const shared = @import("shared");
 const nz = @import("numz");
 const Resources = @import("Resources.zig");
 
-const shadow_caster_radius: f32 = 16;
+// Half-diagonal of the largest caster. Chunks are 32 units, so a centre-point cascade test
+// needs at least that much slack or they pop out of the shadow pass at cascade edges.
+const shadow_caster_radius: f32 = 32;
 
 pub fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
     const inv_rotation = transform.rotation.conjugate().toMat4x4();

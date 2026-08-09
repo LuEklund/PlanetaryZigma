@@ -26,6 +26,11 @@ pub const max_textures = 256;
 pub const shadow_cascade_count = 3;
 pub const shadow_map_size: u32 = 2048;
 
+pub const RetiredMesh = struct {
+    mesh: Mesh,
+    frame: u32,
+};
+
 pub const GPUCascades = extern struct {
     light_view_proj: [shadow_cascade_count][16]f32,
     splits: [4]f32,
@@ -39,6 +44,9 @@ texture_table: TextureTable,
 /// The GPU arrays themselves. A mesh handle is `index + 1`, so 0 stays `.none`; a texture
 /// is keyed by the descriptor slot, because that slot is the only name the producer holds.
 meshes: std.ArrayList(?Mesh),
+/// A freed mesh may still be referenced by a frame in flight, so it waits out the ring
+/// instead of stalling the device. Chunk streaming frees several a frame.
+retired_meshes: std.ArrayList(RetiredMesh),
 textures: std.AutoArrayHashMapUnmanaged(u32, Image),
 /// Bound wherever nothing has been uploaded yet, and never freed.
 blank_texture: Image,
@@ -218,6 +226,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     self.* = .{
         .texture_table = undefined,
         .meshes = .empty,
+        .retired_meshes = .empty,
         .textures = .empty,
         .blank_texture = undefined,
         .missing_texture = undefined,
@@ -296,6 +305,8 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     check(c.vkDeviceWaitIdle(device.handle)) catch {};
     for (self.meshes.items) |*slot| if (slot.*) |*item| item.deinit(gpa, vma);
     self.meshes.deinit(gpa);
+    for (self.retired_meshes.items) |*retired| retired.mesh.deinit(gpa, vma);
+    self.retired_meshes.deinit(gpa);
     for (self.textures.values()) |*image| image.deinit(vma, device);
     self.textures.deinit(gpa);
     self.blank_texture.deinit(vma, device);
@@ -332,20 +343,37 @@ pub fn meshAt(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
     return null;
 }
 
-pub fn freeMesh(self: *Resources, handle: contract.MeshHandle) void {
+pub fn freeMesh(self: *Resources, handle: contract.MeshHandle, frame: u32) void {
     const raw = @intFromEnum(handle);
     if (raw == 0 or raw > self.meshes.items.len) return;
     const slot = &self.meshes.items[raw - 1];
-    if (slot.*) |*mesh| {
-        check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
-        mesh.deinit(self.gpa, self.texture_table.vma);
+    if (slot.*) |mesh| {
+        self.retired_meshes.append(self.gpa, .{ .mesh = mesh, .frame = frame }) catch {
+            var doomed = mesh;
+            check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
+            doomed.deinit(self.gpa, self.texture_table.vma);
+        };
     }
     slot.* = null;
 }
 
+/// Anything retired a full ring ago is no longer referenced by a frame in flight.
+pub fn drainRetiredMeshes(self: *Resources, frame: u32) void {
+    var index: usize = 0;
+    while (index < self.retired_meshes.items.len) {
+        const retired = &self.retired_meshes.items[index];
+        if (frame < retired.frame + FrameData.max_frames_inflight) {
+            index += 1;
+            continue;
+        }
+        var doomed = self.retired_meshes.swapRemove(index).mesh;
+        doomed.deinit(self.gpa, self.texture_table.vma);
+    }
+}
+
 /// Build the GPU half from an upload command. No parser types cross: geometry arrives as
 /// bytes and `MeshUpload.skinned` says which layout to read the bytes as.
-pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, command: *const contract.MeshUpload) !contract.MeshHandle {
+pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, command: *const contract.MeshUpload) !contract.MeshHandle {
     const gpa = self.gpa;
     const surfaces = try gpa.alloc(Mesh.GeoSurface, command.surfaces.len);
     defer gpa.free(surfaces);
@@ -363,7 +391,7 @@ pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, command: *const co
     // Reuse the old row so a reloaded mesh keeps its handle and callers need no fixup.
     const raw = @intFromEnum(old);
     if (raw != 0 and raw <= self.meshes.items.len) {
-        self.freeMesh(old);
+        self.freeMesh(old, frame);
         self.meshes.items[raw - 1] = mesh;
         return old;
     }

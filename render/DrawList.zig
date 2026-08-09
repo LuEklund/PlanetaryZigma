@@ -2,9 +2,6 @@ const DrawList = @This();
 
 const std = @import("std");
 const nz = @import("numz");
-// The last one, and only for PlanetState: chunks still ride the packet instead of going
-// through uploadMesh like every other mesh.
-const shared = @import("shared");
 const Shader = @import("Shader.zig");
 const contract = @import("root.zig");
 
@@ -23,7 +20,7 @@ joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
 ui: UiLayer,
-planet: PlanetState,
+planet_radius: f32,
 surface_width: u32,
 surface_height: u32,
 
@@ -87,12 +84,6 @@ pub const TextureUpload = struct {
     faces: []const []const u8,
 };
 
-pub const PlanetState = struct {
-    radius: f32,
-    uploads: []const shared.Planet.Upload,
-    removes: []const shared.Planet.Chunk.Coord,
-};
-
 pub fn init(gpa: std.mem.Allocator) !DrawList {
     return .{
         .camera = .{ .position = @splat(0), .rotation = .identity, .fov_rad = 0 },
@@ -106,7 +97,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_width = 0,
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, max_ui_quads), .screen_width = 0, .screen_height = 0 },
-        .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
+        .planet_radius = 1,
     };
 }
 
