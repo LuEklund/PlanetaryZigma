@@ -52,7 +52,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     errdefer self.draw_list.deinit(gpa);
 
     try asset_server.load();
-    self.assets.uploadGenerated(&self.render);
+    try self.assets.uploadGenerated(gpa, &self.render);
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });

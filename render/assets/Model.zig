@@ -9,18 +9,6 @@ const gltf = @import("gltf.zig");
 
 pub const Spec = shared.entity.ModelSpec;
 
-pub const Generated = enum {
-    default,
-    cube_projectile,
-
-    pub const count = @typeInfo(Generated).@"enum".fields.len;
-};
-
-pub const Handle = union(enum) {
-    file: u32,
-    generated: Generated,
-};
-
 surfaces: std.ArrayList(Surface),
 /// One opaque render handle per glTF mesh, filled in after upload. A plain integer on
 /// purpose: assets does not import render, and does not need to know what it means.

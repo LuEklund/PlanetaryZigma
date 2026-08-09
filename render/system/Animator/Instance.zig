@@ -7,7 +7,7 @@ const Model = @import("assets").Model;
 const Shader = @import("contract").Shader;
 const Node = @import("assets").Node;
 
-model: Model.Handle,
+model: u32,
 offset: nz.Transform3D(f32),
 highlight: bool,
 spin_speed: f32,
@@ -128,7 +128,7 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, model_handle: Model.Handle, model: ?*Model) !Instance {
+pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *Model) !Instance {
     return .{
         .model = model_handle,
         .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },
@@ -143,12 +143,9 @@ pub fn init(gpa: std.mem.Allocator, model_handle: Model.Handle, model: ?*Model) 
         .spawn_time = 0,
         .death_time = 0,
         .spin_time = 0,
-        .spawn_duration = if (model) |file_model| file_model.spawn_duration else 0,
-        .death_duration = if (model) |file_model| file_model.death_duration else 0,
-        .skeleton = if (model) |file_model|
-            (if (file_model.isSkinned()) try Skeleton.init(gpa, file_model) else null)
-        else
-            null,
+        .spawn_duration = model.spawn_duration,
+        .death_duration = model.death_duration,
+        .skeleton = if (model.isSkinned()) try Skeleton.init(gpa, model) else null,
     };
 }
 

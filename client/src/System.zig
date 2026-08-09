@@ -82,7 +82,7 @@ pub fn init(self: *System, data: Data) !void {
 
     // render.so is up, so parsing can start; the uploads drain on the first frame.
     try data.asset_server.load();
-    self.assets.uploadGenerated(&self.render);
+    try self.assets.uploadGenerated(data.gpa, &self.render);
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);

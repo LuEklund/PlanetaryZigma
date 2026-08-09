@@ -62,18 +62,25 @@ pub fn deinit(self: *Assets, gpa: std.mem.Allocator) void {
 
 /// The primitives are assets like any other: generated here, uploaded through the same
 /// door. Call once, after the renderer exists.
-pub fn uploadGenerated(self: *Assets, renderer: *const RenderLib) void {
+pub fn uploadGenerated(self: *Assets, gpa: std.mem.Allocator, renderer: *const RenderLib) !void {
     const surfaces = [_]contract.SurfaceUpload{.{
         .index_start = 0,
         .index_count = @intCast(assets.box.indices.len),
         .texture_slot = @intCast(Texture.slot(.blank)),
     }};
-    const handle = renderer.api.uploadMesh(renderer.handle, .none, &.{
-        .name = "generated",
-        .vertices = std.mem.sliceAsBytes(assets.box.vertices),
-        .skinned = false,
-        .indices = assets.box.indices,
-        .surfaces = &surfaces,
-    });
-    self.models.generated = @splat(@intFromEnum(handle));
+    var path_buffer: [shared.entity.all_kinds.len][]const u8 = undefined;
+    for (assets.ModelTable.paths(&path_buffer), 0..) |path, row| {
+        if (assets.ModelTable.isFile(path)) continue;
+        const handle = renderer.api.uploadMesh(renderer.handle, .none, &.{
+            .name = path,
+            .vertices = std.mem.sliceAsBytes(assets.box.vertices),
+            .skinned = false,
+            .indices = assets.box.indices,
+            .surfaces = &surfaces,
+        });
+        const model = &self.models.models[row];
+        model.mesh_handles = try gpa.alloc(usize, 1);
+        model.mesh_handles[0] = @intFromEnum(handle);
+        try model.surfaces.append(gpa, .{ .mesh_id = 0, .model_matrix = .identity });
+    }
 }

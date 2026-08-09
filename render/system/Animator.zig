@@ -41,7 +41,7 @@ pub const Frame = struct {
 pub const Entity = struct {
     id: shared.entity.Id,
     /// Which model, decided by the caller. The animator never maps a game kind to an asset.
-    model: Model.Handle,
+    model: u32,
     transform: nz.Transform3D(f32),
     /// Applied after `transform`; comes from the caller's model spec.
     offset: nz.Transform3D(f32),
@@ -76,7 +76,7 @@ pub fn deinit(self: *Animator) void {
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(models: *ModelTable, instance: *const Instance) ?*Model {
+fn resolveModel(models: *ModelTable, instance: *const Instance) *Model {
     return models.modelPtr(instance.model);
 }
 
@@ -95,9 +95,7 @@ pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, mo
 pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
     if (!self.instances.contains(entity.id)) {
         const model = models.modelPtr(entity.model);
-        if (model) |file_model| if (file_model.isEmpty()) {
-            std.log.err("model not loaded for entity {d}", .{entity.id});
-        };
+        if (model.isEmpty()) std.log.err("model not loaded for entity {d}", .{entity.id});
         try self.instances.put(entity.id, try .init(self.gpa, entity.model, model));
     }
     const instance = self.instances.getPtr(entity.id).?;
@@ -135,8 +133,7 @@ fn applyReloads(self: *Animator, models: *ModelTable) !void {
         const reloaded_model = &models.models[file_index];
         var instance_iterator = self.instances.valueIterator();
         while (instance_iterator.next()) |instance| {
-            const handle = instance.model;
-            if (handle != .file or handle.file != file_index) continue;
+            if (instance.model != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
             instance.spawn_duration = reloaded_model.spawn_duration;
@@ -171,7 +168,7 @@ fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, mo
     for (triggers) |trigger| {
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = resolveModel(models, instance) orelse continue;
+        const model = resolveModel(models, instance);
         const clip_index = model.state_clips.get(trigger.state) orelse continue;
         skeleton.playOverlay(model, clip_index);
     }
@@ -190,7 +187,7 @@ fn animate(self: *Animator, models: *ModelTable) void {
             instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawn_duration);
             instance.spin_time += self.frame.delta_time;
         }
-        const model = resolveModel(models, instance) orelse continue;
+        const model = resolveModel(models, instance);
         playAnimation(self.frame, entry.key_ptr.*, instance, model);
     }
 }
@@ -223,11 +220,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
             for (0..instance_skeleton.skin_starts.len - 1) |skin_index| {
                 skin_offsets[skin_index] = palette_base + instance_skeleton.skin_starts[skin_index];
             }
-            const file_index = switch (instance.model) {
-                .file => |index| index,
-                .generated => continue,
-            };
-            const mesh_handles = models.models[file_index].mesh_handles;
+            const mesh_handles = models.models[instance.model].mesh_handles;
             for (instance_skeleton.nodes) |node| {
                 const mesh_id = node.mesh_id orelse continue;
                 if (mesh_id >= mesh_handles.len) continue;
@@ -240,32 +233,23 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
                     .highlight = instance.highlight,
                 });
             }
-        } else switch (instance.model) {
-            .generated => |generated| list.draw_meshes.appendAssumeCapacity(.{
-                .mesh = @enumFromInt(models.generated[@intFromEnum(generated)]),
-                .model_matrix = top_matrix,
-                .position = instance.transform.position,
-                .palette_offset = null,
-                .skinned = false,
-                .highlight = instance.highlight,
-            }),
+        } else {
             // The surface walk lives here now: one row per surface, so the backend never
-            // expands one row into many draws and the rows stay sortable.
-            .file => |file_index| {
-                const model = &models.models[file_index];
-                if (model.isEmpty() or model.isSkinned()) continue;
-                for (model.surfaces.items) |surface| {
-                    if (surface.mesh_id >= model.mesh_handles.len) continue;
-                    list.draw_meshes.appendAssumeCapacity(.{
-                        .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
-                        .model_matrix = top_matrix.mul(surface.model_matrix),
-                        .position = instance.transform.position,
-                        .palette_offset = null,
-                        .skinned = false,
-                        .highlight = instance.highlight,
-                    });
-                }
-            },
+            // expands one row into many draws and the rows stay sortable. A generated model
+            // is one surface, so it comes through here with no special case.
+            const model = &models.models[instance.model];
+            if (model.isEmpty() or model.isSkinned()) continue;
+            for (model.surfaces.items) |surface| {
+                if (surface.mesh_id >= model.mesh_handles.len) continue;
+                list.draw_meshes.appendAssumeCapacity(.{
+                    .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
+                    .model_matrix = top_matrix.mul(surface.model_matrix),
+                    .position = instance.transform.position,
+                    .palette_offset = null,
+                    .skinned = false,
+                    .highlight = instance.highlight,
+                });
+            }
         }
     }
 }

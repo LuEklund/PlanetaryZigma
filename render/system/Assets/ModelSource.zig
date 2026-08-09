@@ -30,6 +30,9 @@ const Parsed = union(enum) {
 gpa: std.mem.Allocator,
 models: *ModelTable,
 kinds: []entity.Kind,
+/// Which ModelTable row each loaded file fills. The two lists differ because generated
+/// models are rows with no file.
+rows: []u32,
 /// Texture slots the backend handed back for this model's embedded images. Ours to free
 /// on a reload, because the backend allocated them at our request.
 image_slots: [][]u32,
@@ -44,19 +47,29 @@ pub fn init(
     renderer: *const RenderLib,
 ) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
-    const files = try gpa.alloc([]const u8, model_paths.len);
-    const kinds = try gpa.alloc(entity.Kind, model_paths.len);
-    for (model_paths, kinds, files) |path, *kind, *file| {
-        kind.* = kindForPath(path);
-        file.* = path["objects/".len..];
+    const model_paths = ModelTable.paths(&path_buffer);
+    var file_count: usize = 0;
+    for (model_paths) |path| {
+        if (ModelTable.isFile(path)) file_count += 1;
+    }
+    const files = try gpa.alloc([]const u8, file_count);
+    const kinds = try gpa.alloc(entity.Kind, file_count);
+    const rows = try gpa.alloc(u32, file_count);
+    var next: usize = 0;
+    for (model_paths, 0..) |path, row| {
+        if (!ModelTable.isFile(path)) continue;
+        kinds[next] = kindForPath(path);
+        files[next] = path["objects/".len..];
+        rows[next] = @intCast(row);
+        next += 1;
     }
 
     self.* = .{
         .gpa = gpa,
         .models = models,
         .kinds = kinds,
-        .image_slots = try gpa.alloc([]u32, model_paths.len),
+        .rows = rows,
+        .image_slots = try gpa.alloc([]u32, file_count),
         .renderer = renderer,
         .interface = .{
             .gpa = gpa,
@@ -74,6 +87,7 @@ pub fn deinit(self: *ModelSource) void {
     for (0..self.image_slots.len) |index| self.releaseImages(index);
     self.gpa.free(self.image_slots);
     self.gpa.free(self.kinds);
+    self.gpa.free(self.rows);
     self.gpa.free(self.interface.files);
 }
 
@@ -96,7 +110,8 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     const gpa = self.gpa;
     const file = try err_file;
 
-    const model = &self.models.models[index];
+    const row = self.rows[index];
+    const model = &self.models.models[row];
     const kind_spec = entity.spec(self.kinds[index]);
     const model_spec = kind_spec.model orelse return;
 
@@ -113,7 +128,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 
     self.releaseImages(index);
     try self.upload(index, model, &parsed);
-    try self.models.reloaded.append(gpa, @intCast(index));
+    try self.models.reloaded.append(gpa, row);
 }
 
 /// Images first, because a surface names the slot one of them landed in.
