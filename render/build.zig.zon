@@ -7,6 +7,10 @@
         .shared = .{
             .path = "../shared/",
         },
+        .numz = .{
+            .url = "git+https://github.com/LuEklund/numz.git#b230c27e927c328a1528713ba782ee302f28317b",
+            .hash = "numz-0.0.2-V-sGm0rfAABDpmxYTHA_A6bc3MFGtn_YJ9VKkhTlDBmH",
+        },
         .wayland = .{
             .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
             .hash = "wayland-0.5.0-dev-lQa1kon9AQAqOJxIINbYDrDekiRI5p9bnvtFoi6Pic34",

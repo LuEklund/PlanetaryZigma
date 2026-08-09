@@ -2,9 +2,9 @@ const Instance = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const nz = shared.numz;
+const nz = @import("numz");
 const Model = @import("assets").Model;
-const Shader = @import("shared").Shader;
+const Shader = @import("render").Shader;
 const Node = @import("assets").Node;
 
 model: Model.Handle,

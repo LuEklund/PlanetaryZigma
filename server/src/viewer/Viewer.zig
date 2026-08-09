@@ -5,9 +5,9 @@ const shared = @import("shared");
 const Window = @import("Window");
 const render = @import("render");
 const render_system = @import("render_system");
-const Emitter = @import("shared").Emitter;
+const Emitter = @import("render_system").Emitter;
 const AssetServer = @import("assets").AssetServer;
-const Ui = @import("shared").Ui;
+const Ui = @import("ui");
 const DrawList = @import("render").DrawList;
 const World = @import("../World.zig");
 const Quat = shared.numz.quat.Hamiltonian(f32);
@@ -47,6 +47,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
             .gpa = gpa,
             .io = io,
             .window = window,
+            .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
         }) orelse return error.RenderInit,
     };
     errdefer self.renderer.vtable.deinit(self.renderer.userdata);

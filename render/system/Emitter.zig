@@ -1,17 +1,19 @@
 const std = @import("std");
 const nz = @import("numz");
-const entity = @import("entity.zig");
-const Shader = @import("Shader.zig");
+const DrawList = @import("render").DrawList;
+const Shader = @import("render").Shader;
 
 const Emitter = @This();
 
-pub const max_emitters: u32 = 1024;
+pub const max_emitters: u32 = DrawList.max_emitters;
 
 effect: Shader.Kind,
 origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
-owner: entity.Id,
+/// Whoever the effect follows. An opaque number: render has no notion of an entity, and
+/// only ever compares it.
+owner: u64,
 last_seen: f32,
 
 pub const List = [max_emitters]Emitter;
@@ -24,7 +26,7 @@ pub const free: Emitter = .{
     .origin = .{ 0, 0, 0 },
     .target = .{ 0, 0, 0 },
     .spawn_time = free_spawn_time,
-    .owner = .none,
+    .owner = 0,
     .last_seen = free_spawn_time,
 };
 
@@ -58,12 +60,12 @@ pub fn spawn(list: *List, request: Spawn, elapsed_time: f32) void {
         .origin = request.origin,
         .target = request.target,
         .spawn_time = elapsed_time,
-        .owner = .none,
+        .owner = 0,
         .last_seen = elapsed_time,
     }, elapsed_time);
 }
 
-pub fn keepAlive(list: *List, effect: Shader.Kind, owner: entity.Id, origin: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn keepAlive(list: *List, effect: Shader.Kind, owner: u64, origin: nz.Vec3(f32), elapsed_time: f32) void {
     std.debug.assert(Shader.particleInfo(effect).duration == null);
     for (list) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;

@@ -10,6 +10,9 @@ pub fn build(b: *std.Build) void {
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("ztracy");
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    // Straight to numz, not through shared: reaching a math library by way of the game's
+    // contract is exactly the detour that stops render being usable on its own.
+    const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
@@ -133,6 +136,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
             .{ .name = "zgltf", .module = zgltf },
             .{ .name = "stb_image", .module = stb_image.createModule() },
             .{ .name = "ztracy", .module = ztracy },
@@ -152,6 +156,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
             .{ .name = "Window", .module = window },
             .{ .name = "assets", .module = assets },
             .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
@@ -161,6 +166,20 @@ pub fn build(b: *std.Build) void {
     });
     render.addIncludePath(stb_dep.path("."));
 
+    // The widget system: it produces the contract's quad layout and knows nothing about a
+    // GPU. Its own module because client and server viewer both draw a UI.
+    _ = b.addModule("ui", .{
+        .root_source_file = b.path("ui/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
+            .{ .name = "render", .module = render },
+        },
+    });
+
+
     // The client-side render system. Depends on the contract; the contract knows nothing
     // of it. This is what holds per-frame and per-entity state, so the game owns it.
     const render_system = b.addModule("render_system", .{
@@ -169,6 +188,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
             .{ .name = "render", .module = render },
             .{ .name = "assets", .module = assets },
             .{ .name = "Window", .module = window },
@@ -189,6 +209,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
                 .{ .name = "assets", .module = assets },
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },

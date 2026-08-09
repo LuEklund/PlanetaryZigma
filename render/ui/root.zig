@@ -2,28 +2,19 @@ const Ui = @This();
 
 const std = @import("std");
 const nz = @import("numz");
-const Font = @import("Font.zig");
-const Texture = @import("Texture.zig");
+const Font = @import("shared").Font;
+const Texture = @import("shared").Texture;
 
-pub const max_ui_quads: usize = 2048;
+const DrawList = @import("render").DrawList;
 
-pub const Vertex = extern struct {
-    position: [2]f32,
-    uv: [2]f32,
-    color: [4]f32,
-    texture_index: u32 = 0,
-    is_sdf: u32 = 0,
-    _: [2]u32 = .{ 0, 0 },
-};
+pub const max_ui_quads = DrawList.max_ui_quads;
+pub const Vertex = DrawList.UiVertex;
+pub const Quad = DrawList.UiQuad;
 
 fn textureSlot(self: *const Ui, kind: Texture.Kind) u32 {
     _ = self;
     return @intCast(Texture.slot(kind));
 }
-
-pub const Quad = struct {
-    vertices: [4]Vertex,
-};
 
 writer_buffer_out: [8192]u8 = undefined,
 writer_len: usize = 0,

@@ -115,6 +115,7 @@ fn addServerArtifacts(
         system.root_module.addImport("assets", dep.module("assets"));
         system.root_module.addImport("render_system", dep.module("render_system"));
         system.root_module.addImport("Window", dep.module("Window"));
+        system.root_module.addImport("ui", dep.module("ui"));
     }
 
     system.root_module.linkLibrary(box3d_lib);
@@ -138,7 +139,10 @@ fn addServerArtifacts(
         .use_llvm = true,
     });
 
-    if (render_dep) |dep| exe.root_module.addImport("Window", dep.module("Window"));
+    if (render_dep) |dep| {
+        exe.root_module.addImport("Window", dep.module("Window"));
+        exe.root_module.addImport("ui", dep.module("ui"));
+    }
 
     if (target.result.os.tag != .windows) {
         exe.root_module.addRPath(steam_dep.path("steamworks/public/steam/lib/linux64"));

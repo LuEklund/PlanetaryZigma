@@ -2,9 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Shader = @import("shared").Shader;
+const Shader = @import("render").Shader;
 const Renderer = @import("render_system").Renderer;
-const Emitter = @import("shared").Emitter;
+const Emitter = @import("render_system").Emitter;
 
 const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
@@ -19,7 +19,7 @@ pub fn populate(world: *World) !void {
 pub fn update(emitters: *Emitter.List, elapsed_time: f32) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        Emitter.keepAlive(emitters, particle_kind, .none, surface_point, elapsed_time);
+        Emitter.keepAlive(emitters, particle_kind, 0, surface_point, elapsed_time);
         return;
     }
     for (emitters) |emitter| {

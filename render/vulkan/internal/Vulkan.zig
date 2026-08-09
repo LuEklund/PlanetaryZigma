@@ -3,10 +3,9 @@ const Vulkan = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
-const nz = shared.numz;
+const nz = @import("numz");
 const Window = @import("Window");
 const TextureTable = @import("Vulkan/TextureTable.zig");
-const Texture = @import("shared").Texture;
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
@@ -20,9 +19,8 @@ const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Planet = @import("Planet.zig");
-const Shader = @import("shared").Shader;
+const Shader = @import("render").Shader;
 const Shaders = @import("Vulkan/Shaders.zig");
-const Ui = @import("shared").Ui;
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
@@ -82,7 +80,7 @@ pub fn init(data: *const contract.Renderer.InitOptions) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, self.vma, self.physical_device, self.device, data.first_dynamic_texture_slot);
     self.writeHighlightMaskSlot();
 
     return self;
@@ -120,7 +118,7 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
 
 fn writeHighlightMaskSlot(self: *Vulkan) void {
     self.resources.texture_table.write(
-        Texture.slot(.highlight_mask),
+        contract.highlight_mask_texture,
         self.swapchain.mask_image.vk_imageview,
         self.resources.texture_table.samplers.items[0],
     );
@@ -752,7 +750,7 @@ fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 }
 
 fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
-    current_frame.ui_vertex_buffer.copy(Ui.Quad, list.ui.quads.items);
+    current_frame.ui_vertex_buffer.copy(DrawList.UiQuad, list.ui.quads.items);
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_FALSE);

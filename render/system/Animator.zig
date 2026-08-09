@@ -3,15 +3,15 @@ const Animator = @This();
 const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
-const nz = shared.numz;
+const nz = @import("numz");
 const Model = @import("assets").Model;
 const Node = @import("assets").Node;
 const AnimationClip = @import("assets").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("assets").ModelTable;
 const DrawList = @import("render").DrawList;
-const Emitter = @import("shared").Emitter;
-const Shader = @import("shared").Shader;
+const Emitter = @import("Emitter.zig");
+const Shader = @import("render").Shader;
 
 const max_skins = 8;
 
@@ -201,7 +201,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
         const instance = entry.value_ptr;
         if (instance.effect) |effect| {
             const effect_offset = nz.vec.scale(nz.vec.normalize(instance.transform.position), 0.5);
-            Emitter.keepAlive(emitters, effect, entry.key_ptr.*, instance.transform.position - effect_offset, self.frame.elapsed_time);
+            Emitter.keepAlive(emitters, effect, @intFromEnum(entry.key_ptr.*), instance.transform.position - effect_offset, self.frame.elapsed_time);
         }
         var transform = instance.transform;
         if (instance.shrink_on_death and instance.is_dying and instance.death_duration > 0) {

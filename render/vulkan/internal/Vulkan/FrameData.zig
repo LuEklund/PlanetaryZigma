@@ -6,8 +6,6 @@ const Vma = @import("Vma.zig");
 const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const Ui = @import("shared").Ui;
-const Emitter = @import("shared").Emitter;
 const DrawList = @import("render").DrawList;
 const check = @import("utils.zig").check;
 
@@ -87,8 +85,8 @@ pub fn init(vma: Vma, device: Device) !FrameData {
         .ui_vertex_buffer = try .init(
             device,
             vma,
-            Ui.Vertex,
-            Ui.max_ui_quads * 4,
+            DrawList.UiVertex,
+            DrawList.max_ui_quads * 4,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
@@ -110,7 +108,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             device,
             vma,
             GPUEmitter,
-            Emitter.max_emitters,
+            DrawList.max_emitters,
             c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,

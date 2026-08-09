@@ -3,7 +3,7 @@ const Resources = @This();
 const std = @import("std");
 const c = @import("vulkan");
 const ext = @import("procs.zig").device.ProcTable;
-const nz = @import("shared").numz;
+const nz = @import("numz");
 const Vma = @import("Vma.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
@@ -11,11 +11,9 @@ const DescriptorLayout = @import("DescriptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
-const Shader = @import("shared").Shader;
+const Shader = @import("render").Shader;
 const FrameData = @import("FrameData.zig");
-const Ui = @import("shared").Ui;
 const TextureTable = @import("TextureTable.zig");
-const Texture = @import("shared").Texture;
 const contract = @import("render");
 const Shaders = @import("Shaders.zig");
 const DrawList = @import("render").DrawList;
@@ -59,7 +57,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, first_dynamic_texture_slot: u32) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -141,7 +139,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         device,
         vma,
         u32,
-        Ui.max_ui_quads * 6,
+        DrawList.max_ui_quads * 6,
         c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         .{
             .usage = Vma.c.VMA_MEMORY_USAGE_AUTO,
@@ -149,7 +147,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         },
     );
     var index_data: [*]u32 = @ptrCast(@alignCast(ui_index_buffer.info.pMappedData));
-    for (0..Ui.max_ui_quads) |quad_index| {
+    for (0..DrawList.max_ui_quads) |quad_index| {
         const base: u32 = @as(u32, @intCast(quad_index)) * 4;
         index_data[quad_index * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
     }
@@ -243,6 +241,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         descriptor_layouts.get(.textures).handle,
         descriptor_layouts.get(.material).handle,
         physical_device.combined_image_sampler_descriptor_size,
+        first_dynamic_texture_slot,
     );
     try self.shaders.init(gpa, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
@@ -285,7 +284,7 @@ var blank: Image = try .init(
     try missing.uploadDataToImage(self.vma, self.device, &checkerboard, checkerboard.len, 0);
 
     self.texture_table.registerEmpty(blank.vk_imageview, self.texture_table.samplers.items[0]);
-    self.texture_table.write(Texture.slot(.missing), missing.vk_imageview, self.texture_table.samplers.items[0]);
+    self.texture_table.write(contract.missing_texture, missing.vk_imageview, self.texture_table.samplers.items[0]);
 
     self.blank_texture = blank;
     self.missing_texture = missing;

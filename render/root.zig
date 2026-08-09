@@ -12,6 +12,16 @@ const Window = @import("Window");
 
 pub const DrawList = @import("DrawList.zig");
 
+/// Slots the backend owns and writes itself. Everything above this number is a texture the
+/// producer uploaded, named in whatever order it likes.
+pub const reserved_textures: u32 = 3;
+pub const blank_texture: u32 = 0;
+pub const missing_texture: u32 = 1;
+pub const highlight_mask_texture: u32 = 2;
+/// Shader kinds, descriptor sets and push-constant layouts: all four are renderer facts,
+/// so they live with the renderer rather than in the game's wire contract.
+pub const Shader = @import("Shader.zig");
+
 pub const Renderer = struct {
     userdata: *anyopaque,
     /// Points AT the loader's table, never a copy of it: a hot swap rewrites that table in
@@ -22,6 +32,8 @@ pub const Renderer = struct {
         gpa: std.mem.Allocator,
         io: std.Io,
         window: *Window,
+        /// Slots below this are the producer's to name; the backend allocates above it.
+        first_dynamic_texture_slot: u32,
     };
 
     /// Field names ARE the exported symbol names — HotLib resolves by field. render.so is

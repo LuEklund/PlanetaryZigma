@@ -7,7 +7,7 @@
 const ShaderSource = @This();
 
 const std = @import("std");
-const Shader = @import("shared").Shader;
+const Shader = @import("render").Shader;
 const AssetServer = @import("assets").AssetServer;
 const render = @import("render");
 

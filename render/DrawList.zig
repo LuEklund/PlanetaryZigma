@@ -1,16 +1,18 @@
 const DrawList = @This();
 
 const std = @import("std");
+const nz = @import("numz");
+// The last one, and only for PlanetState: chunks still ride the packet instead of going
+// through uploadMesh like every other mesh.
 const shared = @import("shared");
-const nz = shared.numz;
-const Shader = @import("shared").Shader;
-const Emitter = @import("shared").Emitter;
-const Ui = @import("shared").Ui;
+const Shader = @import("Shader.zig");
 const contract = @import("root.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
-pub const max_draw_meshes: u32 = shared.max_entities * 32;
+pub const max_emitters: u32 = 1024;
+/// The packet's own ceiling, not the sim's: 1024 things on screen, up to 32 meshes each.
+pub const max_draw_meshes: u32 = 1024 * 32;
 
 camera: Camera,
 time: f32,
@@ -54,8 +56,25 @@ pub const DrawEmitter = struct {
     spawn_time: f32,
 };
 
+pub const max_ui_quads: usize = 2048;
+
+/// The UI vertex layout. It is a GPU format, so it belongs with the renderer; the widget
+/// system that produces it is a separate module entirely.
+pub const UiVertex = extern struct {
+    position: [2]f32,
+    uv: [2]f32,
+    color: [4]f32,
+    texture_index: u32 = 0,
+    is_sdf: u32 = 0,
+    _: [2]u32 = .{ 0, 0 },
+};
+
+pub const UiQuad = struct {
+    vertices: [4]UiVertex,
+};
+
 pub const UiLayer = struct {
-    quads: std.ArrayList(Ui.Quad),
+    quads: std.ArrayList(UiQuad),
     screen_width: f32,
     screen_height: f32,
 };
@@ -83,10 +102,10 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .draw_meshes = try .initCapacity(gpa, max_draw_meshes),
         .joint_matrices = try .initCapacity(gpa, max_joint_matrices),
         .draw_lines = try .initCapacity(gpa, max_lines),
-        .emitters = try .initCapacity(gpa, Emitter.max_emitters),
+        .emitters = try .initCapacity(gpa, max_emitters),
         .surface_width = 0,
         .surface_height = 0,
-        .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
+        .ui = .{ .quads = try .initCapacity(gpa, max_ui_quads), .screen_width = 0, .screen_height = 0 },
         .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
     };
 }

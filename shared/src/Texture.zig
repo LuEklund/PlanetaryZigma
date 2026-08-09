@@ -10,6 +10,8 @@ pub const Kind = union(enum) {
     item: Item.Kind,
 };
 
+/// Mirrors `render.reserved_textures`; the renderer owns these three and writes them
+/// itself. Collapses into one definition once `shared` may import `render`.
 pub const reserved = 3;
 const named_files = [_]std.meta.Tag(Kind){ .skybox_cubemap, .crosshair };
 

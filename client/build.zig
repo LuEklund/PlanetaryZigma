@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
     const assets = render_dep.module("assets");
     const render_system = render_dep.module("render_system");
     const window = render_dep.module("Window");
+    const ui = render_dep.module("ui");
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
@@ -42,6 +43,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "assets", .module = assets },
                 .{ .name = "render_system", .module = render_system },
                 .{ .name = "Window", .module = window },
+                .{ .name = "ui", .module = ui },
                 .{ .name = "ztracy", .module = ztracy },
             },
             .link_libc = true,
@@ -61,6 +63,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
                 .{ .name = "Window", .module = window },
+                .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "miniaudio", .module = miniaudio },

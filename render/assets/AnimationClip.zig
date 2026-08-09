@@ -1,7 +1,7 @@
 const AnimationClip = @This();
 
 const std = @import("std");
-const nz = @import("shared").numz;
+const nz = @import("numz");
 
 const Sampler = struct {
     inputs: []f32,

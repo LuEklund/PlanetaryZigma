@@ -1,5 +1,5 @@
 const std = @import("std");
-const nz = @import("shared").numz;
+const nz = @import("numz");
 const zgltf = @import("zgltf");
 const Bitmap = @import("Bitmap.zig");
 const Node = @import("Node.zig");

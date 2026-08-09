@@ -6,7 +6,6 @@ const ext = @import("../Vulkan/procs.zig").device.ProcTable;
 const Vma = @import("../Vulkan/Vma.zig");
 const Device = @import("../Vulkan/device.zig").Logical;
 const Buffer = @import("../Vulkan/Buffer.zig");
-const Texture = @import("shared").Texture;
 const check = @import("../Vulkan/utils.zig").check;
 
 pub const max_textures = 256;
@@ -30,6 +29,7 @@ pub fn init(
     textures_layout: c.VkDescriptorSetLayout,
     material_layout: c.VkDescriptorSetLayout,
     descriptor_size: usize,
+    first_dynamic_slot: usize,
 ) !TextureTable {
     var table_set_size: c.VkDeviceSize = 0;
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, textures_layout, &table_set_size);
@@ -52,7 +52,7 @@ pub fn init(
         ),
         .binding_offset = binding_offset,
         .descriptor_size = descriptor_size,
-        .next_slot = Texture.count(),
+        .next_slot = first_dynamic_slot,
         .free_slots = .empty,
         .samplers = .empty,
         .empty_view = null,

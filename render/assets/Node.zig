@@ -1,6 +1,6 @@
 const Node = @This();
 
-const nz = @import("shared").numz;
+const nz = @import("numz");
 
 parent: ?usize = null,
 mesh_id: ?usize = null,

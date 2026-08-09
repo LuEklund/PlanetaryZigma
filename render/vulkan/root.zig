@@ -3,6 +3,7 @@ const Vulkan = @import("internal/Vulkan.zig");
 const contract = @import("render");
 const DrawList = contract.DrawList;
 const shared = @import("shared");
+const render = @import("render");
 
 // The Renderer struct lives in the contract, not here: consumers must reach it without
 // reaching this file, or importing it drags the whole backend into their compilation.
@@ -62,7 +63,7 @@ pub const ffi = struct {
 
     pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        const shader_kind: shared.Shader.Kind = @enumFromInt(kind);
+        const shader_kind: render.Shader.Kind = @enumFromInt(kind);
         context.vulkan.resources.shaders.apply(shader_kind, spirv[0..len]) catch |err| {
             std.log.err("upload shader {t}: {s}", .{ shader_kind, @errorName(err) });
         };

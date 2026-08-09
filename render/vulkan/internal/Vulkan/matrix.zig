@@ -1,6 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
-const nz = shared.numz;
+const nz = @import("numz");
 const Resources = @import("Resources.zig");
 
 const shadow_caster_radius: f32 = 16;

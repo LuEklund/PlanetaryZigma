@@ -6,4 +6,7 @@
 //! anything that holds per-frame or per-entity state lives here, where the game can own it.
 
 pub const Animator = @import("Animator.zig");
+/// A free list with spawn/keepAlive/timeout rules — behaviour, so it is a system and not
+/// part of the contract. The contract only carries the rows it produces.
+pub const Emitter = @import("Emitter.zig");
 pub const Assets = @import("Assets.zig");

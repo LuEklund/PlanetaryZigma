@@ -2,11 +2,11 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Ui = @import("shared").Ui;
+const Ui = @import("ui");
 const System = @import("../System.zig");
 const DrawList = @import("render").DrawList;
 const render_system = @import("render_system");
-const Emitter = @import("shared").Emitter;
+const Emitter = @import("render_system").Emitter;
 const ModelTable = @import("assets").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };

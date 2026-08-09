@@ -2,7 +2,7 @@ const Model = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const nz = shared.numz;
+const nz = @import("numz");
 const Node = @import("Node.zig");
 const AnimationClip = @import("AnimationClip.zig");
 const gltf = @import("gltf.zig");
