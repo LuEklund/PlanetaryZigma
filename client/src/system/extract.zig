@@ -4,6 +4,7 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("shared").Ui;
 const Renderer = @import("render").Renderer;
+const ModelTable = @import("render").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
@@ -40,14 +41,21 @@ pub fn frame(world: *World, renderer: *Renderer, ui: *Ui, draw_sky: bool) !void 
     world.effects.clearRetainingCapacity();
 
     for (world.entities.values()) |*entity| {
+        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
+        const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
         try renderer.animator.observe(.{
             .id = entity.id,
-            .kind = entity.kind,
+            .model = model_handle,
             .transform = entity.transform,
+            .offset = model_spec.offset,
             .velocity = if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
             .is_dying = entity.flags.is_dying,
             .stun_time = entity.stun_time,
             .state_override = entity.override_animation_state,
+            .highlight = entity.kind == .teleporter,
+            .spin_speed = if (entity.kind == .item) Renderer.item_spin_speed else 0,
+            .shrink_on_death = entity.kind == .lootbox,
+            .effect = if (entity.kind == .item) .item_effect else null,
         }, &renderer.models);
     }
     renderer.advanceAnimation(world.trigger_events.items);

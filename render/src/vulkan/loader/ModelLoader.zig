@@ -3,10 +3,9 @@ const ModelLoader = @This();
 const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
-const entity = shared.entity;
-const gltf = @import("render").gltf;
+const contract = @import("render");
+const gltf = contract.gltf;
 const DrawList = @import("render").DrawList;
-const ModelTable = @import("render").ModelTable;
 const Mesh = @import("../Vulkan/Mesh.zig");
 const Image = @import("../Vulkan/Image.zig");
 const Buffer = @import("../Vulkan/Buffer.zig");
@@ -15,7 +14,7 @@ const check = @import("../Vulkan/utils.zig").check;
 
 gpa: std.mem.Allocator,
 table: *TextureTable,
-entries: []Entry,
+entries: [contract.max_models]Entry,
 
 /// The GPU half only — the CPU `Model` lives in the caller-owned `ModelTable`.
 pub const Entry = struct {
@@ -25,21 +24,15 @@ pub const Entry = struct {
 };
 
 pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, table: *TextureTable) !void {
-    var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
-    const entries = try gpa.alloc(Entry, model_paths.len);
-    for (entries) |*entry| entry.* = .{ .meshes = &.{}, .image_slots = &.{}, .images = &.{} };
-
     self.* = .{
         .gpa = gpa,
         .table = table,
-        .entries = entries,
+        .entries = @splat(.{ .meshes = &.{}, .image_slots = &.{}, .images = &.{} }),
     };
 }
 
 pub fn deinit(self: *ModelLoader) void {
     for (0..self.entries.len) |index| self.release(index);
-    self.gpa.free(self.entries);
 }
 
 fn release(self: *ModelLoader, index: usize) void {

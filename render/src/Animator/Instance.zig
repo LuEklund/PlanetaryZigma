@@ -4,10 +4,16 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const Model = @import("../asset/Model.zig");
+const Shader = @import("shared").Shader;
 const Node = @import("../asset/Node.zig");
 
 model_handle: ?Model.Handle,
-kind: shared.entity.Kind,
+model: Model.Handle,
+offset: nz.Transform3D(f32),
+highlight: bool,
+spin_speed: f32,
+shrink_on_death: bool,
+effect: ?Shader.Kind,
 transform: nz.Transform3D(f32),
 is_dying: bool,
 seen: bool,
@@ -94,10 +100,15 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, kind: shared.entity.Kind, model_handle: ?Model.Handle, model: ?*Model) !Instance {
+pub fn init(gpa: std.mem.Allocator, model_handle: Model.Handle, model: ?*Model) !Instance {
     return .{
         .model_handle = model_handle,
-        .kind = kind,
+        .model = model_handle,
+        .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },
+        .highlight = false,
+        .spin_speed = 0,
+        .shrink_on_death = false,
+        .effect = null,
         .transform = .{},
         .is_dying = false,
         .seen = true,

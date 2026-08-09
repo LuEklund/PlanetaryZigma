@@ -24,11 +24,16 @@ pub const Node = @import("asset/Node.zig");
 pub const Bitmap = @import("asset/Bitmap.zig");
 pub const gltf = @import("asset/gltf.zig");
 
+/// Upper bound on distinct model files. Comptime like every other bound in the codebase
+/// (max_entities, max_ui_quads, max_draw_meshes) so the backend allocates nothing for it —
+/// the array sits inside the block renderInit already made. Overflow is a loud assert, not
+/// a resize; make it dynamic only when a real workload needs it.
+pub const max_models: u32 = 64;
+
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     fonts: *[Font.count]Font,
-    models: *ModelTable,
     window: *Window,
 };
 

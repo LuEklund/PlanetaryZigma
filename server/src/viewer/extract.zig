@@ -3,6 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Renderer = @import("render").Renderer;
+const ModelTable = @import("render").ModelTable;
 const Camera = @import("camera.zig");
 const Ui = @import("shared").Ui;
 const DrawList = @import("render").DrawList;
@@ -55,14 +56,21 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
     }, &.{}, &renderer.models);
 
     for (world.entities.values()) |*entity| {
+        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
+        const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
         try renderer.animator.observe(.{
             .id = entity.id,
-            .kind = entity.kind,
+            .model = model_handle,
             .transform = entity.transform,
+            .offset = model_spec.offset,
             .velocity = entity.replicated_velocity,
             .is_dying = false,
             .stun_time = @max(0, entity.un_stun_at - world.elapsed_time),
             .state_override = null,
+            .highlight = entity.kind == .teleporter,
+            .spin_speed = if (entity.kind == .item) Renderer.item_spin_speed else 0,
+            .shrink_on_death = entity.kind == .lootbox,
+            .effect = if (entity.kind == .item) .item_effect else null,
         }, &renderer.models);
     }
     renderer.advanceAnimation(&.{});

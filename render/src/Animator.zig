@@ -19,7 +19,7 @@ const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
 const look_yaw_deadzone: f32 = 0.05;
 
-const item_spin_speed: f32 = 1.5;
+pub const item_spin_speed: f32 = 1.5;
 
 fn easeOutBack(x: f32) f32 {
     const c1: f32 = 1.70158;
@@ -40,12 +40,20 @@ pub const Frame = struct {
 /// producer fills it from the sim and a client one from replicated state.
 pub const Entity = struct {
     id: shared.entity.Id,
-    kind: shared.entity.Kind,
+    /// Which model, decided by the caller. The animator never maps a game kind to an asset.
+    model: Model.Handle,
     transform: nz.Transform3D(f32),
+    /// Applied after `transform`; comes from the caller's model spec.
+    offset: nz.Transform3D(f32),
     velocity: nz.Vec3(f32),
     is_dying: bool,
     stun_time: f32,
     state_override: ?shared.entity.State,
+    /// Presentation, decided by the caller — these used to be `switch (kind)` arms here.
+    highlight: bool,
+    spin_speed: f32,
+    shrink_on_death: bool,
+    effect: ?Shader.Kind,
 };
 
 gpa: std.mem.Allocator,
@@ -86,18 +94,21 @@ pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, mo
 }
 
 pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
-    if (shared.entity.modelSpec(entity.kind) == null) return;
     if (!self.instances.contains(entity.id)) {
-        const handle = ModelTable.handleForKind(entity.kind);
-        const model = if (handle) |model_handle| models.modelPtr(model_handle) else null;
+        const model = models.modelPtr(entity.model);
         if (model) |file_model| if (file_model.isEmpty()) {
-            std.log.err("model not loaded for {s}", .{@tagName(entity.kind)});
+            std.log.err("model not loaded for entity {d}", .{entity.id});
         };
-        try self.instances.put(entity.id, try .init(self.gpa, entity.kind, handle, model));
+        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model));
     }
     const instance = self.instances.getPtr(entity.id).?;
     instance.seen = true;
-    instance.kind = entity.kind;
+    instance.model = entity.model;
+    instance.offset = entity.offset;
+    instance.highlight = entity.highlight;
+    instance.spin_speed = entity.spin_speed;
+    instance.shrink_on_death = entity.shrink_on_death;
+    instance.effect = entity.effect;
     instance.transform = entity.transform;
     instance.is_dying = entity.is_dying;
     if (instance.skeleton == null) return;
@@ -117,11 +128,11 @@ pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, mode
     self.animate(models);
 }
 
-pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
+pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const ModelTable) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    self.appendDraws(list, emitters);
+    self.appendDraws(list, emitters, models);
     self.retire();
 }
 
@@ -181,7 +192,7 @@ fn animate(self: *Animator, models: *ModelTable) void {
         } else if (instance.death_time > 0) {
             instance.death_time = 0;
         }
-        if (instance.kind == .item) {
+        if (instance.spin_speed != 0) {
             instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawn_duration);
             instance.spin_time += self.frame.delta_time;
         }
@@ -190,59 +201,73 @@ fn animate(self: *Animator, models: *ModelTable) void {
     }
 }
 
-fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List) void {
+fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const ModelTable) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
-        if (instance.kind == .item) {
-            const offset = nz.vec.scale(nz.vec.normalize(instance.transform.position), 0.5);
-            Emitter.keepAlive(emitters, .item_effect, entry.key_ptr.*, instance.transform.position - offset, self.frame.elapsed_time);
+        if (instance.effect) |effect| {
+            const effect_offset = nz.vec.scale(nz.vec.normalize(instance.transform.position), 0.5);
+            Emitter.keepAlive(emitters, effect, entry.key_ptr.*, instance.transform.position - effect_offset, self.frame.elapsed_time);
         }
-        const model_spec = shared.entity.modelSpec(instance.kind) orelse continue;
         var transform = instance.transform;
-        switch (instance.kind) {
-            .lootbox => {
-                if (instance.is_dying and instance.death_duration > 0) {
-                    transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.death_duration, 0, 1));
-                }
-            },
-            .item => {
-                if (instance.spawn_duration > 0) {
-                    transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawn_duration, 0, 1)));
-                }
-                transform.rotation = transform.rotation
-                    .mul(nz.Quat(f32).angleAxis(item_spin_speed * instance.spin_time, .{ 0, 1, 0 }))
-                    .normalize();
-            },
-            else => {},
+        if (instance.shrink_on_death and instance.is_dying and instance.death_duration > 0) {
+            transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.death_duration, 0, 1));
         }
-        const top_matrix = transform.toMat4x4().mul(model_spec.offset.toMat4x4());
+        if (instance.spin_speed != 0) {
+            if (instance.spawn_duration > 0) {
+                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawn_duration, 0, 1)));
+            }
+            transform.rotation = transform.rotation
+                .mul(nz.Quat(f32).angleAxis(instance.spin_speed * instance.spin_time, .{ 0, 1, 0 }))
+                .normalize();
+        }
+        const top_matrix = transform.toMat4x4().mul(instance.offset.toMat4x4());
         if (instance.skeleton) |*instance_skeleton| {
             var skin_offsets: [max_skins]u32 = undefined;
             for (instance_skeleton.joint_matrices, 0..) |matrices, skin_index| {
                 skin_offsets[skin_index] = @intCast(list.joint_matrices.items.len);
                 list.joint_matrices.appendSliceAssumeCapacity(matrices);
             }
+            const file_index = switch (instance.model) {
+                .file => |index| index,
+                .generated => continue,
+            };
             for (instance_skeleton.nodes) |node| {
                 const mesh_id = node.mesh_id orelse continue;
-                list.draw_models.appendAssumeCapacity(.{
-                    .kind = instance.kind,
+                list.draw_meshes.appendAssumeCapacity(.{
+                    .mesh = .{ .file = .{ .model = file_index, .mesh = @intCast(mesh_id) } },
                     .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
                     .position = instance.transform.position,
-                    .mesh_id = @intCast(mesh_id),
                     .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
-                    .highlight = instance.kind == .teleporter,
+                    .skinned = true,
+                    .highlight = instance.highlight,
                 });
             }
-        } else {
-            list.draw_models.appendAssumeCapacity(.{
-                .kind = instance.kind,
+        } else switch (instance.model) {
+            .generated => |generated| list.draw_meshes.appendAssumeCapacity(.{
+                .mesh = .{ .generated = generated },
                 .model_matrix = top_matrix,
                 .position = instance.transform.position,
-                .mesh_id = null,
                 .palette_offset = null,
-                .highlight = instance.kind == .teleporter,
-            });
+                .skinned = false,
+                .highlight = instance.highlight,
+            }),
+            // The surface walk lives here now: one row per surface, so the backend never
+            // expands one row into many draws and the rows stay sortable.
+            .file => |file_index| {
+                const model = &models.models[file_index];
+                if (model.isEmpty() or model.isSkinned()) continue;
+                for (model.surfaces.items) |surface| {
+                    list.draw_meshes.appendAssumeCapacity(.{
+                        .mesh = .{ .file = .{ .model = file_index, .mesh = @intCast(surface.mesh_id) } },
+                        .model_matrix = top_matrix.mul(surface.model_matrix),
+                        .position = instance.transform.position,
+                        .palette_offset = null,
+                        .skinned = false,
+                        .highlight = instance.highlight,
+                    });
+                }
+            },
         }
     }
 }

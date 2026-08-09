@@ -6,7 +6,6 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Window = @import("Window");
 const Font = @import("shared").Font;
-const ModelTable = @import("render").ModelTable;
 const ModelLoader = @import("loader/ModelLoader.zig");
 const TextureTable = @import("loader/TextureTable.zig");
 const Texture = @import("shared").Texture;
@@ -15,7 +14,6 @@ const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
-const Node = @import("render").Node;
 const Buffer = @import("Vulkan/Buffer.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -37,7 +35,6 @@ const contract = @import("render");
 
 const check = @import("Vulkan/utils.zig").check;
 
-pub const Model = @import("render").Model;
 pub const c = @import("vulkan");
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
@@ -87,7 +84,7 @@ pub fn init(data: *const contract.Data) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, data.fonts, data.models, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, data.fonts, self.vma, self.physical_device, self.device);
     self.writeHighlightMaskSlot();
 
     return self;
@@ -509,20 +506,19 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
         ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
 
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_static));
-        for (list.draw_models.items) |draw_model| {
-            if (draw_model.mesh_id != null) continue;
-            if (!matrix.cascadeContains(&cascade_vp, draw_model.position)) continue;
-            const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-            drawStatic(self, cmd, handle, cascade_vp.mul(draw_model.model_matrix));
+        for (list.draw_meshes.items) |row| {
+            if (row.skinned) continue;
+            if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
+            const mesh = meshOf(self, row.mesh) orelse continue;
+            drawMeshNode(self, cmd, current_frame, mesh, null, cascade_vp.mul(row.model_matrix));
         }
         for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, cascade_vp);
         bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_skinned));
-        for (list.draw_models.items) |draw_model| {
-            const mesh_id = draw_model.mesh_id orelse continue;
-            if (!matrix.cascadeContains(&cascade_vp, draw_model.position)) continue;
-            const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-            const entry = fileEntry(self, handle) orelse continue;
-            drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, cascade_vp.mul(draw_model.model_matrix));
+        for (list.draw_meshes.items) |row| {
+            if (!row.skinned) continue;
+            if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
+            const mesh = meshOf(self, row.mesh) orelse continue;
+            drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, cascade_vp.mul(row.model_matrix));
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -559,20 +555,19 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.static));
     bindFragmentShader(cmd, self.resources.shader_loader.frag(.mesh));
-    for (list.draw_models.items) |draw_model| {
-        if (draw_model.mesh_id != null) continue;
-        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-        drawStatic(self, cmd, handle, draw_model.model_matrix);
+    for (list.draw_meshes.items) |row| {
+        if (row.skinned) continue;
+        const mesh = meshOf(self, row.mesh) orelse continue;
+        drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
     }
 
     for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, .identity);
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
-    for (list.draw_models.items) |draw_model| {
-        const mesh_id = draw_model.mesh_id orelse continue;
-        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-        const entry = fileEntry(self, handle) orelse continue;
-        drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, draw_model.model_matrix);
+    for (list.draw_meshes.items) |row| {
+        if (!row.skinned) continue;
+        const mesh = meshOf(self, row.mesh) orelse continue;
+        drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, row.model_matrix);
     }
 }
 
@@ -649,20 +644,18 @@ fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *co
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_static));
     bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
-    for (list.draw_models.items) |draw_model| {
-        if (!draw_model.highlight or draw_model.mesh_id != null) continue;
-        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-        drawStatic(self, cmd, handle, draw_model.model_matrix);
+    for (list.draw_meshes.items) |row| {
+        if (!row.highlight or row.skinned) continue;
+        const mesh = meshOf(self, row.mesh) orelse continue;
+        drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
     }
 
     bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_skinned));
     bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
-    for (list.draw_models.items) |draw_model| {
-        const mesh_id = draw_model.mesh_id orelse continue;
-        if (!draw_model.highlight) continue;
-        const handle = ModelTable.handleForKind(draw_model.kind) orelse continue;
-        const entry = fileEntry(self, handle) orelse continue;
-        drawMeshNode(self, cmd, current_frame, &entry.meshes[mesh_id], draw_model.palette_offset, draw_model.model_matrix);
+    for (list.draw_meshes.items) |row| {
+        if (!row.highlight or !row.skinned) continue;
+        const mesh = meshOf(self, row.mesh) orelse continue;
+        drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, row.model_matrix);
     }
 
     ext.vkCmdEndRendering(cmd);
@@ -856,35 +849,16 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
 
-fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle, top_matrix: nz.Mat4x4(f32)) void {
-    switch (model_handle) {
-        .generated => |generated_kind| {
-            const mesh = self.resources.generated.getPtr(generated_kind);
-            var push: Shader.WorldPushConstant = .{
-                .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-                .model_matrix = top_matrix.d,
-                .joint_matrices_address = 0,
-                .texture_index = 0,
-            };
-            emitNode(self, cmd, mesh, &push);
+/// The only lookup left on the draw side: a handle the producer already resolved.
+fn meshOf(self: *Vulkan, ref: DrawList.MeshRef) ?*Mesh {
+    return switch (ref) {
+        .generated => |generated| self.resources.generated.getPtr(generated),
+        .file => |file| {
+            const entry = &self.resources.model_loader.entries[file.model];
+            if (file.mesh >= entry.meshes.len) return null;
+            return &entry.meshes[file.mesh];
         },
-        .file => |file_index| {
-            const entry = &self.resources.model_loader.entries[file_index];
-            const model = &self.resources.models.models[file_index];
-            if (model.isEmpty() or model.isSkinned()) return;
-            for (model.surfaces.items) |surface| {
-                const mesh = &entry.meshes[surface.mesh_id];
-                const surface_matrix = top_matrix.mul(surface.model_matrix);
-                var push: Shader.WorldPushConstant = .{
-                    .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
-                    .model_matrix = surface_matrix.d,
-                    .joint_matrices_address = 0,
-                    .texture_index = 0,
-                };
-                emitNode(self, cmd, mesh, &push);
-            }
-        },
-    }
+    };
 }
 
 fn drawMeshNode(
@@ -932,12 +906,6 @@ fn emitNode(
     }
 }
 
-fn fileEntry(self: *Vulkan, model_handle: Model.Handle) ?*ModelLoader.Entry {
-    return switch (model_handle) {
-        .file => |file_index| &self.resources.model_loader.entries[file_index],
-        .generated => null,
-    };
-}
 
 fn syncPlanet(self: *Vulkan, gpa: std.mem.Allocator, state: DrawList.PlanetState) !void {
     self.planet.drainRetired(gpa, self.vma, self.current_frame_inflight);

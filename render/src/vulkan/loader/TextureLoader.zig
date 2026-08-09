@@ -2,8 +2,6 @@ const TextureLoader = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const shared = @import("shared");
-const entity = shared.entity;
 const Image = @import("../Vulkan/Image.zig");
 const DrawList = @import("render").DrawList;
 const TextureTable = @import("TextureTable.zig");

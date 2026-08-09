@@ -20,7 +20,6 @@ const TextureLoader = @import("../loader/TextureLoader.zig");
 const ShaderLoader = @import("../loader/ShaderLoader.zig");
 const FontLoader = @import("../loader/FontLoader.zig");
 const Font = @import("shared").Font;
-const ModelTable = @import("render").ModelTable;
 const Model = @import("render").Model;
 const Mesh = @import("../Vulkan/Mesh.zig");
 
@@ -41,8 +40,6 @@ device: Device,
 
 texture_table: TextureTable,
 model_loader: *ModelLoader,
-/// Read-only at draw time: surfaces and skinned-ness come from the caller's table.
-models: *ModelTable,
 texture_loader: *TextureLoader,
 shader_loader: *ShaderLoader,
 font_loader: *FontLoader,
@@ -59,7 +56,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, fonts: []Font, models: *ModelTable, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -220,7 +217,6 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, models: *ModelTable, vma: Vma
     self.* = .{
         .texture_table = undefined,
         .model_loader = undefined,
-        .models = models,
         .texture_loader = undefined,
         .shader_loader = undefined,
         .font_loader = undefined,

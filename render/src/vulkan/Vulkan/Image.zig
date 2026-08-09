@@ -427,7 +427,3 @@ pub const Barrier = struct {
     }
 };
 
-pub const Decoded = @import("render").Bitmap;
-pub const DecodeError = Decoded.Error;
-pub const DecodeTask = Decoded.Task;
-pub const decodeImages = Decoded.decodeAll;

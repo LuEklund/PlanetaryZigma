@@ -12,6 +12,7 @@ const entity = shared.entity;
 const AssetServer = @import("AssetServer.zig");
 const DrawList = @import("DrawList.zig");
 const ModelTable = @import("asset/ModelTable.zig");
+const contract = @import("root.zig");
 
 const Loader = AssetServer.Loader;
 
@@ -25,6 +26,7 @@ interface: Loader,
 pub fn init(self: *ModelSource, gpa: std.mem.Allocator, asset_server: *AssetServer, models: *ModelTable) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
     const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
+    std.debug.assert(model_paths.len <= contract.max_models);
     const files = try gpa.alloc([]const u8, model_paths.len);
     const kinds = try gpa.alloc(entity.Kind, model_paths.len);
     for (model_paths, kinds, files) |path, *kind, *file| {

@@ -7,16 +7,17 @@ const Shader = @import("shared").Shader;
 const Emitter = @import("shared").Emitter;
 const Ui = @import("shared").Ui;
 const gltf = @import("asset/gltf.zig");
+const Model = @import("asset/Model.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
-pub const max_draw_models: u32 = shared.max_entities * 8;
+pub const max_draw_meshes: u32 = shared.max_entities * 32;
 
 camera: Camera,
 time: f32,
 light_color: [4]f32,
 draw_sky: bool,
-draw_models: std.ArrayList(DrawModel),
+draw_meshes: std.ArrayList(DrawMesh),
 joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
@@ -37,13 +38,20 @@ pub const Camera = struct {
     fov_rad: f32,
 };
 
-pub const DrawModel = struct {
-    kind: shared.entity.Kind,
+/// Which GPU mesh to draw. The producer resolved this; the backend does no lookup.
+pub const MeshRef = union(enum) {
+    generated: Model.Generated,
+    file: struct { model: u32, mesh: u32 },
+};
+
+/// One row is one draw unit, which is what makes depth sorting possible above the boundary.
+pub const DrawMesh = struct {
+    mesh: MeshRef,
     model_matrix: nz.Mat4x4(f32),
     position: nz.Vec3(f32),
-    mesh_id: ?u32,
     palette_offset: ?u32,
-    highlight: bool = false,
+    skinned: bool,
+    highlight: bool,
 };
 
 pub const Line = struct {
@@ -108,7 +116,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .time = 0,
         .light_color = .{ 1, 1, 1, 1 },
         .draw_sky = false,
-        .draw_models = try .initCapacity(gpa, max_draw_models),
+        .draw_meshes = try .initCapacity(gpa, max_draw_meshes),
         .joint_matrices = try .initCapacity(gpa, max_joint_matrices),
         .draw_lines = try .initCapacity(gpa, max_lines),
         .emitters = try .initCapacity(gpa, Emitter.max_emitters),
@@ -124,7 +132,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
 }
 
 pub fn deinit(self: *DrawList, gpa: std.mem.Allocator) void {
-    self.draw_models.deinit(gpa);
+    self.draw_meshes.deinit(gpa);
     self.joint_matrices.deinit(gpa);
     self.draw_lines.deinit(gpa);
     self.emitters.deinit(gpa);
@@ -132,7 +140,7 @@ pub fn deinit(self: *DrawList, gpa: std.mem.Allocator) void {
 }
 
 pub fn clear(self: *DrawList) void {
-    self.draw_models.clearRetainingCapacity();
+    self.draw_meshes.clearRetainingCapacity();
     self.joint_matrices.clearRetainingCapacity();
     self.draw_lines.clearRetainingCapacity();
     self.emitters.clearRetainingCapacity();

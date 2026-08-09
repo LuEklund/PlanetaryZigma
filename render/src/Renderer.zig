@@ -63,7 +63,6 @@ pub fn init(self: *Renderer, data: Data) !void {
         .gpa = data.gpa,
         .io = data.io,
         .fonts = &self.fonts,
-        .models = &self.models,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.lib.symbols.renderDeinit(self.handle);
@@ -89,6 +88,8 @@ pub fn deinit(self: *Renderer, gpa: std.mem.Allocator, io: std.Io) void {
     self.lib.deinit(io);
     self.models.deinit(gpa);
 }
+
+pub const item_spin_speed: f32 = Animator.item_spin_speed;
 
 pub const Frame = struct {
     camera: DrawList.Camera,
@@ -138,7 +139,7 @@ pub fn advanceAnimation(self: *Renderer, triggers: []const shared.net.Event.Trig
 }
 
 pub fn drawAnimated(self: *Renderer) void {
-    self.animator.draw(&self.list, &self.emitters);
+    self.animator.draw(&self.list, &self.emitters, &self.models);
 }
 
 pub fn drawUi(self: *Renderer, quads: []const Ui.Quad, screen_width: f32, screen_height: f32) void {
