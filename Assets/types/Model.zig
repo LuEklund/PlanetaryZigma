@@ -1,38 +1,29 @@
 const Model = @This();
 
 const std = @import("std");
-const shared = @import("shared");
 const nz = @import("numz");
 const Node = @import("Node.zig");
 const AnimationClip = @import("AnimationClip.zig");
 const gltf = @import("gltf.zig");
 
-pub const Spec = shared.entity.ModelSpec;
-
 surfaces: std.ArrayList(Surface),
 /// One opaque render handle per glTF mesh, filled in after upload. A plain integer on
 /// purpose: assets does not import render, and does not need to know what it means.
 mesh_handles: []usize,
-spawn_duration: f32,
-death_duration: f32,
 nodes: std.ArrayList(Node),
+/// One per node, same order. The glTF names survive the parse so a lookup by name works
+/// at any time, not only while the file is open.
+node_names: [][]const u8,
 clips: []AnimationClip,
 skins: []Skin,
-look_nodes: []usize,
-overlay_mask: ?[]bool,
-state_clips: std.EnumArray(shared.entity.State, ?usize),
 
 pub const empty: Model = .{
     .mesh_handles = &.{},
     .surfaces = .empty,
-    .spawn_duration = 0,
-    .death_duration = 0,
     .nodes = .empty,
+    .node_names = &.{},
     .clips = &.{},
     .skins = &.{},
-    .look_nodes = &.{},
-    .overlay_mask = null,
-    .state_clips = .initFill(null),
 };
 
 const Surface = struct {
@@ -64,61 +55,37 @@ pub fn isEmpty(self: *const Model) bool {
     return self.surfaces.items.len == 0 and self.nodes.items.len == 0;
 }
 
+pub fn nodeIndex(self: *const Model, name: []const u8) ?usize {
+    for (self.node_names, 0..) |node_name, index| {
+        if (std.mem.eql(u8, node_name, name)) return index;
+    }
+    return null;
+}
+
 pub fn isSkinned(self: *const Model) bool {
     return self.skins.len > 0;
 }
 
+/// Everything the file contains, and nothing about what a game wants from it. Whether the
+/// model is skinned is a property of the file, so the caller does not say.
 pub fn parseGlb(
     self: *Model,
     comptime VertexType: type,
     gpa: std.mem.Allocator,
     io: std.Io,
     file: std.Io.File,
-    kind_spec: shared.entity.Spec,
-    spec: Spec,
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
     var glb: gltf.Glb = try .read(gpa, io, file);
     defer glb.deinit(gpa);
-    const upload_data = if (spec.clip_names != null) skinned: {
-        var look_node_name_buffer: [3][]const u8 = undefined;
-        var look_node_count: usize = 0;
-        if (spec.look_node_names) |look_node_names| {
-            inline for (.{ look_node_names.spine, look_node_names.neck, look_node_names.head }) |maybe_node_name| {
-                if (maybe_node_name) |node_name| {
-                    look_node_name_buffer[look_node_count] = node_name;
-                    look_node_count += 1;
-                }
-            }
-        }
-        const look_node_names: ?[]const []const u8 = if (look_node_count > 0) look_node_name_buffer[0..look_node_count] else null;
-        var overlay_root: usize = undefined;
-        const skinned_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.skins, &self.clips, look_node_names, &self.look_nodes, spec.overlay_root_name, &overlay_root);
-        if (spec.overlay_root_name != null) {
-            const overlay_mask = try gpa.alloc(bool, self.nodes.items.len);
-            for (self.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
-                masked.* = node_index == overlay_root or if (node.parent) |parent| overlay_mask[parent] else false;
-            }
-            self.overlay_mask = overlay_mask;
-        }
-        break :skinned skinned_data;
-    } else try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, null, null, null, null, null, null);
+    const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.node_names, &self.skins, &self.clips);
 
     computeMatrices(self.nodes.items);
 
-    self.spawn_duration = kind_spec.spawn_duration;
-    self.death_duration = kind_spec.death_duration;
-
-    if (spec.clip_names) |clip_names| {
-        for (clip_names.values, &self.state_clips.values) |maybe_name, *state_clip| {
-            state_clip.* = if (maybe_name) |clip_name| try self.createClipIndex(clip_name, spec) else null;
-        }
-        if (self.state_clips.get(.death)) |index| {
-            const death_clip = self.clips[index];
-            self.death_duration = death_clip.end - death_clip.start;
-        }
-    } else {
+    // A model with no skin is drawn surface by surface, so the hierarchy has done its job
+    // once the world matrices are baked.
+    if (!self.isSkinned()) {
         for (self.nodes.items) |node| {
             const mesh_id = node.mesh_id orelse continue;
             try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = node.model_matrix });
@@ -129,14 +96,11 @@ pub fn parseGlb(
     return upload_data;
 }
 
-fn createClipIndex(self: *const Model, name: []const u8, spec: Spec) !usize {
+pub fn clipIndex(self: *const Model, name: []const u8) ?usize {
     for (self.clips, 0..) |clip, index| {
         if (std.mem.eql(u8, clip.name, name)) return index;
     }
-    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path });
-    for (self.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
-    std.log.err("in the model spec assign null or one of these", .{});
-    return error.ClipNotFound;
+    return null;
 }
 
 pub fn computeMatrices(nodes: []Node) void {
@@ -150,6 +114,9 @@ pub fn computeMatrices(nodes: []Node) void {
 }
 
 pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
+    for (self.node_names) |name| gpa.free(name);
+    gpa.free(self.node_names);
+    self.node_names = &.{};
     gpa.free(self.mesh_handles);
     self.mesh_handles = &.{};
     self.nodes.clearAndFree(gpa);
@@ -159,10 +126,6 @@ pub fn clear(self: *Model, gpa: std.mem.Allocator) void {
     for (self.skins) |*skin| skin.deinit(gpa);
     gpa.free(self.skins);
     self.skins = &.{};
-    gpa.free(self.look_nodes);
-    self.look_nodes = &.{};
-    if (self.overlay_mask) |overlay_mask| gpa.free(overlay_mask);
-    self.overlay_mask = null;
     self.surfaces.clearAndFree(gpa);
 }
 

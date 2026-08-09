@@ -51,8 +51,8 @@ pub const ffi = struct {
     // A freshly dlopened render.so has its OWN procs.instance/device globals, still
     // undefined — rebinding them is what makes a render swap work at all.
     //
-    // Nothing else needs re-registering: every loader AssetServer holds now lives above the
-    // boundary; shaders, fonts and textures upload through the vtable, models via the packet.
+    // Nothing else to re-register: assets are polled by the game and pushed through the
+    // vtable, so nothing on either side holds a pointer into the other.
     pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));

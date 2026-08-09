@@ -49,31 +49,28 @@ pub fn main(init: std.process.Init) !void {
         break;
     }
 
-    var steam_server: shared.SteamNet.Server = try .init(gpa, io, .{
+    var steam_server: shared.SteamNet.Server = undefined;
+    try steam_server.init(gpa, io, .{
         .mode = server_mode,
         .host_steam_id = host_steam_id,
     });
     defer steam_server.deinit();
-    steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
-    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemReload") = try .init("system_server", io);
+    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemReload") = try .init("system_server", gpa, io);
     defer system_lib.deinit(io);
 
     var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
     var window: Window = undefined;
-    var asset_server: System.AssetServer = undefined;
     if (build_options.viewer) {
         try window.open(gpa, init.minimal, .{
             .app_id = "planetary_zigma_server",
             .title = "PlanetaryZigma — server view",
             .size = .{ .width = 854, .height = 480 },
         });
-        asset_server = try .init(gpa, io);
     }
     defer if (build_options.viewer) {
-        asset_server.deinit();
         window.close();
     };
 
@@ -86,7 +83,6 @@ pub fn main(init: std.process.Init) !void {
         .gpa = gpa,
         .steam_server = &steam_server,
         .window = if (build_options.viewer) &window else {},
-        .asset_server = if (build_options.viewer) &asset_server else {},
     })) return error.SystemInit;
 
     defer system_lib.api.systemDeinit(&system_instance);
@@ -111,9 +107,6 @@ pub fn main(init: std.process.Init) !void {
 
         system_lib.trySwap(io) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
-    steam_server.handle_packets_future.cancel(io) catch |err| {
-        std.log.err("packet pump exit: {s}", .{@errorName(err)});
-    };
 }
 
 pub fn getDeltaTime(io: std.Io) f32 {

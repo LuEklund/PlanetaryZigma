@@ -4,11 +4,12 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = @import("numz");
-const Model = @import("assets").Model;
-const Node = @import("assets").Node;
-const AnimationClip = @import("assets").AnimationClip;
+const Model = @import("Assets").Model;
+const Node = @import("Assets").Node;
+const AnimationClip = @import("Assets").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
-const ModelTable = @import("assets").ModelTable;
+const Rig = @import("Rig.zig");
+const ModelTable = @import("ModelTable.zig");
 const DrawList = @import("contract").DrawList;
 const Emitter = @import("Emitter.zig");
 const Shader = @import("contract").Shader;
@@ -80,6 +81,10 @@ fn resolveModel(models: *ModelTable, instance: *const Instance) *Model {
     return models.modelPtr(instance.model);
 }
 
+fn resolveRig(models: *const ModelTable, instance: *const Instance) *const Rig {
+    return &models.rigs[instance.model];
+}
+
 pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *ModelTable) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
@@ -96,7 +101,7 @@ pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
     if (!self.instances.contains(entity.id)) {
         const model = models.modelPtr(entity.model);
         if (model.isEmpty()) std.log.err("model not loaded for entity {d}", .{entity.id});
-        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model));
+        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model, &models.rigs[entity.model]));
     }
     const instance = self.instances.getPtr(entity.id).?;
     instance.seen = true;
@@ -136,8 +141,8 @@ fn applyReloads(self: *Animator, models: *ModelTable) !void {
             if (instance.model != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
-            instance.spawn_duration = reloaded_model.spawn_duration;
-            instance.death_duration = reloaded_model.death_duration;
+            instance.spawn_duration = models.rigs[file_index].spawn_duration;
+            instance.death_duration = models.rigs[file_index].death_duration;
         }
     }
     models.reloaded.clearRetainingCapacity();
@@ -169,7 +174,7 @@ fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, mo
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
         const model = resolveModel(models, instance);
-        const clip_index = model.state_clips.get(trigger.state) orelse continue;
+        const clip_index = resolveRig(models, instance).state_clips.get(trigger.state) orelse continue;
         skeleton.playOverlay(model, clip_index);
     }
 }
@@ -188,7 +193,7 @@ fn animate(self: *Animator, models: *ModelTable) void {
             instance.spin_time += self.frame.delta_time;
         }
         const model = resolveModel(models, instance);
-        playAnimation(self.frame, entry.key_ptr.*, instance, model);
+        playAnimation(self.frame, entry.key_ptr.*, instance, model, resolveRig(models, instance));
     }
 }
 
@@ -254,9 +259,9 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
     }
 }
 
-fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *Model) void {
+fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *Model, rig: *const Rig) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
-    const clip_index = model.state_clips.get(instance.state);
+    const clip_index = rig.state_clips.get(instance.state);
     if (clip_index) |index| {
         if (index != skeleton.player.active) {
             skeleton.playClip(model, index);
@@ -290,7 +295,7 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
         }
     }
     if (skeleton.overlay) |overlay| {
-        sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, model.overlay_mask);
+        sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, rig.overlay_mask);
     }
     if (skeleton.fade_time > 0) {
         skeleton.fade_time -= frame.delta_time;
@@ -302,9 +307,9 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
         }
     }
     var saved_look_rotations: [3]nz.Quat(f32) = undefined;
-    const looking = id == frame.local_entity and model.look_nodes.len > 0;
+    const looking = id == frame.local_entity and rig.look_nodes.len > 0;
     if (looking) {
-        for (model.look_nodes, 0..) |node_index, saved_index| {
+        for (rig.look_nodes, 0..) |node_index, saved_index| {
             saved_look_rotations[saved_index] = skeleton.nodes[node_index].rotation;
         }
         const look_pitch = std.math.clamp(frame.camera_pitch * look_pitch_sign, -1.0, 1.0);
@@ -312,7 +317,7 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
         if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
         var look_yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w) * look_yaw_sign, -1.2, 1.2);
         if (@abs(look_yaw) < look_yaw_deadzone) look_yaw = 0;
-        const aim_nodes: []const usize = if (skeleton.overlay != null) model.look_nodes[0..1] else model.look_nodes;
+        const aim_nodes: []const usize = if (skeleton.overlay != null) rig.look_nodes[0..1] else rig.look_nodes;
         const pitch_per_node = look_pitch / @as(f32, @floatFromInt(aim_nodes.len));
         const yaw_per_node = look_yaw / @as(f32, @floatFromInt(aim_nodes.len));
         for (aim_nodes) |node_index| {
@@ -325,7 +330,7 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
     }
     Model.computeMatrices(skeleton.nodes);
     if (looking) {
-        for (model.look_nodes, 0..) |node_index, saved_index| {
+        for (rig.look_nodes, 0..) |node_index, saved_index| {
             skeleton.nodes[node_index].rotation = saved_look_rotations[saved_index];
         }
     }

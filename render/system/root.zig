@@ -9,4 +9,9 @@ pub const Animator = @import("Animator.zig");
 /// A free list with spawn/keepAlive/timeout rules — behaviour, so it is a system and not
 /// part of the contract. The contract only carries the rows it produces.
 pub const Emitter = @import("Emitter.zig");
-pub const Assets = @import("Assets.zig");
+/// One row per model the game knows about. Game knowledge — `assets` parses files and has
+/// no idea an entity kind exists.
+/// Polls the asset watchers and pushes what changed at the renderer.
+pub const upload = @import("upload.zig");
+pub const ModelTable = @import("ModelTable.zig");
+pub const Rig = @import("Rig.zig");

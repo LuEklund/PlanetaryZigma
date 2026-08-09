@@ -82,12 +82,11 @@ pub fn parseScene(
     gltf: zgltf.Gltf,
     bin: []const u8,
     out_nodes: *std.ArrayList(Node),
+    /// Node names in the SAME order as `out_nodes`, so a lookup by name is valid for the
+    /// whole life of the model, not just during the parse.
+    out_node_names: *[][]const u8,
     out_skins: ?*[]Skin,
     out_clips: ?*[]AnimationClip,
-    look_node_names: ?[]const []const u8,
-    out_look_nodes: ?*[]usize,
-    overlay_root_name: ?[]const u8,
-    out_overlay_root: ?*usize,
 ) !UploadData(VertexType) {
     var upload: UploadData(VertexType) = .{};
     errdefer upload.deinit(gpa);
@@ -390,31 +389,14 @@ pub fn parseScene(
             out_nodes.items[node_map[gltf_child_index]].parent = sorted_index;
         }
     }
-    if (look_node_names) |node_names| {
-        const look_nodes = try gpa.alloc(usize, node_names.len);
-        errdefer gpa.free(look_nodes);
-        for (node_names, look_nodes) |node_name, *node_index| {
-            node_index.* = for (gltf_nodes, 0..) |gltf_node, gltf_index| {
-                if (std.mem.eql(u8, gltf_node.name orelse "", node_name)) break node_map[gltf_index];
-            } else {
-                std.log.err("look node \"{s}\" not found; nodes in this file:", .{node_name});
-                for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-                std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
-                return error.LookBoneNotFound;
-            };
-        }
-        out_look_nodes.?.* = look_nodes;
+
+    const node_names = try gpa.alloc([]const u8, out_nodes.items.len);
+    errdefer gpa.free(node_names);
+    for (node_names) |*name| name.* = "";
+    for (gltf_nodes, 0..) |gltf_node, gltf_index| {
+        node_names[node_map[gltf_index]] = try gpa.dupe(u8, gltf_node.name orelse "");
     }
-    if (overlay_root_name) |root_name| {
-        out_overlay_root.?.* = for (gltf_nodes, 0..) |gltf_node, gltf_index| {
-            if (std.mem.eql(u8, gltf_node.name orelse "", root_name)) break node_map[gltf_index];
-        } else {
-            std.log.err("overlay root \"{s}\" not found; nodes in this file:", .{root_name});
-            for (gltf_nodes) |gltf_node| std.log.err("  \"{s}\"", .{gltf_node.name orelse ""});
-            std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
-            return error.OverlayRootNotFound;
-        };
-    }
+    out_node_names.* = node_names;
 
     if (out_skins) |skins| {
         if (gltf.skins) |gltf_skins| {

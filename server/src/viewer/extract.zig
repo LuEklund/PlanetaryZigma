@@ -5,7 +5,7 @@ const World = @import("../World.zig");
 const render_system = @import("render_system");
 const render = @import("contract");
 const Emitter = @import("render_system").Emitter;
-const ModelTable = @import("assets").ModelTable;
+const ModelTable = @import("render_system").ModelTable;
 const Camera = @import("camera.zig");
 const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
@@ -83,7 +83,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, &.{}, &viewer.assets.models);
+    }, &.{}, &viewer.models);
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
@@ -104,10 +104,10 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
-        }, &viewer.assets.models);
+        }, &viewer.models);
     }
-    viewer.animator.advance(&.{}, &viewer.assets.models);
-    viewer.animator.draw(list, &viewer.emitters, &viewer.assets.models);
+    viewer.animator.advance(&.{}, &viewer.models);
+    viewer.animator.draw(list, &viewer.emitters, &viewer.models);
 
     if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);

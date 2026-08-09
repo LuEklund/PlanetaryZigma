@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const System = @import("system");
-const AssetServer = @import("assets").AssetServer;
 const World = System.World;
 const Window = @import("Window");
 const tracy = @import("ztracy");
@@ -31,14 +30,15 @@ pub fn main(init: std.process.Init) !void {
 
     const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
     shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
-    std.log.info("\n====\nNET = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
-    var steam_client: shared.SteamNet.Client = try .init(gpa, io);
-    steam_client.handle_packets_future = try io.concurrent(shared.SteamNet.Client.handlePackets, .{&steam_client});
+    std.log.info("\n====\nNET-DEBUG = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
+
+    var steam_client: shared.SteamNet.Client = undefined;
+    try steam_client.init(gpa, io);
     steam_zone.end();
 
     defer steam_client.deinit();
 
-    var system_lib: shared.HotLib(System.Api, *anyopaque, "systemReload") = try .init("system_client", io);
+    var system_lib: shared.HotLib(System.Api, *anyopaque, "systemReload") = try .init("system_client", gpa, io);
     defer system_lib.deinit(io);
 
     var window: Window = undefined;
@@ -52,8 +52,6 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close();
 
-    var asset_server = try AssetServer.init(gpa, init.io);
-    defer asset_server.deinit();
 
     var world: World = try .init(gpa);
     defer world.deinit();
@@ -61,7 +59,6 @@ pub fn main(init: std.process.Init) !void {
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
     system_lib.handle = system_lib.api.systemInit(&System.Data{
         .gpa = gpa,
-        .asset_server = &asset_server,
         .window = &window,
         .io = io,
         .world = &world,

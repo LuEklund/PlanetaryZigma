@@ -83,16 +83,7 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    const zgltf = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf");
-
     const stb_dep = b.dependency("stb", .{});
-    const stb_image = b.addTranslateC(.{
-        .root_source_file = stb_dep.path("stb_image.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    stb_image.addIncludePath(stb_dep.path("."));
-
     const stb_truetype = b.addTranslateC(.{
         .root_source_file = stb_dep.path("stb_truetype.h"),
         .target = target,
@@ -132,30 +123,6 @@ pub fn build(b: *std.Build) void {
         .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
     });
 
-    const stbi_impl = b.addWriteFiles().add("stbi_impl.c",
-        \\#define STB_IMAGE_IMPLEMENTATION
-        \\#include "stb_image.h"
-        \\#define STB_TRUETYPE_IMPLEMENTATION
-        \\#include "stb_truetype.h"
-    );
-
-    // The asset system as its own module, a sibling of `Window`. The game imports it
-    // directly — reaching asset data should not mean importing the renderer.
-    const assets = b.addModule("assets", .{
-        .root_source_file = b.path("assets/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shared", .module = shared },
-            .{ .name = "numz", .module = numz },
-            .{ .name = "zgltf", .module = zgltf },
-            .{ .name = "stb_image", .module = stb_image.createModule() },
-            .{ .name = "ztracy", .module = ztracy },
-        },
-        .link_libc = true,
-    });
-    assets.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
-    assets.addIncludePath(stb_dep.path("."));
 
 
     // The widget system: it produces the contract's quad layout and knows nothing about a
@@ -174,7 +141,9 @@ pub fn build(b: *std.Build) void {
 
     // The client-side render system. Depends on the contract; the contract knows nothing
     // of it. This is what holds per-frame and per-entity state, so the game owns it.
-    const render_system = b.addModule("render_system", .{
+    const assets_pkg = b.dependency("Assets", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("Assets");
+
+    _ = b.addModule("render_system", .{
         .root_source_file = b.path("system/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -182,14 +151,12 @@ pub fn build(b: *std.Build) void {
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
             .{ .name = "contract", .module = contract },
-            .{ .name = "assets", .module = assets },
+            .{ .name = "Assets", .module = assets_pkg },
             .{ .name = "Window", .module = window },
-            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
             .{ .name = "ztracy", .module = ztracy },
         },
         .link_libc = true,
     });
-    render_system.addIncludePath(stb_dep.path("."));
 
     // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
     // not rebuild the game systems.
@@ -203,8 +170,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
-                .{ .name = "assets", .module = assets },
-                .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+                    .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
                 .{ .name = "contract", .module = contract },
@@ -215,8 +181,6 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .linkage = .dynamic,
     });
-    // No stbi_impl here: the backend imports the `render` module, which already carries
-    // that C source, so adding it again is a duplicate-symbol link error.
     linkVulkan(b, backend, target);
     b.installArtifact(backend);
 }

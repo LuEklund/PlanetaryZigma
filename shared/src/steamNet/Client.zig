@@ -90,7 +90,9 @@ packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
+/// Fills the caller's Client rather than returning one: the packet pump holds `self`, and
+/// a returned struct would be copied out from under it.
+pub fn init(self: *Client, gpa: std.mem.Allocator, io: std.Io) !void {
     if (!steam.SteamAPI_Init()) {
         std.log.err("SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.", .{});
         return error.InitSteamworks;
@@ -98,7 +100,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
     steam.SteamAPI_ManualDispatch_Init();
     const steam_pipe = steam.SteamAPI_GetHSteamPipe();
 
-    return .{
+    self.* = .{
         .pipe = steam_pipe,
         .packets = .{},
         .gpa = gpa,
@@ -107,6 +109,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
         .user_steam_id = steam.SteamUser().GetSteamID(),
         .browser = .{},
     };
+    self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
 pub fn personaName(_: *const Client) []const u8 {

@@ -2,11 +2,12 @@ const Viewer = @This();
 
 const std = @import("std");
 const shared = @import("shared");
+const shared_shader = @import("contract").Shader;
 const Window = @import("Window");
 const contract = @import("contract");
 const render_system = @import("render_system");
+const Assets = @import("Assets");
 const Emitter = @import("render_system").Emitter;
-const AssetServer = @import("assets").AssetServer;
 const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
 const World = @import("../World.zig");
@@ -19,7 +20,9 @@ const menu = @import("menu.zig");
 render: shared.HotLib(contract.Api, *anyopaque, "reload"),
 draw_list: DrawList,
 window: *Window,
-assets: render_system.Assets,
+models: render_system.ModelTable,
+fonts: [shared.Font.count]shared.Font,
+assets: Assets,
 animator: render_system.Animator,
 emitters: Emitter.List,
 camera: Camera,
@@ -30,15 +33,36 @@ border_lines: std.ArrayList(DrawList.Line),
 arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
-pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
-    try self.assets.init(gpa, asset_server, &self.render);
-    errdefer self.assets.deinit(gpa);
+pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, planet_radius: f32) !void {
+    const assets_dir = try Assets.openDir(io);
+    defer assets_dir.close(io);
+    self.assets.init(gpa);
+    // What this game owns. One row per file, and the index is what comes back when it
+    // changes: a shader ordinal, a texture slot, a font index, a model row.
+    for (std.enums.values(shared_shader.Kind)) |kind| {
+        try self.assets.add(io, assets_dir, "shaders", shared_shader.get(kind).path, .shader, @intFromEnum(kind));
+    }
+    var texture_paths: [shared.Texture.paths_capacity][]const u8 = undefined;
+    for (shared.Texture.paths(&texture_paths), 0..) |path, index| {
+        try self.assets.add(io, assets_dir, "textures", path, .texture, @intCast(shared.Texture.reserved + index));
+    }
+    for (shared.Font.files, 0..) |path, index| {
+        try self.assets.add(io, assets_dir, "fonts", path, .font, @intCast(index));
+    }
+    var model_paths: [shared.entity.all_kinds.len][]const u8 = undefined;
+    for (render_system.ModelTable.paths(&model_paths), 0..) |path, row| {
+        // A generated model is a row with no file behind it, so it is never registered.
+        if (!render_system.ModelTable.isFile(path)) continue;
+        try self.assets.add(io, assets_dir, "objects", path["objects/".len..], .model, @intCast(row));
+    }
+    self.fonts = @splat(.empty);
+    self.models = try .init(gpa);
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
     self.window = window;
-    self.render = try .init("render", io);
+    self.render = try .init("render", gpa, io);
     errdefer self.render.deinit(io);
     self.render.handle = self.render.api.init(&contract.InitOptions{
         .gpa = gpa,
@@ -51,8 +75,8 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.draw_list = try .init(gpa);
     errdefer self.draw_list.deinit(gpa);
 
-    try asset_server.load();
-    try self.assets.uploadGenerated(gpa, &self.render);
+    self.pollAssets(gpa, io);
+    try render_system.upload.generated(gpa, &self.render, &self.models);
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
@@ -63,6 +87,90 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.border_lines_field = null;
 }
 
+/// The three stages, in order: the watcher notices, a loader parses, the uploader sends.
+fn pollAssets(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
+    var changed: [64]u32 = undefined;
+    while (true) {
+        const rows = self.assets.poll(io, &changed);
+        for (rows) |entry| self.loadAsset(gpa, io, entry);
+        // A first poll reports every file, and there are more of those than the buffer
+        // holds, so keep going until a pass comes back short.
+        if (rows.len < changed.len) break;
+    }
+}
+
+fn loadAsset(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, entry: u32) void {
+    const row = self.assets.entries.items[entry];
+    switch (row.kind) {
+        .shader => {
+            const spirv = Assets.loader.shader(gpa, &self.assets, io, entry) catch |err| {
+                std.log.err("shader {s}: {t}", .{ row.path, err });
+                return;
+            };
+            defer gpa.free(spirv);
+            self.render.api.uploadShader(self.render.handle, row.index, spirv.ptr, spirv.len);
+        },
+        .texture => {
+            const cubemap = row.index == shared.Texture.slot(.skybox_cubemap);
+            var decoded = Assets.loader.texture(gpa, &self.assets, io, entry, cubemap) catch |err| {
+                std.log.warn("texture {s}: {t} - using fallback", .{ row.path, err });
+                // An empty face list binds the checkerboard, so a file that would not decode
+                // is visible rather than stale. A cube view has no 2D stand-in.
+                if (cubemap) return;
+                return self.render.api.uploadTexture(self.render.handle, &.{
+                    .slot = row.index,
+                    .width = 0,
+                    .height = 0,
+                    .faces = &.{},
+                });
+            };
+            defer decoded.deinit(gpa);
+            self.render.api.uploadTexture(self.render.handle, &.{
+                .slot = row.index,
+                .width = decoded.width,
+                .height = decoded.height,
+                .faces = decoded.faces,
+            });
+        },
+        .font => {
+            const baked = &self.fonts[row.index];
+            const coverage = Assets.loader.font(baked, gpa, &self.assets, io, entry) catch |err| {
+                std.log.err("font {s}: {t}", .{ row.path, err });
+                return;
+            };
+            defer gpa.free(coverage);
+            if (baked.atlas_texture_index != 0) {
+                self.render.api.freeImage(self.render.handle, baked.atlas_texture_index);
+            }
+            baked.atlas_texture_index = self.render.api.uploadImage(self.render.handle, &.{
+                .width = shared.Font.atlas_width,
+                .height = shared.Font.atlas_height,
+                .pixels = coverage,
+                .r8 = true,
+                .mips = false,
+                .mag_linear = true,
+                .min_linear = true,
+            });
+        },
+        .model => self.loadModel(gpa, io, entry, row.index) catch |err| {
+            std.log.err("model {s}: {t}", .{ row.path, err });
+        },
+    }
+}
+
+fn loadModel(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, entry: u32, row: u32) !void {
+    const kind_spec = shared.entity.spec(render_system.ModelTable.kindForRow(row));
+    const model_spec = kind_spec.model orelse return;
+    const parsed_model = &self.models.models[row];
+
+    var parsed = try Assets.loader.model(gpa, &self.assets, io, entry, parsed_model, model_spec.clip_names != null);
+    defer parsed.deinit(gpa);
+
+    try self.models.rigs[row].init(gpa, parsed_model, kind_spec, model_spec);
+    try render_system.upload.model(gpa, &self.render, &self.models, parsed_model, &parsed, row);
+}
+
+
 pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.arrow_lines.deinit(gpa);
     self.border_lines.deinit(gpa);
@@ -70,7 +178,8 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.draw_list.deinit(gpa);
     self.animator.deinit();
     // Before the renderer: freeing a model's images is a call INTO render.so.
-    self.assets.deinit(gpa);
+    self.assets.deinit(io);
+    self.models.deinit(gpa);
     self.render.api.deinit(self.render.handle);
     self.render.deinit(io);
 }
@@ -102,7 +211,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, &self.assets.fonts[0], world.delta_time);
+    }, &self.fonts[0], world.delta_time);
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;

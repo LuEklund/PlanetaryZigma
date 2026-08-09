@@ -3,11 +3,17 @@ const ModelTable = @This();
 const std = @import("std");
 const shared = @import("shared");
 const entity = shared.entity;
-const Model = @import("Model.zig");
+const Model = @import("Assets").Model;
+const Rig = @import("Rig.zig");
 
 /// Owned by the game loop, not render.so: animation reads clips and skins from here
 /// without a pointer into a library that can be swapped underneath it.
 models: []Model,
+/// One per model, same order: the spec read against that model's own names.
+rigs: []Rig,
+/// Texture slots the backend handed back for each model's embedded images. Ours to free
+/// on a reload, because the backend allocated them at our request.
+image_slots: [][]u32,
 reloaded: std.ArrayList(u32),
 
 /// A model that is generated rather than read: the row exists, it just has no file behind
@@ -36,10 +42,21 @@ pub fn init(gpa: std.mem.Allocator) !ModelTable {
     var buffer: [entity.all_kinds.len][]const u8 = undefined;
     const models = try gpa.alloc(Model, paths(&buffer).len);
     @memset(models, .empty);
-    return .{ .models = models, .reloaded = .empty };
+    const rigs = try gpa.alloc(Rig, models.len);
+    @memset(rigs, .empty);
+    const image_slots = try gpa.alloc([]u32, models.len);
+    @memset(image_slots, &.{});
+    return .{ .models = models, .rigs = rigs, .image_slots = image_slots, .reloaded = .empty };
 }
 
 pub fn deinit(self: *ModelTable, gpa: std.mem.Allocator) void {
+    for (self.rigs) |*rig| rig.deinit(gpa);
+    gpa.free(self.rigs);
+    for (self.image_slots) |slots| gpa.free(slots);
+    gpa.free(self.image_slots);
+    // Each row owns nodes, node names, clips, skins and surfaces. Freeing the array alone
+    // leaks all of it — one allocation per node name, per clip, per skin.
+    for (self.models) |*row| row.deinit(gpa);
     gpa.free(self.models);
     self.reloaded.deinit(gpa);
 }
@@ -51,6 +68,18 @@ pub fn handleForKind(kind: entity.Kind) ?u32 {
         if (std.mem.eql(u8, path, wanted)) return @intCast(index);
     }
     return null;
+}
+
+/// Which entity kind owns this row. The specs carry the "objects/" prefix that the watcher
+/// strips, so the comparison happens on the full path.
+pub fn kindForRow(row: u32) entity.Kind {
+    var buffer: [entity.all_kinds.len][]const u8 = undefined;
+    const wanted = paths(&buffer)[row];
+    for (entity.all_kinds) |kind| {
+        const model_spec = entity.spec(kind).model orelse continue;
+        if (std.mem.eql(u8, model_spec.path, wanted)) return kind;
+    }
+    unreachable;
 }
 
 pub fn modelPtr(self: *ModelTable, handle: u32) *Model {

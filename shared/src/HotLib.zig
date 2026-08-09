@@ -4,6 +4,10 @@
 //!
 //! The library is copied to a scratch path before opening, so a rebuild can overwrite the
 //! original while this process still has the old one mapped.
+//!
+//! A swapped-out build is NEVER closed mid-run, only at deinit. Anything that stored a
+//! pointer into it — a registered callback, a vtable — keeps pointing at code that still
+//! exists. Closing on swap turns every one of those into a jump into unmapped memory.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -32,13 +36,16 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
         handle: Handle,
 
         dynlib: DynLib,
+        /// Every build swapped out so far, kept mapped until deinit. See the header.
+        retired: std.ArrayList(DynLib),
+        gpa: std.mem.Allocator,
         mtime: std.Io.Timestamp,
         dir_path: []const u8,
         source_name: []const u8,
         copy_id: u64,
         process_id: u32,
 
-        pub fn init(comptime library_name: []const u8, io: std.Io) !Self {
+        pub fn init(comptime library_name: []const u8, gpa: std.mem.Allocator, io: std.Io) !Self {
             const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
             const search_paths: []const [:0]const u8 = &.{
                 "../lib/",
@@ -58,6 +65,8 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
                 .api = undefined,
                 .handle = undefined,
                 .dynlib = undefined,
+                .retired = .empty,
+                .gpa = gpa,
                 .mtime = .zero,
                 .dir_path = found_path,
                 .source_name = source_name,
@@ -70,6 +79,8 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
 
         pub fn deinit(self: *Self, io: std.Io) void {
             _ = io;
+            for (self.retired.items) |*old| old.close();
+            self.retired.deinit(self.gpa);
             self.dynlib.close();
         }
 
@@ -92,7 +103,7 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
             };
 
             @field(self.api, reload_symbol)(self.handle, true);
-            self.dynlib.close();
+            self.retired.append(self.gpa, self.dynlib) catch {};
             self.dynlib = next_dynlib;
             self.api = next_api;
             self.mtime = next_mtime;

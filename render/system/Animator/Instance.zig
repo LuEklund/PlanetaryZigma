@@ -3,9 +3,10 @@ const Instance = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = @import("numz");
-const Model = @import("assets").Model;
+const Model = @import("Assets").Model;
+const Rig = @import("../Rig.zig");
 const Shader = @import("contract").Shader;
-const Node = @import("assets").Node;
+const Node = @import("Assets").Node;
 
 model: u32,
 offset: nz.Transform3D(f32),
@@ -128,7 +129,7 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *Model) !Instance {
+pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *Model, rig: *const Rig) !Instance {
     return .{
         .model = model_handle,
         .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },
@@ -143,8 +144,8 @@ pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *Model) !Instance 
         .spawn_time = 0,
         .death_time = 0,
         .spin_time = 0,
-        .spawn_duration = model.spawn_duration,
-        .death_duration = model.death_duration,
+        .spawn_duration = rig.spawn_duration,
+        .death_duration = rig.death_duration,
         .skeleton = if (model.isSkinned()) try Skeleton.init(gpa, model) else null,
     };
 }
