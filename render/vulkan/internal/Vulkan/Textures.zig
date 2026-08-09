@@ -1,4 +1,4 @@
-const TextureLoader = @This();
+const Textures = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
@@ -15,7 +15,7 @@ missing: Image,
 skybox: ?Image,
 images: [Texture.paths_capacity]?Image,
 
-pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, table: *TextureTable) !void {
+pub fn init(self: *Textures, gpa: std.mem.Allocator, table: *TextureTable) !void {
 
     var blank: Image = try .init(
         table.vma,
@@ -63,7 +63,7 @@ pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, table: *TextureTable) 
     };
 }
 
-pub fn deinit(self: *TextureLoader) void {
+pub fn deinit(self: *Textures) void {
     const table = self.table;
     for (&self.images) |*slot| if (slot.*) |*image| image.deinit(table.vma, table.device);
     if (self.skybox) |*skybox| skybox.deinit(table.vma, table.device);
@@ -73,7 +73,7 @@ pub fn deinit(self: *TextureLoader) void {
 
 /// Replace one slot's GPU image from pixels the producer decoded. Six faces means a
 /// cubemap; the cross-split already happened above the boundary.
-pub fn apply(self: *TextureLoader, upload: DrawList.TextureUpload) !void {
+pub fn apply(self: *Textures, upload: DrawList.TextureUpload) !void {
     if (upload.faces.len == 6) return self.applyCubemap(upload);
 
     const table = self.table;
@@ -112,7 +112,7 @@ pub fn apply(self: *TextureLoader, upload: DrawList.TextureUpload) !void {
     table.write(upload.slot, image.vk_imageview, table.samplers.items[0]);
 }
 
-fn applyCubemap(self: *TextureLoader, upload: DrawList.TextureUpload) !void {
+fn applyCubemap(self: *Textures, upload: DrawList.TextureUpload) !void {
     const table = self.table;
 
     var cubemap: Image = try .init(

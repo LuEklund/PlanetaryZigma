@@ -1,4 +1,4 @@
-const FontLoader = @This();
+const Fonts = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
@@ -13,8 +13,8 @@ items: []Font,
 samplers: []c.VkSampler,
 atlases: []?Image,
 
-/// `fonts` is caller-owned: a loader-owned one would be a pointer into render.so.
-pub fn init(self: *FontLoader, gpa: std.mem.Allocator, table: *TextureTable, fonts: []Font) !void {
+/// `fonts` is caller-owned: one owned here would be a pointer into render.so.
+pub fn init(self: *Fonts, gpa: std.mem.Allocator, table: *TextureTable, fonts: []Font) !void {
     std.debug.assert(fonts.len == Font.files.len);
     const items = fonts;
     const samplers = try gpa.alloc(c.VkSampler, Font.files.len);
@@ -31,13 +31,13 @@ pub fn init(self: *FontLoader, gpa: std.mem.Allocator, table: *TextureTable, fon
     };
 }
 
-pub fn deinit(self: *FontLoader) void {
+pub fn deinit(self: *Fonts) void {
     for (0..self.items.len) |index| self.release(index);
     self.gpa.free(self.samplers);
     self.gpa.free(self.atlases);
 }
 
-fn release(self: *FontLoader, index: usize) void {
+fn release(self: *Fonts, index: usize) void {
     if (self.samplers[index] == null) return;
     self.table.free(self.gpa, self.items[index].atlas_texture_index);
     if (self.atlases[index]) |*atlas| atlas.deinit(self.table.vma, self.table.device);
@@ -47,7 +47,7 @@ fn release(self: *FontLoader, index: usize) void {
 }
 
 /// Upload a baked atlas and hand its slot number back through the shared fonts array.
-pub fn apply(self: *FontLoader, index: usize, coverage: []const u8) !void {
+pub fn apply(self: *Fonts, index: usize, coverage: []const u8) !void {
     const table = self.table;
     check(c.vkDeviceWaitIdle(table.device.handle)) catch {};
     self.release(index);

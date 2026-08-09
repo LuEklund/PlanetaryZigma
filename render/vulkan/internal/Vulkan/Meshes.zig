@@ -1,4 +1,4 @@
-const ModelLoader = @This();
+const Meshes = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
@@ -26,7 +26,7 @@ pub const Entry = struct {
     images: []Image,
 };
 
-pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, table: *TextureTable) !void {
+pub fn init(self: *Meshes, gpa: std.mem.Allocator, table: *TextureTable) !void {
     self.* = .{
         .gpa = gpa,
         .table = table,
@@ -34,11 +34,11 @@ pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, table: *TextureTable) !v
     };
 }
 
-pub fn deinit(self: *ModelLoader) void {
+pub fn deinit(self: *Meshes) void {
     for (0..self.entries.len) |index| self.release(index);
 }
 
-fn release(self: *ModelLoader, index: usize) void {
+fn release(self: *Meshes, index: usize) void {
     const gpa = self.gpa;
     const entry = &self.entries[index];
     if (entry.meshes.len == 0) return;
@@ -56,12 +56,12 @@ fn release(self: *ModelLoader, index: usize) void {
 
 /// Build the GPU half from an upload command. No parser types cross: geometry arrives as
 /// bytes and pixels, and `MeshUpload.skinned` says which layout to read the bytes as.
-pub fn apply(self: *ModelLoader, upload: DrawList.ModelUpload) !void {
+pub fn apply(self: *Meshes, upload: DrawList.ModelUpload) !void {
     self.release(upload.index);
     try self.uploadToGpu(self.gpa, &self.entries[upload.index], upload);
 }
 
-fn uploadToGpu(self: *ModelLoader, gpa: std.mem.Allocator, entry: *Entry, upload: DrawList.ModelUpload) !void {
+fn uploadToGpu(self: *Meshes, gpa: std.mem.Allocator, entry: *Entry, upload: DrawList.ModelUpload) !void {
     const device = self.table.device;
     const vma = self.table.vma;
 

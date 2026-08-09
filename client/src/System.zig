@@ -61,6 +61,7 @@ pub fn init(self: *System, data: Data) !void {
     self.io = data.io;
     self.window = data.window;
     self.asset_server = data.asset_server;
+
     try self.assets.init(data.gpa, data.asset_server);
     errdefer self.assets.deinit(data.gpa);
     self.animator = try .init(data.gpa);

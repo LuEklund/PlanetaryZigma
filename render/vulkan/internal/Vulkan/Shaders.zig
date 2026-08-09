@@ -1,4 +1,4 @@
-const ShaderLoader = @This();
+const Shaders = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
@@ -52,7 +52,7 @@ pub const Stages = struct {
     frag: Object,
 };
 
-pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, device: Device, layouts: std.EnumArray(Shader.Descriptor, c.VkDescriptorSetLayout)) !void {
+pub fn init(self: *Shaders, gpa: std.mem.Allocator, device: Device, layouts: std.EnumArray(Shader.Descriptor, c.VkDescriptorSetLayout)) !void {
     const shaders = try gpa.alloc(Stages, Shader.Kind.count);
     for (shaders) |*pair| {
         pair.vert.handle = null;
@@ -67,24 +67,24 @@ pub fn init(self: *ShaderLoader, gpa: std.mem.Allocator, device: Device, layouts
     };
 }
 
-pub fn deinit(self: *ShaderLoader) void {
+pub fn deinit(self: *Shaders) void {
     for (self.shaders) |*pair| for ([_]*Object{ &pair.vert, &pair.frag }) |shader| {
         if (shader.handle != null) shader.deinit();
     };
     self.gpa.free(self.shaders);
 }
 
-pub fn vert(self: *ShaderLoader, kind: Shader.Kind) *Object {
+pub fn vert(self: *Shaders, kind: Shader.Kind) *Object {
     return &self.shaders[@intFromEnum(kind)].vert;
 }
 
-pub fn frag(self: *ShaderLoader, kind: Shader.Kind) *Object {
+pub fn frag(self: *Shaders, kind: Shader.Kind) *Object {
     return &self.shaders[@intFromEnum(kind)].frag;
 }
 
 /// Replace one kind's GPU objects from bytes the producer read. Called while draining
 /// DrawList.shader_uploads, before any command buffer for this frame is recorded.
-pub fn apply(self: *ShaderLoader, kind: Shader.Kind, spirv: []align(4) const u8) !void {
+pub fn apply(self: *Shaders, kind: Shader.Kind, spirv: []align(4) const u8) !void {
     const spec = Shader.get(kind);
     const pair = &self.shaders[@intFromEnum(kind)];
 

@@ -6,8 +6,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Window = @import("Window");
 const Font = @import("shared").Font;
-const ModelLoader = @import("loader/ModelLoader.zig");
-const TextureTable = @import("loader/TextureTable.zig");
+const Meshes = @import("Vulkan/Meshes.zig");
+const TextureTable = @import("Vulkan/TextureTable.zig");
 const Texture = @import("shared").Texture;
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
@@ -23,7 +23,7 @@ const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Planet = @import("Planet.zig");
 const Shader = @import("shared").Shader;
-const ShaderLoader = @import("loader/ShaderLoader.zig");
+const Shaders = @import("Vulkan/Shaders.zig");
 const Ui = @import("shared").Ui;
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
@@ -140,10 +140,10 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     defer tracy_scope.end();
 
     for (list.asset_uploads) |upload| switch (upload) {
-        .shader => |shader| try self.resources.shader_loader.apply(shader.kind, shader.spirv),
-        .texture => |texture| try self.resources.texture_loader.apply(texture),
-        .font => |font| try self.resources.font_loader.apply(font.index, font.coverage),
-        .model => |model| try self.resources.model_loader.apply(model),
+        .shader => |shader| try self.resources.shaders.apply(shader.kind, shader.spirv),
+        .texture => |texture| try self.resources.textures.apply(texture),
+        .font => |font| try self.resources.fonts.apply(font.index, font.coverage),
+        .model => |model| try self.resources.meshes.apply(model),
     };
 
     try self.syncPlanet(self.gpa, list.planet);
@@ -296,7 +296,7 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
             c.VK_SHADER_STAGE_GEOMETRY_BIT,
         };
 
-        const bound = [_]c.VkShaderEXT{ self.resources.shader_loader.vert(.skinned).handle, self.resources.shader_loader.frag(.mesh).handle, null, null, null };
+        const bound = [_]c.VkShaderEXT{ self.resources.shaders.vert(.skinned).handle, self.resources.shaders.frag(.mesh).handle, null, null, null };
         ext.vkCmdBindShadersEXT(cmd, stages.len, &stages[0], &bound[0]);
     }
 
@@ -488,7 +488,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
     ext.vkCmdBeginRendering(cmd, &shadow_render_info);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.vert(.shadow_static).handle, null };
+        const handles = [_]c.VkShaderEXT{ self.resources.shaders.vert(.shadow_static).handle, null };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     }
     ext.vkCmdSetDepthBiasEnableEXT(cmd, c.VK_TRUE);
@@ -507,7 +507,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
         ext.vkCmdSetViewportWithCountEXT(cmd, 1, &shadow_viewport);
         ext.vkCmdSetScissorWithCountEXT(cmd, 1, &shadow_scissor);
 
-        bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_static));
+        bindVertexShader(cmd, self.resources.shaders.vert(.shadow_static));
         for (list.draw_meshes.items) |row| {
             if (row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
@@ -515,7 +515,7 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             drawMeshNode(self, cmd, current_frame, mesh, null, cascade_vp.mul(row.model_matrix));
         }
         for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, cascade_vp);
-        bindVertexShader(cmd, self.resources.shader_loader.vert(.shadow_skinned));
+        bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
@@ -555,8 +555,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
-    bindVertexShader(cmd, self.resources.shader_loader.vert(.static));
-    bindFragmentShader(cmd, self.resources.shader_loader.frag(.mesh));
+    bindVertexShader(cmd, self.resources.shaders.vert(.static));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.mesh));
     for (list.draw_meshes.items) |row| {
         if (row.skinned) continue;
         const mesh = meshOf(self, row.mesh) orelse continue;
@@ -565,7 +565,7 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     for (self.planet.meshes.values()) |*mesh| drawPlanetChunk(self, cmd, mesh, .identity);
 
-    bindVertexShader(cmd, self.resources.shader_loader.vert(.skinned));
+    bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
     for (list.draw_meshes.items) |row| {
         if (!row.skinned) continue;
         const mesh = meshOf(self, row.mesh) orelse continue;
@@ -583,7 +583,7 @@ fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fr
     ext.vkCmdSetDepthCompareOpEXT(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
     {
         const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-        const handle = [_]c.VkShaderEXT{ self.resources.shader_loader.vert(.sky).handle, self.resources.shader_loader.frag(.sky).handle };
+        const handle = [_]c.VkShaderEXT{ self.resources.shaders.vert(.sky).handle, self.resources.shaders.frag(.sky).handle };
         ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handle[0]);
     }
     const sky_bindings = [_]c.VkDescriptorBufferBindingInfoEXT{
@@ -644,16 +644,16 @@ fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *co
 
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
-    bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_static));
-    bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
+    bindVertexShader(cmd, self.resources.shaders.vert(.highlight_static));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.highlight_static));
     for (list.draw_meshes.items) |row| {
         if (!row.highlight or row.skinned) continue;
         const mesh = meshOf(self, row.mesh) orelse continue;
         drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
     }
 
-    bindVertexShader(cmd, self.resources.shader_loader.vert(.highlight_skinned));
-    bindFragmentShader(cmd, self.resources.shader_loader.frag(.highlight_static));
+    bindVertexShader(cmd, self.resources.shaders.vert(.highlight_skinned));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.highlight_static));
     for (list.draw_meshes.items) |row| {
         if (!row.highlight or !row.skinned) continue;
         const mesh = meshOf(self, row.mesh) orelse continue;
@@ -705,8 +705,8 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
         const batch = batches.get(effect);
         if (batch.emitter_count == 0) continue;
 
-        bindVertexShader(cmd, self.resources.shader_loader.vert(effect));
-        bindFragmentShader(cmd, self.resources.shader_loader.frag(effect));
+        bindVertexShader(cmd, self.resources.shaders.vert(effect));
+        bindFragmentShader(cmd, self.resources.shaders.frag(effect));
 
         const push: Shader.ParticlePushConstant = .{
             .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
@@ -723,7 +723,7 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
 
 fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
     const stages = [_]c.VkShaderStageFlagBits{ c.VK_SHADER_STAGE_VERTEX_BIT, c.VK_SHADER_STAGE_FRAGMENT_BIT };
-    const handles = [_]c.VkShaderEXT{ self.resources.shader_loader.vert(.debug).handle, self.resources.shader_loader.frag(.debug).handle };
+    const handles = [_]c.VkShaderEXT{ self.resources.shaders.vert(.debug).handle, self.resources.shaders.frag(.debug).handle };
     ext.vkCmdBindShadersEXT(cmd, 2, &stages[0], &handles[0]);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     c.vkCmdSetLineWidth(cmd, 1);
@@ -772,8 +772,8 @@ fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData
     };
 
     const bounds_ui = [_]c.VkShaderEXT{
-        self.resources.shader_loader.vert(.ui).handle,
-        self.resources.shader_loader.frag(.ui).handle,
+        self.resources.shaders.vert(.ui).handle,
+        self.resources.shaders.frag(.ui).handle,
     };
 
     ext.vkCmdBindShadersEXT(cmd, 2, &stages_ui[0], &bounds_ui[0]);
@@ -839,13 +839,13 @@ fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *c
     ext.vkCmdSetDescriptorBufferOffsetsEXT(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline_layout_handle, 2, 1, &buf_idx_2, &off_2);
 }
 
-fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void {
+fn bindVertexShader(cmd: c.VkCommandBuffer, shader: *Shaders.Object) void {
     const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_VERTEX_BIT};
     const handle = [_]c.VkShaderEXT{shader.handle};
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
 
-fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void {
+fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shaders.Object) void {
     const stage = [_]c.VkShaderStageFlagBits{c.VK_SHADER_STAGE_FRAGMENT_BIT};
     const handle = [_]c.VkShaderEXT{shader.handle};
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
@@ -856,7 +856,7 @@ fn meshOf(self: *Vulkan, ref: DrawList.MeshRef) ?*Mesh {
     return switch (ref) {
         .generated => |index| if (index < self.resources.generated.len) &self.resources.generated[index] else null,
         .file => |file| {
-            const entry = &self.resources.model_loader.entries[file.model];
+            const entry = &self.resources.meshes.entries[file.model];
             if (file.mesh >= entry.meshes.len) return null;
             return &entry.meshes[file.mesh];
         },

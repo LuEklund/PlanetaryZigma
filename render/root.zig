@@ -13,7 +13,6 @@ const Font = @import("shared").Font;
 
 pub const DrawList = @import("DrawList.zig");
 
-
 /// Upper bound on distinct model files. Comptime like every other bound in the codebase
 /// (max_entities, max_ui_quads, max_draw_meshes) so the backend allocates nothing for it —
 /// the array sits inside the block renderInit already made. Overflow is a loud assert, not
@@ -27,7 +26,7 @@ pub const Data = struct {
     window: *Window,
 };
 
-pub const Table = struct {
+pub const VTable = struct {
     renderInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     renderDeinit: *const fn (*anyopaque) callconv(.c) void,
     renderUpdate: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,

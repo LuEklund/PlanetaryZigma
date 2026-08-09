@@ -14,11 +14,11 @@ const Buffer = @import("Buffer.zig");
 const Shader = @import("shared").Shader;
 const FrameData = @import("FrameData.zig");
 const Ui = @import("shared").Ui;
-const TextureTable = @import("../loader/TextureTable.zig");
-const ModelLoader = @import("../loader/ModelLoader.zig");
-const TextureLoader = @import("../loader/TextureLoader.zig");
-const ShaderLoader = @import("../loader/ShaderLoader.zig");
-const FontLoader = @import("../loader/FontLoader.zig");
+const TextureTable = @import("TextureTable.zig");
+const Meshes = @import("Meshes.zig");
+const Textures = @import("Textures.zig");
+const Shaders = @import("Shaders.zig");
+const Fonts = @import("Fonts.zig");
 const Font = @import("shared").Font;
 const DrawList = @import("render").DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
@@ -39,10 +39,10 @@ vma: Vma,
 device: Device,
 
 texture_table: TextureTable,
-model_loader: *ModelLoader,
-texture_loader: *TextureLoader,
-shader_loader: *ShaderLoader,
-font_loader: *FontLoader,
+meshes: *Meshes,
+textures: *Textures,
+shaders: *Shaders,
+fonts: *Fonts,
 generated: [DrawList.max_generated]Mesh,
 
 descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout),
@@ -216,10 +216,10 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
     const self = try gpa.create(Resources);
     self.* = .{
         .texture_table = undefined,
-        .model_loader = undefined,
-        .texture_loader = undefined,
-        .shader_loader = undefined,
-        .font_loader = undefined,
+        .meshes = undefined,
+        .textures = undefined,
+        .shaders = undefined,
+        .fonts = undefined,
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
@@ -240,19 +240,19 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
         descriptor_layouts.get(.material).handle,
         physical_device.combined_image_sampler_descriptor_size,
     );
-    self.model_loader = try gpa.create(ModelLoader);
-    try self.model_loader.init(gpa, &self.texture_table);
-    self.texture_loader = try gpa.create(TextureLoader);
-    try self.texture_loader.init(gpa, &self.texture_table);
-    self.shader_loader = try gpa.create(ShaderLoader);
-    try self.shader_loader.init(gpa, device, .init(.{
+    self.meshes = try gpa.create(Meshes);
+    try self.meshes.init(gpa, &self.texture_table);
+    self.textures = try gpa.create(Textures);
+    try self.textures.init(gpa, &self.texture_table);
+    self.shaders = try gpa.create(Shaders);
+    try self.shaders.init(gpa, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
         .material = descriptor_layouts.get(.material).handle,
         .textures = descriptor_layouts.get(.textures).handle,
         .shadow = descriptor_layouts.get(.shadow).handle,
     }));
-    self.font_loader = try gpa.create(FontLoader);
-    try self.font_loader.init(gpa, &self.texture_table, fonts);
+    self.fonts = try gpa.create(Fonts);
+    try self.fonts.init(gpa, &self.texture_table, fonts);
 
     for (&self.generated) |*mesh| mesh.* = try makeBoxMesh(gpa, self.vma, self.device, "generated");
 
@@ -260,14 +260,14 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
 }
 
 pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device) void {
-    self.model_loader.deinit();
-    gpa.destroy(self.model_loader);
-    self.texture_loader.deinit();
-    gpa.destroy(self.texture_loader);
-    self.font_loader.deinit();
-    gpa.destroy(self.font_loader);
-    self.shader_loader.deinit();
-    gpa.destroy(self.shader_loader);
+    self.meshes.deinit();
+    gpa.destroy(self.meshes);
+    self.textures.deinit();
+    gpa.destroy(self.textures);
+    self.fonts.deinit();
+    gpa.destroy(self.fonts);
+    self.shaders.deinit();
+    gpa.destroy(self.shaders);
     self.texture_table.deinit(gpa);
     for (&self.generated) |*mesh| mesh.deinit(gpa, self.vma);
     for (self.descriptor_layouts.values) |layout| {
