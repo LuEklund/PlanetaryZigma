@@ -6,18 +6,22 @@
 const FontSource = @This();
 
 const std = @import("std");
+const shared = @import("shared");
 const stbTruetype = @import("stb_truetype");
 const Font = @import("shared").Font;
 const AssetServer = @import("assets").AssetServer;
-const render = @import("contract");
+const contract = @import("contract");
 
 const Loader = AssetServer.Loader;
+/// The loaded renderer library: its table and the state block it goes with.
+const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+
 
 gpa: std.mem.Allocator,
 fonts: []Font,
 coverage: [Font.count]?[]u8,
 /// Read only inside `load`, which the owner runs after the renderer exists.
-renderer: *const render.Renderer,
+renderer: *const RenderLib,
 interface: Loader,
 
 pub fn init(
@@ -25,7 +29,7 @@ pub fn init(
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
     fonts: []Font,
-    renderer: *const render.Renderer,
+    renderer: *const RenderLib,
 ) !void {
     std.debug.assert(fonts.len == Font.files.len);
     @memset(fonts, .empty);
@@ -61,9 +65,9 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     self.coverage[index] = coverage;
 
     if (self.fonts[index].atlas_texture_index != 0) {
-        self.renderer.vtable.freeImage(self.renderer.userdata, self.fonts[index].atlas_texture_index);
+        self.renderer.api.freeImage(self.renderer.handle, self.fonts[index].atlas_texture_index);
     }
-    self.fonts[index].atlas_texture_index = self.renderer.vtable.uploadImage(self.renderer.userdata, &.{
+    self.fonts[index].atlas_texture_index = self.renderer.api.uploadImage(self.renderer.handle, &.{
         .width = Font.atlas_width,
         .height = Font.atlas_height,
         .pixels = coverage,

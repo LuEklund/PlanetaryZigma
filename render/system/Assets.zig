@@ -8,10 +8,14 @@
 const Assets = @This();
 
 const std = @import("std");
+const shared = @import("shared");
 const assets = @import("assets");
 const Font = @import("shared").Font;
 const Texture = @import("shared").Texture;
-const render = @import("contract");
+const contract = @import("contract");
+/// The loaded renderer library: its table and the state block it goes with.
+const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+
 const DrawList = @import("contract").DrawList;
 
 const ShaderSource = @import("Assets/ShaderSource.zig");
@@ -33,7 +37,7 @@ pub fn init(
     self: *Assets,
     gpa: std.mem.Allocator,
     asset_server: *assets.AssetServer,
-    renderer: *const render.Renderer,
+    renderer: *const RenderLib,
 ) !void {
     self.fonts = @splat(.empty);
     self.models = try .init(gpa);
@@ -58,13 +62,13 @@ pub fn deinit(self: *Assets, gpa: std.mem.Allocator) void {
 
 /// The primitives are assets like any other: generated here, uploaded through the same
 /// door. Call once, after the renderer exists.
-pub fn uploadGenerated(self: *Assets, renderer: *const render.Renderer) void {
-    const surfaces = [_]render.SurfaceUpload{.{
+pub fn uploadGenerated(self: *Assets, renderer: *const RenderLib) void {
+    const surfaces = [_]contract.SurfaceUpload{.{
         .index_start = 0,
         .index_count = @intCast(assets.box.indices.len),
         .texture_slot = @intCast(Texture.slot(.blank)),
     }};
-    const handle = renderer.vtable.uploadMesh(renderer.userdata, .none, &.{
+    const handle = renderer.api.uploadMesh(renderer.handle, .none, &.{
         .name = "generated",
         .vertices = std.mem.sliceAsBytes(assets.box.vertices),
         .skinned = false,

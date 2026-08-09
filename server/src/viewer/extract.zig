@@ -45,7 +45,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
     // renderer and keep the handle. Before the rows, so a chunk uploaded this frame draws.
     for (world.planet.removes.items) |removed| {
         if (removed.mesh_handle == 0) continue;
-        viewer.renderer.vtable.freeMesh(viewer.renderer.userdata, @enumFromInt(removed.mesh_handle));
+        viewer.render.api.freeMesh(viewer.render.handle, @enumFromInt(removed.mesh_handle));
     }
     for (world.planet.uploads.items) |chunk_upload| {
         const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
@@ -54,7 +54,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             .index_count = @intCast(chunk_upload.indices.len),
             .texture_slot = render.blank_texture,
         }};
-        entry.mesh_handle = @intFromEnum(viewer.renderer.vtable.uploadMesh(viewer.renderer.userdata, @enumFromInt(entry.mesh_handle), &.{
+        entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(entry.mesh_handle), &.{
             .name = "chunk",
             .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
             .skinned = false,
@@ -126,7 +126,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         });
     }
 
-    viewer.renderer.vtable.update(viewer.renderer.userdata, list);
+    viewer.render.api.update(viewer.render.handle, list);
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };

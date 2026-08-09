@@ -46,7 +46,7 @@ resources: *Resources,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
-pub fn init(data: *const contract.Renderer.InitOptions) !*Vulkan {
+pub fn init(data: *const contract.InitOptions) !*Vulkan {
     const gpa = data.gpa;
     const window: *Window = @ptrCast(@alignCast(data.window));
     const self = try gpa.create(Vulkan);

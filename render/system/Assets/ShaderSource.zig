@@ -7,24 +7,28 @@
 const ShaderSource = @This();
 
 const std = @import("std");
+const shared = @import("shared");
 const Shader = @import("contract").Shader;
 const AssetServer = @import("assets").AssetServer;
-const render = @import("contract");
+const contract = @import("contract");
 
 const Loader = AssetServer.Loader;
+/// The loaded renderer library: its table and the state block it goes with.
+const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+
 
 gpa: std.mem.Allocator,
 /// One owned buffer per kind, kept so a reload can free the previous bytes.
 spirv: [Shader.Kind.count]?[]align(4) u8,
 /// Read only inside `load`, which the owner runs after the renderer exists.
-renderer: *const render.Renderer,
+renderer: *const RenderLib,
 interface: Loader,
 
 pub fn init(
     self: *ShaderSource,
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
-    renderer: *const render.Renderer,
+    renderer: *const RenderLib,
 ) !void {
     const files = try gpa.alloc([]const u8, Shader.Kind.count);
     for (std.enums.values(Shader.Kind), files) |kind, *file| file.* = Shader.get(kind).path;
@@ -66,7 +70,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     if (self.spirv[index]) |old| self.gpa.free(old);
     self.spirv[index] = bytes;
 
-    self.renderer.vtable.uploadShader(self.renderer.userdata, @intCast(index), bytes.ptr, bytes.len);
+    self.renderer.api.uploadShader(self.renderer.handle, @intCast(index), bytes.ptr, bytes.len);
 }
 
 fn unload(loader: *Loader, index: usize) void {

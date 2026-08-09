@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     defer steam_server.deinit();
     steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
-    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemInit", "systemReload") = try .init("system_server", io);
+    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemReload") = try .init("system_server", io);
     defer system_lib.deinit(io);
 
     var world: World = try .init(gpa, dev_mode);
@@ -78,8 +78,9 @@ pub fn main(init: std.process.Init) !void {
     };
 
     var system_instance: System = undefined;
+    system_lib.handle = &system_instance;
 
-    if (!system_lib.symbols.systemInit(&system_instance, &System.Data{
+    if (!system_lib.api.systemInit(&system_instance, &System.Data{
         .io = io,
         .world = &world,
         .gpa = gpa,
@@ -88,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
         .asset_server = if (build_options.viewer) &asset_server else {},
     })) return error.SystemInit;
 
-    defer system_lib.symbols.systemDeinit(&system_instance);
+    defer system_lib.api.systemDeinit(&system_instance);
 
     var loop_time_tracker: f32 = 0;
     const time_step: f32 = shared.tick_seconds;
@@ -106,9 +107,9 @@ pub fn main(init: std.process.Init) !void {
         world.delta_time = time_step;
         loop_time_tracker -= time_step;
 
-        system_lib.symbols.systemUpdate(&system_instance, &world);
+        system_lib.api.systemUpdate(&system_instance, &world);
 
-        system_lib.trySwap(io, &system_instance) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        system_lib.trySwap(io) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
     steam_server.handle_packets_future.cancel(io) catch |err| {
         std.log.err("packet pump exit: {s}", .{@errorName(err)});

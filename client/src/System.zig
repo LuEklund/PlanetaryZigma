@@ -6,12 +6,12 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
-pub const AssetServer = @import("assets").AssetServer;
+const AssetServer = @import("assets").AssetServer;
 const render_system = @import("render_system");
 const Emitter = @import("render_system").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
-const render = @import("contract");
+const contract = @import("contract");
 const DrawList = @import("contract").DrawList;
 
 const menu_world = @import("system/menu.zig");
@@ -35,8 +35,7 @@ gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
 asset_server: *AssetServer,
-render_lib: shared.HotLib(render.Renderer.VTable, *anyopaque, "init", "reload"),
-renderer: render.Renderer,
+render: shared.HotLib(contract.Api, *anyopaque, "reload"),
 draw_list: DrawList,
 assets: render_system.Assets,
 animator: render_system.Animator,
@@ -62,31 +61,28 @@ pub fn init(self: *System, data: Data) !void {
     self.window = data.window;
     self.asset_server = data.asset_server;
 
-    try self.assets.init(data.gpa, data.asset_server, &self.renderer);
+    try self.assets.init(data.gpa, data.asset_server, &self.render);
     errdefer self.assets.deinit(data.gpa);
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
-    self.render_lib = try .init("render", data.io);
-    errdefer self.render_lib.deinit(data.io);
-    self.renderer = .{
-        .vtable = &self.render_lib.symbols,
-        .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
-            .gpa = data.gpa,
-            .io = data.io,
-            .window = @ptrCast(data.window),
-            .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
-        }) orelse return error.RenderInit,
-    };
-    errdefer self.renderer.vtable.deinit(self.renderer.userdata);
+    self.render = try .init("render", data.io);
+    errdefer self.render.deinit(data.io);
+    self.render.handle = self.render.api.init(&contract.InitOptions{
+        .gpa = data.gpa,
+        .io = data.io,
+        .window = @ptrCast(data.window),
+        .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
+    }) orelse return error.RenderInit;
+    errdefer self.render.api.deinit(self.render.handle);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
 
     // render.so is up, so parsing can start; the uploads drain on the first frame.
     try data.asset_server.load();
-    self.assets.uploadGenerated(&self.renderer);
+    self.assets.uploadGenerated(&self.render);
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
@@ -103,8 +99,8 @@ pub fn deinit(self: *System) void {
     self.animator.deinit();
     // Before the renderer: freeing a model's images is a call INTO render.so.
     self.assets.deinit(self.gpa);
-    self.renderer.vtable.deinit(self.renderer.userdata);
-    self.render_lib.deinit(self.io);
+    self.render.api.deinit(self.render.handle);
+    self.render.deinit(self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -154,7 +150,7 @@ pub fn update(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     try extract.frame(self, world, self.scene != .particle_lab);
-    self.render_lib.trySwap(self.io, self.renderer.userdata) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
+    self.render.trySwap(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
     try self.asset_server.reloadChangedAssets();
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
@@ -246,7 +242,7 @@ comptime {
     if (@import("builtin").output_mode == .Lib) _ = ffi;
 }
 
-pub const Table = struct {
+pub const Api = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,

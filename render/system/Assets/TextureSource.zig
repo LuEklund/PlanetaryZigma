@@ -6,13 +6,17 @@
 const TextureSource = @This();
 
 const std = @import("std");
+const shared = @import("shared");
 const Texture = @import("shared").Texture;
 const AssetServer = @import("assets").AssetServer;
 const Bitmap = @import("assets").Bitmap;
-const render = @import("contract");
+const contract = @import("contract");
 const DrawList = @import("contract").DrawList;
 
 const Loader = AssetServer.Loader;
+/// The loaded renderer library: its table and the state block it goes with.
+const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+
 const channels: u32 = 4;
 
 const Owned = struct {
@@ -24,14 +28,14 @@ const Owned = struct {
 gpa: std.mem.Allocator,
 owned: [Texture.paths_capacity]?Owned,
 /// Read only inside `load`, which the owner runs after the renderer exists.
-renderer: *const render.Renderer,
+renderer: *const RenderLib,
 interface: Loader,
 
 pub fn init(
     self: *TextureSource,
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
-    renderer: *const render.Renderer,
+    renderer: *const RenderLib,
 ) !void {
     var path_buffer: [Texture.paths_capacity][]const u8 = undefined;
     const texture_paths = Texture.paths(&path_buffer);
@@ -104,7 +108,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     if (self.owned[index]) |old| self.free(old);
     self.owned[index] = owned;
 
-    self.renderer.vtable.uploadTexture(self.renderer.userdata, &.{
+    self.renderer.api.uploadTexture(self.renderer.handle, &.{
         .slot = slot,
         .width = width,
         .height = height,
@@ -117,7 +121,7 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
 /// is exempt: a 2D fallback cannot stand in for a cube view.
 fn pushFallback(self: *TextureSource, slot: u32) !void {
     if (slot == Texture.slot(.skybox_cubemap)) return;
-    self.renderer.vtable.uploadTexture(self.renderer.userdata, &.{
+    self.renderer.api.uploadTexture(self.renderer.handle, &.{
         .slot = slot,
         .width = 0,
         .height = 0,

@@ -3,7 +3,7 @@ const Viewer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const render = @import("contract");
+const contract = @import("contract");
 const render_system = @import("render_system");
 const Emitter = @import("render_system").Emitter;
 const AssetServer = @import("assets").AssetServer;
@@ -16,8 +16,7 @@ const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-render_lib: shared.HotLib(render.Renderer.VTable, *anyopaque, "init", "reload"),
-renderer: render.Renderer,
+render: shared.HotLib(contract.Api, *anyopaque, "reload"),
 draw_list: DrawList,
 window: *Window,
 assets: render_system.Assets,
@@ -32,31 +31,28 @@ arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
-    try self.assets.init(gpa, asset_server, &self.renderer);
+    try self.assets.init(gpa, asset_server, &self.render);
     errdefer self.assets.deinit(gpa);
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
     self.window = window;
-    self.render_lib = try .init("render", io);
-    errdefer self.render_lib.deinit(io);
-    self.renderer = .{
-        .vtable = &self.render_lib.symbols,
-        .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
-            .gpa = gpa,
-            .io = io,
-            .window = @ptrCast(window),
-            .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
-        }) orelse return error.RenderInit,
-    };
-    errdefer self.renderer.vtable.deinit(self.renderer.userdata);
+    self.render = try .init("render", io);
+    errdefer self.render.deinit(io);
+    self.render.handle = self.render.api.init(&contract.InitOptions{
+        .gpa = gpa,
+        .io = io,
+        .window = @ptrCast(window),
+        .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
+    }) orelse return error.RenderInit;
+    errdefer self.render.api.deinit(self.render.handle);
 
     self.draw_list = try .init(gpa);
     errdefer self.draw_list.deinit(gpa);
 
     try asset_server.load();
-    self.assets.uploadGenerated(&self.renderer);
+    self.assets.uploadGenerated(&self.render);
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
@@ -75,8 +71,8 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.animator.deinit();
     // Before the renderer: freeing a model's images is a call INTO render.so.
     self.assets.deinit(gpa);
-    self.renderer.vtable.deinit(self.renderer.userdata);
-    self.render_lib.deinit(io);
+    self.render.api.deinit(self.render.handle);
+    self.render.deinit(io);
 }
 
 /// Returns true when the window asks the server to stop.
@@ -126,6 +122,6 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     }
 
     try extract.frame(world, self);
-    try self.render_lib.trySwap(io, self.renderer.userdata);
+    try self.render.trySwap(io);
     return quit;
 }

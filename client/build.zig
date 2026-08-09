@@ -62,6 +62,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
+                .{ .name = "assets", .module = assets },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },

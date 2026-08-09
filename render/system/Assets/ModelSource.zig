@@ -10,12 +10,15 @@ const std = @import("std");
 const shared = @import("shared");
 const entity = shared.entity;
 const AssetServer = @import("assets").AssetServer;
-const render = @import("contract");
+const contract = @import("contract");
 const ModelTable = @import("assets").ModelTable;
 const Model = @import("assets").Model;
 const Texture = @import("shared").Texture;
 
 const Loader = AssetServer.Loader;
+/// The loaded renderer library: its table and the state block it goes with.
+const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+
 const gltf = @import("assets").gltf;
 
 /// glTF keeps its own generic shape; the contract does not name it. This is the adapter.
@@ -30,7 +33,7 @@ kinds: []entity.Kind,
 /// Texture slots the backend handed back for this model's embedded images. Ours to free
 /// on a reload, because the backend allocated them at our request.
 image_slots: [][]u32,
-renderer: *const render.Renderer,
+renderer: *const RenderLib,
 interface: Loader,
 
 pub fn init(
@@ -38,7 +41,7 @@ pub fn init(
     gpa: std.mem.Allocator,
     asset_server: *AssetServer,
     models: *ModelTable,
-    renderer: *const render.Renderer,
+    renderer: *const RenderLib,
 ) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
     const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
@@ -75,7 +78,7 @@ pub fn deinit(self: *ModelSource) void {
 }
 
 fn releaseImages(self: *ModelSource, index: usize) void {
-    for (self.image_slots[index]) |slot| self.renderer.vtable.freeImage(self.renderer.userdata, slot);
+    for (self.image_slots[index]) |slot| self.renderer.api.freeImage(self.renderer.handle, slot);
     self.gpa.free(self.image_slots[index]);
     self.image_slots[index] = &.{};
 }
@@ -126,7 +129,7 @@ fn upload(self: *ModelSource, index: usize, model: *Model, parsed: *const Parsed
                 const sampler = if (sampler_index) |sampler| data.samplers[sampler] else null;
                 const width: u32 = @intCast(image.width);
                 const height: u32 = @intCast(image.height);
-                slot.* = renderer.vtable.uploadImage(renderer.userdata, &.{
+                slot.* = renderer.api.uploadImage(renderer.handle, &.{
                     .width = width,
                     .height = height,
                     .pixels = image.pixels[0 .. width * height * 4],
@@ -141,7 +144,7 @@ fn upload(self: *ModelSource, index: usize, model: *Model, parsed: *const Parsed
             const handles = try gpa.alloc(usize, data.meshes.len);
             errdefer gpa.free(handles);
             for (data.meshes, handles) |mesh, *handle| {
-                const surfaces = try gpa.alloc(render.SurfaceUpload, mesh.surfaces.len);
+                const surfaces = try gpa.alloc(contract.SurfaceUpload, mesh.surfaces.len);
                 defer gpa.free(surfaces);
                 for (mesh.surfaces, surfaces) |src, *surface| surface.* = .{
                     .index_start = src.index_start,
@@ -153,7 +156,7 @@ fn upload(self: *ModelSource, index: usize, model: *Model, parsed: *const Parsed
                     else
                         Texture.slot(.blank)),
                 };
-                handle.* = @intFromEnum(renderer.vtable.uploadMesh(renderer.userdata, .none, &.{
+                handle.* = @intFromEnum(renderer.api.uploadMesh(renderer.handle, .none, &.{
                     .name = mesh.name,
                     .vertices = std.mem.sliceAsBytes(mesh.vertices),
                     .skinned = tag == .skinned,

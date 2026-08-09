@@ -22,44 +22,37 @@ pub const highlight_mask_texture: u32 = 2;
 /// so they live with the renderer rather than in the game's wire contract.
 pub const Shader = @import("Shader.zig");
 
-pub const Renderer = struct {
-    userdata: *anyopaque,
-    /// Points AT the loader's table, never a copy of it: a hot swap rewrites that table in
-    /// place, and a copy would go on calling the closed image.
-    vtable: *const VTable,
+pub const InitOptions = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    /// The platform window, opaque here on purpose: what a window is belongs to the
+    /// platform layer and the implementation, not to the ABI between them.
+    window: *anyopaque,
+    /// Slots below this are the producer's to name; the backend allocates above it.
+    first_dynamic_texture_slot: u32,
+};
 
-    pub const InitOptions = struct {
-        gpa: std.mem.Allocator,
-        io: std.Io,
-        /// The platform window, opaque here on purpose: what a window is belongs to the
-        /// platform layer and the implementation, not to the ABI between them.
-        window: *anyopaque,
-        /// Slots below this are the producer's to name; the backend allocates above it.
-        first_dynamic_texture_slot: u32,
-    };
+/// Field names ARE the exported symbol names — HotLib resolves by field. render.so is
+/// dlopened RTLD_LOCAL, so short names here do not enter the global namespace.
+pub const Api = struct {
+    init: *const fn (options: *const InitOptions) callconv(.c) ?*anyopaque,
+    deinit: *const fn (*anyopaque) callconv(.c) void,
+    update: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
+    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 
-    /// Field names ARE the exported symbol names — HotLib resolves by field. render.so is
-    /// dlopened RTLD_LOCAL, so short names here do not enter the global namespace.
-    pub const VTable = struct {
-        init: *const fn (options: *const InitOptions) callconv(.c) ?*anyopaque,
-        deinit: *const fn (*anyopaque) callconv(.c) void,
-        update: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
-        reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
+    /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary.
+    /// Kind IS the handle: the render passes bind shaders by kind, so nothing comes back.
+    uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
+    /// Slot rides inside the upload: file textures are a comptime set, so the producer
+    /// already names them and `Ui` reads the same numbers.
+    uploadTexture: *const fn (*anyopaque, upload: *const DrawList.TextureUpload) callconv(.c) void,
 
-        /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary.
-        /// Kind IS the handle: the render passes bind shaders by kind, so nothing comes back.
-        uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
-        /// Slot rides inside the upload: file textures are a comptime set, so the producer
-        /// already names them and `Ui` reads the same numbers.
-        uploadTexture: *const fn (*anyopaque, upload: *const DrawList.TextureUpload) callconv(.c) void,
-
-        /// Runtime-created, so the backend names them. `old` is freed first; pass `.none`
-        /// on a first load. Both return 0 / `.none` on failure.
-        uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
-        uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
-        freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
-        freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
-    };
+    /// Runtime-created, so the backend names them. `old` is freed first; pass `.none`
+    /// on a first load. Both return 0 / `.none` on failure.
+    uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
+    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
+    freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
+    freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
 };
 
 /// What the backend hands back for an uploaded mesh. Its bits are the backend's business.

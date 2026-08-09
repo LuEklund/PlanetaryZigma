@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const System = @import("system");
+const AssetServer = @import("assets").AssetServer;
 const World = System.World;
 const Window = @import("Window");
 const tracy = @import("ztracy");
@@ -37,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var system_lib: shared.HotLib(System.Table, *anyopaque, "systemInit", "systemReload") = try .init("system_client", io);
+    var system_lib: shared.HotLib(System.Api, *anyopaque, "systemReload") = try .init("system_client", io);
     defer system_lib.deinit(io);
 
     var window: Window = undefined;
@@ -51,14 +52,14 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close();
 
-    var asset_server = try System.AssetServer.init(gpa, init.io);
+    var asset_server = try AssetServer.init(gpa, init.io);
     defer asset_server.deinit();
 
     var world: World = try .init(gpa);
     defer world.deinit();
 
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
-    const system: *anyopaque = system_lib.symbols.systemInit(&System.Data{
+    system_lib.handle = system_lib.api.systemInit(&System.Data{
         .gpa = gpa,
         .asset_server = &asset_server,
         .window = &window,
@@ -67,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
         .steam_client = &steam_client,
     }) orelse return error.SystemInit;
     ctx_zone.end();
-    defer system_lib.symbols.systemDeinit(system);
+    defer system_lib.api.systemDeinit(system_lib.handle);
 
     var accumulated_time: f32 = 0;
     var fps_window_seconds: f32 = 0;
@@ -94,14 +95,8 @@ pub fn main(init: std.process.Init) !void {
             fps_window_seconds = 0;
         }
 
-        if (system_lib.symbols.systemUpdate(system, &world)) break;
-
-        const keypad_0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
-        for (0..10) |generation| {
-            if (window.keyboard.get(@enumFromInt(keypad_0 + generation)) != .release) continue;
-            system_lib.rewind(generation, system) catch |err| std.log.err("system rewind: {s}", .{@errorName(err)});
-            break;
-        } else system_lib.trySwap(io, system) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        if (system_lib.api.systemUpdate(system_lib.handle, &world)) break;
+        system_lib.trySwap(io) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
     }
 }
 

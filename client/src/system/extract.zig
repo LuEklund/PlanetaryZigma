@@ -37,7 +37,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     // renderer and keep the handle. Before the rows, so a chunk uploaded this frame draws.
     for (world.planet.removes.items) |removed| {
         if (removed.mesh_handle == 0) continue;
-        system.renderer.vtable.freeMesh(system.renderer.userdata, @enumFromInt(removed.mesh_handle));
+        system.render.api.freeMesh(system.render.handle, @enumFromInt(removed.mesh_handle));
     }
     for (world.planet.uploads.items) |chunk_upload| {
         const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
@@ -46,7 +46,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             .index_count = @intCast(chunk_upload.indices.len),
             .texture_slot = render.blank_texture,
         }};
-        entry.mesh_handle = @intFromEnum(system.renderer.vtable.uploadMesh(system.renderer.userdata, @enumFromInt(entry.mesh_handle), &.{
+        entry.mesh_handle = @intFromEnum(system.render.api.uploadMesh(system.render.handle, @enumFromInt(entry.mesh_handle), &.{
             .name = "chunk",
             .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
             .skinned = false,
@@ -129,7 +129,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         });
     }
 
-    system.renderer.vtable.update(system.renderer.userdata, list);
+    system.render.api.update(system.render.handle, list);
 }
 
 fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
