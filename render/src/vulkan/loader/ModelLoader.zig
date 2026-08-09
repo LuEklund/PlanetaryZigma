@@ -4,91 +4,68 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const entity = shared.entity;
-const AssetServer = @import("../../AssetServer.zig");
-const Loader = AssetServer.Loader;
-const Model = @import("../../asset/Model.zig");
-const gltf = @import("../../asset/gltf.zig");
+const gltf = @import("render").gltf;
+const DrawList = @import("render").DrawList;
+const ModelTable = @import("render").ModelTable;
 const Mesh = @import("../Vulkan/Mesh.zig");
 const Image = @import("../Vulkan/Image.zig");
 const Buffer = @import("../Vulkan/Buffer.zig");
 const TextureTable = @import("TextureTable.zig");
-const ModelTable = @import("../../asset/ModelTable.zig");
 const check = @import("../Vulkan/utils.zig").check;
 
+gpa: std.mem.Allocator,
 table: *TextureTable,
-models: *ModelTable,
 entries: []Entry,
-interface: Loader,
 
 /// The GPU half only — the CPU `Model` lives in the caller-owned `ModelTable`.
 pub const Entry = struct {
-    kind: entity.Kind,
     meshes: []Mesh,
     image_slots: []Image.Handle,
     images: []Image,
 };
 
-pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, models: *ModelTable) !void {
+pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, table: *TextureTable) !void {
     var path_buffer: [entity.all_kinds.len][]const u8 = undefined;
     const model_paths = ModelTable.pathsByFileIndex(&path_buffer);
-    const files = try gpa.alloc([]const u8, model_paths.len);
     const entries = try gpa.alloc(Entry, model_paths.len);
-    for (model_paths, entries, files) |path, *entry, *file| {
-        entry.* = .{ .kind = kindForPath(path), .meshes = &.{}, .image_slots = &.{}, .images = &.{} };
-        file.* = path["objects/".len..];
-    }
+    for (entries) |*entry| entry.* = .{ .meshes = &.{}, .image_slots = &.{}, .images = &.{} };
 
     self.* = .{
+        .gpa = gpa,
         .table = table,
-        .models = models,
         .entries = entries,
-        .interface = .{
-            .gpa = gpa,
-            .io = asset_server.io,
-            .root_path = "objects",
-            .files = files,
-            .vtable = &.{ .load = load, .unload = unload },
-        },
     };
-    try asset_server.addLoader(&self.interface);
 }
 
 pub fn deinit(self: *ModelLoader) void {
-    const gpa = self.interface.gpa;
-    for (0..self.entries.len) |index| unload(&self.interface, index);
-    gpa.free(self.entries);
-    gpa.free(self.interface.files);
+    for (0..self.entries.len) |index| self.release(index);
+    self.gpa.free(self.entries);
 }
 
-fn kindForPath(path: []const u8) entity.Kind {
-    for (entity.all_kinds) |kind| {
-        const model_spec = entity.spec(kind).model orelse continue;
-        if (std.mem.eql(u8, model_spec.path, path)) return kind;
-    }
-    unreachable;
-}
-
-fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usize) !void {
-    const self: *ModelLoader = @fieldParentPtr("interface", loader);
-    const gpa = loader.gpa;
-    const io = loader.io;
-    const file = try err_file;
-    unload(loader, index);
-
+fn release(self: *ModelLoader, index: usize) void {
+    const gpa = self.gpa;
     const entry = &self.entries[index];
-    const model = &self.models.models[index];
-    const kind_spec = entity.spec(entry.kind);
-    const model_spec = kind_spec.model orelse return;
-    if (model_spec.clip_names != null) {
-        var upload_data = try model.parseGlb(Mesh.SkinnedVertex, gpa, io, file, kind_spec, model_spec);
-        defer upload_data.deinit(gpa);
-        try self.uploadToGpu(Mesh.SkinnedVertex, gpa, entry, upload_data);
-    } else {
-        var upload_data = try model.parseGlb(Mesh.StaticVertex, gpa, io, file, kind_spec, model_spec);
-        defer upload_data.deinit(gpa);
-        try self.uploadToGpu(Mesh.StaticVertex, gpa, entry, upload_data);
+    if (entry.meshes.len == 0) return;
+    check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
+    for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
+    gpa.free(entry.meshes);
+    entry.meshes = &.{};
+    for (entry.image_slots) |slot| self.table.free(gpa, @intFromEnum(slot));
+    gpa.free(entry.image_slots);
+    entry.image_slots = &.{};
+    for (entry.images) |*image| image.deinit(self.table.vma, self.table.device);
+    gpa.free(entry.images);
+    entry.images = &.{};
+}
+
+/// Build the GPU half from geometry the producer already parsed.
+pub fn apply(self: *ModelLoader, upload: DrawList.ModelUpload) !void {
+    self.release(upload.index);
+    const entry = &self.entries[upload.index];
+    switch (upload.data) {
+        .static => |data| try self.uploadToGpu(Mesh.StaticVertex, self.gpa, entry, data),
+        .skinned => |data| try self.uploadToGpu(Mesh.SkinnedVertex, self.gpa, entry, data),
     }
-    try self.models.reloaded.append(gpa, @intCast(index));
 }
 
 fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Allocator, entry: *Entry, upload: gltf.UploadData(VertexType)) !void {
@@ -149,24 +126,4 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
     entry.meshes = meshes;
     entry.image_slots = image_slots;
     entry.images = images;
-}
-
-fn unload(loader: *Loader, index: usize) void {
-    const self: *ModelLoader = @fieldParentPtr("interface", loader);
-    const gpa = loader.gpa;
-    const entry = &self.entries[index];
-    const model = &self.models.models[index];
-    if (entry.meshes.len == 0 and model.isEmpty()) return;
-    check(c.vkDeviceWaitIdle(self.table.device.handle)) catch {};
-    for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
-    gpa.free(entry.meshes);
-    entry.meshes = &.{};
-    for (entry.image_slots) |slot| self.table.free(gpa, @intFromEnum(slot));
-    gpa.free(entry.image_slots);
-    entry.image_slots = &.{};
-    for (entry.images) |*image| image.deinit(self.table.vma, self.table.device);
-    gpa.free(entry.images);
-    entry.images = &.{};
-    model.deinit(gpa);
-    model.* = .empty;
 }

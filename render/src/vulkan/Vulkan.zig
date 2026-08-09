@@ -5,9 +5,8 @@ const builtin = @import("builtin");
 const shared = @import("shared");
 const nz = shared.numz;
 const Window = @import("Window");
-const AssetServer = @import("../AssetServer.zig");
 const Font = @import("shared").Font;
-const ModelTable = @import("../asset/ModelTable.zig");
+const ModelTable = @import("render").ModelTable;
 const ModelLoader = @import("loader/ModelLoader.zig");
 const TextureTable = @import("loader/TextureTable.zig");
 const Texture = @import("shared").Texture;
@@ -16,7 +15,7 @@ const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
-const Node = @import("../asset/Node.zig");
+const Node = @import("render").Node;
 const Buffer = @import("Vulkan/Buffer.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
@@ -33,12 +32,12 @@ const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
-const DrawList = @import("../DrawList.zig");
-const Backend = @import("../Backend.zig");
+const DrawList = @import("render").DrawList;
+const contract = @import("render");
 
 const check = @import("Vulkan/utils.zig").check;
 
-pub const Model = @import("../asset/Model.zig");
+pub const Model = @import("render").Model;
 pub const c = @import("vulkan");
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
 
@@ -56,7 +55,7 @@ planet: Planet,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
-pub fn init(data: *const Backend.Data) !*Vulkan {
+pub fn init(data: *const contract.Data) !*Vulkan {
     const gpa = data.gpa;
     const window = data.window;
     const self = try gpa.create(Vulkan);
@@ -88,10 +87,8 @@ pub fn init(data: *const Backend.Data) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, data.asset_server, data.fonts, data.models, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, data.fonts, data.models, self.vma, self.physical_device, self.device);
     self.writeHighlightMaskSlot();
-
-    try data.asset_server.load();
 
     return self;
 }
@@ -144,6 +141,11 @@ const frame_timeout_ns: u64 = 1000000000;
 pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+
+    for (list.shader_uploads) |upload| try self.resources.shader_loader.apply(upload.kind, upload.spirv);
+    for (list.texture_uploads) |upload| try self.resources.texture_loader.apply(upload);
+    for (list.font_uploads) |upload| try self.resources.font_loader.apply(upload.index, upload.coverage);
+    for (list.model_uploads) |upload| try self.resources.model_loader.apply(upload);
 
     try self.syncPlanet(self.gpa, list.planet);
     if (list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
@@ -868,7 +870,7 @@ fn drawStatic(self: *Vulkan, cmd: c.VkCommandBuffer, model_handle: Model.Handle,
         },
         .file => |file_index| {
             const entry = &self.resources.model_loader.entries[file_index];
-            const model = &self.resources.model_loader.models.models[file_index];
+            const model = &self.resources.models.models[file_index];
             if (model.isEmpty() or model.isSkinned()) return;
             for (model.surfaces.items) |surface| {
                 const mesh = &entry.meshes[surface.mesh_id];

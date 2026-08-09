@@ -207,6 +207,20 @@ pub fn recreate(
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
     );
+    // Every attachment sized from `extent` has to be rebuilt here, or the highlight mask
+    // pass hands vkCmdBeginRendering a stale view and renderArea overruns it.
+    // Vulkan.resize rewrites the mask's descriptor slot right after this returns.
+    self.mask_image.deinit(vma, device);
+    self.mask_image = try .init(
+        vma,
+        device,
+        c.VK_FORMAT_R8_UNORM,
+        self.extent,
+        .@"2d",
+        c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
     const cmd = try device.beginImmediateCommand();
     var depth_image_barrier: Image.Barrier = .init(cmd, self.depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     depth_image_barrier.transition(

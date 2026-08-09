@@ -7,6 +7,10 @@ const contract = @import("root.zig");
 const AssetServer = @import("AssetServer.zig");
 const DrawList = @import("DrawList.zig");
 const Animator = @import("Animator.zig");
+const ShaderSource = @import("ShaderSource.zig");
+const TextureSource = @import("TextureSource.zig");
+const FontSource = @import("FontSource.zig");
+const ModelSource = @import("ModelSource.zig");
 const Emitter = @import("shared").Emitter;
 const Shader = @import("shared").Shader;
 const Ui = @import("shared").Ui;
@@ -20,6 +24,10 @@ list: DrawList,
 animator: Animator,
 emitters: Emitter.List,
 models: contract.ModelTable,
+shader_source: ShaderSource,
+texture_source: TextureSource,
+font_source: FontSource,
+model_source: ModelSource,
 window: *Window,
 /// render.so's loaders fill these in place, so they must outlive a swap of it.
 fonts: [Font.count]Font,
@@ -40,15 +48,28 @@ pub fn init(self: *Renderer, data: Data) !void {
     self.lib = try .init("render", data.io);
     errdefer self.lib.deinit(data.io);
 
+    // Before renderInit: that call runs asset_server.load(), which is what fills the
+    // first frame's shader uploads.
+    try self.shader_source.init(data.gpa, data.asset_server);
+    errdefer self.shader_source.deinit();
+    try self.texture_source.init(data.gpa, data.asset_server);
+    errdefer self.texture_source.deinit();
+    try self.font_source.init(data.gpa, data.asset_server, &self.fonts);
+    errdefer self.font_source.deinit();
+    try self.model_source.init(data.gpa, data.asset_server, &self.models);
+    errdefer self.model_source.deinit();
+
     self.handle = self.lib.symbols.renderInit(&contract.Data{
         .gpa = data.gpa,
         .io = data.io,
-        .asset_server = data.asset_server,
         .fonts = &self.fonts,
         .models = &self.models,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.lib.symbols.renderDeinit(self.handle);
+
+    // The producers above the boundary own the initial read; renderInit is pure GPU init.
+    try data.asset_server.load();
 
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
@@ -59,6 +80,10 @@ pub fn init(self: *Renderer, data: Data) !void {
 
 pub fn deinit(self: *Renderer, gpa: std.mem.Allocator, io: std.Io) void {
     self.list.deinit(gpa);
+    self.shader_source.deinit();
+    self.texture_source.deinit();
+    self.font_source.deinit();
+    self.model_source.deinit();
     self.animator.deinit();
     self.lib.symbols.renderDeinit(self.handle);
     self.lib.deinit(io);
@@ -132,7 +157,15 @@ pub fn endFrame(self: *Renderer, elapsed_time: f32) void {
             .spawn_time = emitter.spawn_time,
         });
     }
+    self.list.shader_uploads = self.shader_source.uploads();
+    self.list.texture_uploads = self.texture_source.uploads();
+    self.list.font_uploads = self.font_source.uploads();
+    self.list.model_uploads = self.model_source.uploads();
     self.lib.symbols.renderUpdate(self.handle, &self.list);
+    self.shader_source.consumed();
+    self.texture_source.consumed();
+    self.font_source.consumed();
+    self.model_source.consumed();
 }
 
 pub fn reloadIfChanged(self: *Renderer, io: std.Io) !void {

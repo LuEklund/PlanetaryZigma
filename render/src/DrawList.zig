@@ -6,6 +6,7 @@ const nz = shared.numz;
 const Shader = @import("shared").Shader;
 const Emitter = @import("shared").Emitter;
 const Ui = @import("shared").Ui;
+const gltf = @import("asset/gltf.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
@@ -21,6 +22,12 @@ draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
 ui: UiLayer,
 planet: PlanetState,
+/// Asset bytes read above the boundary; the backend creates GPU objects from them and
+/// keeps nothing. Owned by the producer, valid only for this frame's renderUpdate.
+shader_uploads: []const ShaderUpload,
+texture_uploads: []const TextureUpload,
+font_uploads: []const FontUpload,
+model_uploads: []const ModelUpload,
 surface_width: u32,
 surface_height: u32,
 
@@ -58,6 +65,37 @@ pub const UiLayer = struct {
     screen_height: f32,
 };
 
+pub const ShaderUpload = struct {
+    kind: Shader.Kind,
+    spirv: []align(4) const u8,
+};
+
+pub const TextureUpload = struct {
+    slot: u32,
+    width: u32,
+    height: u32,
+    /// One entry is a 2D texture; six is a cubemap, in Vulkan face order.
+    faces: []const []const u8,
+};
+
+pub const FontUpload = struct {
+    index: u32,
+    /// R8 coverage for the whole atlas; glyph metrics were already written producer-side.
+    coverage: []const u8,
+};
+
+pub const ModelUpload = struct {
+    index: u32,
+    data: Data,
+
+    /// Which vertex layout the glTF parsed into; the CPU-side Model already went straight
+    /// into the caller's ModelTable.
+    pub const Data = union(enum) {
+        static: gltf.UploadData(shared.StaticVertex),
+        skinned: gltf.UploadData(shared.SkinnedVertex),
+    };
+};
+
 pub const PlanetState = struct {
     radius: f32,
     uploads: []const shared.Planet.Upload,
@@ -78,6 +116,10 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .surface_height = 0,
         .ui = .{ .quads = try .initCapacity(gpa, Ui.max_ui_quads), .screen_width = 0, .screen_height = 0 },
         .planet = .{ .radius = 1, .uploads = &.{}, .removes = &.{} },
+        .shader_uploads = &.{},
+        .texture_uploads = &.{},
+        .font_uploads = &.{},
+        .model_uploads = &.{},
     };
 }
 

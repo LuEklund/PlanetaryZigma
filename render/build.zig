@@ -153,7 +153,7 @@ pub fn build(b: *std.Build) void {
     const backend = b.addLibrary(.{
         .name = "render",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Backend.zig"),
+            .root_source_file = b.path("src/vulkan/root.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -164,6 +164,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
+                .{ .name = "render", .module = render },
             },
             .link_libc = true,
         }),
@@ -171,8 +172,8 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .linkage = .dynamic,
     });
-    backend.root_module.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
-    backend.root_module.addIncludePath(stb_dep.path("."));
+    // No stbi_impl here: the backend imports the `render` module, which already carries
+    // that C source, so adding it again is a duplicate-symbol link error.
     linkVulkan(b, backend, target);
     b.installArtifact(backend);
 }

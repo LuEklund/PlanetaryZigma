@@ -164,7 +164,7 @@ pub fn recordUploadDataToImage(
 
     @memcpy(
         @as([*]u8, @ptrCast(upload_buffer.info.pMappedData))[0..@intCast(data_size)],
-        @as([*]u8, @ptrCast(data))[0..@intCast(data_size)],
+        @as([*]const u8, @ptrCast(data))[0..@intCast(data_size)],
     );
 
     var image_barrier: Barrier = .init(cmd, self.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
@@ -427,7 +427,7 @@ pub const Barrier = struct {
     }
 };
 
-pub const Decoded = @import("../../asset/Bitmap.zig");
+pub const Decoded = @import("render").Bitmap;
 pub const DecodeError = Decoded.Error;
 pub const DecodeTask = Decoded.Task;
 pub const decodeImages = Decoded.decodeAll;

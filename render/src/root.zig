@@ -13,13 +13,20 @@ const Font = @import("shared").Font;
 
 pub const AssetServer = @import("AssetServer.zig");
 pub const DrawList = @import("DrawList.zig");
-pub const ModelTable = @import("asset/ModelTable.zig");
 pub const Renderer = @import("Renderer.zig");
+
+// A backend module is rooted at its own directory and cannot import upward by path, so
+// everything vulkan/ needs from here has to be named here. That is the point: this list
+// IS the backend's dependency on the rest of the package.
+pub const ModelTable = @import("asset/ModelTable.zig");
+pub const Model = @import("asset/Model.zig");
+pub const Node = @import("asset/Node.zig");
+pub const Bitmap = @import("asset/Bitmap.zig");
+pub const gltf = @import("asset/gltf.zig");
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    asset_server: *AssetServer,
     fonts: *[Font.count]Font,
     models: *ModelTable,
     window: *Window,

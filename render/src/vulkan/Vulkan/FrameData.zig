@@ -8,7 +8,7 @@ const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Ui = @import("shared").Ui;
 const Emitter = @import("shared").Emitter;
-const DrawList = @import("../../DrawList.zig");
+const DrawList = @import("render").DrawList;
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,
