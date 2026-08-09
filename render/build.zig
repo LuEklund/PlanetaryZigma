@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
     const win32 = b.dependency("win32", .{}).module("win32");
 
     const window = b.addModule("Window", .{
-        .root_source_file = b.path("src/Window.zig"),
+        .root_source_file = b.path("window/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -125,42 +125,72 @@ pub fn build(b: *std.Build) void {
         \\#include "stb_truetype.h"
     );
 
+    // The asset system as its own module, a sibling of `Window`. The game imports it
+    // directly — reaching asset data should not mean importing the renderer.
+    const assets = b.addModule("assets", .{
+        .root_source_file = b.path("assets/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "zgltf", .module = zgltf },
+            .{ .name = "stb_image", .module = stb_image.createModule() },
+            .{ .name = "ztracy", .module = ztracy },
+        },
+        .link_libc = true,
+    });
+    assets.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
+    assets.addIncludePath(stb_dep.path("."));
+
     // The contract module. src/root.zig no longer names a single backend file, so a
     // consumer's compilation cannot reach Vulkan.zig at all — an edit there rebuilds
     // render.so and leaves system_client.so byte-identical. Verified by the probe in
     // src/root.zig's header comment; re-run it if you add an import there.
     const render = b.addModule("render", .{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "Window", .module = window },
-            .{ .name = "zgltf", .module = zgltf },
-            .{ .name = "stb_image", .module = stb_image.createModule() },
+            .{ .name = "assets", .module = assets },
             .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
             .{ .name = "ztracy", .module = ztracy },
         },
         .link_libc = true,
     });
-    // Hidden, not exported: both .so roots compile this source, so without this 102 stb
-    // symbols are global in both and ELF interposition picks by dlopen order.
-    render.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
     render.addIncludePath(stb_dep.path("."));
+
+    // The client-side render system. Depends on the contract; the contract knows nothing
+    // of it. This is what holds per-frame and per-entity state, so the game owns it.
+    const render_system = b.addModule("render_system", .{
+        .root_source_file = b.path("system/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "render", .module = render },
+            .{ .name = "assets", .module = assets },
+            .{ .name = "Window", .module = window },
+            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+            .{ .name = "ztracy", .module = ztracy },
+        },
+        .link_libc = true,
+    });
+    render_system.addIncludePath(stb_dep.path("."));
 
     // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
     // not rebuild the game systems.
     const backend = b.addLibrary(.{
         .name = "render",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/vulkan/root.zig"),
+            .root_source_file = b.path("vulkan/root.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "Window", .module = window },
-                .{ .name = "zgltf", .module = zgltf },
-                .{ .name = "stb_image", .module = stb_image.createModule() },
+                .{ .name = "assets", .module = assets },
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },

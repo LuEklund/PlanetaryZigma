@@ -852,7 +852,7 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *ShaderLoader.Object) void
 /// The only lookup left on the draw side: a handle the producer already resolved.
 fn meshOf(self: *Vulkan, ref: DrawList.MeshRef) ?*Mesh {
     return switch (ref) {
-        .generated => |generated| self.resources.generated.getPtr(generated),
+        .generated => |index| if (index < self.resources.generated.len) &self.resources.generated[index] else null,
         .file => |file| {
             const entry = &self.resources.model_loader.entries[file.model];
             if (file.mesh >= entry.meshes.len) return null;

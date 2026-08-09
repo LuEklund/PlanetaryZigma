@@ -112,6 +112,8 @@ fn addServerArtifacts(
 
     if (render_dep) |dep| {
         system.root_module.addImport("render", dep.module("render"));
+        system.root_module.addImport("assets", dep.module("assets"));
+        system.root_module.addImport("render_system", dep.module("render_system"));
         system.root_module.addImport("Window", dep.module("Window"));
     }
 

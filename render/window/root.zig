@@ -18,11 +18,11 @@ keyboard: Keyboard = .{},
 
 pub const Inner = switch (native_os) {
     .linux, .freebsd, .netbsd, .openbsd => union(XdgSessionType) {
-        wayland: @import("Window/Wayland.zig"),
-        x11: @import("Window/Xlib.zig"),
+        wayland: @import("internal/Wayland.zig"),
+        x11: @import("internal/Xlib.zig"),
     },
-    .windows => @import("Window/Win32.zig"),
-    .macos => @import("Window/Cocoa.zig"),
+    .windows => @import("internal/Win32.zig"),
+    .macos => @import("internal/Cocoa.zig"),
     else => struct {
         const open = @compileError("unsupported platform");
         const close = @compileError("unsupported platform");
@@ -149,7 +149,7 @@ pub const Pointer = struct {
     };
 };
 
-pub const Keyboard = @import("Window/Keyboard.zig");
+pub const Keyboard = @import("internal/Keyboard.zig");
 
 pub const OpenOptions = struct {
     app_id: ?[:0]const u8 = null, // e.g "my_app"

@@ -20,7 +20,7 @@ const TextureLoader = @import("../loader/TextureLoader.zig");
 const ShaderLoader = @import("../loader/ShaderLoader.zig");
 const FontLoader = @import("../loader/FontLoader.zig");
 const Font = @import("shared").Font;
-const Model = @import("render").Model;
+const DrawList = @import("render").DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
 
 const check = @import("utils.zig").check;
@@ -43,7 +43,7 @@ model_loader: *ModelLoader,
 texture_loader: *TextureLoader,
 shader_loader: *ShaderLoader,
 font_loader: *FontLoader,
-generated: std.EnumArray(Model.Generated, Mesh),
+generated: [DrawList.max_generated]Mesh,
 
 descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
@@ -254,8 +254,7 @@ pub fn init(gpa: std.mem.Allocator, fonts: []Font, vma: Vma, physical_device: Ph
     self.font_loader = try gpa.create(FontLoader);
     try self.font_loader.init(gpa, &self.texture_table, fonts);
 
-    self.generated.set(.default, try makeBoxMesh(gpa, self.vma, self.device, "default"));
-    self.generated.set(.cube_projectile, try makeBoxMesh(gpa, self.vma, self.device, "cube_projectile"));
+    for (&self.generated) |*mesh| mesh.* = try makeBoxMesh(gpa, self.vma, self.device, "generated");
 
     return self;
 }
@@ -270,7 +269,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.shader_loader.deinit();
     gpa.destroy(self.shader_loader);
     self.texture_table.deinit(gpa);
-    for (&self.generated.values) |*mesh| mesh.deinit(gpa, self.vma);
+    for (&self.generated) |*mesh| mesh.deinit(gpa, self.vma);
     for (self.descriptor_layouts.values) |layout| {
         layout.deinit(device);
     }

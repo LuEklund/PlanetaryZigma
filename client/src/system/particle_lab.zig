@@ -3,7 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Shader = @import("shared").Shader;
-const Renderer = @import("render").Renderer;
+const Renderer = @import("render_system").Renderer;
 const Emitter = @import("shared").Emitter;
 
 const particle_kind: Shader.Kind = .item_effect;

@@ -2,7 +2,7 @@ const Wayland = @This();
 
 const std = @import("std");
 
-const Window = @import("../Window.zig");
+const Window = @import("../root.zig");
 
 const wl = @import("wayland").client.wl;
 const wp = @import("wayland").client.wp;

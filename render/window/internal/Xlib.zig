@@ -2,7 +2,7 @@ const Xlib = @This();
 
 const std = @import("std");
 
-const Window = @import("../Window.zig");
+const Window = @import("../root.zig");
 
 display: *xlib.Display,
 procs: xlib.ProcTable,

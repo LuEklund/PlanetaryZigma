@@ -6,8 +6,6 @@ const nz = shared.numz;
 const Shader = @import("shared").Shader;
 const Emitter = @import("shared").Emitter;
 const Ui = @import("shared").Ui;
-const gltf = @import("asset/gltf.zig");
-const Model = @import("asset/Model.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
@@ -38,9 +36,13 @@ pub const Camera = struct {
     fov_rad: f32,
 };
 
+/// How many built-in primitive meshes the backend keeps. The producer maps its own names
+/// onto these indices; render never learns what they mean.
+pub const max_generated: u32 = 4;
+
 /// Which GPU mesh to draw. The producer resolved this; the backend does no lookup.
 pub const MeshRef = union(enum) {
-    generated: Model.Generated,
+    generated: u32,
     file: struct { model: u32, mesh: u32 },
 };
 
@@ -92,16 +94,42 @@ pub const FontUpload = struct {
     coverage: []const u8,
 };
 
+/// A model upload is a plain command: geometry and pixels, no parser types. Whoever
+/// produced it (glTF today, anything tomorrow) fills these in; the backend only makes
+/// GPU objects out of them.
 pub const ModelUpload = struct {
     index: u32,
-    data: Data,
+    meshes: []const MeshUpload,
+    images: []const ImageUpload,
+    samplers: []const SamplerUpload,
+};
 
-    /// Which vertex layout the glTF parsed into; the CPU-side Model already went straight
-    /// into the caller's ModelTable.
-    pub const Data = union(enum) {
-        static: gltf.UploadData(shared.StaticVertex),
-        skinned: gltf.UploadData(shared.SkinnedVertex),
-    };
+pub const MeshUpload = struct {
+    name: []const u8,
+    /// Raw vertex bytes; `skinned` picks the layout to reinterpret them as.
+    vertices: []const u8,
+    skinned: bool,
+    indices: []const u32,
+    surfaces: []const SurfaceUpload,
+};
+
+pub const SurfaceUpload = struct {
+    index_start: u32,
+    index_count: u32,
+    image_index: ?u32,
+    material_missing: bool,
+};
+
+pub const ImageUpload = struct {
+    width: u32,
+    height: u32,
+    pixels: []const u8,
+    sampler_index: ?u32,
+};
+
+pub const SamplerUpload = struct {
+    mag_linear: bool,
+    min_linear: bool,
 };
 
 pub const PlanetState = struct {

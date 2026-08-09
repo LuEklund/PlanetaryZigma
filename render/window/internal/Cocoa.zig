@@ -1,6 +1,6 @@
 const Cocoa = @This();
 
-const Window = @import("../Window.zig");
+const Window = @import("../root.zig");
 
 pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     _ = options;

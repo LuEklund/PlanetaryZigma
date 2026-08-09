@@ -3,8 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("shared").Ui;
-const Renderer = @import("render").Renderer;
-const ModelTable = @import("render").ModelTable;
+const Renderer = @import("render_system").Renderer;
+const ModelTable = @import("assets").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;

@@ -5,7 +5,7 @@ const Win32 = @This();
 const std = @import("std");
 const win32 = @import("win32").everything;
 
-const Window = @import("../Window.zig");
+const Window = @import("../root.zig");
 
 gpa: std.mem.Allocator,
 hinstance: std.os.windows.HINSTANCE,

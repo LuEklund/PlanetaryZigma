@@ -11,18 +11,8 @@ const std = @import("std");
 const Window = @import("Window");
 const Font = @import("shared").Font;
 
-pub const AssetServer = @import("AssetServer.zig");
 pub const DrawList = @import("DrawList.zig");
-pub const Renderer = @import("Renderer.zig");
 
-// A backend module is rooted at its own directory and cannot import upward by path, so
-// everything vulkan/ needs from here has to be named here. That is the point: this list
-// IS the backend's dependency on the rest of the package.
-pub const ModelTable = @import("asset/ModelTable.zig");
-pub const Model = @import("asset/Model.zig");
-pub const Node = @import("asset/Node.zig");
-pub const Bitmap = @import("asset/Bitmap.zig");
-pub const gltf = @import("asset/gltf.zig");
 
 /// Upper bound on distinct model files. Comptime like every other bound in the codebase
 /// (max_entities, max_ui_quads, max_draw_meshes) so the backend allocates nothing for it —

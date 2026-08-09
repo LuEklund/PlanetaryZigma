@@ -14,7 +14,7 @@ const build_options = @import("build_options");
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
 pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
 pub const Window = if (build_options.viewer) @import("Window") else void;
-pub const AssetServer = if (build_options.viewer) @import("render").AssetServer else void;
+pub const AssetServer = if (build_options.viewer) @import("assets").AssetServer else void;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Vulkan = @import("Vulkan.zig");
+const Vulkan = @import("internal/Vulkan.zig");
 const contract = @import("render");
 const DrawList = contract.DrawList;
 const shared = @import("shared");

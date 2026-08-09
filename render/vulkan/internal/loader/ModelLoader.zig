@@ -4,7 +4,10 @@ const std = @import("std");
 const c = @import("vulkan");
 const shared = @import("shared");
 const contract = @import("render");
-const gltf = contract.gltf;
+
+fn verticesAs(comptime VertexType: type, bytes: []const u8) []const VertexType {
+    return @alignCast(std.mem.bytesAsSlice(VertexType, bytes));
+}
 const DrawList = @import("render").DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
 const Image = @import("../Vulkan/Image.zig");
@@ -51,17 +54,14 @@ fn release(self: *ModelLoader, index: usize) void {
     entry.images = &.{};
 }
 
-/// Build the GPU half from geometry the producer already parsed.
+/// Build the GPU half from an upload command. No parser types cross: geometry arrives as
+/// bytes and pixels, and `MeshUpload.skinned` says which layout to read the bytes as.
 pub fn apply(self: *ModelLoader, upload: DrawList.ModelUpload) !void {
     self.release(upload.index);
-    const entry = &self.entries[upload.index];
-    switch (upload.data) {
-        .static => |data| try self.uploadToGpu(Mesh.StaticVertex, self.gpa, entry, data),
-        .skinned => |data| try self.uploadToGpu(Mesh.SkinnedVertex, self.gpa, entry, data),
-    }
+    try self.uploadToGpu(self.gpa, &self.entries[upload.index], upload);
 }
 
-fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Allocator, entry: *Entry, upload: gltf.UploadData(VertexType)) !void {
+fn uploadToGpu(self: *ModelLoader, gpa: std.mem.Allocator, entry: *Entry, upload: DrawList.ModelUpload) !void {
     const device = self.table.device;
     const vma = self.table.vma;
 
@@ -82,7 +82,7 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
             upload_buffers.deinit(gpa);
         }
         const upload_cmd = try device.beginImmediateCommand();
-        for (upload.images, upload.image_sampler, image_slots, images) |decoded_image, sampler_index, *slot, *image| {
+        for (upload.images, image_slots, images) |decoded_image, *slot, *image| {
             var new_image: Image = try .init(
                 vma,
                 device,
@@ -93,8 +93,8 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
                 c.VK_IMAGE_ASPECT_COLOR_BIT,
                 true,
             );
-            try new_image.recordUploadDataToImage(gpa, vma, device, upload_cmd, decoded_image.pixels, 0, 4, &upload_buffers);
-            const sampler = if (sampler_index) |glb_index| glb_samplers[glb_index] else self.table.samplers.items[0];
+            try new_image.recordUploadDataToImage(gpa, vma, device, upload_cmd, decoded_image.pixels.ptr, 0, 4, &upload_buffers);
+            const sampler = if (decoded_image.sampler_index) |glb_index| glb_samplers[glb_index] else self.table.samplers.items[0];
             const slot_index = self.table.alloc();
             self.table.write(slot_index, new_image.vk_imageview, sampler);
             slot.* = @enumFromInt(slot_index);
@@ -113,7 +113,10 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
             .index_count = surface_data.index_count,
             .texture = if (surface_data.material_missing) .material_not_found else if (surface_data.image_index) |image_index| image_slots[image_index] else .blank,
         };
-        mesh.* = try .init(gpa, vma, mesh_data.name, device, VertexType, mesh_data.vertices, mesh_data.indices, surfaces);
+        mesh.* = if (mesh_data.skinned)
+            try .init(gpa, vma, mesh_data.name, device, Mesh.SkinnedVertex, verticesAs(Mesh.SkinnedVertex, mesh_data.vertices), mesh_data.indices, surfaces)
+        else
+            try .init(gpa, vma, mesh_data.name, device, Mesh.StaticVertex, verticesAs(Mesh.StaticVertex, mesh_data.vertices), mesh_data.indices, surfaces);
     }
 
     entry.meshes = meshes;

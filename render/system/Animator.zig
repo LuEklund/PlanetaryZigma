@@ -4,12 +4,12 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
-const Model = @import("asset/Model.zig");
-const Node = @import("asset/Node.zig");
-const AnimationClip = @import("asset/AnimationClip.zig");
+const Model = @import("assets").Model;
+const Node = @import("assets").Node;
+const AnimationClip = @import("assets").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
-const ModelTable = @import("asset/ModelTable.zig");
-const DrawList = @import("DrawList.zig");
+const ModelTable = @import("assets").ModelTable;
+const DrawList = @import("render").DrawList;
 const Emitter = @import("shared").Emitter;
 const Shader = @import("shared").Shader;
 
@@ -240,7 +240,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
             }
         } else switch (instance.model) {
             .generated => |generated| list.draw_meshes.appendAssumeCapacity(.{
-                .mesh = .{ .generated = generated },
+                .mesh = .{ .generated = @intFromEnum(generated) },
                 .model_matrix = top_matrix,
                 .position = instance.transform.position,
                 .palette_offset = null,

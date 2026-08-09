@@ -14,6 +14,8 @@ pub fn build(b: *std.Build) void {
 
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const render = render_dep.module("render");
+    const assets = render_dep.module("assets");
+    const render_system = render_dep.module("render_system");
     const window = render_dep.module("Window");
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
@@ -37,6 +39,8 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "render", .module = render },
+                .{ .name = "assets", .module = assets },
+                .{ .name = "render_system", .module = render_system },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ztracy", .module = ztracy },
             },

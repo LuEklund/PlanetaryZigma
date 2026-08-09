@@ -9,8 +9,8 @@ const FontSource = @This();
 const std = @import("std");
 const stbTruetype = @import("stb_truetype");
 const Font = @import("shared").Font;
-const AssetServer = @import("AssetServer.zig");
-const DrawList = @import("DrawList.zig");
+const AssetServer = @import("assets").AssetServer;
+const DrawList = @import("render").DrawList;
 
 const Loader = AssetServer.Loader;
 

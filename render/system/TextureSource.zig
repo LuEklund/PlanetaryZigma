@@ -7,9 +7,9 @@ const TextureSource = @This();
 
 const std = @import("std");
 const Texture = @import("shared").Texture;
-const AssetServer = @import("AssetServer.zig");
-const Bitmap = @import("asset/Bitmap.zig");
-const DrawList = @import("DrawList.zig");
+const AssetServer = @import("assets").AssetServer;
+const Bitmap = @import("assets").Bitmap;
+const DrawList = @import("render").DrawList;
 
 const Loader = AssetServer.Loader;
 const channels: u32 = 4;

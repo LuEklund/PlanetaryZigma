@@ -3,9 +3,10 @@ const Renderer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const contract = @import("root.zig");
-const AssetServer = @import("AssetServer.zig");
-const DrawList = @import("DrawList.zig");
+const contract = @import("render");
+const assets = @import("assets");
+const AssetServer = @import("assets").AssetServer;
+const DrawList = @import("render").DrawList;
 const Animator = @import("Animator.zig");
 const ShaderSource = @import("ShaderSource.zig");
 const TextureSource = @import("TextureSource.zig");
@@ -23,7 +24,7 @@ handle: *anyopaque,
 list: DrawList,
 animator: Animator,
 emitters: Emitter.List,
-models: contract.ModelTable,
+models: assets.ModelTable,
 shader_source: ShaderSource,
 texture_source: TextureSource,
 font_source: FontSource,

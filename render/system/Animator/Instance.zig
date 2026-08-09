@@ -3,9 +3,9 @@ const Instance = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Model = @import("../asset/Model.zig");
+const Model = @import("assets").Model;
 const Shader = @import("shared").Shader;
-const Node = @import("../asset/Node.zig");
+const Node = @import("assets").Node;
 
 model: Model.Handle,
 offset: nz.Transform3D(f32),
