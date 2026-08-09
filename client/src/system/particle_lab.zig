@@ -2,9 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Shader = @import("render").Shader;
+const Shader = @import("shared").Shader;
 const Renderer = @import("render").Renderer;
-const Emitter = @import("render").Emitter;
+const Emitter = @import("shared").Emitter;
 
 const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };

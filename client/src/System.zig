@@ -99,7 +99,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world);
     if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0])) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,

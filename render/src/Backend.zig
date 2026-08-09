@@ -1,37 +1,21 @@
 const std = @import("std");
-const Window = @import("Window");
 const Vulkan = @import("backend/Vulkan.zig");
-const DrawList = @import("DrawList.zig");
-const AssetServer = @import("AssetServer.zig");
-const Font = @import("asset/Font.zig");
-const Texture = @import("Texture.zig");
-pub const ModelTable = @import("asset/ModelTable.zig");
+const contract = @import("root.zig");
+const DrawList = contract.DrawList;
 const shared = @import("shared");
+
+// Table/Data live in the contract, not here: consumers must reach them without reaching
+// this file, or importing them drags the whole backend into their compilation.
+pub const Data = contract.Data;
+pub const Table = contract.Table;
 
 // Each .so carries its own copy of shared's globals, so this one needs its own wiring.
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
-
-pub const Data = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    asset_server: *AssetServer,
-    fonts: *[Font.count]Font,
-    models: *ModelTable,
-    texture_slots: *[Texture.count()]u32,
-    window: *Window,
-};
 
 const Context = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     vulkan: *Vulkan,
-};
-
-pub const Table = struct {
-    renderInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
-    renderDeinit: *const fn (*anyopaque) callconv(.c) void,
-    renderUpdate: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
-    renderReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
 // Root-module test, NOT output_mode == .Lib: system_client.so is also a Lib, and that

@@ -1,6 +1,6 @@
 const std = @import("std");
-const shared = @import("shared");
-const nz = shared.numz;
+const nz = @import("numz");
+const entity = @import("entity.zig");
 const Shader = @import("Shader.zig");
 
 const Emitter = @This();
@@ -11,7 +11,7 @@ effect: Shader.Kind,
 origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
-owner: shared.entity.Id,
+owner: entity.Id,
 last_seen: f32,
 
 pub const List = [max_emitters]Emitter;
@@ -63,7 +63,7 @@ pub fn spawn(list: *List, request: Spawn, elapsed_time: f32) void {
     }, elapsed_time);
 }
 
-pub fn keepAlive(list: *List, effect: Shader.Kind, owner: shared.entity.Id, origin: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn keepAlive(list: *List, effect: Shader.Kind, owner: entity.Id, origin: nz.Vec3(f32), elapsed_time: f32) void {
     std.debug.assert(Shader.particleInfo(effect).duration == null);
     for (list) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;

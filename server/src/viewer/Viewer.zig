@@ -5,7 +5,7 @@ const shared = @import("shared");
 const Window = @import("Window");
 const Renderer = @import("render").Renderer;
 const AssetServer = @import("render").AssetServer;
-const Ui = @import("render").Ui;
+const Ui = @import("shared").Ui;
 const DrawList = @import("render").DrawList;
 const World = @import("../World.zig");
 const Quat = shared.numz.quat.Hamiltonian(f32);
@@ -75,7 +75,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, &self.renderer.fonts[0], &self.renderer.texture_slots, world.delta_time);
+    }, &self.renderer.fonts[0], world.delta_time);
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;

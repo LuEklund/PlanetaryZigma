@@ -7,7 +7,7 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Options = @import("Options.zig");
-const Emitter = @import("render").Emitter;
+const Emitter = @import("shared").Emitter;
 const DrawList = @import("render").DrawList;
 
 pub const DamageEvent = struct {

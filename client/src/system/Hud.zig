@@ -6,10 +6,10 @@ const shared = @import("shared");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
-const Ui = @import("render").Ui;
+const Ui = @import("shared").Ui;
 const Renderer = @import("render").Renderer;
 const Window = @import("Window");
-const Font = @import("render").Font;
+const Font = @import("shared").Font;
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
@@ -80,7 +80,6 @@ pub fn update(
     network_manager: *NetworkManager,
     options: *Options,
     font: *const Font,
-    texture_slots: []const u32,
 ) !Request {
     const ui = &hud.ui;
     const controller = &world.controller;
@@ -92,7 +91,7 @@ pub fn update(
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
-    }, font, texture_slots, world.delta_time);
+    }, font, world.delta_time);
     hud.damage_popups.update(world.delta_time);
     if (world.getPtr(world.player_id)) |player| {
         for (world.damage_events.items) |damage_event| {

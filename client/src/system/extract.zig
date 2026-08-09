@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Ui = @import("render").Ui;
+const Ui = @import("shared").Ui;
 const Renderer = @import("render").Renderer;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };

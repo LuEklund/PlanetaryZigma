@@ -6,8 +6,8 @@ const Vma = @import("Vma.zig");
 const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const Ui = @import("../../Ui.zig");
-const Emitter = @import("../../Emitter.zig");
+const Ui = @import("shared").Ui;
+const Emitter = @import("shared").Emitter;
 const DrawList = @import("../../DrawList.zig");
 const check = @import("utils.zig").check;
 

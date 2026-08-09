@@ -9,24 +9,64 @@ const Loader = AssetServer.Loader;
 const Image = @import("../Vulkan/Image.zig");
 const Bitmap = @import("../../asset/Bitmap.zig");
 const TextureTable = @import("TextureTable.zig");
-const Texture = @import("../../Texture.zig");
+const Texture = @import("shared").Texture;
+const check = @import("../Vulkan/utils.zig").check;
 
 table: *TextureTable,
-slots: []u32,
+blank: Image,
+missing: Image,
+skybox: ?Image,
+images: [Texture.paths_capacity]?Image,
 interface: Loader,
 
-pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, slots: []u32) !void {
+pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable) !void {
     var path_buffer: [Texture.paths_capacity][]const u8 = undefined;
     const texture_paths = Texture.paths(&path_buffer);
-    std.debug.assert(slots.len == Texture.reserved + texture_paths.len);
     const files = try gpa.alloc([]const u8, texture_paths.len);
     @memcpy(files, texture_paths);
-    @memset(slots, @intFromEnum(Image.Handle.material_not_found));
-    slots[0] = @intFromEnum(Image.Handle.blank);
+
+    var blank: Image = try .init(
+        table.vma,
+        table.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 1, .height = 1, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    var white: [4]u8 = .{ 255, 255, 255, 255 };
+    try blank.uploadDataToImage(table.vma, table.device, &white, 4, 0);
+
+    var missing: Image = try .init(
+        table.vma,
+        table.device,
+        c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = 8, .height = 8, .depth = 1 },
+        .@"2d",
+        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        false,
+    );
+    var checkerboard: [8 * 8 * 4]u8 = undefined;
+    for (0..8) |y| for (0..8) |x| {
+        const magenta: bool = (x + y) % 2 == 0;
+        checkerboard[(y * 8 + x) * 4 + 0] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 1] = 0;
+        checkerboard[(y * 8 + x) * 4 + 2] = if (magenta) 255 else 0;
+        checkerboard[(y * 8 + x) * 4 + 3] = 255;
+    };
+    try missing.uploadDataToImage(table.vma, table.device, &checkerboard, checkerboard.len, 0);
+
+    table.registerEmpty(blank.vk_imageview, table.samplers.items[0]);
+    table.write(Texture.slot(.missing), missing.vk_imageview, table.samplers.items[0]);
 
     self.* = .{
         .table = table,
-        .slots = slots,
+        .blank = blank,
+        .missing = missing,
+        .skybox = null,
+        .images = @splat(null),
         .interface = .{
             .gpa = gpa,
             .io = asset_server.io,
@@ -41,6 +81,9 @@ pub fn init(self: *TextureLoader, gpa: std.mem.Allocator, asset_server: *AssetSe
 pub fn deinit(self: *TextureLoader) void {
     const gpa = self.interface.gpa;
     for (0..self.interface.files.len) |index| unload(&self.interface, index);
+    if (self.skybox) |*skybox| skybox.deinit(self.table.vma, self.table.device);
+    self.blank.deinit(self.table.vma, self.table.device);
+    self.missing.deinit(self.table.vma, self.table.device);
     gpa.free(self.interface.files);
 }
 
@@ -86,9 +129,9 @@ fn load(loader: *Loader, err_file: std.Io.File.OpenError!std.Io.File, index: usi
     errdefer image.deinit(table.vma, table.device);
     try image.uploadDataToImage(table.vma, table.device, decoded.pixels, 4, 0);
 
-    var path_buffer: [512]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_buffer, "textures/{s}", .{loader.files[index]});
-    self.slots[Texture.reserved + index] = @intFromEnum(try table.allocSlot(gpa, image, table.samplers.items[0], path));
+    self.images[index] = image;
+    table.write(Texture.reserved + index, image.vk_imageview, table.samplers.items[0]);
+    std.log.debug("texture slot {d}: textures/{s}", .{ Texture.reserved + index, loader.files[index] });
 }
 
 fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !void {
@@ -134,14 +177,20 @@ fn loadSkybox(self: *TextureLoader, gpa: std.mem.Allocator, decoded: Bitmap) !vo
         try cubemap.uploadDataToImage(table.vma, table.device, data.ptr, channels, @intCast(face));
     }
 
-    table.setSkybox(cubemap);
+    if (self.skybox) |*old| {
+        check(c.vkDeviceWaitIdle(table.device.handle)) catch {};
+        old.deinit(table.vma, table.device);
+    }
+    self.skybox = cubemap;
+    table.writeSkybox(cubemap.vk_imageview, table.samplers.items[0]);
 }
 
 fn unload(loader: *Loader, index: usize) void {
     const self: *TextureLoader = @fieldParentPtr("interface", loader);
-    const missing = @intFromEnum(Image.Handle.material_not_found);
-    const slot = &self.slots[Texture.reserved + index];
-    if (slot.* == missing) return;
-    self.table.freeSlot(loader.gpa, @enumFromInt(slot.*));
-    slot.* = missing;
+    const table = self.table;
+    var image = self.images[index] orelse return;
+    check(c.vkDeviceWaitIdle(table.device.handle)) catch {};
+    table.write(Texture.reserved + index, self.missing.vk_imageview, table.samplers.items[0]);
+    image.deinit(table.vma, table.device);
+    self.images[index] = null;
 }

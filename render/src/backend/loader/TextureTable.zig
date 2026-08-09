@@ -5,23 +5,22 @@ const c = @import("vulkan");
 const ext = @import("../Vulkan/procs.zig").device.ProcTable;
 const Vma = @import("../Vulkan/Vma.zig");
 const Device = @import("../Vulkan/device.zig").Logical;
-const Image = @import("../Vulkan/Image.zig");
 const Buffer = @import("../Vulkan/Buffer.zig");
+const Texture = @import("shared").Texture;
 const check = @import("../Vulkan/utils.zig").check;
 
 pub const max_textures = 256;
-pub const crosshair_texture_path = "crosshair.png";
 
 vma: Vma,
 device: Device,
 descriptor_buffer: Buffer,
 binding_offset: c.VkDeviceSize,
 descriptor_size: usize,
-images: std.ArrayList(Image),
+next_slot: usize,
 free_slots: std.ArrayList(usize),
 samplers: std.ArrayList(c.VkSampler),
-paths: std.StringHashMapUnmanaged(Image.Handle),
-skybox: ?Image,
+empty_view: c.VkImageView,
+empty_sampler: c.VkSampler,
 skybox_descriptor: Buffer,
 
 pub fn init(
@@ -53,11 +52,11 @@ pub fn init(
         ),
         .binding_offset = binding_offset,
         .descriptor_size = descriptor_size,
-        .images = .empty,
+        .next_slot = Texture.count(),
         .free_slots = .empty,
         .samplers = .empty,
-        .paths = .empty,
-        .skybox = null,
+        .empty_view = null,
+        .empty_sampler = null,
         .skybox_descriptor = try .init(
             device,
             vma,
@@ -68,39 +67,6 @@ pub fn init(
             .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
         ),
     };
-
-    var blank: Image = try .init(
-        vma,
-        device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = 1, .height = 1, .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    var white: [4]u8 = .{ 255, 255, 255, 255 };
-    try blank.uploadDataToImage(vma, device, &white, 4, 0);
-
-    var material_not_found: Image = try .init(
-        vma,
-        device,
-        c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = 8, .height = 8, .depth = 1 },
-        .@"2d",
-        c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    var checkerboard: [8 * 8 * 4]u8 = undefined;
-    for (0..8) |y| for (0..8) |x| {
-        const magenta: bool = (x + y) % 2 == 0;
-        checkerboard[(y * 8 + x) * 4 + 0] = if (magenta) 255 else 0;
-        checkerboard[(y * 8 + x) * 4 + 1] = 0;
-        checkerboard[(y * 8 + x) * 4 + 2] = if (magenta) 255 else 0;
-        checkerboard[(y * 8 + x) * 4 + 3] = 255;
-    };
-    try material_not_found.uploadDataToImage(vma, device, &checkerboard, checkerboard.len, 0);
 
     const sampler_info: c.VkSamplerCreateInfo = .{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -119,66 +85,38 @@ pub fn init(
     var default_sampler: c.VkSampler = undefined;
     try check(c.vkCreateSampler(device.handle, &sampler_info, null, &default_sampler));
     try self.samplers.append(gpa, default_sampler);
-    try self.images.append(gpa, blank);
-    try self.images.append(gpa, material_not_found);
-    for (0..max_textures) |slot| self.writeDescriptor(slot, blank.vk_imageview, default_sampler);
-    self.writeDescriptor(Image.Handle.material_not_found.index(), material_not_found.vk_imageview, default_sampler);
 
     return self;
 }
 
 pub fn deinit(self: *TextureTable, gpa: std.mem.Allocator) void {
-    for (self.images.items, 0..) |*image, slot| {
-        if (std.mem.indexOfScalar(usize, self.free_slots.items, slot) != null) continue;
-        image.deinit(self.vma, self.device);
-    }
-    self.images.deinit(gpa);
     self.free_slots.deinit(gpa);
     for (self.samplers.items) |sampler| c.vkDestroySampler(self.device.handle, sampler, null);
     self.samplers.deinit(gpa);
-    var path_iterator = self.paths.keyIterator();
-    while (path_iterator.next()) |path| gpa.free(path.*);
-    self.paths.deinit(gpa);
-    if (self.skybox) |*skybox| skybox.deinit(self.vma, self.device);
     self.skybox_descriptor.deinit(self.vma);
     self.descriptor_buffer.deinit(self.vma);
 }
 
-pub fn allocSlot(self: *TextureTable, gpa: std.mem.Allocator, image: Image, sampler: c.VkSampler, path: ?[]const u8) !Image.Handle {
-    const slot: usize = if (self.free_slots.pop()) |free_slot| reuse: {
-        self.images.items[free_slot] = image;
-        break :reuse free_slot;
-    } else grow: {
-        std.debug.assert(self.images.items.len < max_textures);
-        try self.images.append(gpa, image);
-        break :grow self.images.items.len - 1;
-    };
-    self.writeDescriptor(slot, image.vk_imageview, sampler);
-    if (path) |new_path| try self.paths.put(gpa, try gpa.dupe(u8, new_path), @enumFromInt(slot));
-    std.log.debug("texture slot {d}/{d}: {s}", .{ slot + 1, max_textures, path orelse "unnamed" });
-    return @enumFromInt(slot);
+// The empty texture fills unused slots and reclaimed slots. The loader that owns it
+// registers it once at startup, before any other slot is written.
+pub fn registerEmpty(self: *TextureTable, view: c.VkImageView, sampler: c.VkSampler) void {
+    self.empty_view = view;
+    self.empty_sampler = sampler;
+    for (0..max_textures) |slot| self.write(slot, view, sampler);
 }
 
-pub fn freeSlot(self: *TextureTable, gpa: std.mem.Allocator, image_handle: Image.Handle) void {
-    const slot = image_handle.index();
+pub fn alloc(self: *TextureTable) usize {
+    if (self.free_slots.pop()) |free_slot| return free_slot;
+    std.debug.assert(self.next_slot < max_textures);
+    const slot = self.next_slot;
+    self.next_slot += 1;
+    return slot;
+}
+
+pub fn free(self: *TextureTable, gpa: std.mem.Allocator, slot: usize) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
-    self.images.items[slot].deinit(self.vma, self.device);
-    self.images.items[slot] = self.images.items[0];
-    self.writeDescriptor(slot, self.images.items[0].vk_imageview, self.samplers.items[0]);
-    var path_iterator = self.paths.iterator();
-    while (path_iterator.next()) |entry| {
-        if (entry.value_ptr.* == image_handle) {
-            const path = entry.key_ptr.*;
-            _ = self.paths.remove(path);
-            gpa.free(path);
-            break;
-        }
-    }
+    self.write(slot, self.empty_view, self.empty_sampler);
     self.free_slots.append(gpa, slot) catch {};
-}
-
-pub fn handle(self: *const TextureTable, path: []const u8) Image.Handle {
-    return self.paths.get(path).?;
 }
 
 pub fn addSampler(self: *TextureTable, gpa: std.mem.Allocator, mag_linear: bool, min_linear: bool) !c.VkSampler {
@@ -204,23 +142,13 @@ pub fn addSampler(self: *TextureTable, gpa: std.mem.Allocator, mag_linear: bool,
     return new_sampler;
 }
 
-pub fn setSlotSampler(self: *TextureTable, image_handle: Image.Handle, sampler: c.VkSampler) void {
-    const slot = image_handle.index();
-    self.writeDescriptor(slot, self.images.items[slot].vk_imageview, sampler);
-}
-
-pub fn setSkybox(self: *TextureTable, image: Image) void {
-    if (self.skybox) |*old| {
-        check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
-        old.deinit(self.vma, self.device);
-    }
-    self.skybox = image;
-    self.writeCombinedSamplerDescriptor(@ptrCast(self.skybox_descriptor.info.pMappedData), image.vk_imageview, self.samplers.items[0]);
-}
-
-fn writeDescriptor(self: *TextureTable, slot: usize, view: c.VkImageView, sampler: c.VkSampler) void {
+pub fn write(self: *TextureTable, slot: usize, view: c.VkImageView, sampler: c.VkSampler) void {
     const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.descriptor_buffer.info.pMappedData);
     self.writeCombinedSamplerDescriptor(descriptor_buffer_bytes + self.binding_offset + slot * self.descriptor_size, view, sampler);
+}
+
+pub fn writeSkybox(self: *TextureTable, view: c.VkImageView, sampler: c.VkSampler) void {
+    self.writeCombinedSamplerDescriptor(@ptrCast(self.skybox_descriptor.info.pMappedData), view, sampler);
 }
 
 fn writeCombinedSamplerDescriptor(self: *TextureTable, destination: [*]u8, view: c.VkImageView, sampler: c.VkSampler) void {

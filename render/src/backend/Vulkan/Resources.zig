@@ -11,16 +11,16 @@ const DescriptorLayout = @import("DescriptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
-const Shader = @import("../../Shader.zig");
+const Shader = @import("shared").Shader;
 const FrameData = @import("FrameData.zig");
-const Ui = @import("../../Ui.zig");
+const Ui = @import("shared").Ui;
 const AssetServer = @import("../../AssetServer.zig");
 const TextureTable = @import("../loader/TextureTable.zig");
 const ModelLoader = @import("../loader/ModelLoader.zig");
 const TextureLoader = @import("../loader/TextureLoader.zig");
 const ShaderLoader = @import("../loader/ShaderLoader.zig");
 const FontLoader = @import("../loader/FontLoader.zig");
-const Font = @import("../../asset/Font.zig");
+const Font = @import("shared").Font;
 const ModelTable = @import("../../asset/ModelTable.zig");
 const Model = @import("../../asset/Model.zig");
 const Mesh = @import("../Vulkan/Mesh.zig");
@@ -58,7 +58,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, texture_slots: []u32, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, models: *ModelTable, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -245,7 +245,7 @@ pub fn init(gpa: std.mem.Allocator, asset_server: *AssetServer, fonts: []Font, m
     self.model_loader = try gpa.create(ModelLoader);
     try self.model_loader.init(gpa, asset_server, &self.texture_table, models);
     self.texture_loader = try gpa.create(TextureLoader);
-    try self.texture_loader.init(gpa, asset_server, &self.texture_table, texture_slots);
+    try self.texture_loader.init(gpa, asset_server, &self.texture_table);
     self.shader_loader = try gpa.create(ShaderLoader);
     try self.shader_loader.init(gpa, asset_server, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,

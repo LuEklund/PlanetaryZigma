@@ -3,9 +3,9 @@ const DrawList = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const Shader = @import("Shader.zig");
-const Emitter = @import("Emitter.zig");
-const Ui = @import("Ui.zig");
+const Shader = @import("shared").Shader;
+const Emitter = @import("shared").Emitter;
+const Ui = @import("shared").Ui;
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;

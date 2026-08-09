@@ -1,15 +1,16 @@
 const std = @import("std");
-const Item = @import("shared").Item;
+const Item = @import("Item.zig");
 
 pub const Kind = union(enum) {
     blank,
     missing,
+    highlight_mask,
     skybox_cubemap,
     crosshair,
     item: Item.Kind,
 };
 
-pub const reserved = 2;
+pub const reserved = 3;
 const named_files = [_]std.meta.Tag(Kind){ .skybox_cubemap, .crosshair };
 
 pub const paths_capacity = named_files.len + Item.items.len;
@@ -32,6 +33,7 @@ pub fn slot(kind: Kind) usize {
     return switch (kind) {
         .blank => 0,
         .missing => 1,
+        .highlight_mask => 2,
         .item => |item| reserved + named_files.len + @as(usize, @intFromEnum(item)),
         inline else => |_, tag| reserved + comptime namedIndex(tag),
     };

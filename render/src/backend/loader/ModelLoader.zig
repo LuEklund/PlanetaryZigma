@@ -25,6 +25,7 @@ pub const Entry = struct {
     kind: entity.Kind,
     meshes: []Mesh,
     image_slots: []Image.Handle,
+    images: []Image,
 };
 
 pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServer, table: *TextureTable, models: *ModelTable) !void {
@@ -33,7 +34,7 @@ pub fn init(self: *ModelLoader, gpa: std.mem.Allocator, asset_server: *AssetServ
     const files = try gpa.alloc([]const u8, model_paths.len);
     const entries = try gpa.alloc(Entry, model_paths.len);
     for (model_paths, entries, files) |path, *entry, *file| {
-        entry.* = .{ .kind = kindForPath(path), .meshes = &.{}, .image_slots = &.{} };
+        entry.* = .{ .kind = kindForPath(path), .meshes = &.{}, .image_slots = &.{}, .images = &.{} };
         file.* = path["objects/".len..];
     }
 
@@ -102,6 +103,8 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
 
     const image_slots = try gpa.alloc(Image.Handle, upload.images.len);
     errdefer gpa.free(image_slots);
+    const images = try gpa.alloc(Image, upload.images.len);
+    errdefer gpa.free(images);
     if (upload.images.len > 0) {
         var upload_buffers: std.ArrayList(Buffer) = .empty;
         defer {
@@ -109,7 +112,7 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
             upload_buffers.deinit(gpa);
         }
         const upload_cmd = try device.beginImmediateCommand();
-        for (upload.images, upload.image_sampler, image_slots) |decoded_image, sampler_index, *slot| {
+        for (upload.images, upload.image_sampler, image_slots, images) |decoded_image, sampler_index, *slot, *image| {
             var new_image: Image = try .init(
                 vma,
                 device,
@@ -122,7 +125,10 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
             );
             try new_image.recordUploadDataToImage(gpa, vma, device, upload_cmd, decoded_image.pixels, 0, 4, &upload_buffers);
             const sampler = if (sampler_index) |glb_index| glb_samplers[glb_index] else self.table.samplers.items[0];
-            slot.* = try self.table.allocSlot(gpa, new_image, sampler, null);
+            const slot_index = self.table.alloc();
+            self.table.write(slot_index, new_image.vk_imageview, sampler);
+            slot.* = @enumFromInt(slot_index);
+            image.* = new_image;
         }
         try device.endImmediateCommand(upload_cmd);
     }
@@ -142,6 +148,7 @@ fn uploadToGpu(self: *ModelLoader, comptime VertexType: type, gpa: std.mem.Alloc
 
     entry.meshes = meshes;
     entry.image_slots = image_slots;
+    entry.images = images;
 }
 
 fn unload(loader: *Loader, index: usize) void {
@@ -154,9 +161,12 @@ fn unload(loader: *Loader, index: usize) void {
     for (entry.meshes) |*mesh| mesh.deinit(gpa, self.table.vma);
     gpa.free(entry.meshes);
     entry.meshes = &.{};
-    for (entry.image_slots) |slot| self.table.freeSlot(gpa, slot);
+    for (entry.image_slots) |slot| self.table.free(gpa, @intFromEnum(slot));
     gpa.free(entry.image_slots);
     entry.image_slots = &.{};
+    for (entry.images) |*image| image.deinit(self.table.vma, self.table.device);
+    gpa.free(entry.images);
+    entry.images = &.{};
     model.deinit(gpa);
     model.* = .empty;
 }

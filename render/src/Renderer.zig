@@ -3,27 +3,26 @@ const Renderer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const Backend = @import("Backend.zig");
+const contract = @import("root.zig");
 const AssetServer = @import("AssetServer.zig");
 const DrawList = @import("DrawList.zig");
 const Animator = @import("Animator.zig");
-const Emitter = @import("Emitter.zig");
-const Shader = @import("Shader.zig");
-const Ui = @import("Ui.zig");
-const Font = @import("asset/Font.zig");
-const Texture = @import("Texture.zig");
+const Emitter = @import("shared").Emitter;
+const Shader = @import("shared").Shader;
+const Ui = @import("shared").Ui;
+const Font = @import("shared").Font;
+const Texture = @import("shared").Texture;
 const nz = shared.numz;
 
-lib: shared.HotLib(Backend.Table, *anyopaque, "renderInit", "renderReload"),
+lib: shared.HotLib(contract.Table, *anyopaque, "renderInit", "renderReload"),
 handle: *anyopaque,
 list: DrawList,
 animator: Animator,
 emitters: Emitter.List,
-models: Backend.ModelTable,
+models: contract.ModelTable,
 window: *Window,
 /// render.so's loaders fill these in place, so they must outlive a swap of it.
 fonts: [Font.count]Font,
-texture_slots: [Texture.count()]u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -35,20 +34,18 @@ pub const Data = struct {
 pub fn init(self: *Renderer, data: Data) !void {
     self.window = data.window;
     self.fonts = @splat(.empty);
-    self.texture_slots = @splat(0);
     self.models = try .init(data.gpa);
     errdefer self.models.deinit(data.gpa);
 
     self.lib = try .init("render", data.io);
     errdefer self.lib.deinit(data.io);
 
-    self.handle = self.lib.symbols.renderInit(&Backend.Data{
+    self.handle = self.lib.symbols.renderInit(&contract.Data{
         .gpa = data.gpa,
         .io = data.io,
         .asset_server = data.asset_server,
         .fonts = &self.fonts,
         .models = &self.models,
-        .texture_slots = &self.texture_slots,
         .window = data.window,
     }) orelse return error.RenderInit;
     errdefer self.lib.symbols.renderDeinit(self.handle);

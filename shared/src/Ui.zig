@@ -1,8 +1,8 @@
 const Ui = @This();
 
 const std = @import("std");
-const nz = @import("shared").numz;
-const Font = @import("asset/Font.zig");
+const nz = @import("numz");
+const Font = @import("Font.zig");
 const Texture = @import("Texture.zig");
 
 pub const max_ui_quads: usize = 2048;
@@ -17,7 +17,8 @@ pub const Vertex = extern struct {
 };
 
 fn textureSlot(self: *const Ui, kind: Texture.Kind) u32 {
-    return self.texture_slots[Texture.slot(kind)];
+    _ = self;
+    return @intCast(Texture.slot(kind));
 }
 
 pub const Quad = struct {
@@ -36,7 +37,6 @@ mouse_state: MouseState = .{},
 screen_width: f32,
 screen_height: f32,
 default_font: *const Font,
-texture_slots: []const u32,
 hot_item: ?u64 = null,
 active_item: ?u64 = null,
 fire_item: ?u64 = null,
@@ -130,7 +130,6 @@ pub fn init(
         .screen_width = @floatFromInt(screen_width),
         .screen_height = @floatFromInt(screen_height),
         .default_font = &Font.empty,
-        .texture_slots = &.{},
     };
 }
 
@@ -141,9 +140,8 @@ pub fn deinit(self: *Ui, gpa: std.mem.Allocator) void {
     self.animations.deinit(gpa);
 }
 
-pub fn start(self: *Ui, mouse_state: MouseState, font: *const Font, texture_slots: []const u32, delta_time: f32) void {
+pub fn start(self: *Ui, mouse_state: MouseState, font: *const Font, delta_time: f32) void {
     self.default_font = font;
-    self.texture_slots = texture_slots;
     const left_click_prev = self.mouse_state.left_click;
     self.mouse_state = mouse_state;
     self.delta_time = delta_time;

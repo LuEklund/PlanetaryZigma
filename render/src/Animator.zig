@@ -10,8 +10,8 @@ const AnimationClip = @import("asset/AnimationClip.zig");
 const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("asset/ModelTable.zig");
 const DrawList = @import("DrawList.zig");
-const Emitter = @import("Emitter.zig");
-const Shader = @import("Shader.zig");
+const Emitter = @import("shared").Emitter;
+const Shader = @import("shared").Shader;
 
 const max_skins = 8;
 

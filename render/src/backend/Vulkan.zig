@@ -6,10 +6,11 @@ const shared = @import("shared");
 const nz = shared.numz;
 const Window = @import("Window");
 const AssetServer = @import("../AssetServer.zig");
-const Font = @import("../asset/Font.zig");
+const Font = @import("shared").Font;
 const ModelTable = @import("../asset/ModelTable.zig");
 const ModelLoader = @import("loader/ModelLoader.zig");
 const TextureTable = @import("loader/TextureTable.zig");
+const Texture = @import("shared").Texture;
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
@@ -24,9 +25,9 @@ const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
 const Planet = @import("Planet.zig");
-const Shader = @import("../Shader.zig");
+const Shader = @import("shared").Shader;
 const ShaderLoader = @import("loader/ShaderLoader.zig");
-const Ui = @import("../Ui.zig");
+const Ui = @import("shared").Ui;
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
@@ -87,7 +88,8 @@ pub fn init(data: *const Backend.Data) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, data.asset_server, data.fonts, data.models, data.texture_slots, self.vma, self.physical_device, self.device);
+    self.resources = try .init(gpa, data.asset_server, data.fonts, data.models, self.vma, self.physical_device, self.device);
+    self.writeHighlightMaskSlot();
 
     try data.asset_server.load();
 
@@ -120,6 +122,15 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
         self.surface,
         width,
         height,
+    );
+    self.writeHighlightMaskSlot();
+}
+
+fn writeHighlightMaskSlot(self: *Vulkan) void {
+    self.resources.texture_table.write(
+        Texture.slot(.highlight_mask),
+        self.swapchain.mask_image.vk_imageview,
+        self.resources.texture_table.samplers.items[0],
     );
 }
 
@@ -250,13 +261,13 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     current_frame.joint_buffer.copy(nz.Mat4x4(f32), list.joint_matrices.items);
 
     renderShadowPass(self, cmd, current_frame, list, cascade_vps);
+    renderHighlightPass(self, cmd, current_frame, list);
 
     const particle_batches = packEmitters(current_frame, list);
 
     beginRendering(self, cmd);
     renderWorldPass(self, cmd, current_frame, list);
     if (list.draw_sky) renderSkyPass(self, cmd, current_frame);
-    renderHighlightPass(self, cmd, current_frame, list);
     renderParticlePass(self, cmd, current_frame, list, particle_batches);
     if (list.draw_lines.items.len != 0) renderDebugPass(self, cmd, current_frame, list);
     renderUiPass(self, cmd, current_frame, list);

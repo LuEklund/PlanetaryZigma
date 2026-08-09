@@ -52,8 +52,8 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
     .sky = .{ .path = "sky.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
     .ui = .{ .path = "ui.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
     .debug = .{ .path = "debug.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .highlight_static = .{ .path = "shadow.spv", .vert = "highlight_static_vert", .frag = "highlight_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .highlight_skinned = .{ .path = "shadow.spv", .vert = "highlight_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .highlight_static = .{ .path = "mesh.spv", .vert = "highlight_static_vert", .frag = "highlight_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .highlight_skinned = .{ .path = "mesh.spv", .vert = "highlight_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
 
     .explosion = .{
         .path = "particle/explosion.spv",

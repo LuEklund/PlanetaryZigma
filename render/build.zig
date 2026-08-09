@@ -125,9 +125,10 @@ pub fn build(b: *std.Build) void {
         \\#include "stb_truetype.h"
     );
 
-    // Producers get everything except `vulkan`. root.zig still names the Vulkan files,
-    // but an unreferenced decl is never analysed, so nothing in that half is loaded —
-    // and VMA's C translation unit, which is what drags in libvulkan, is never linked.
+    // The contract module. src/root.zig no longer names a single backend file, so a
+    // consumer's compilation cannot reach Vulkan.zig at all — an edit there rebuilds
+    // render.so and leaves system_client.so byte-identical. Verified by the probe in
+    // src/root.zig's header comment; re-run it if you add an import there.
     const render = b.addModule("render", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,

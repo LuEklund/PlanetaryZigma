@@ -4,7 +4,7 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Renderer = @import("render").Renderer;
 const Camera = @import("camera.zig");
-const Ui = @import("render").Ui;
+const Ui = @import("shared").Ui;
 const DrawList = @import("render").DrawList;
 const Viewer = @import("Viewer.zig");
 

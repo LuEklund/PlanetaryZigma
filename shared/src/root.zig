@@ -15,6 +15,12 @@ pub const SteamNet = @import("SteamNet.zig");
 pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
 
+pub const Ui = @import("Ui.zig");
+pub const Font = @import("Font.zig");
+pub const Texture = @import("Texture.zig");
+pub const Emitter = @import("Emitter.zig");
+pub const Shader = @import("Shader.zig");
+
 pub const entity = @import("entity.zig");
 
 pub const version: []const u8 = "0.1.0";
