@@ -1,15 +1,15 @@
-//! The render contract — this is the module consumers import, and all they may import.
+//! The renderer ABI: the module every consumer imports, and all they may import.
 //!
-//! It must NEVER reach the backend. The moment anything here transitively imports
-//! `backend/Vulkan.zig`, every render edit recompiles system_client.so again and the
-//! whole boundary is gone. Guard: `touch render/src/backend/Vulkan.zig`, rebuild, and
+//! It depends on numz and nothing here may reach an implementation. The
+//! moment it does, every backend edit recompiles system_client.so and the hot-reload
+//! boundary is gone. Guard: `touch render/vulkan/internal/Vulkan.zig`, rebuild, and
 //! `zig-out/lib/libsystem_client.so` must be byte-identical.
 //!
 //! See implementation_ideas/systems-as-libraries.md § LIBRARY-SHAPE CONVENTION.
 
 const std = @import("std");
-const Window = @import("Window");
 
+pub const log = @import("log.zig");
 pub const DrawList = @import("DrawList.zig");
 
 /// Slots the backend owns and writes itself. Everything above this number is a texture the
@@ -31,7 +31,9 @@ pub const Renderer = struct {
     pub const InitOptions = struct {
         gpa: std.mem.Allocator,
         io: std.Io,
-        window: *Window,
+        /// The platform window, opaque here on purpose: what a window is belongs to the
+        /// platform layer and the implementation, not to the ABI between them.
+        window: *anyopaque,
         /// Slots below this are the producer's to name; the backend allocates above it.
         first_dynamic_texture_slot: u32,
     };

@@ -3,12 +3,12 @@ const Viewer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const render = @import("render");
+const render = @import("contract");
 const render_system = @import("render_system");
 const Emitter = @import("render_system").Emitter;
 const AssetServer = @import("assets").AssetServer;
 const Ui = @import("ui");
-const DrawList = @import("render").DrawList;
+const DrawList = @import("contract").DrawList;
 const World = @import("../World.zig");
 const Quat = shared.numz.quat.Hamiltonian(f32);
 const nz = shared.numz;
@@ -46,7 +46,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
         .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
             .gpa = gpa,
             .io = io,
-            .window = window,
+            .window = @ptrCast(window),
             .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
         }) orelse return error.RenderInit,
     };

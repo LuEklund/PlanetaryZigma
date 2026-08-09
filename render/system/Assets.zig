@@ -11,8 +11,8 @@ const std = @import("std");
 const assets = @import("assets");
 const Font = @import("shared").Font;
 const Texture = @import("shared").Texture;
-const render = @import("render");
-const DrawList = @import("render").DrawList;
+const render = @import("contract");
+const DrawList = @import("contract").DrawList;
 
 const ShaderSource = @import("Assets/ShaderSource.zig");
 const TextureSource = @import("Assets/TextureSource.zig");

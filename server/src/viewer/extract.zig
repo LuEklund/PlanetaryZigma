@@ -3,12 +3,12 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const render_system = @import("render_system");
-const render = @import("render");
+const render = @import("contract");
 const Emitter = @import("render_system").Emitter;
 const ModelTable = @import("assets").ModelTable;
 const Camera = @import("camera.zig");
 const Ui = @import("ui");
-const DrawList = @import("render").DrawList;
+const DrawList = @import("contract").DrawList;
 const Viewer = @import("Viewer.zig");
 
 pub fn frame(world: *World, viewer: *Viewer) !void {

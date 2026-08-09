@@ -9,7 +9,7 @@ const std = @import("std");
 const stbTruetype = @import("stb_truetype");
 const Font = @import("shared").Font;
 const AssetServer = @import("assets").AssetServer;
-const render = @import("render");
+const render = @import("contract");
 
 const Loader = AssetServer.Loader;
 

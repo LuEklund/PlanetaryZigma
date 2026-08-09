@@ -1,7 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
-const DrawList = @import("render").DrawList;
-const Shader = @import("render").Shader;
+const DrawList = @import("contract").DrawList;
+const Shader = @import("contract").Shader;
 
 const Emitter = @This();
 

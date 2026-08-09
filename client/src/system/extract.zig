@@ -4,9 +4,9 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const Ui = @import("ui");
 const System = @import("../System.zig");
-const DrawList = @import("render").DrawList;
+const DrawList = @import("contract").DrawList;
 const render_system = @import("render_system");
-const render = @import("render");
+const render = @import("contract");
 const Emitter = @import("render_system").Emitter;
 const ModelTable = @import("assets").ModelTable;
 

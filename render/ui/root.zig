@@ -5,7 +5,7 @@ const nz = @import("numz");
 const Font = @import("shared").Font;
 const Texture = @import("shared").Texture;
 
-const DrawList = @import("render").DrawList;
+const DrawList = @import("contract").DrawList;
 
 pub const max_ui_quads = DrawList.max_ui_quads;
 pub const Vertex = DrawList.UiVertex;

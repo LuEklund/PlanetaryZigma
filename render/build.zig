@@ -13,6 +13,17 @@ pub fn build(b: *std.Build) void {
     // Straight to numz, not through shared: reaching a math library by way of the game's
     // contract is exactly the detour that stops render being usable on its own.
     const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
+    // The ABI. Its own module, not its own package: a package per contract would double
+    // the tree the first time a second system wants one. numz only — nothing here may
+    // reach an implementation, which is what keeps a backend edit off the game's rebuild.
+    const contract = b.addModule("contract", .{
+        .root_source_file = b.path("root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "numz", .module = numz },
+        },
+    });
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
@@ -146,25 +157,6 @@ pub fn build(b: *std.Build) void {
     assets.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
     assets.addIncludePath(stb_dep.path("."));
 
-    // The contract module. src/root.zig no longer names a single backend file, so a
-    // consumer's compilation cannot reach Vulkan.zig at all — an edit there rebuilds
-    // render.so and leaves system_client.so byte-identical. Verified by the probe in
-    // src/root.zig's header comment; re-run it if you add an import there.
-    const render = b.addModule("render", .{
-        .root_source_file = b.path("root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shared", .module = shared },
-            .{ .name = "numz", .module = numz },
-            .{ .name = "Window", .module = window },
-            .{ .name = "assets", .module = assets },
-            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
-            .{ .name = "ztracy", .module = ztracy },
-        },
-        .link_libc = true,
-    });
-    render.addIncludePath(stb_dep.path("."));
 
     // The widget system: it produces the contract's quad layout and knows nothing about a
     // GPU. Its own module because client and server viewer both draw a UI.
@@ -175,7 +167,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
-            .{ .name = "render", .module = render },
+            .{ .name = "contract", .module = contract },
         },
     });
 
@@ -189,7 +181,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
-            .{ .name = "render", .module = render },
+            .{ .name = "contract", .module = contract },
             .{ .name = "assets", .module = assets },
             .{ .name = "Window", .module = window },
             .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
@@ -215,7 +207,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
-                .{ .name = "render", .module = render },
+                .{ .name = "contract", .module = contract },
             },
             .link_libc = true,
         }),

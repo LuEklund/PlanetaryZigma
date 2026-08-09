@@ -9,9 +9,9 @@ const Node = @import("assets").Node;
 const AnimationClip = @import("assets").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
 const ModelTable = @import("assets").ModelTable;
-const DrawList = @import("render").DrawList;
+const DrawList = @import("contract").DrawList;
 const Emitter = @import("Emitter.zig");
-const Shader = @import("render").Shader;
+const Shader = @import("contract").Shader;
 
 const max_skins = 8;
 

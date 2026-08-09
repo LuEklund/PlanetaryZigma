@@ -7,9 +7,9 @@
 const ShaderSource = @This();
 
 const std = @import("std");
-const Shader = @import("render").Shader;
+const Shader = @import("contract").Shader;
 const AssetServer = @import("assets").AssetServer;
-const render = @import("render");
+const render = @import("contract");
 
 const Loader = AssetServer.Loader;
 

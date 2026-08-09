@@ -2,7 +2,7 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Shader = @import("render").Shader;
+const Shader = @import("contract").Shader;
 const Renderer = @import("render_system").Renderer;
 const Emitter = @import("render_system").Emitter;
 

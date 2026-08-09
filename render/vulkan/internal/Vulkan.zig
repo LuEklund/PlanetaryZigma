@@ -18,15 +18,15 @@ const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
-const Shader = @import("render").Shader;
+const Shader = @import("contract").Shader;
 const Shaders = @import("Vulkan/Shaders.zig");
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
-const DrawList = @import("render").DrawList;
-const contract = @import("render");
+const DrawList = @import("contract").DrawList;
+const contract = @import("contract");
 
 const check = @import("Vulkan/utils.zig").check;
 
@@ -48,7 +48,7 @@ frames: [FrameData.max_frames_inflight]FrameData,
 
 pub fn init(data: *const contract.Renderer.InitOptions) !*Vulkan {
     const gpa = data.gpa;
-    const window = data.window;
+    const window: *Window = @ptrCast(@alignCast(data.window));
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.current_frame_inflight = 0;

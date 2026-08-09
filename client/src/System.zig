@@ -11,8 +11,8 @@ const render_system = @import("render_system");
 const Emitter = @import("render_system").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
-const render = @import("render");
-const DrawList = @import("render").DrawList;
+const render = @import("contract");
+const DrawList = @import("contract").DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -75,7 +75,7 @@ pub fn init(self: *System, data: Data) !void {
         .userdata = self.render_lib.symbols.init(&render.Renderer.InitOptions{
             .gpa = data.gpa,
             .io = data.io,
-            .window = data.window,
+            .window = @ptrCast(data.window),
             .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
         }) orelse return error.RenderInit,
     };

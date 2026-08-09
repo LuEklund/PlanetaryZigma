@@ -9,8 +9,8 @@ const std = @import("std");
 const Texture = @import("shared").Texture;
 const AssetServer = @import("assets").AssetServer;
 const Bitmap = @import("assets").Bitmap;
-const render = @import("render");
-const DrawList = @import("render").DrawList;
+const render = @import("contract");
+const DrawList = @import("contract").DrawList;
 
 const Loader = AssetServer.Loader;
 const channels: u32 = 4;

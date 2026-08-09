@@ -4,7 +4,7 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = @import("numz");
 const Model = @import("assets").Model;
-const Shader = @import("render").Shader;
+const Shader = @import("contract").Shader;
 const Node = @import("assets").Node;
 
 model: Model.Handle,

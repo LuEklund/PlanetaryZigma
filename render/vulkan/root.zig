@@ -1,16 +1,15 @@
 const std = @import("std");
 const Vulkan = @import("internal/Vulkan.zig");
-const contract = @import("render");
+const contract = @import("contract");
 const DrawList = contract.DrawList;
-const shared = @import("shared");
-const render = @import("render");
+const render = @import("contract");
 
 // The Renderer struct lives in the contract, not here: consumers must reach it without
 // reaching this file, or importing it drags the whole backend into their compilation.
 const InitOptions = contract.Renderer.InitOptions;
 
-// Each .so carries its own copy of shared's globals, so this one needs its own wiring.
-pub const std_options: std.Options = .{ .logFn = shared.logFn };
+// Each image carries its own copy of these globals, so this one needs its own wiring.
+pub const std_options: std.Options = .{ .logFn = contract.log.logFn };
 
 const Context = struct {
     gpa: std.mem.Allocator,
@@ -26,7 +25,7 @@ comptime {
 
 pub const ffi = struct {
     pub export fn init(data: *const InitOptions) ?*anyopaque {
-        shared.log_io = data.io;
+        contract.log.io = data.io;
         std.log.info("render init", .{});
         const context = data.gpa.create(Context) catch return null;
         context.* = .{
@@ -57,7 +56,7 @@ pub const ffi = struct {
     pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));
-        shared.log_io = context.io;
+        contract.log.io = context.io;
         context.vulkan.rebindProcs();
     }
 
