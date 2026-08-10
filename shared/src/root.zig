@@ -15,7 +15,6 @@ pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
 
 pub const Font = @import("Font.zig");
-pub const Texture = @import("Texture.zig");
 
 pub const entity = @import("entity.zig");
 

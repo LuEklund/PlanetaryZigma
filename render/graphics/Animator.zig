@@ -4,12 +4,12 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = @import("numz");
-const Model = @import("assets").Model;
-const Node = @import("assets").Node;
-const AnimationClip = @import("assets").AnimationClip;
+const Model = @import("assets/root.zig").Model;
+const Node = @import("assets/root.zig").Node;
+const AnimationClip = @import("assets/root.zig").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
 const Rig = @import("Rig.zig");
-const ModelTable = @import("ModelTable.zig");
+const Models = @import("Models.zig");
 const DrawList = @import("contract").DrawList;
 const Emitter = @import("Emitter.zig");
 const Shader = @import("contract").Shader;
@@ -77,15 +77,15 @@ pub fn deinit(self: *Animator) void {
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(models: *const ModelTable, instance: *const Instance) *const Model {
+fn resolveModel(models: *const Models, instance: *const Instance) *const Model {
     return models.modelPtr(instance.model);
 }
 
-fn resolveRig(models: *const ModelTable, instance: *const Instance) *const Rig {
-    return &models.rigs[instance.model];
+fn resolveRig(models: *const Models, instance: *const Instance) *const Rig {
+    return models.rig(instance.model);
 }
 
-pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *ModelTable) !void {
+pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *Models) !void {
     self.frame = frame;
     var instance_iterator = self.instances.valueIterator();
     while (instance_iterator.next()) |instance| instance.seen = false;
@@ -97,11 +97,11 @@ pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, mo
     try self.applyReloads(models);
 }
 
-pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
+pub fn observe(self: *Animator, entity: Entity, models: *Models) !void {
     if (!self.instances.contains(entity.id)) {
         const model = models.modelPtr(entity.model);
         if (model.isEmpty()) std.log.err("model not loaded for entity {d}", .{entity.id});
-        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model, &models.rigs[entity.model]));
+        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model, models.rig(entity.model)));
     }
     const instance = self.instances.getPtr(entity.id).?;
     instance.seen = true;
@@ -117,7 +117,7 @@ pub fn observe(self: *Animator, entity: Entity, models: *ModelTable) !void {
     instance.state = entity.state;
 }
 
-pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *ModelTable) void {
+pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *Models) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -125,7 +125,7 @@ pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, mode
     self.animate(models);
 }
 
-pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const ModelTable) void {
+pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const Models) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -133,16 +133,16 @@ pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *
     self.retire();
 }
 
-fn applyReloads(self: *Animator, models: *ModelTable) !void {
+fn applyReloads(self: *Animator, models: *Models) !void {
     for (models.reloaded.items) |file_index| {
-        const reloaded_model = &models.models[file_index];
+        const reloaded_model = models.modelPtr(file_index);
         var instance_iterator = self.instances.valueIterator();
         while (instance_iterator.next()) |instance| {
             if (instance.model != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
-            instance.spawn_duration = models.rigs[file_index].spawn_duration;
-            instance.death_duration = models.rigs[file_index].death_duration;
+            instance.spawn_duration = models.rig(file_index).spawn_duration;
+            instance.death_duration = models.rig(file_index).death_duration;
         }
     }
     models.reloaded.clearRetainingCapacity();
@@ -169,7 +169,7 @@ fn retire(self: *Animator) void {
     }
 }
 
-fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *ModelTable) void {
+fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *Models) void {
     for (triggers) |trigger| {
         const instance = self.instances.getPtr(trigger.id) orelse continue;
         const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
@@ -179,7 +179,7 @@ fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, mo
     }
 }
 
-fn animate(self: *Animator, models: *ModelTable) void {
+fn animate(self: *Animator, models: *Models) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
@@ -197,7 +197,7 @@ fn animate(self: *Animator, models: *ModelTable) void {
     }
 }
 
-fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const ModelTable) void {
+fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const Models) void {
     var instance_iterator = self.instances.iterator();
     while (instance_iterator.next()) |entry| {
         const instance = entry.value_ptr;
@@ -225,7 +225,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
             for (0..instance_skeleton.skin_starts.len - 1) |skin_index| {
                 skin_offsets[skin_index] = palette_base + instance_skeleton.skin_starts[skin_index];
             }
-            const mesh_handles = models.models[instance.model].mesh_handles;
+            const mesh_handles = models.modelPtr(instance.model).mesh_handles;
             for (instance_skeleton.nodes) |node| {
                 const mesh_id = node.mesh_id orelse continue;
                 if (mesh_id >= mesh_handles.len) continue;
@@ -242,7 +242,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
             // The surface walk lives here now: one row per surface, so the backend never
             // expands one row into many draws and the rows stay sortable. A generated model
             // is one surface, so it comes through here with no special case.
-            const model = &models.models[instance.model];
+            const model = models.modelPtr(instance.model);
             if (model.isEmpty() or model.isSkinned()) continue;
             for (model.surfaces.items) |surface| {
                 if (surface.mesh_id >= model.mesh_handles.len) continue;

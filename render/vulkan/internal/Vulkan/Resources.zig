@@ -50,6 +50,9 @@ retired_meshes: std.ArrayList(RetiredMesh),
 textures: std.AutoArrayHashMapUnmanaged(u32, Image),
 /// Bound wherever nothing has been uploaded yet, and never freed.
 blank_texture: Image,
+/// The sky is one image with its own descriptor, so it is held here rather than in the
+/// table — nothing names it and nothing else can use it.
+skybox_image: ?Image,
 /// The checkerboard: a decode that failed is visible, not white and not stale.
 missing_texture: Image,
 shaders: Shaders,
@@ -229,6 +232,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .retired_meshes = .empty,
         .textures = .empty,
         .blank_texture = undefined,
+        .skybox_image = null,
         .missing_texture = undefined,
         .shaders = undefined,
         .descriptor_layouts = descriptor_layouts,
@@ -309,6 +313,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.retired_meshes.deinit(gpa);
     for (self.textures.values()) |*image| image.deinit(vma, device);
     self.textures.deinit(gpa);
+    if (self.skybox_image) |*sky| sky.deinit(vma, device);
     self.blank_texture.deinit(vma, device);
     self.missing_texture.deinit(vma, device);
     self.shaders.deinit();
@@ -407,75 +412,90 @@ pub fn freeTexture(self: *Resources, slot: u32) void {
     self.texture_table.free(self.gpa, slot);
 }
 
-pub fn uploadTexture(self: *Resources, desc: TextureDesc) !u32 {
+pub const ImageDesc = struct {
+    /// null asks the store to name it — that is what makes a handle a handle.
+    slot: ?u32,
+    width: u32,
+    height: u32,
+    pixels: []const u8,
+    r8: bool,
+    mips: bool,
+    mag_linear: bool,
+    min_linear: bool,
+};
+
+pub fn uploadImage(self: *Resources, desc: ImageDesc) !u32 {
     const table = &self.texture_table;
     const slot: u32 = desc.slot orelse @intCast(table.alloc());
 
-    if (desc.faces.len == 0) {
-        self.dropTexture(slot);
-        table.write(slot, self.missing_texture.vk_imageview, table.samplers.items[0]);
-        return slot;
-    }
+    var image = try self.buildImage(&.{desc.pixels}, desc.width, desc.height, desc.r8, desc.mips, .@"2d");
+    errdefer image.deinit(table.vma, table.device);
+    const sampler = try self.samplerFor(desc.mag_linear, desc.min_linear);
 
-    const cubemap = desc.faces.len == 6;
-    const usage: u32 = if (desc.mips)
+    self.dropTexture(slot);
+    try self.textures.put(self.gpa, slot, image);
+    table.write(slot, image.vk_imageview, sampler);
+    return slot;
+}
+
+/// The sky owns its own descriptor rather than a table slot, so nothing names it and there
+/// is nothing to hand back. Always mipless and linear.
+pub fn uploadSkybox(self: *Resources, faces: [6][]const u8, size: u32) !void {
+    const table = &self.texture_table;
+    var image = try self.buildImage(&faces, size, size, false, false, .cube_map);
+    errdefer image.deinit(table.vma, table.device);
+    const sampler = try self.samplerFor(true, true);
+
+    if (self.skybox_image) |*old| old.deinit(table.vma, table.device);
+    self.skybox_image = image;
+    table.writeSkybox(image.vk_imageview, sampler);
+}
+
+fn samplerFor(self: *Resources, mag_linear: bool, min_linear: bool) !c.VkSampler {
+    const table = &self.texture_table;
+    if (mag_linear and min_linear) return table.samplers.items[0];
+    return table.addSampler(self.gpa, mag_linear, min_linear);
+}
+
+/// Create the image and get the pixels into it. One face is a 2D image, six is a cubemap.
+fn buildImage(self: *Resources, faces: []const []const u8, width: u32, height: u32, r8: bool, mips: bool, kind: Image.Kind) !Image {
+    const table = &self.texture_table;
+    const usage: u32 = if (mips)
         c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT
     else
         c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    const channels: u32 = if (desc.r8) 1 else 4;
+    const channels: u32 = if (r8) 1 else 4;
     var image: Image = try .init(
         table.vma,
         table.device,
-        if (desc.r8) c.VK_FORMAT_R8_UNORM else c.VK_FORMAT_R8G8B8A8_UNORM,
-        .{ .width = desc.width, .height = desc.height, .depth = 1 },
-        if (cubemap) .cube_map else .@"2d",
+        if (r8) c.VK_FORMAT_R8_UNORM else c.VK_FORMAT_R8G8B8A8_UNORM,
+        .{ .width = width, .height = height, .depth = 1 },
+        kind,
         usage,
         c.VK_IMAGE_ASPECT_COLOR_BIT,
-        desc.mips,
+        mips,
     );
     errdefer image.deinit(table.vma, table.device);
 
-    if (desc.mips) {
+    if (mips) {
         var upload_buffers: std.ArrayList(Buffer) = .empty;
         defer {
             for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(table.vma);
             upload_buffers.deinit(self.gpa);
         }
         const cmd = try table.device.beginImmediateCommand();
-        for (desc.faces) |face| {
+        for (faces) |face| {
             try image.recordUploadDataToImage(self.gpa, table.vma, table.device, cmd, face.ptr, 0, channels, &upload_buffers);
         }
         try table.device.endImmediateCommand(cmd);
     } else {
-        for (desc.faces, 0..) |face, layer| {
+        for (faces, 0..) |face, layer| {
             try image.uploadDataToImage(table.vma, table.device, face.ptr, channels, @intCast(layer));
         }
     }
 
-    const sampler = if (desc.mag_linear and desc.min_linear)
-        table.samplers.items[0]
-    else
-        try table.addSampler(self.gpa, desc.mag_linear, desc.min_linear);
-
-    self.dropTexture(slot);
-    try self.textures.put(self.gpa, slot, image);
-    if (cubemap) table.writeSkybox(image.vk_imageview, sampler) else table.write(slot, image.vk_imageview, sampler);
-    return slot;
+    return image;
 }
-
-pub const TextureDesc = struct {
-    /// null asks the store to name it — that is what makes a handle a handle.
-    slot: ?u32,
-    width: u32,
-    height: u32,
-    /// Zero faces binds the checkerboard; one is a 2D image; six is a cubemap in Vulkan
-    /// face order, which goes to the skybox descriptor rather than a table slot.
-    faces: []const []const u8,
-    r8: bool,
-    mips: bool,
-    mag_linear: bool,
-    min_linear: bool,
-};
 
 /// Drop the GPU image in a slot but keep the slot: the caller is about to rewrite it.
 fn dropTexture(self: *Resources, slot: u32) void {

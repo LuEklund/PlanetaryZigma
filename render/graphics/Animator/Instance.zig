@@ -3,10 +3,10 @@ const Instance = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = @import("numz");
-const Model = @import("assets").Model;
+const Model = @import("../assets/root.zig").Model;
 const Rig = @import("../Rig.zig");
 const Shader = @import("contract").Shader;
-const Node = @import("assets").Node;
+const Node = @import("../assets/root.zig").Node;
 
 model: u32,
 offset: nz.Transform3D(f32),

@@ -14,8 +14,7 @@ pub fn build(b: *std.Build) void {
 
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const contract = render_dep.module("contract");
-        const render_system = render_dep.module("render_system");
-    const assets = render_dep.module("assets");
+        const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
     const ui = render_dep.module("ui");
 
@@ -41,8 +40,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
                 .{ .name = "contract", .module = contract },
                 
-                .{ .name = "render_system", .module = render_system },
-                .{ .name = "assets", .module = assets },
+                .{ .name = "graphics", .module = graphics },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
                 .{ .name = "ztracy", .module = ztracy },

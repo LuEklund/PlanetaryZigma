@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Ui = @import("ui");
-const Renderer = @import("render_system").Renderer;
+const Assets = @import("graphics").Assets;
 const Window = @import("Window");
 const Font = @import("shared").Font;
 const NetworkManager = @import("NetworkManager.zig");
@@ -79,7 +79,7 @@ pub fn update(
     scene: system.Scene,
     network_manager: *NetworkManager,
     options: *Options,
-    font: *const Font,
+    game_assets: *const Assets,
 ) !Request {
     const ui = &hud.ui;
     const controller = &world.controller;
@@ -91,7 +91,7 @@ pub fn update(
         .position = .{ .left = position[0], .top = position[1] },
         .left_click = controller.mouse_button_left,
         .right_click = controller.mouse_button_right,
-    }, font, world.delta_time);
+    }, game_assets.fonts.default(), world.delta_time);
     hud.damage_popups.update(world.delta_time);
     if (world.getPtr(world.player_id)) |player| {
         for (world.damage_events.items) |damage_event| {
@@ -114,7 +114,7 @@ pub fn update(
         request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, controller.show_stats);
+        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, controller.show_stats, game_assets);
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;

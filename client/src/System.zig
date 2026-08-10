@@ -6,8 +6,9 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
-const render_system = @import("render_system");
-const Emitter = @import("render_system").Emitter;
+const Assets = @import("graphics").Assets;
+const Animator = @import("graphics").Animator;
+const Emitter = @import("graphics").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const contract = @import("contract");
@@ -35,8 +36,8 @@ io: std.Io,
 window: *Window,
 render: shared.HotLib(contract.Api, *anyopaque),
 draw_list: DrawList,
-assets: render_system.Assets,
-animator: render_system.Animator,
+assets: Assets,
+animator: Animator,
 emitters: Emitter.List,
 network_manager: NetworkManager,
 scene: Scene,
@@ -70,15 +71,13 @@ pub fn init(self: *System, data: Data) !void {
         .gpa = data.gpa,
         .io = data.io,
         .window = @ptrCast(data.window),
-        .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
     }) orelse return error.RenderInit;
     errdefer self.render.api.deinit(self.render.handle);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
 
-    try self.assets.uploadPrimitives(data.gpa, &self.render);
-    try self.assets.uploadChanged(data.gpa, data.io, &self.render);
+    try self.assets.update(data.gpa, data.io, &self.render);
 
 
     try self.hud.init(data.gpa, data.window.size);
@@ -123,7 +122,7 @@ pub fn update(self: *System, world: *World) !void {
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world);
     if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets.fonts[0])) {
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -147,7 +146,7 @@ pub fn update(self: *System, world: *World) !void {
     );
     try extract.frame(self, world, self.scene != .particle_lab);
     self.render.trySwap(self.io);
-    self.assets.uploadChanged(self.gpa, self.io, &self.render) catch |err| std.log.err("upload assets: {t}", .{err});
+    self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);

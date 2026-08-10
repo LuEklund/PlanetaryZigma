@@ -2,9 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const render_system = @import("render_system");
+const graphics = @import("graphics");
 const render = @import("contract");
-const Emitter = @import("render_system").Emitter;
+const Emitter = @import("graphics").Emitter;
 const Camera = @import("camera.zig");
 const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
@@ -87,7 +87,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const model_handle = shared.entity.modelRow(entity.kind) orelse continue;
+        const model_handle = models.get(entity.kind) orelse continue;
         try viewer.animator.observe(.{
             .id = entity.id,
             .model = model_handle,
@@ -101,7 +101,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
                 null,
             ),
             .highlight = entity.kind == .teleporter,
-            .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
+            .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
         }, models);

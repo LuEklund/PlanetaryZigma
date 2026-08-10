@@ -27,6 +27,18 @@ pub fn deinit(self: *Bitmap) void {
     self.* = .{};
 }
 
+/// One image, decoded. `decodeAll` is the batch door; this is the one every caller with a
+/// single file actually wants.
+pub fn one(gpa: std.mem.Allocator, bytes: []const u8) !Bitmap {
+    var decoded: Bitmap = .{};
+    var tasks: [1]Task = .{.{ .result = &decoded, .bytes = bytes }};
+    try decodeAll(gpa, &tasks);
+    errdefer decoded.deinit();
+    if (decoded.err) |err| return err;
+    try if (decoded.pixels == null) error.LoadingStbi;
+    return decoded;
+}
+
 pub fn decodeAll(gpa: std.mem.Allocator, tasks: []Task) !void {
     if (tasks.len == 0) return;
 

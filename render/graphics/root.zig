@@ -2,14 +2,13 @@
 //! `render`'s Table itself and decides what to feed it, because client and server want
 //! different frames.
 //!
-//! Kept out of the `render` module deliberately. That one is the contract plus the backend;
-//! anything that holds per-frame or per-entity state lives here, where the game can own it.
+//! Not named after the renderer: that is the contract plus the backend, and nothing in it
+//! knows this exists. The file readers live in `assets/` beside this, so `assets.Model` is a
+//! parsed glTF and `graphics.Assets` is the set this game loaded out of one.
 
 /// The game's files and what they parsed into. A struct that owns state, like `Animator` —
 /// the renderer is a parameter to its calls, never a field.
 pub const Assets = @import("Assets.zig");
-/// What the loader hands the animator.
-pub const ModelTable = @import("ModelTable.zig");
 pub const Rig = @import("Rig.zig");
 
 pub const Animator = @import("Animator.zig");

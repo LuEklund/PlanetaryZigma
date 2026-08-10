@@ -5,9 +5,9 @@ const World = @import("../World.zig");
 const Ui = @import("ui");
 const System = @import("../System.zig");
 const DrawList = @import("contract").DrawList;
-const render_system = @import("render_system");
+const graphics = @import("graphics");
 const render = @import("contract");
-const Emitter = @import("render_system").Emitter;
+const Emitter = @import("graphics").Emitter;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
@@ -79,7 +79,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const model_handle = shared.entity.modelRow(entity.kind) orelse continue;
+        const model_handle = models.get(entity.kind) orelse continue;
         try animator.observe(.{
             .id = entity.id,
             .model = model_handle,
@@ -93,7 +93,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                 entity.override_animation_state,
             ),
             .highlight = entity.kind == .teleporter,
-            .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
+            .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
         }, models);

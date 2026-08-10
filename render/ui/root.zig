@@ -3,18 +3,13 @@ const Ui = @This();
 const std = @import("std");
 const nz = @import("numz");
 const Font = @import("shared").Font;
-const Texture = @import("shared").Texture;
 
-const DrawList = @import("contract").DrawList;
+const contract = @import("contract");
+const DrawList = contract.DrawList;
 
 pub const max_ui_quads = DrawList.max_ui_quads;
 pub const Vertex = DrawList.UiVertex;
 pub const Quad = DrawList.UiQuad;
-
-fn textureSlot(self: *const Ui, kind: Texture.Kind) u32 {
-    _ = self;
-    return @intCast(Texture.slot(kind));
-}
 
 writer_buffer_out: [8192]u8 = undefined,
 writer_len: usize = 0,
@@ -97,7 +92,7 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
-    texture: Texture.Kind = .blank,
+    texture: u32 = contract.blank_texture,
     gap: f32 = 0,
     text: ?Text = null,
     name: ?[]const u8 = null,
@@ -322,10 +317,10 @@ fn pushQuads(self: *Ui) void {
         if (node.layout.color.a != 0) {
             const colors: [4]f32 = node.layout.color.toVec();
             self.quads.appendAssumeCapacity(.{ .vertices = .{
-                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
-                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
-                .{ .position = .{ rect.left + rect.width, rect.top + rect.height }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
-                .{ .position = .{ rect.left, rect.top + rect.height }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = self.textureSlot(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture },
+                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.height }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture },
+                .{ .position = .{ rect.left, rect.top + rect.height }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture },
             } });
         }
         if (node.layout.text) |text| {

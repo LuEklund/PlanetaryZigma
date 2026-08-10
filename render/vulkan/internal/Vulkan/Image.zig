@@ -14,7 +14,7 @@ extent: c.VkExtent3D = undefined,
 format: c.VkFormat = undefined,
 mip_mapped: bool = undefined,
 
-const Kind = enum(u8) {
+pub const Kind = enum(u8) {
     @"2d" = 0,
     @"3d" = 1,
     cube_map = 2,

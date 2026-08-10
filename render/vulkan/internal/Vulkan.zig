@@ -77,7 +77,7 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, self.vma, self.physical_device, self.device, data.first_dynamic_texture_slot);
+    self.resources = try .init(gpa, self.vma, self.physical_device, self.device, contract.reserved_textures);
     self.writeHighlightMaskSlot();
 
     return self;

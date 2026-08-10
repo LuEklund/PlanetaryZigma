@@ -4,8 +4,8 @@ const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
 const contract = @import("contract");
-const render_system = @import("render_system");
-const Emitter = @import("render_system").Emitter;
+const graphics = @import("graphics");
+const Emitter = @import("graphics").Emitter;
 const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
 const World = @import("../World.zig");
@@ -18,8 +18,8 @@ const menu = @import("menu.zig");
 render: shared.HotLib(contract.Api, *anyopaque),
 draw_list: DrawList,
 window: *Window,
-assets: render_system.Assets,
-animator: render_system.Animator,
+assets: graphics.Assets,
+animator: graphics.Animator,
 emitters: Emitter.List,
 camera: Camera,
 ui: Ui,
@@ -44,15 +44,13 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
         .gpa = gpa,
         .io = io,
         .window = @ptrCast(window),
-        .first_dynamic_texture_slot = @intCast(shared.Texture.count()),
     }) orelse return error.RenderInit;
     errdefer self.render.api.deinit(self.render.handle);
 
     self.draw_list = try .init(gpa);
     errdefer self.draw_list.deinit(gpa);
 
-    try self.assets.uploadPrimitives(gpa, &self.render);
-    try self.assets.uploadChanged(gpa, io, &self.render);
+    try self.assets.update(gpa, io, &self.render);
 
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
@@ -104,7 +102,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, &self.assets.fonts[0], world.delta_time);
+    }, self.assets.fonts.default(), world.delta_time);
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;
@@ -125,6 +123,6 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
 
     try extract.frame(world, self);
     self.render.trySwap(io);
-    self.assets.uploadChanged(world.gpa, io, &self.render) catch |err| std.log.err("upload assets: {t}", .{err});
+    self.assets.update(world.gpa, io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
     return quit;
 }

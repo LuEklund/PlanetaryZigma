@@ -28,8 +28,6 @@ pub const InitOptions = struct {
     /// The platform window, opaque here on purpose: what a window is belongs to the
     /// platform layer and the implementation, not to the ABI between them.
     window: *anyopaque,
-    /// Slots below this are the producer's to name; the backend allocates above it.
-    first_dynamic_texture_slot: u32,
 };
 
 /// Field names ARE the exported symbol names — HotLib resolves by field. render.so is
@@ -48,14 +46,19 @@ pub const Api = struct {
     /// Pixels, not files. A model and a font are the caller's words for a file it parsed;
     /// what arrives here is an image and a mesh, which is all a renderer has a name for.
     ///
-    /// Slot rides inside a texture upload: file textures are a comptime set, so the caller
-    /// already names them and `Ui` reads the same numbers. An image has no name of its own,
-    /// so the backend hands one back.
-    uploadTexture: *const fn (*anyopaque, upload: *const DrawList.TextureUpload) callconv(.c) void,
+    /// Nothing outside names a texture — the backend does, and hands the handle back. The
+    /// three reserved ones are the only fixed numbers, and it writes those itself.
+    ///
+    /// `old` is the handle from the last upload of the same image; passing it back rewrites
+    /// that slot instead of leaking it. Any reserved handle means "no slot yet" and gets a
+    /// fresh one — those three are shared and never written by a caller.
+    uploadImage: *const fn (*anyopaque, old: u32, upload: *const ImageUpload) callconv(.c) u32,
+    /// Its own call because it is its own thing: six faces, one of them in the whole scene,
+    /// and it goes to the sky rather than into the table. Nothing comes back to name.
+    uploadSkybox: *const fn (*anyopaque, upload: *const SkyboxUpload) callconv(.c) void,
     /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary. Kind IS
     /// the handle: the render passes bind shaders by kind, so nothing comes back.
     uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
-    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
     freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
 };
 
@@ -75,8 +78,15 @@ pub const MeshUpload = struct {
     surfaces: []const SurfaceUpload,
 };
 
-/// An image with no name of its own — a glTF embedded texture, or a baked font atlas. The
-/// sampler is described inline; there is no separate sampler table to index into.
+/// The sky, as six square faces in Vulkan order. Always mipless and always linear — there
+/// is one of these and it fills the horizon.
+pub const SkyboxUpload = struct {
+    size: u32,
+    faces: [6][]const u8,
+};
+
+/// One 2D image. The sampler is described inline; there is no separate sampler table to
+/// index into.
 pub const ImageUpload = struct {
     width: u32,
     height: u32,

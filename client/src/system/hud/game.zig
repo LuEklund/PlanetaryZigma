@@ -4,6 +4,7 @@ const nz = shared.numz;
 const system = @import("../../System.zig");
 const World = system.World;
 const Ui = @import("ui");
+const Assets = @import("graphics").Assets;
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -12,7 +13,7 @@ const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
 const OptionsTab = Hud.OptionsTab;
 
-pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool) !void {
+pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool, game_assets: *const Assets) !void {
     const ping = network_manager.ping_milliseconds;
     const ping_text = if (ping < 0) "-- ms" else ui.print("{d} ms", .{ping});
     const ping_color: nz.color.Rgba(f32) = if (ping < 0)
@@ -111,7 +112,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         .offset = .{ .left = ui.screen_width - equipment_size.width, .top = ui.screen_height - equipment_size.height },
                         .color = .new(1, 1, 1, 1),
                         .name = @tagName(item_kind),
-                        .texture = .{ .item = item_kind },
+                        .texture = game_assets.textures.get(item_kind),
                         .child_anchor = .{ .x = .start, .y = .end },
                         .children = &.{.{
                             .size = .{ .fixed = ui.textSize(amount_text, 48) },
@@ -140,7 +141,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
 
                         .color = .new(1, 1, 1, 1),
                         .name = @tagName(item_kind),
-                        .texture = .{ .item = item_kind },
+                        .texture = game_assets.textures.get(item_kind),
                         .child_anchor = .{ .x = .end, .y = .end },
                         .children = &.{.{
                             .size = .{ .fixed = ui.textSize(amount_text, 32) },
@@ -215,7 +216,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                             },
                         },
                         .color = .new(1, 1, 1, 1),
-                        .texture = .crosshair,
+                        .texture = game_assets.textures.crosshair(),
                     },
                 },
             });

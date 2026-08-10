@@ -60,36 +60,30 @@ pub const ffi = struct {
         context.vulkan.rebindProcs();
     }
 
-    pub export fn uploadTexture(handle: *anyopaque, upload: *const DrawList.TextureUpload) void {
+    pub export fn uploadImage(handle: *anyopaque, old: u32, upload: *const contract.ImageUpload) u32 {
         const context: *Context = @ptrCast(@alignCast(handle));
-        _ = context.vulkan.resources.uploadTexture(.{
-            .slot = upload.slot,
+        return context.vulkan.resources.uploadImage(.{
+            // The reserved three are ours and shared: a caller still pointing at one has
+            // no slot of its own yet, and writing there would break it for everything else.
+            .slot = if (old >= contract.reserved_textures) old else null,
             .width = upload.width,
             .height = upload.height,
-            .faces = upload.faces,
-            .r8 = false,
-            .mips = false,
-            .mag_linear = true,
-            .min_linear = true,
-        }) catch |err| {
-            std.log.err("upload texture slot {d}: {s}", .{ upload.slot, @errorName(err) });
-        };
-    }
-
-    pub export fn uploadImage(handle: *anyopaque, upload: *const contract.ImageUpload) u32 {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadTexture(.{
-            .slot = null,
-            .width = upload.width,
-            .height = upload.height,
-            .faces = &.{upload.pixels},
+            .pixels = upload.pixels,
             .r8 = upload.r8,
             .mips = upload.mips,
             .mag_linear = upload.mag_linear,
             .min_linear = upload.min_linear,
         }) catch |err| {
             std.log.err("upload image: {s}", .{@errorName(err)});
-            return 0;
+            return old;
+        };
+    }
+
+    /// One skybox, no handle: it goes to its own descriptor, not into the table.
+    pub export fn uploadSkybox(handle: *anyopaque, upload: *const contract.SkyboxUpload) void {
+        const context: *Context = @ptrCast(@alignCast(handle));
+        context.vulkan.resources.uploadSkybox(upload.faces, upload.size) catch |err| {
+            std.log.err("upload skybox: {s}", .{@errorName(err)});
         };
     }
 

@@ -8,7 +8,7 @@ const Rig = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const Model = @import("assets").Model;
+const Model = @import("assets/root.zig").Model;
 
 state_clips: std.EnumArray(shared.entity.State, ?usize),
 look_nodes: []usize,

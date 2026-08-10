@@ -76,14 +76,6 @@ pub const UiLayer = struct {
     screen_height: f32,
 };
 
-pub const TextureUpload = struct {
-    slot: u32,
-    width: u32,
-    height: u32,
-    /// One entry is a 2D texture; six is a cubemap, in Vulkan face order.
-    faces: []const []const u8,
-};
-
 pub fn init(gpa: std.mem.Allocator) !DrawList {
     return .{
         .camera = .{ .position = @splat(0), .rotation = .identity, .fov_rad = 0 },

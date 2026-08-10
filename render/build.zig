@@ -98,34 +98,6 @@ pub fn build(b: *std.Build) void {
     });
     stb_image.addIncludePath(stb_dep.path("."));
 
-    // Files in, data out. A module rather than a package: nothing outside this tree ever
-    // wanted it on its own, and the extra package meant a `Loaded` union existed only to
-    // carry parsed data back across a boundary with one caller.
-    const assets = b.addModule("assets", .{
-        .root_source_file = b.path("assets/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shared", .module = shared },
-            .{ .name = "numz", .module = numz },
-            .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
-            .{ .name = "ztracy", .module = ztracy },
-            .{ .name = "stb_image", .module = stb_image.createModule() },
-            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
-        },
-        .link_libc = true,
-    });
-    assets.addIncludePath(stb_dep.path("."));
-    assets.addCSourceFile(.{
-        .file = b.addWriteFiles().add("stbi_impl.c",
-            \\#define STB_IMAGE_IMPLEMENTATION
-            \\#include "stb_image.h"
-            \\#define STB_TRUETYPE_IMPLEMENTATION
-            \\#include "stb_truetype.h"
-        ),
-        .flags = &.{"-fvisibility=hidden"},
-    });
-
     const vulkandeps = b.dependency("vulkan_headers", .{});
     const vmadep = b.dependency("vma", .{});
 
@@ -174,21 +146,36 @@ pub fn build(b: *std.Build) void {
     });
 
 
-    // The client-side render system. Depends on the contract; the contract knows nothing
-    // of it. This is what holds per-frame and per-entity state, so the game owns it.
-    _ = b.addModule("render_system", .{
-        .root_source_file = b.path("system/root.zig"),
+    // What the game holds to build a frame: its assets, its animation, its particles.
+    // Depends on the contract; the contract knows nothing of it. Deliberately not named
+    // after the renderer — this is the producer side, and the backend never sees it.
+    const graphics = b.addModule("graphics", .{
+        .root_source_file = b.path("graphics/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
             .{ .name = "contract", .module = contract },
-            .{ .name = "assets", .module = assets },
+            .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
+            .{ .name = "stb_image", .module = stb_image.createModule() },
+            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
             .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
         },
         .link_libc = true,
+    });
+    // The file readers are internal files now, not a module: nothing outside this tree ever
+    // asked for them on their own.
+    graphics.addIncludePath(stb_dep.path("."));
+    graphics.addCSourceFile(.{
+        .file = b.addWriteFiles().add("stbi_impl.c",
+            \\#define STB_IMAGE_IMPLEMENTATION
+            \\#include "stb_image.h"
+            \\#define STB_TRUETYPE_IMPLEMENTATION
+            \\#include "stb_truetype.h"
+        ),
+        .flags = &.{"-fvisibility=hidden"},
     });
 
     // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
@@ -207,7 +194,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
                 .{ .name = "contract", .module = contract },
-                .{ .name = "assets", .module = assets },
             },
             .link_libc = true,
         }),
