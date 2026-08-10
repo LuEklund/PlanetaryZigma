@@ -12,13 +12,6 @@ const std = @import("std");
 pub const log = @import("log.zig");
 pub const DrawList = @import("DrawList.zig");
 
-/// Slots the backend owns and writes itself. Everything above this number is a texture the
-/// producer uploaded, named in whatever order it likes.
-pub const reserved_textures: u32 = 3;
-pub const blank_texture: u32 = 0;
-pub const missing_texture: u32 = 1;
-pub const highlight_mask_texture: u32 = 2;
-
 pub const Shader = @import("Shader.zig");
 
 pub const InitOptions = struct {
@@ -40,12 +33,18 @@ pub const Api = struct {
     uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
 
-    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
+    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) TextureHandle,
     uploadSkybox: *const fn (*anyopaque, upload: *const SkyboxUpload) callconv(.c) void,
     uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
-    /// Only ever a slot this caller was handed. The reserved three are the backend's own
+    /// Only ever a handle this caller was handed. The named ones are the backend's own
     /// and were never yours to give back.
-    freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
+    freeImage: *const fn (*anyopaque, texture: TextureHandle) callconv(.c) void,
+};
+
+pub const TextureHandle = enum(u32) {
+    blank,
+    missing,
+    _,
 };
 
 /// What the backend hands back for an uploaded mesh. Its bits are the backend's business.
@@ -82,5 +81,5 @@ pub const ImageUpload = struct {
 pub const SurfaceUpload = struct {
     index_start: u32,
     index_count: u32,
-    texture_slot: u32,
+    texture: TextureHandle,
 };

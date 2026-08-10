@@ -7,6 +7,7 @@ const Vma = @import("../Vulkan/Vma.zig");
 const Device = @import("../Vulkan/device.zig").Logical;
 const Buffer = @import("../Vulkan/Buffer.zig");
 const check = @import("../Vulkan/utils.zig").check;
+const contract = @import("contract");
 
 pub const max_textures = 256;
 
@@ -15,8 +16,7 @@ device: Device,
 descriptor_buffer: Buffer,
 binding_offset: c.VkDeviceSize,
 descriptor_size: usize,
-next_slot: usize,
-free_slots: std.ArrayList(usize),
+taken: [max_textures]bool,
 samplers: std.ArrayList(c.VkSampler),
 empty_view: c.VkImageView,
 empty_sampler: c.VkSampler,
@@ -29,7 +29,6 @@ pub fn init(
     textures_layout: c.VkDescriptorSetLayout,
     material_layout: c.VkDescriptorSetLayout,
     descriptor_size: usize,
-    first_dynamic_slot: usize,
 ) !TextureTable {
     var table_set_size: c.VkDeviceSize = 0;
     ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, textures_layout, &table_set_size);
@@ -52,8 +51,11 @@ pub fn init(
         ),
         .binding_offset = binding_offset,
         .descriptor_size = descriptor_size,
-        .next_slot = first_dynamic_slot,
-        .free_slots = .empty,
+        .taken = taken: {
+            var named: [max_textures]bool = @splat(false);
+            for (0..@typeInfo(contract.TextureHandle).@"enum".fields.len) |slot| named[slot] = true;
+            break :taken named;
+        },
         .samplers = .empty,
         .empty_view = null,
         .empty_sampler = null,
@@ -90,7 +92,6 @@ pub fn init(
 }
 
 pub fn deinit(self: *TextureTable, gpa: std.mem.Allocator) void {
-    self.free_slots.deinit(gpa);
     for (self.samplers.items) |sampler| c.vkDestroySampler(self.device.handle, sampler, null);
     self.samplers.deinit(gpa);
     self.skybox_descriptor.deinit(self.vma);
@@ -102,21 +103,19 @@ pub fn deinit(self: *TextureTable, gpa: std.mem.Allocator) void {
 pub fn registerEmpty(self: *TextureTable, view: c.VkImageView, sampler: c.VkSampler) void {
     self.empty_view = view;
     self.empty_sampler = sampler;
-    for (0..max_textures) |slot| self.write(slot, view, sampler);
+    for (0..max_textures) |slot| self.write(@enumFromInt(slot), view, sampler);
 }
 
-pub fn alloc(self: *TextureTable) usize {
-    if (self.free_slots.pop()) |free_slot| return free_slot;
-    std.debug.assert(self.next_slot < max_textures);
-    const slot = self.next_slot;
-    self.next_slot += 1;
-    return slot;
+pub fn alloc(self: *TextureTable) contract.TextureHandle {
+    const slot = std.mem.indexOfScalar(bool, &self.taken, false).?;
+    self.taken[slot] = true;
+    return @enumFromInt(slot);
 }
 
-pub fn free(self: *TextureTable, gpa: std.mem.Allocator, slot: usize) void {
+pub fn free(self: *TextureTable, texture: contract.TextureHandle) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
-    self.write(slot, self.empty_view, self.empty_sampler);
-    self.free_slots.append(gpa, slot) catch {};
+    self.write(texture, self.empty_view, self.empty_sampler);
+    self.taken[@intFromEnum(texture)] = false;
 }
 
 pub fn addSampler(self: *TextureTable, gpa: std.mem.Allocator, mag_linear: bool, min_linear: bool) !c.VkSampler {
@@ -142,9 +141,9 @@ pub fn addSampler(self: *TextureTable, gpa: std.mem.Allocator, mag_linear: bool,
     return new_sampler;
 }
 
-pub fn write(self: *TextureTable, slot: usize, view: c.VkImageView, sampler: c.VkSampler) void {
+pub fn write(self: *TextureTable, texture: contract.TextureHandle, view: c.VkImageView, sampler: c.VkSampler) void {
     const descriptor_buffer_bytes: [*]u8 = @ptrCast(self.descriptor_buffer.info.pMappedData);
-    self.writeCombinedSamplerDescriptor(descriptor_buffer_bytes + self.binding_offset + slot * self.descriptor_size, view, sampler);
+    self.writeCombinedSamplerDescriptor(descriptor_buffer_bytes + self.binding_offset + @intFromEnum(texture) * self.descriptor_size, view, sampler);
 }
 
 pub fn writeSkybox(self: *TextureTable, view: c.VkImageView, sampler: c.VkSampler) void {

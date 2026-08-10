@@ -92,7 +92,7 @@ pub const Layout = struct {
     color: nz.color.Rgba(f32) = .new(0, 0, 0, 0),
     axis_align: AxisAlign = .horizontal,
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
-    texture: u32 = contract.blank_texture,
+    texture: contract.TextureHandle = .blank,
     gap: f32 = 0,
     text: ?Text = null,
     name: ?[]const u8 = null,
@@ -317,10 +317,10 @@ fn pushQuads(self: *Ui) void {
         if (node.layout.color.a != 0) {
             const colors: [4]f32 = node.layout.color.toVec();
             self.quads.appendAssumeCapacity(.{ .vertices = .{
-                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = node.layout.texture },
-                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = node.layout.texture },
-                .{ .position = .{ rect.left + rect.width, rect.top + rect.height }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = node.layout.texture },
-                .{ .position = .{ rect.left, rect.top + rect.height }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = node.layout.texture },
+                .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top }, .color = colors, .uv = .{ 1, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left + rect.width, rect.top + rect.height }, .color = colors, .uv = .{ 1, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
+                .{ .position = .{ rect.left, rect.top + rect.height }, .color = colors, .uv = .{ 0, 1 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
             } });
         }
         if (node.layout.text) |text| {

@@ -34,7 +34,7 @@ pub const RetiredMesh = struct {
 
 pub const RetiredImage = struct {
     image: Image,
-    slot: ?u32,
+    texture: ?contract.TextureHandle,
     frame: u32,
 };
 
@@ -49,7 +49,7 @@ device: Device,
 
 texture_table: TextureTable,
 meshes: std.ArrayList(?Mesh),
-textures: std.AutoArrayHashMapUnmanaged(u32, Image),
+textures: std.AutoArrayHashMapUnmanaged(contract.TextureHandle, Image),
 retired_meshes: std.ArrayList(RetiredMesh),
 retired_images: std.ArrayList(RetiredImage),
 
@@ -70,7 +70,7 @@ shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
 shadow_cascade_offset: c.VkDeviceSize,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, first_dynamic_texture_slot: u32) !*Resources {
+pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
@@ -258,7 +258,6 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         descriptor_layouts.get(.textures).handle,
         descriptor_layouts.get(.material).handle,
         physical_device.combined_image_sampler_descriptor_size,
-        first_dynamic_texture_slot,
     );
     try self.shaders.init(gpa, device, .init(.{
         .scene = descriptor_layouts.get(.scene).handle,
@@ -301,7 +300,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     try missing.uploadDataToImage(self.vma, self.device, &checkerboard, checkerboard.len, 0);
 
     self.texture_table.registerEmpty(blank.vk_imageview, self.texture_table.samplers.items[0]);
-    self.texture_table.write(contract.missing_texture, missing.vk_imageview, self.texture_table.samplers.items[0]);
+    self.texture_table.write(.missing, missing.vk_imageview, self.texture_table.samplers.items[0]);
 
     self.blank_texture = blank;
     self.missing_texture = missing;
@@ -309,7 +308,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     const box_surfaces = [_]contract.SurfaceUpload{.{
         .index_start = 0,
         .index_count = @intCast(box.indices.len),
-        .texture_slot = contract.blank_texture,
+        .texture = .blank,
     }};
     const box_handle = try self.uploadMesh(.none, 0, &.{
         .name = "default",
@@ -402,7 +401,7 @@ fn drainRetiredImages(self: *Resources, frame: u32) void {
         }
         var doomed = self.retired_images.swapRemove(index);
         doomed.image.deinit(self.texture_table.vma, self.texture_table.device);
-        if (doomed.slot) |slot| self.texture_table.free(self.gpa, slot);
+        if (doomed.texture) |texture| self.texture_table.free(texture);
     }
 }
 
@@ -426,7 +425,7 @@ pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, comman
     for (command.surfaces, surfaces) |src, *surface| surface.* = .{
         .index_start = src.index_start,
         .index_count = src.index_count,
-        .texture = @enumFromInt(src.texture_slot),
+        .texture = src.texture,
     };
 
     const mesh: Mesh = if (command.skinned)
@@ -444,30 +443,30 @@ pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, comman
     return @enumFromInt(self.meshes.items.len);
 }
 
-pub fn freeTexture(self: *Resources, slot: u32, frame: u32) void {
-    const entry = self.textures.fetchSwapRemove(slot) orelse return;
-    self.retire(entry.value, slot, frame);
+pub fn freeTexture(self: *Resources, texture: contract.TextureHandle, frame: u32) void {
+    const entry = self.textures.fetchSwapRemove(texture) orelse return;
+    self.retire(entry.value, texture, frame);
 }
 
-fn retire(self: *Resources, image: Image, slot: ?u32, frame: u32) void {
-    self.retired_images.append(self.gpa, .{ .image = image, .slot = slot, .frame = frame }) catch {
+fn retire(self: *Resources, image: Image, texture: ?contract.TextureHandle, frame: u32) void {
+    self.retired_images.append(self.gpa, .{ .image = image, .texture = texture, .frame = frame }) catch {
         var doomed = image;
         check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
         doomed.deinit(self.texture_table.vma, self.texture_table.device);
-        if (slot) |taken| self.texture_table.free(self.gpa, taken);
+        if (texture) |taken| self.texture_table.free(taken);
     };
 }
 
-pub fn uploadImage(self: *Resources, upload: *const contract.ImageUpload) !u32 {
+pub fn uploadImage(self: *Resources, upload: *const contract.ImageUpload) !contract.TextureHandle {
     const table = &self.texture_table;
     var image = try self.buildImage(&.{upload.pixels}, upload.width, upload.height, upload.r8, upload.mips, .@"2d");
     errdefer image.deinit(table.vma, table.device);
     const sampler = try self.samplerFor(upload.mag_linear, upload.min_linear);
 
-    const slot: u32 = @intCast(table.alloc());
-    try self.textures.put(self.gpa, slot, image);
-    table.write(slot, image.vk_imageview, sampler);
-    return slot;
+    const texture = table.alloc();
+    try self.textures.put(self.gpa, texture, image);
+    table.write(texture, image.vk_imageview, sampler);
+    return texture;
 }
 
 pub fn uploadSkybox(self: *Resources, upload: *const contract.SkyboxUpload, frame: u32) !void {

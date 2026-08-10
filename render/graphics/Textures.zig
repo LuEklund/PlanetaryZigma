@@ -18,9 +18,7 @@ const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 const Entry = struct {
     path: []const u8,
     mtime: std.Io.Timestamp,
-    /// The checkerboard until this file has a slot of its own. A reload uploads the new one
-    /// first and frees this second, so what is drawn is never a slot in the middle of a swap.
-    handle: u32,
+    handle: contract.TextureHandle,
 };
 
 dir: std.Io.Dir,
@@ -53,15 +51,15 @@ pub fn deinit(self: *Textures, gpa: std.mem.Allocator, io: std.Io) void {
 
 pub fn add(self: *Textures, gpa: std.mem.Allocator, path: []const u8) !u32 {
     const entry: u32 = @intCast(self.entries.items.len);
-    try self.entries.append(gpa, .{ .path = path, .mtime = .zero, .handle = contract.missing_texture });
+    try self.entries.append(gpa, .{ .path = path, .mtime = .zero, .handle = .missing });
     return entry;
 }
 
-pub fn get(self: *const Textures, item: shared.Item.Kind) u32 {
+pub fn get(self: *const Textures, item: shared.Item.Kind) contract.TextureHandle {
     return self.entries.items[self.icon_entries.get(item)].handle;
 }
 
-pub fn crosshair(self: *const Textures) u32 {
+pub fn crosshair(self: *const Textures) contract.TextureHandle {
     return self.entries.items[self.crosshair_entry].handle;
 }
 
@@ -85,13 +83,12 @@ pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *co
             .mag_linear = true,
             .min_linear = true,
         });
-        if (uploaded == 0) {
+        if (uploaded == .missing) {
             std.log.err("upload texture {s}: keeping the one already bound", .{entry.path});
             continue;
         }
-        // The old one goes only now that the new one exists. On a first load there is no old
-        // one — the entry is still pointing at the backend's checkerboard, which is not ours.
-        if (entry.handle != contract.missing_texture) renderer.api.freeImage(renderer.handle, entry.handle);
+        // The old one goes only now that the new one exists.
+        if (entry.handle != .missing) renderer.api.freeImage(renderer.handle, entry.handle);
         entry.handle = uploaded;
     }
 }
