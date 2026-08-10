@@ -87,21 +87,6 @@ fn steer(
     return nz.vec.normalize(heading);
 }
 
-fn attackLands(world: *World, attacker: *system.Entity, target: *const system.Entity, attack: shared.entity.State) bool {
-    const last_used, const range, const cooldown = switch (attack) {
-        .attack => .{ &attacker.last_attack, shared.entity.spec(attacker.kind).primary_range, attacker.stat(.primary_cooldown) },
-        .utility => .{ &attacker.last_utility, shared.entity.spec(attacker.kind).utility_range, attacker.stat(.utility_cooldown) },
-        else => unreachable,
-    };
-    const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
-    if (distance < range and world.elapsed_time - last_used.* >= cooldown) {
-        last_used.* = world.elapsed_time;
-        world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
-        return true;
-    }
-    return false;
-}
-
 pub fn updateEnemies(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -143,7 +128,7 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
@@ -166,7 +151,7 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     if (distance_to_player < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
                     }
@@ -178,7 +163,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 14 } } });
 
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
                     const muzzle_velocity = nz.vec.scale(aim_dir, 50);
@@ -194,7 +179,7 @@ pub fn updateEnemies(world: *World) !void {
                         .damage = damage,
                     });
                 }
-                // if (attackLands(world, enemy, player, .attack)) {
+                // if (world.attackLands(enemy, player, .attack)) {
                 //     _ = world.spawn(.{
                 //         .kind = .{ .enemy = .tubloid },
                 //         .transform = .{ .position = enemy.transform.position },
@@ -208,11 +193,11 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 if (enemy.mode == .walking) world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 const utility_range = shared.entity.spec(enemy.kind).utility_range;
-                if (distance_to_player > utility_range * 0.75 and attackLands(world, enemy, player, .utility)) {
+                if (distance_to_player > utility_range * 0.75 and world.attackLands(enemy, player, .utility)) {
                     world.act(.{ .id = enemy.id, .verb = .{ .arc_jump = player.transform.position } });
                 }
 
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     if (distance_to_player < range) {
                         if (world.removeHealth(player, damage, enemy) == .ignored) std.log.debug("did not take damage", .{});
                     }
@@ -223,7 +208,7 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     //TODO: hardcoded capsule half-height; becomes a muzzle socket.
                     const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
                     const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
@@ -260,7 +245,7 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
-                if (attackLands(world, enemy, player, .attack)) {
+                if (world.attackLands(enemy, player, .attack)) {
                     _ = world.removeHealth(player, damage, enemy);
                 }
             },
@@ -269,22 +254,35 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
-                if (attackLands(world, enemy, player, .attack)) {
-                    //TODO: hardcoded capsule half-height; becomes a muzzle socket.
-                    const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
-                    const aim_dir = nz.vec.normalize(player.transform.position - muzzle_position);
-                    const muzzle_velocity = nz.vec.scale(aim_dir, 50);
-                    _ = try world.spawn(.{
-                        .kind = .projectile_cube,
-                        .owner_id = enemy.id,
-                        .transform = .{
-                            .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
-                            .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
-                        },
-                        .replicated_velocity = muzzle_velocity,
-                        .lifetime = 2,
-                        .damage = damage,
-                    });
+                if (world.attackLands(enemy, player, .attack)) {
+                    var best: ?*system.Entity = null;
+                    var best_distance_sqr: f32 = std.math.floatMax(f32);
+                    for (world.entities.values()) |*entity| {
+                        if (entity.kind != .enemy) continue;
+                        const offset = entity.transform.position - enemy.transform.position;
+                        const distance_sqr = nz.vec.dot(offset, offset);
+                        if (distance_sqr >= best_distance_sqr) continue;
+                        if (entity.health >= entity.max_health) continue;
+                        best_distance_sqr = distance_sqr;
+                        best = entity;
+                    }
+                    if (best) |target| {
+                        //TODO: hardcoded capsule half-height; becomes a muzzle socket.
+                        const muzzle_position = enemy.transform.position + nz.vec.scale(planet_up, 0.8);
+                        const aim_dir = nz.vec.normalize(target.transform.position - muzzle_position);
+                        const muzzle_velocity = nz.vec.scale(aim_dir, 50);
+                        _ = try world.spawn(.{
+                            .kind = .projectile_cube,
+                            .owner_id = enemy.id,
+                            .transform = .{
+                                .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                                .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                            },
+                            .replicated_velocity = muzzle_velocity,
+                            .lifetime = 2,
+                            .damage = damage,
+                        });
+                    }
                 }
             },
         }

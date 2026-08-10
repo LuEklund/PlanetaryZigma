@@ -97,6 +97,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             .effect = if (entity.kind == .item) .item_effect else null,
         }, models);
     }
+
     animator.advance(world.trigger_events.items, models);
     world.trigger_events.clearRetainingCapacity();
     animator.draw(list, emitters, models);

@@ -54,6 +54,7 @@ pub const actions: []const Action = &.{
     .{ .id = .use_equipment, .default = .{ .key = .q }, .bindable = .{ .label = "Use Equipment" } },
     .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
     .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
+    .{ .id = .utility, .default = .{ .key = .left_shift }, .bindable = .{ .label = "Utility" } },
     .{ .id = .dev_f1, .default = .{ .key = .f1 }, .dev_command = .f1 },
     .{ .id = .dev_f2, .default = .{ .key = .f2 }, .dev_command = .f2 },
     .{ .id = .dev_f3, .default = .{ .key = .f3 }, .dev_command = .f3 },

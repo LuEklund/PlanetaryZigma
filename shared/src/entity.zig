@@ -120,7 +120,7 @@ pub fn spec(kind: Kind) Spec {
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .has_health = true,
-            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1 }),
+            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1, .utility_cooldown = 5 }),
             .primary_range = 10,
             .currency = 100,
         },

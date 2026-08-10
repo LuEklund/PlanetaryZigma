@@ -94,6 +94,7 @@ pub const Layout = struct {
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     texture: contract.TextureHandle = .blank,
     gap: f32 = 0,
+    //TODO: Padding
     text: ?Text = null,
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
