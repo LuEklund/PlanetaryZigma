@@ -18,7 +18,7 @@ pub const Entry = struct {
     kind: ?entity.Kind,
     model: Model,
     rig: Rig,
-    image_slots: []u32,
+    image_slots: []contract.TextureHandle,
 };
 
 dir: std.Io.Dir,
@@ -109,7 +109,7 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         for (entry.model.mesh_handles) |mesh| {
             if (mesh != 0) renderer.api.freeMesh(renderer.handle, @enumFromInt(mesh));
         }
-        for (entry.image_slots) |slot| renderer.api.freeImage(renderer.handle, slot);
+        for (entry.image_slots) |texture| renderer.api.freeImage(renderer.handle, texture);
         gpa.free(entry.image_slots);
         entry.image_slots = &.{};
         entry.model.deinit(gpa);
@@ -129,7 +129,7 @@ fn uploadMeshes(
 ) !void {
     switch (parsed.*) {
         inline else => |*data, tag| {
-            const slots = try gpa.alloc(u32, data.images.len);
+            const slots = try gpa.alloc(contract.TextureHandle, data.images.len);
             errdefer gpa.free(slots);
             for (data.images, data.image_sampler, slots) |image, sampler_index, *slot| {
                 const sampler = if (sampler_index) |sampler| data.samplers[sampler] else null;
@@ -155,12 +155,12 @@ fn uploadMeshes(
                 for (mesh.surfaces, surfaces) |src, *surface| surface.* = .{
                     .index_start = src.index_start,
                     .index_count = src.index_count,
-                    .texture_slot = if (src.material_missing)
-                        contract.missing_texture
+                    .texture = if (src.material_missing)
+                        .missing
                     else if (src.image_index) |image_index|
                         slots[image_index]
                     else
-                        contract.blank_texture,
+                        .blank,
                 };
                 mesh_handle.* = @intFromEnum(renderer.api.uploadMesh(renderer.handle, .none, &.{
                     .name = mesh.name,

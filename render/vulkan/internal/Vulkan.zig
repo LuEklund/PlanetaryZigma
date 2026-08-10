@@ -43,6 +43,7 @@ device: Device,
 vma: Vma,
 swapchain: Swapchain,
 resources: *Resources,
+highlight_mask: contract.TextureHandle,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
 
@@ -77,8 +78,9 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
         frame.* = try .init(self.vma, self.device);
     }
 
-    self.resources = try .init(gpa, self.vma, self.physical_device, self.device, contract.reserved_textures);
-    self.writeHighlightMaskSlot();
+    self.resources = try .init(gpa, self.vma, self.physical_device, self.device);
+    self.highlight_mask = self.resources.texture_table.alloc();
+    self.writeHighlightMask();
 
     return self;
 }
@@ -87,7 +89,6 @@ pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
 
     self.resources.deinit(gpa, self.vma, self.device);
-
 
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
     self.swapchain.deinit(self.vma, self.device);
@@ -109,12 +110,12 @@ pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !v
         width,
         height,
     );
-    self.writeHighlightMaskSlot();
+    self.writeHighlightMask();
 }
 
-fn writeHighlightMaskSlot(self: *Vulkan) void {
+fn writeHighlightMask(self: *Vulkan) void {
     self.resources.texture_table.write(
-        contract.highlight_mask_texture,
+        self.highlight_mask,
         self.swapchain.mask_image.vk_imageview,
         self.resources.texture_table.samplers.items[0],
     );
@@ -255,6 +256,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     renderWorldPass(self, cmd, current_frame, list);
     if (list.draw_sky) renderSkyPass(self, cmd, current_frame);
     renderParticlePass(self, cmd, current_frame, list, particle_batches);
+    renderOutlinePass(self, cmd, current_frame);
     if (list.draw_lines.items.len != 0) renderDebugPass(self, cmd, current_frame, list);
     renderUiPass(self, cmd, current_frame, list);
     ext.vkCmdEndRendering(cmd);
@@ -547,7 +549,6 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
     }
 
-
     bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
     for (list.draw_meshes.items) |row| {
         if (!row.skinned) continue;
@@ -669,6 +670,30 @@ fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.Enum
         first_emitter += emitter_count;
     }
     return batches;
+}
+
+fn renderOutlinePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData) void {
+    ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_NONE);
+    const color_blend_enables: c.VkBool32 = c.VK_FALSE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
+
+    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
+    self.bindWorldDescriptors(cmd, current_frame, world_pipeline_layout_handle);
+
+    bindVertexShader(cmd, self.resources.shaders.vert(.highlight_outline));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.highlight_outline));
+
+    var push: Shader.WorldPushConstant = .{
+        .vertex_buffer_address = 0,
+        .model_matrix = nz.Mat4x4(f32).identity.d,
+        .joint_matrices_address = 0,
+        .texture_index = @intFromEnum(self.highlight_mask),
+    };
+    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
+
+    c.vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
 fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
@@ -868,4 +893,3 @@ fn emitNode(
         c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
 }
-

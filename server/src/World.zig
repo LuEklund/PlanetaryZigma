@@ -427,7 +427,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
                 .kind = .teleporter,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){ 0, slab.y, 0 } },
             });
-            portal.teleporter.state = .active;
+            portal.teleporter.state = .completed;
             portal.teleporter.charged = portal.teleporter.max_charge;
             self.teleporter_id = portal.id;
             try self.flush();

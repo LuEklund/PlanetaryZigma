@@ -41,7 +41,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         const surfaces = [_]render.SurfaceUpload{.{
             .index_start = 0,
             .index_count = @intCast(chunk_upload.indices.len),
-            .texture_slot = render.blank_texture,
+            .texture = .blank,
         }};
         entry.mesh_handle = @intFromEnum(system.render.api.uploadMesh(system.render.handle, @enumFromInt(entry.mesh_handle), &.{
             .name = "chunk",
@@ -75,6 +75,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
 
+    const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
         const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
         const model_handle = models.get(entity.kind);
@@ -90,7 +91,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                 entity.flags.is_dying,
                 entity.override_animation_state,
             ),
-            .highlight = entity.kind == .teleporter,
+            .highlight = player_interact == entity.id,
             .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
