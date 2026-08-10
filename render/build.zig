@@ -98,6 +98,11 @@ pub fn build(b: *std.Build) void {
     });
     stb_image.addIncludePath(stb_dep.path("."));
 
+    // Public, not createModule(): ZLS's build runner only runs the translate-c step for
+    // modules in b.modules, and panics resolving one reached as someone's import.
+    const stb_truetype_module = stb_truetype.addModule("stb_truetype");
+    const stb_image_module = stb_image.addModule("stb_image");
+
     const vulkandeps = b.dependency("vulkan_headers", .{});
     const vmadep = b.dependency("vma", .{});
 
@@ -156,8 +161,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "numz", .module = numz },
             .{ .name = "contract", .module = contract },
             .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
-            .{ .name = "stb_image", .module = stb_image.createModule() },
-            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+            .{ .name = "stb_image", .module = stb_image_module },
+            .{ .name = "stb_truetype", .module = stb_truetype_module },
             .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
         },
@@ -188,7 +193,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
-                    .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+                    .{ .name = "stb_truetype", .module = stb_truetype_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
                 .{ .name = "contract", .module = contract },

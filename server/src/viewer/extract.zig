@@ -50,7 +50,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         const surfaces = [_]render.SurfaceUpload{.{
             .index_start = 0,
             .index_count = @intCast(chunk_upload.indices.len),
-            .texture_slot = render.blank_texture,
+            .texture = .blank,
         }};
         entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(entry.mesh_handle), &.{
             .name = "chunk",

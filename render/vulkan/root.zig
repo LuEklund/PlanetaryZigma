@@ -60,11 +60,11 @@ pub const ffi = struct {
         context.vulkan.rebindProcs();
     }
 
-    pub export fn uploadImage(handle: *anyopaque, upload: *const contract.ImageUpload) u32 {
+    pub export fn uploadImage(handle: *anyopaque, upload: *const contract.ImageUpload) contract.TextureHandle {
         const context: *Context = @ptrCast(@alignCast(handle));
         return context.vulkan.resources.uploadImage(upload) catch |err| {
             std.log.err("upload image: {s}", .{@errorName(err)});
-            return 0;
+            return .missing;
         };
     }
 
@@ -88,9 +88,9 @@ pub const ffi = struct {
         context.vulkan.resources.freeMesh(mesh, context.vulkan.current_frame_inflight);
     }
 
-    pub export fn freeImage(handle: *anyopaque, slot: u32) void {
+    pub export fn freeImage(handle: *anyopaque, texture: contract.TextureHandle) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.freeTexture(slot, context.vulkan.current_frame_inflight);
+        context.vulkan.resources.freeTexture(texture, context.vulkan.current_frame_inflight);
     }
 
     pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {

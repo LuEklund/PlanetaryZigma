@@ -357,7 +357,10 @@ fn addObjectivePanel(world: *World, ui: *Ui) void {
     if (world.getPtr(world.teleporter_id)) |teleporter_entity| {
         const teleporter = teleporter_entity.teleporter;
         const boss_alive = world.teleporter_bosses.items.len > 0;
-        if (teleporter.state == .idle) {
+        if (world.stage == 0) {
+            lines[line_count] = "Press E on the teleporter to start";
+            line_count += 1;
+        } else if (teleporter.state == .idle) {
             lines[line_count] = "Find the teleporter";
             line_count += 1;
         } else {

@@ -8,6 +8,7 @@ const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
 const Image = @import("Image.zig");
+const contract = @import("contract");
 
 
 surfaces: std.ArrayList(GeoSurface),
@@ -21,7 +22,7 @@ pub const SkinnedVertex = shared.SkinnedVertex;
 pub const GeoSurface = struct {
     index_start: u32,
     index_count: u32,
-    texture: Image.Handle,
+    texture: contract.TextureHandle,
 };
 
 pub fn init(

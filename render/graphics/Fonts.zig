@@ -64,12 +64,14 @@ pub fn update(self: *Fonts, gpa: std.mem.Allocator, io: std.Io, renderer: *const
             .mag_linear = true,
             .min_linear = true,
         });
-        if (uploaded == 0) {
+        if (uploaded == .missing) {
             std.log.err("upload font atlas {s}: keeping the one already bound", .{entry.path});
             continue;
         }
-        if (entry.font.atlas_texture_index != 0) renderer.api.freeImage(renderer.handle, entry.font.atlas_texture_index);
-        entry.font.atlas_texture_index = uploaded;
+        if (entry.font.atlas_texture_index != @intFromEnum(contract.TextureHandle.missing)) {
+            renderer.api.freeImage(renderer.handle, @enumFromInt(entry.font.atlas_texture_index));
+        }
+        entry.font.atlas_texture_index = @intFromEnum(uploaded);
     }
 }
 
