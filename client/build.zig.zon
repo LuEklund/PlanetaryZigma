@@ -4,9 +4,6 @@
     .fingerprint = 0x9145da0722fc95d5,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .Assets = .{
-            .path = "../Assets/",
-        },
         .shared = .{
             .path = "../shared/",
         },

@@ -1,18 +1,10 @@
 const std = @import("std");
-const Assets = @import("../Watcher.zig");
 const stbTruetype = @import("stb_truetype");
 const Font = @import("shared").Font;
 
 /// Bakes an SDF atlas and fills in `self`'s glyph metrics. The coverage bitmap is returned
 /// for the caller to do what it likes with.
-pub fn bake(self: *Font, gpa: std.mem.Allocator, watcher: *Assets, io: std.Io, entry: u32) ![]u8 {
-    const file = try watcher.open(io, entry);
-    defer file.close(io);
-
-    var read_buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &read_buffer);
-    const content = try reader.interface.allocRemaining(gpa, .unlimited);
-    defer gpa.free(content);
+pub fn bake(self: *Font, gpa: std.mem.Allocator, content: []const u8) ![]u8 {
 
     const coverage = try gpa.alloc(u8, Font.atlas_width * Font.atlas_height);
     errdefer gpa.free(coverage);

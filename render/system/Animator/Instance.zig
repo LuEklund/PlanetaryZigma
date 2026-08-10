@@ -3,10 +3,10 @@ const Instance = @This();
 const std = @import("std");
 const shared = @import("shared");
 const nz = @import("numz");
-const Model = @import("Assets").Model;
+const Model = @import("assets").Model;
 const Rig = @import("../Rig.zig");
 const Shader = @import("contract").Shader;
-const Node = @import("Assets").Node;
+const Node = @import("assets").Node;
 
 model: u32,
 offset: nz.Transform3D(f32),
@@ -58,7 +58,7 @@ pub const Skeleton = struct {
     player: Player,
     overlay: ?Player,
 
-    pub fn init(gpa: std.mem.Allocator, model: *Model) !Skeleton {
+    pub fn init(gpa: std.mem.Allocator, model: *const Model) !Skeleton {
         const node_count = model.nodes.items.len;
         var joint_count: u32 = 0;
         for (model.skins) |skin| joint_count += @intCast(skin.inverse_bind_matrices.?.len);
@@ -129,7 +129,7 @@ pub const Skeleton = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *Model, rig: *const Rig) !Instance {
+pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *const Model, rig: *const Rig) !Instance {
     return .{
         .model = model_handle,
         .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },

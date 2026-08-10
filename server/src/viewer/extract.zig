@@ -5,7 +5,6 @@ const World = @import("../World.zig");
 const render_system = @import("render_system");
 const render = @import("contract");
 const Emitter = @import("render_system").Emitter;
-const ModelTable = @import("render_system").ModelTable;
 const Camera = @import("camera.zig");
 const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
@@ -13,6 +12,7 @@ const Viewer = @import("Viewer.zig");
 
 pub fn frame(world: *World, viewer: *Viewer) !void {
     const list = &viewer.draw_list;
+    const models = &viewer.assets.models;
     const camera = viewer.camera;
     const ui = &viewer.ui;
     // The wire carries the client's real camera; `Entity.camera` holds only the yaw
@@ -83,11 +83,11 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, &.{}, &viewer.models);
+    }, &.{}, models);
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
+        const model_handle = shared.entity.modelRow(entity.kind) orelse continue;
         try viewer.animator.observe(.{
             .id = entity.id,
             .model = model_handle,
@@ -104,10 +104,10 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
-        }, &viewer.models);
+        }, models);
     }
-    viewer.animator.advance(&.{}, &viewer.models);
-    viewer.animator.draw(list, &viewer.emitters, &viewer.models);
+    viewer.animator.advance(&.{}, models);
+    viewer.animator.draw(list, &viewer.emitters, models);
 
     if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);

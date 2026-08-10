@@ -40,18 +40,22 @@ pub const Api = struct {
     update: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 
-    /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary.
-    /// Kind IS the handle: the render passes bind shaders by kind, so nothing comes back.
-    uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
-    /// Slot rides inside the upload: file textures are a comptime set, so the producer
-    /// already names them and `Ui` reads the same numbers.
-    uploadTexture: *const fn (*anyopaque, upload: *const DrawList.TextureUpload) callconv(.c) void,
-
     /// Runtime-created, so the backend names them. `old` is freed first; pass `.none`
     /// on a first load. Both return 0 / `.none` on failure.
     uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
-    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
+
+    /// Pixels, not files. A model and a font are the caller's words for a file it parsed;
+    /// what arrives here is an image and a mesh, which is all a renderer has a name for.
+    ///
+    /// Slot rides inside a texture upload: file textures are a comptime set, so the caller
+    /// already names them and `Ui` reads the same numbers. An image has no name of its own,
+    /// so the backend hands one back.
+    uploadTexture: *const fn (*anyopaque, upload: *const DrawList.TextureUpload) callconv(.c) void,
+    /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary. Kind IS
+    /// the handle: the render passes bind shaders by kind, so nothing comes back.
+    uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
+    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
     freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
 };
 
@@ -71,14 +75,8 @@ pub const MeshUpload = struct {
     surfaces: []const SurfaceUpload,
 };
 
-pub const SurfaceUpload = struct {
-    index_start: u32,
-    index_count: u32,
-    texture_slot: u32,
-};
-
-/// An image with no name of its own — a glTF embedded texture. The sampler is described
-/// inline; there is no separate sampler table to index into.
+/// An image with no name of its own — a glTF embedded texture, or a baked font atlas. The
+/// sampler is described inline; there is no separate sampler table to index into.
 pub const ImageUpload = struct {
     width: u32,
     height: u32,
@@ -88,4 +86,10 @@ pub const ImageUpload = struct {
     mips: bool,
     mag_linear: bool,
     min_linear: bool,
+};
+
+pub const SurfaceUpload = struct {
+    index_start: u32,
+    index_count: u32,
+    texture_slot: u32,
 };

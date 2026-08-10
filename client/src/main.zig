@@ -93,7 +93,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         if (system_lib.api.systemUpdate(system_lib.handle, &world)) break;
-        system_lib.trySwap(io) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        system_lib.trySwap(io);
     }
 }
 

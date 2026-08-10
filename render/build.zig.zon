@@ -7,9 +7,6 @@
         .shared = .{
             .path = "../shared/",
         },
-        .Assets = .{
-            .path = "../Assets/",
-        },
         .numz = .{
             .url = "git+https://github.com/LuEklund/numz.git#b230c27e927c328a1528713ba782ee302f28317b",
             .hash = "numz-0.0.2-V-sGm0rfAABDpmxYTHA_A6bc3MFGtn_YJ9VKkhTlDBmH",
@@ -62,6 +59,14 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "src",
+        "root.zig",
+        "Shader.zig",
+        "DrawList.zig",
+        "log.zig",
+        "assets",
+        "system",
+        "ui",
+        "vulkan",
+        "window",
     },
 }

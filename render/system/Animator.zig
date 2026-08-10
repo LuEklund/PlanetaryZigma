@@ -4,9 +4,9 @@ const std = @import("std");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = @import("numz");
-const Model = @import("Assets").Model;
-const Node = @import("Assets").Node;
-const AnimationClip = @import("Assets").AnimationClip;
+const Model = @import("assets").Model;
+const Node = @import("assets").Node;
+const AnimationClip = @import("assets").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
 const Rig = @import("Rig.zig");
 const ModelTable = @import("ModelTable.zig");
@@ -77,7 +77,7 @@ pub fn deinit(self: *Animator) void {
     self.retiring.deinit(self.gpa);
 }
 
-fn resolveModel(models: *ModelTable, instance: *const Instance) *Model {
+fn resolveModel(models: *const ModelTable, instance: *const Instance) *const Model {
     return models.modelPtr(instance.model);
 }
 
@@ -259,7 +259,7 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
     }
 }
 
-fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *Model, rig: *const Rig) void {
+fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *const Model, rig: *const Rig) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
     const clip_index = rig.state_clips.get(instance.state);
     if (clip_index) |index| {

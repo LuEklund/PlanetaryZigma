@@ -269,6 +269,48 @@ pub fn spec(kind: Kind) Spec {
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 
+/// A model that is generated rather than read: the row exists, it just has no file.
+pub fn isModelFile(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".glb");
+}
+
+/// One row per distinct model path in the specs, in row order. Generated models are rows
+/// like any other — a cube is an asset, not a special case in the renderer.
+pub fn modelPaths(buffer: *[all_kinds.len][]const u8) []const []const u8 {
+    var found: usize = 0;
+    for (all_kinds) |kind| {
+        const model_spec = spec(kind).model orelse continue;
+        for (buffer[0..found]) |seen| {
+            if (std.mem.eql(u8, seen, model_spec.path)) break;
+        } else {
+            buffer[found] = model_spec.path;
+            found += 1;
+        }
+    }
+    return buffer[0..found];
+}
+
+/// Which row a kind draws from, and which kind owns a row. Two directions of the same
+/// lookup, both over paths, because the path is what the specs agree on.
+pub fn modelRow(kind: Kind) ?u32 {
+    const wanted = (modelSpec(kind) orelse return null).path;
+    var buffer: [all_kinds.len][]const u8 = undefined;
+    for (modelPaths(&buffer), 0..) |path, row| {
+        if (std.mem.eql(u8, path, wanted)) return @intCast(row);
+    }
+    return null;
+}
+
+pub fn kindForModelRow(row: u32) Kind {
+    var buffer: [all_kinds.len][]const u8 = undefined;
+    const wanted = modelPaths(&buffer)[row];
+    for (all_kinds) |kind| {
+        const model_spec = spec(kind).model orelse continue;
+        if (std.mem.eql(u8, model_spec.path, wanted)) return kind;
+    }
+    unreachable;
+}
+
 const all_kind_count: usize = 8 + EnemyKind.count + Item.items.len;
 const all_kinds_array: [all_kind_count]Kind = blk: {
     var kinds: [all_kind_count]Kind = undefined;

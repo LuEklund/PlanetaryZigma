@@ -1,6 +1,5 @@
 const std = @import("std");
 const shared = @import("shared");
-const Assets = @import("../Watcher.zig");
 const Model = @import("../types/Model.zig");
 const gltf = @import("../types/gltf.zig");
 
@@ -17,17 +16,14 @@ pub const Parsed = union(enum) {
     }
 };
 
-/// `skinned` picks the vertex layout to produce. The file decides whether it HAS skins;
-/// the caller decides which layout it wants the vertices in.
-pub fn parse(gpa: std.mem.Allocator, watcher: *Assets, io: std.Io, entry: u32, model: *Model, skinned: bool) !Parsed {
-    const file = try watcher.open(io, entry);
-    defer file.close(io);
-
+/// `skinned` picks the vertex layout to produce. The file decides whether it HAS skins; the
+/// caller decides which layout it wants the vertices in.
+pub fn glb(gpa: std.mem.Allocator, bytes: []const u8, model: *Model, skinned: bool) !Parsed {
     if (!model.isEmpty()) model.deinit(gpa);
     model.* = .empty;
 
     return if (skinned)
-        .{ .skinned = try model.parseGlb(shared.SkinnedVertex, gpa, io, file) }
+        .{ .skinned = try model.parseGlb(shared.SkinnedVertex, gpa, bytes) }
     else
-        .{ .static = try model.parseGlb(shared.StaticVertex, gpa, io, file) };
+        .{ .static = try model.parseGlb(shared.StaticVertex, gpa, bytes) };
 }

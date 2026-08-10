@@ -2,7 +2,6 @@ const std = @import("std");
 const Vulkan = @import("internal/Vulkan.zig");
 const contract = @import("contract");
 const DrawList = contract.DrawList;
-const render = @import("contract");
 
 // The Renderer struct lives in the contract, not here: consumers must reach it without
 // reaching this file, or importing it drags the whole backend into their compilation.
@@ -51,21 +50,14 @@ pub const ffi = struct {
     // A freshly dlopened render.so has its OWN procs.instance/device globals, still
     // undefined — rebinding them is what makes a render swap work at all.
     //
-    // Nothing else to re-register: assets are polled by the game and pushed through the
-    // vtable, so nothing on either side holds a pointer into the other.
+    // Nothing else to re-register: the context and every resource in it came from the
+    // exe's allocator and the caller still holds the same handle, so meshes, textures and
+    // shaders all survive the swap untouched.
     pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));
         contract.log.io = context.io;
         context.vulkan.rebindProcs();
-    }
-
-    pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        const shader_kind: render.Shader.Kind = @enumFromInt(kind);
-        context.vulkan.resources.shaders.apply(shader_kind, spirv[0..len]) catch |err| {
-            std.log.err("upload shader {t}: {s}", .{ shader_kind, @errorName(err) });
-        };
     }
 
     pub export fn uploadTexture(handle: *anyopaque, upload: *const DrawList.TextureUpload) void {
@@ -81,14 +73,6 @@ pub const ffi = struct {
             .min_linear = true,
         }) catch |err| {
             std.log.err("upload texture slot {d}: {s}", .{ upload.slot, @errorName(err) });
-        };
-    }
-
-    pub export fn uploadMesh(handle: *anyopaque, old: contract.MeshHandle, upload: *const contract.MeshUpload) contract.MeshHandle {
-        const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadMesh(old, context.vulkan.current_frame_inflight, upload) catch |err| {
-            std.log.err("upload mesh {s}: {s}", .{ upload.name, @errorName(err) });
-            return .none;
         };
     }
 
@@ -109,6 +93,14 @@ pub const ffi = struct {
         };
     }
 
+    pub export fn uploadMesh(handle: *anyopaque, old: contract.MeshHandle, upload: *const contract.MeshUpload) contract.MeshHandle {
+        const context: *Context = @ptrCast(@alignCast(handle));
+        return context.vulkan.resources.uploadMesh(old, context.vulkan.current_frame_inflight, upload) catch |err| {
+            std.log.err("upload mesh {s}: {s}", .{ upload.name, @errorName(err) });
+            return .none;
+        };
+    }
+
     pub export fn freeMesh(handle: *anyopaque, mesh: contract.MeshHandle) void {
         const context: *Context = @ptrCast(@alignCast(handle));
         context.vulkan.resources.freeMesh(mesh, context.vulkan.current_frame_inflight);
@@ -117,6 +109,15 @@ pub const ffi = struct {
     pub export fn freeImage(handle: *anyopaque, slot: u32) void {
         const context: *Context = @ptrCast(@alignCast(handle));
         context.vulkan.resources.freeTexture(slot);
+    }
+
+    /// SPIR-V is already the data, so there is nothing to parse and nothing comes back —
+    /// the kind IS the handle, and the render passes bind by kind.
+    pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {
+        const context: *Context = @ptrCast(@alignCast(handle));
+        context.vulkan.resources.shaders.apply(@enumFromInt(kind), spirv[0..len]) catch |err| {
+            std.log.err("upload shader {d}: {t}", .{ kind, err });
+        };
     }
 
     pub export fn update(handle: *anyopaque, list: *DrawList) void {

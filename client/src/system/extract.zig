@@ -8,13 +8,13 @@ const DrawList = @import("contract").DrawList;
 const render_system = @import("render_system");
 const render = @import("contract");
 const Emitter = @import("render_system").Emitter;
-const ModelTable = @import("render_system").ModelTable;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
+    const models = &system.assets.models;
     const emitters = &system.emitters;
     const ui = &system.hud.ui;
     const list = &system.draw_list;
@@ -71,7 +71,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         .local_entity = world.player_id,
         .camera_pitch = world.camera.pitch,
         .camera_yaw_rotation = world.camera.yaw_rotation,
-    }, world.deaths.items, &system.models);
+    }, world.deaths.items, models);
     world.deaths.clearRetainingCapacity();
 
     for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
@@ -79,7 +79,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
 
     for (world.entities.values()) |*entity| {
         const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const model_handle = ModelTable.handleForKind(entity.kind) orelse continue;
+        const model_handle = shared.entity.modelRow(entity.kind) orelse continue;
         try animator.observe(.{
             .id = entity.id,
             .model = model_handle,
@@ -96,11 +96,11 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             .spin_speed = if (entity.kind == .item) render_system.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
             .effect = if (entity.kind == .item) .item_effect else null,
-        }, &system.models);
+        }, models);
     }
-    animator.advance(world.trigger_events.items, &system.models);
+    animator.advance(world.trigger_events.items, models);
     world.trigger_events.clearRetainingCapacity();
-    animator.draw(list, emitters, &system.models);
+    animator.draw(list, emitters, models);
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {

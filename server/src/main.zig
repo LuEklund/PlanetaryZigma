@@ -105,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
 
         system_lib.api.systemUpdate(&system_instance, &world);
 
-        system_lib.trySwap(io) catch |err| std.log.err("system swap: {s}", .{@errorName(err)});
+        system_lib.trySwap(io);
     }
 }
 

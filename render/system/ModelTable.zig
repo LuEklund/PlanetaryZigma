@@ -1,59 +1,36 @@
+//! What the loader hands the animator: one row per model the game knows about, the spec
+//! read against that model's own names, and which rows just reloaded.
+//!
+//! Nothing about a file is in here. `Assets` fills it, `Animator` reads it, and the texture
+//! slots the loader has to free live on `Assets` because only the loader ever frees one.
+
 const ModelTable = @This();
 
 const std = @import("std");
 const shared = @import("shared");
 const entity = shared.entity;
-const Model = @import("Assets").Model;
+const Model = @import("assets").Model;
 const Rig = @import("Rig.zig");
 
-/// Owned by the game loop, not render.so: animation reads clips and skins from here
-/// without a pointer into a library that can be swapped underneath it.
 models: []Model,
-/// One per model, same order: the spec read against that model's own names.
+/// One per model, same order. No .glb holds any of it — it is the entity spec read against
+/// the file\'s own node names.
 rigs: []Rig,
-/// Texture slots the backend handed back for each model's embedded images. Ours to free
-/// on a reload, because the backend allocated them at our request.
-image_slots: [][]u32,
+/// Rows whose file changed since the animator last looked. It drains this.
 reloaded: std.ArrayList(u32),
-
-/// A model that is generated rather than read: the row exists, it just has no file behind
-/// it. Whoever generates the geometry fills the row in.
-pub fn isFile(path: []const u8) bool {
-    return std.mem.endsWith(u8, path, ".glb");
-}
-
-/// One row per distinct model path in the specs, in row order. Generated models are rows
-/// like any other — a cube is an asset, not a special case in the renderer.
-pub fn paths(buffer: *[entity.all_kinds.len][]const u8) []const []const u8 {
-    var found: usize = 0;
-    for (entity.all_kinds) |kind| {
-        const model_spec = entity.spec(kind).model orelse continue;
-        for (buffer[0..found]) |seen| {
-            if (std.mem.eql(u8, seen, model_spec.path)) break;
-        } else {
-            buffer[found] = model_spec.path;
-            found += 1;
-        }
-    }
-    return buffer[0..found];
-}
 
 pub fn init(gpa: std.mem.Allocator) !ModelTable {
     var buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const models = try gpa.alloc(Model, paths(&buffer).len);
+    const models = try gpa.alloc(Model, entity.modelPaths(&buffer).len);
     @memset(models, .empty);
     const rigs = try gpa.alloc(Rig, models.len);
     @memset(rigs, .empty);
-    const image_slots = try gpa.alloc([]u32, models.len);
-    @memset(image_slots, &.{});
-    return .{ .models = models, .rigs = rigs, .image_slots = image_slots, .reloaded = .empty };
+    return .{ .models = models, .rigs = rigs, .reloaded = .empty };
 }
 
 pub fn deinit(self: *ModelTable, gpa: std.mem.Allocator) void {
     for (self.rigs) |*rig| rig.deinit(gpa);
     gpa.free(self.rigs);
-    for (self.image_slots) |slots| gpa.free(slots);
-    gpa.free(self.image_slots);
     // Each row owns nodes, node names, clips, skins and surfaces. Freeing the array alone
     // leaks all of it — one allocation per node name, per clip, per skin.
     for (self.models) |*row| row.deinit(gpa);
@@ -61,27 +38,6 @@ pub fn deinit(self: *ModelTable, gpa: std.mem.Allocator) void {
     self.reloaded.deinit(gpa);
 }
 
-pub fn handleForKind(kind: entity.Kind) ?u32 {
-    const wanted = (entity.modelSpec(kind) orelse return null).path;
-    var buffer: [entity.all_kinds.len][]const u8 = undefined;
-    for (paths(&buffer), 0..) |path, index| {
-        if (std.mem.eql(u8, path, wanted)) return @intCast(index);
-    }
-    return null;
-}
-
-/// Which entity kind owns this row. The specs carry the "objects/" prefix that the watcher
-/// strips, so the comparison happens on the full path.
-pub fn kindForRow(row: u32) entity.Kind {
-    var buffer: [entity.all_kinds.len][]const u8 = undefined;
-    const wanted = paths(&buffer)[row];
-    for (entity.all_kinds) |kind| {
-        const model_spec = entity.spec(kind).model orelse continue;
-        if (std.mem.eql(u8, model_spec.path, wanted)) return kind;
-    }
-    unreachable;
-}
-
-pub fn modelPtr(self: *ModelTable, handle: u32) *Model {
-    return &self.models[handle];
+pub fn modelPtr(self: *const ModelTable, row: u32) *const Model {
+    return &self.models[row];
 }

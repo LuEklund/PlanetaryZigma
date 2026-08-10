@@ -72,12 +72,11 @@ pub fn parseGlb(
     self: *Model,
     comptime VertexType: type,
     gpa: std.mem.Allocator,
-    io: std.Io,
-    file: std.Io.File,
+    bytes: []const u8,
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
-    var glb: gltf.Glb = try .read(gpa, io, file);
+    var glb: gltf.Glb = try .parse(gpa, bytes);
     defer glb.deinit(gpa);
     const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.node_names, &self.skins, &self.clips);
 

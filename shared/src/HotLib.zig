@@ -94,7 +94,7 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
         /// Runs the newest build if there is one. Resolves BEFORE the pre-reload hook, so a
         /// library missing an export leaves the running one untouched rather than
         /// half-applying a hook pair.
-        pub fn trySwap(self: *Self, io: std.Io) !void {
+        pub fn trySwap(self: *Self, io: std.Io) void {
             if (!self.changed(io)) return;
 
             const next_dynlib, const next_api, const next_mtime = self.open(io) catch |err| {

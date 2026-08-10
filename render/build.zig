@@ -91,6 +91,41 @@ pub fn build(b: *std.Build) void {
     });
     stb_truetype.addIncludePath(stb_dep.path("."));
 
+    const stb_image = b.addTranslateC(.{
+        .root_source_file = stb_dep.path("stb_image.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    stb_image.addIncludePath(stb_dep.path("."));
+
+    // Files in, data out. A module rather than a package: nothing outside this tree ever
+    // wanted it on its own, and the extra package meant a `Loaded` union existed only to
+    // carry parsed data back across a boundary with one caller.
+    const assets = b.addModule("assets", .{
+        .root_source_file = b.path("assets/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
+            .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
+            .{ .name = "ztracy", .module = ztracy },
+            .{ .name = "stb_image", .module = stb_image.createModule() },
+            .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+        },
+        .link_libc = true,
+    });
+    assets.addIncludePath(stb_dep.path("."));
+    assets.addCSourceFile(.{
+        .file = b.addWriteFiles().add("stbi_impl.c",
+            \\#define STB_IMAGE_IMPLEMENTATION
+            \\#include "stb_image.h"
+            \\#define STB_TRUETYPE_IMPLEMENTATION
+            \\#include "stb_truetype.h"
+        ),
+        .flags = &.{"-fvisibility=hidden"},
+    });
+
     const vulkandeps = b.dependency("vulkan_headers", .{});
     const vmadep = b.dependency("vma", .{});
 
@@ -141,8 +176,6 @@ pub fn build(b: *std.Build) void {
 
     // The client-side render system. Depends on the contract; the contract knows nothing
     // of it. This is what holds per-frame and per-entity state, so the game owns it.
-    const assets_pkg = b.dependency("Assets", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("Assets");
-
     _ = b.addModule("render_system", .{
         .root_source_file = b.path("system/root.zig"),
         .target = target,
@@ -151,7 +184,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
             .{ .name = "contract", .module = contract },
-            .{ .name = "Assets", .module = assets_pkg },
+            .{ .name = "assets", .module = assets },
             .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
         },
@@ -174,6 +207,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
                 .{ .name = "contract", .module = contract },
+                .{ .name = "assets", .module = assets },
             },
             .link_libc = true,
         }),

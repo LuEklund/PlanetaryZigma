@@ -1,5 +1,4 @@
 const std = @import("std");
-const Assets = @import("../Watcher.zig");
 const Bitmap = @import("../types/Bitmap.zig");
 
 const channels: u32 = 4;
@@ -19,21 +18,11 @@ pub const Decoded = struct {
     }
 };
 
-/// `cubemap` says to read the file as a 4x3 cross and hand back six faces. Which slot that
-/// is, is the caller's business.
-pub fn decode(gpa: std.mem.Allocator, watcher: *Assets, io: std.Io, entry: u32, cubemap: bool) !Decoded {
-    const file = try watcher.open(io, entry);
-    defer file.close(io);
-
-    var buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &buffer);
-    const len: usize = @intCast((try file.stat(io)).size);
-    const encoded = try gpa.alloc(u8, len);
-    defer gpa.free(encoded);
-    try reader.interface.readSliceAll(encoded);
-
+/// `cubemap` says to read it as a 4x3 cross and hand back six faces. Which slot that is,
+/// is the caller's business.
+pub fn decode(gpa: std.mem.Allocator, bytes: []const u8, cubemap: bool) !Decoded {
     var decoded: Bitmap = .{};
-    var tasks: [1]Bitmap.Task = .{.{ .result = &decoded, .bytes = encoded }};
+    var tasks: [1]Bitmap.Task = .{.{ .result = &decoded, .bytes = bytes }};
     try Bitmap.decodeAll(gpa, &tasks);
     defer decoded.deinit();
     if (decoded.err) |err| return err;

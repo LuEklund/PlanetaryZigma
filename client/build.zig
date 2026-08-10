@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const contract = render_dep.module("contract");
         const render_system = render_dep.module("render_system");
-    const assets_watcher = b.dependency("Assets", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("Assets");
+    const assets = render_dep.module("assets");
     const window = render_dep.module("Window");
     const ui = render_dep.module("ui");
 
@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "contract", .module = contract },
                 
                 .{ .name = "render_system", .module = render_system },
-                .{ .name = "Assets", .module = assets_watcher },
+                .{ .name = "assets", .module = assets },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
                 .{ .name = "ztracy", .module = ztracy },
@@ -116,22 +116,22 @@ pub fn build(b: *std.Build) void {
 
 fn compileShaders(b: *std.Build) *std.Build.Step {
     const io = b.graph.io;
-    var dir = b.build_root.handle.openDir(io, "../Assets/shaders", .{ .iterate = true }) catch @panic("../Assets/shaders not found");
+    var dir = b.build_root.handle.openDir(io, "../assets/shaders", .{ .iterate = true }) catch @panic("../assets/shaders not found");
     defer dir.close(io);
     const usf = b.addUpdateSourceFiles();
-    var walker = dir.walk(b.allocator) catch @panic("walk ../Assets/shaders");
+    var walker = dir.walk(b.allocator) catch @panic("walk ../assets/shaders");
     defer walker.deinit();
-    while (walker.next(io) catch @panic("walk ../Assets/shaders")) |entry| {
+    while (walker.next(io) catch @panic("walk ../assets/shaders")) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".slang")) continue;
         if (std.mem.eql(u8, entry.basename, "scene.slang")) continue;
         const cmd = b.addSystemCommand(&.{"slangc"});
-        cmd.addFileArg(b.path(b.fmt("../Assets/shaders/{s}", .{entry.path})));
+        cmd.addFileArg(b.path(b.fmt("../assets/shaders/{s}", .{entry.path})));
         cmd.addArgs(&.{ "-target", "spirv" });
-        cmd.addPrefixedDirectoryArg("-I", b.path("../Assets/shaders"));
+        cmd.addPrefixedDirectoryArg("-I", b.path("../assets/shaders"));
         cmd.addArg("-o");
         const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
-        usf.addCopyFileToSource(spv, b.fmt("../Assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
+        usf.addCopyFileToSource(spv, b.fmt("../assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
     }
     b.getInstallStep().dependOn(&usf.step);
     return &usf.step;

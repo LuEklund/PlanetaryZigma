@@ -7,17 +7,14 @@ const Skin = @import("Model.zig").Skin;
 const AnimationClip = @import("AnimationClip.zig");
 
 pub const Glb = struct {
-    content: []u8,
+    content: []const u8,
     loaded: zgltf.LoadedGlb,
     gltf: zgltf.Gltf,
     bin: []const u8,
 
-    pub fn read(gpa: std.mem.Allocator, io: std.Io, file: std.Io.File) !Glb {
-        var read_buffer: [4096]u8 = undefined;
-        var reader = file.reader(io, &read_buffer);
-        const content = try reader.interface.allocRemaining(gpa, .unlimited);
-        errdefer gpa.free(content);
-
+    /// `content` is borrowed: whoever read the file still owns those bytes, and `bin`
+    /// points into them, so they must outlive this.
+    pub fn parse(gpa: std.mem.Allocator, content: []const u8) !Glb {
         var loaded = try zgltf.parseGlbSlice(gpa, content);
         errdefer loaded.deinit();
         const bin = loaded.bin orelse return error.MissingBin;
@@ -26,8 +23,8 @@ pub const Glb = struct {
     }
 
     pub fn deinit(self: *Glb, gpa: std.mem.Allocator) void {
+        _ = gpa;
         self.loaded.deinit();
-        gpa.free(self.content);
     }
 };
 
