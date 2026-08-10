@@ -15,7 +15,7 @@ const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-render: shared.HotLib(contract.Api, *anyopaque, "reload"),
+render: shared.HotLib(contract.Api, *anyopaque),
 draw_list: DrawList,
 window: *Window,
 assets: render_system.Assets,

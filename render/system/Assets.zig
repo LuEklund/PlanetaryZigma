@@ -14,7 +14,7 @@ const contract = @import("contract");
 const assets = @import("assets");
 const ModelTable = @import("ModelTable.zig");
 
-const RenderLib = shared.HotLib(contract.Api, *anyopaque, "reload");
+const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 
 shader_files: assets.Watcher,
 texture_files: assets.Watcher,

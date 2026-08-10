@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
 
     defer steam_client.deinit();
 
-    var system_lib: shared.HotLib(System.Api, *anyopaque, "systemReload") = try .init("system_client", gpa, io);
+    var system_lib: shared.HotLib(System.Api, *anyopaque) = try .init("system_client", gpa, io);
     defer system_lib.deinit(io);
 
     var window: Window = undefined;

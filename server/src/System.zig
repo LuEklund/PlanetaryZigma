@@ -141,7 +141,7 @@ pub const ffi = struct {
         systemInit: *const fn (*System, data: *const Data) callconv(.c) bool,
         systemDeinit: *const fn (*System) callconv(.c) void,
         systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
-        systemReload: *const fn (*System, pre_reload: bool) callconv(.c) void,
+        reload: *const fn (*System, pre_reload: bool) callconv(.c) void,
     };
 
     pub export fn systemInit(system: *System, data: *const Data) bool {
@@ -174,7 +174,7 @@ pub const ffi = struct {
             return;
         };
     }
-    pub export fn systemReload(system: *System, pre_reload: bool) void {
+    pub export fn reload(system: *System, pre_reload: bool) void {
         const result = system.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);

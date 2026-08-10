@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     });
     defer steam_server.deinit();
 
-    var system_lib: shared.HotLib(System.ffi.Table, *System, "systemReload") = try .init("system_server", gpa, io);
+    var system_lib: shared.HotLib(System.ffi.Table, *System) = try .init("system_server", gpa, io);
     defer system_lib.deinit(io);
 
     var world: World = try .init(gpa, dev_mode);

@@ -33,7 +33,7 @@ pub const Entity = World.Entity;
 gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
-render: shared.HotLib(contract.Api, *anyopaque, "reload"),
+render: shared.HotLib(contract.Api, *anyopaque),
 draw_list: DrawList,
 assets: render_system.Assets,
 animator: render_system.Animator,
@@ -242,7 +242,7 @@ pub const Api = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
-    systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
+    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
 pub const ffi = struct {
@@ -277,7 +277,7 @@ pub const ffi = struct {
         return context.request_exit;
     }
 
-    pub export fn systemReload(handle: *anyopaque, pre_reload: bool) void {
+    pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         const context: *System = @ptrCast(@alignCast(handle));
         const result = context.reload(pre_reload);
         result catch |err| {

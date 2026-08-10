@@ -20,9 +20,9 @@ extern "kernel32" fn GetFileAttributesW(path: [*:0]const u16) callconv(.winapi) 
 
 /// `Api` is a struct of function pointers; its FIELD NAMES are the exported symbol names.
 /// Resolving all of them IS the liveness check on a freshly copied library — a partially
-/// written file fails a lookup. `reload_symbol` names the one HotLib calls itself, either
-/// side of a swap, so the library can rebind its globals.
-pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol: [:0]const u8) type {
+/// written file fails a lookup. One field is required: `reload`, the only one HotLib calls
+/// itself, either side of a swap, so the library can rebind its globals.
+pub fn HotLib(comptime Api: type, comptime Handle: type) type {
     return struct {
         const Self = @This();
 
@@ -50,9 +50,7 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
             const search_paths: []const [:0]const u8 = &.{
                 "../lib/",
                 "zig-out/lib/",
-                "client/zig-out/lib/",
                 "zig-out/bin/",
-                "client/zig-out/bin/",
                 "./",
             };
             const found_path: []const u8 = for (search_paths) |path| {
@@ -102,12 +100,12 @@ pub fn HotLib(comptime Api: type, comptime Handle: type, comptime reload_symbol:
                 return;
             };
 
-            @field(self.api, reload_symbol)(self.handle, true);
+            self.api.reload(self.handle, true);
             self.retired.append(self.gpa, self.dynlib) catch {};
             self.dynlib = next_dynlib;
             self.api = next_api;
             self.mtime = next_mtime;
-            @field(self.api, reload_symbol)(self.handle, false);
+            self.api.reload(self.handle, false);
             std.log.info("reloaded {s}", .{self.source_name});
         }
 
