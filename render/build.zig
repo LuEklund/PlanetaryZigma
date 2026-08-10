@@ -10,11 +10,25 @@ pub fn build(b: *std.Build) void {
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("ztracy");
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    // Straight to numz, not through shared: reaching a math library by way of the game's
+    // contract is exactly the detour that stops render being usable on its own.
+    const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
+    // The ABI. Its own module, not its own package: a package per contract would double
+    // the tree the first time a second system wants one. numz only — nothing here may
+    // reach an implementation, which is what keeps a backend edit off the game's rebuild.
+    const contract = b.addModule("contract", .{
+        .root_source_file = b.path("root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "numz", .module = numz },
+        },
+    });
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
     const window = b.addModule("Window", .{
-        .root_source_file = b.path("src/Window.zig"),
+        .root_source_file = b.path("window/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -69,22 +83,20 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    const zgltf = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf");
-
     const stb_dep = b.dependency("stb", .{});
-    const stb_image = b.addTranslateC(.{
-        .root_source_file = stb_dep.path("stb_image.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    stb_image.addIncludePath(stb_dep.path("."));
-
     const stb_truetype = b.addTranslateC(.{
         .root_source_file = stb_dep.path("stb_truetype.h"),
         .target = target,
         .optimize = optimize,
     });
     stb_truetype.addIncludePath(stb_dep.path("."));
+
+    const stb_image = b.addTranslateC(.{
+        .root_source_file = stb_dep.path("stb_image.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    stb_image.addIncludePath(stb_dep.path("."));
 
     const vulkandeps = b.dependency("vulkan_headers", .{});
     const vmadep = b.dependency("vma", .{});
@@ -118,51 +130,68 @@ pub fn build(b: *std.Build) void {
         .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
     });
 
-    const stbi_impl = b.addWriteFiles().add("stbi_impl.c",
-        \\#define STB_IMAGE_IMPLEMENTATION
-        \\#include "stb_image.h"
-        \\#define STB_TRUETYPE_IMPLEMENTATION
-        \\#include "stb_truetype.h"
-    );
 
-    // Producers get everything except `vulkan`. root.zig still names the Vulkan files,
-    // but an unreferenced decl is never analysed, so nothing in that half is loaded —
-    // and VMA's C translation unit, which is what drags in libvulkan, is never linked.
-    const render = b.addModule("render", .{
-        .root_source_file = b.path("src/root.zig"),
+
+    _ = b.addModule("ui", .{
+        .root_source_file = b.path("ui/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared },
-            .{ .name = "Window", .module = window },
-            .{ .name = "zgltf", .module = zgltf },
+            .{ .name = "numz", .module = numz },
+            .{ .name = "contract", .module = contract },
+        },
+    });
+
+
+    // What the game holds to build a frame: its assets, its animation, its particles.
+    // Depends on the contract; the contract knows nothing of it. Deliberately not named
+    // after the renderer — this is the producer side, and the backend never sees it.
+    const graphics = b.addModule("graphics", .{
+        .root_source_file = b.path("graphics/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
+            .{ .name = "contract", .module = contract },
+            .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
             .{ .name = "stb_image", .module = stb_image.createModule() },
             .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+            .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
         },
         .link_libc = true,
     });
-    // Hidden, not exported: both .so roots compile this source, so without this 102 stb
-    // symbols are global in both and ELF interposition picks by dlopen order.
-    render.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
-    render.addIncludePath(stb_dep.path("."));
+    // The file readers are internal files now, not a module: nothing outside this tree ever
+    // asked for them on their own.
+    graphics.addIncludePath(stb_dep.path("."));
+    graphics.addCSourceFile(.{
+        .file = b.addWriteFiles().add("stbi_impl.c",
+            \\#define STB_IMAGE_IMPLEMENTATION
+            \\#include "stb_image.h"
+            \\#define STB_TRUETYPE_IMPLEMENTATION
+            \\#include "stb_truetype.h"
+        ),
+        .flags = &.{"-fvisibility=hidden"},
+    });
 
     // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
     // not rebuild the game systems.
     const backend = b.addLibrary(.{
         .name = "render",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Backend.zig"),
+            .root_source_file = b.path("vulkan/root.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
+            .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
-                .{ .name = "zgltf", .module = zgltf },
-                .{ .name = "stb_image", .module = stb_image.createModule() },
-                .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
+                    .{ .name = "stb_truetype", .module = stb_truetype.createModule() },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
+                .{ .name = "contract", .module = contract },
             },
             .link_libc = true,
         }),
@@ -170,8 +199,6 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .linkage = .dynamic,
     });
-    backend.root_module.addCSourceFile(.{ .file = stbi_impl, .flags = &.{"-fvisibility=hidden"} });
-    backend.root_module.addIncludePath(stb_dep.path("."));
     linkVulkan(b, backend, target);
     b.installArtifact(backend);
 }

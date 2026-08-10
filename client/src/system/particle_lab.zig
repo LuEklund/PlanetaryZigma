@@ -2,9 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Shader = @import("render").Shader;
-const Renderer = @import("render").Renderer;
-const Emitter = @import("render").Emitter;
+const Shader = @import("contract").Shader;
+const Renderer = @import("graphics").Renderer;
+const Emitter = @import("graphics").Emitter;
 
 const particle_kind: Shader.Kind = .item_effect;
 const surface_point: nz.Vec3(f32) = .{ 0, 20, 0 };
@@ -16,16 +16,16 @@ pub fn populate(world: *World) !void {
     world.camera = .{ .transform = .{ .position = camera_position } };
 }
 
-pub fn update(renderer: *Renderer, elapsed_time: f32) void {
+pub fn update(emitters: *Emitter.List, elapsed_time: f32) void {
     const particle_info = Shader.particleInfo(particle_kind);
     if (particle_info.duration == null) {
-        renderer.keepAliveEffect(particle_kind, .none, surface_point, elapsed_time);
+        Emitter.keepAlive(emitters, particle_kind, 0, surface_point, elapsed_time);
         return;
     }
-    for (&renderer.emitters) |emitter| {
+    for (emitters) |emitter| {
         if (emitter.effect == particle_kind and emitter.alive(elapsed_time)) return;
     }
-    renderer.spawnEffect(.{
+    Emitter.spawn(emitters, .{
         .effect = particle_kind,
         .origin = surface_point,
         .target = if (particle_info.topology == .ribbon) ribbon_target else surface_point,

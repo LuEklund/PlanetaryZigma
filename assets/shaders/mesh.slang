@@ -49,6 +49,27 @@ struct VertexOutput {
 };
 
 [shader("vertex")]
+float4 highlight_static_vert(uint vertex_index: SV_VertexID) : SV_Position {
+    Vertex vertex = push_constant.vertex_buffer[vertex_index];
+    return mul(scene_data.proj_view, mul(push_constant.model_matrix, float4(vertex.position, 1.0)));
+}
+[shader("vertex")]
+float4 highlight_skinned_vert(uint vertex_index: SV_VertexID) : SV_Position {
+    SkinnedVertex *skinned_buffer = (SkinnedVertex *)push_constant.vertex_buffer;
+    SkinnedVertex vertex = skinned_buffer[vertex_index];
+    float4 local = float4(vertex.position, 1.0);
+    float4x4 skin_matrix = vertex.joint_weights.x * push_constant.joint_matrices[vertex.joint_indices.x] +
+                           vertex.joint_weights.y * push_constant.joint_matrices[vertex.joint_indices.y] +
+                           vertex.joint_weights.z * push_constant.joint_matrices[vertex.joint_indices.z] +
+                           vertex.joint_weights.w * push_constant.joint_matrices[vertex.joint_indices.w];
+    return mul(scene_data.proj_view, mul(push_constant.model_matrix, local));
+}
+[shader("fragment")]
+float4 highlight_frag() : SV_Target {
+    return float4(1, 1, 1, 1);
+}
+
+[shader("vertex")]
 VertexOutput static_vert(uint vertex_index: SV_VertexID) {
     Vertex vertex = push_constant.vertex_buffer[vertex_index];
     float4 world_position = mul(push_constant.model_matrix, float4(vertex.position, 1.0));

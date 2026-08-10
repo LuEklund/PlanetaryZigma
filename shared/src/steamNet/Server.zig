@@ -47,7 +47,9 @@ pub const HostState = enum(u8) {
     left,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
+/// Fills the caller's Server rather than returning one: the packet pump holds `self`, and
+/// a returned struct would be copied out from under it.
+pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !void {
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -141,7 +143,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         },
     }
 
-    return .{
+    self.* = .{
         .gpa = gpa,
         .pipe = pipe,
         .gs = gs,
@@ -155,6 +157,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         .host_state = if (options.host_steam_id != 0 or options.mode == .local_singleplayer) .waiting else .none,
         .mode = options.mode,
     };
+    self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
 pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
@@ -173,6 +176,9 @@ pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version
 }
 
 pub fn deinit(self: *Server) void {
+    self.handle_packets_future.cancel(self.io) catch |err| {
+        std.log.err("packet pump exit: {s}", .{@errorName(err)});
+    };
     if (self.listen_socket != 0) _ = self.socket.CloseListenSocket(self.listen_socket);
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);

@@ -102,7 +102,7 @@ pub fn spec(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,
-            .model = .{ .path = "default", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .player => .{
@@ -138,7 +138,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .platform => .{
             .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "default", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .target_dummy => .{
@@ -154,7 +154,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .projectile_cube => .{
             .collider = null,
-            .model = .{ .path = "cube_projectile", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .projectile_rocket => .{
@@ -325,3 +325,13 @@ pub const State = enum(u16) {
     utility = 4,
     stun = 5,
 };
+
+/// Which animation an entity should be playing. Lives here, not in the renderer: the 0.5
+/// threshold and the stun/death precedence are game rules, and both the client and the
+/// server viewer need the same answer.
+pub fn animationState(velocity: nz.Vec3(f32), stun_time: f32, is_dying: bool, override: ?State) State {
+    if (override) |forced| return forced;
+    if (is_dying) return .death;
+    if (stun_time > 0) return .stun;
+    return if (nz.vec.length(velocity) > 0.5) .walk else .idle;
+}

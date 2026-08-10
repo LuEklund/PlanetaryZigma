@@ -3,10 +3,11 @@ const Viewer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const Renderer = @import("render").Renderer;
-const AssetServer = @import("render").AssetServer;
-const Ui = @import("render").Ui;
-const DrawList = @import("render").DrawList;
+const contract = @import("contract");
+const graphics = @import("graphics");
+const Emitter = @import("graphics").Emitter;
+const Ui = @import("ui");
+const DrawList = @import("contract").DrawList;
 const World = @import("../World.zig");
 const Quat = shared.numz.quat.Hamiltonian(f32);
 const nz = shared.numz;
@@ -14,7 +15,12 @@ const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-renderer: Renderer,
+render: shared.HotLib(contract.Api, *anyopaque),
+draw_list: DrawList,
+window: *Window,
+assets: graphics.Assets,
+animator: graphics.Animator,
+emitters: Emitter.List,
 camera: Camera,
 ui: Ui,
 menu_open: bool,
@@ -23,14 +29,29 @@ border_lines: std.ArrayList(DrawList.Line),
 arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
-pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, asset_server: *AssetServer, planet_radius: f32) !void {
-    try self.renderer.init(.{
+pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, planet_radius: f32) !void {
+    self.animator = try .init(gpa);
+    errdefer self.animator.deinit();
+    self.emitters = @splat(Emitter.free);
+
+    self.window = window;
+    self.render = try .init("render", gpa, io);
+    errdefer self.render.deinit(io);
+    self.render.handle = self.render.api.init(&contract.InitOptions{
         .gpa = gpa,
         .io = io,
-        .window = window,
-        .asset_server = asset_server,
-    });
-    errdefer self.renderer.deinit(gpa, io);
+        .window = @ptrCast(window),
+    }) orelse return error.RenderInit;
+    errdefer self.render.api.deinit(self.render.handle);
+
+    self.assets = try .init(gpa, io);
+    errdefer self.assets.deinit(gpa, io);
+
+    self.draw_list = try .init(gpa);
+    errdefer self.draw_list.deinit(gpa);
+
+    try self.assets.update(gpa, io, &self.render);
+
 
     self.ui = try .init(gpa, window.size.width, window.size.height);
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
@@ -41,16 +62,21 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.border_lines_field = null;
 }
 
+
+
 pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.arrow_lines.deinit(gpa);
     self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
-    self.renderer.deinit(gpa, io);
+    self.draw_list.deinit(gpa);
+    self.animator.deinit();
+    self.assets.deinit(gpa, io);
+    self.render.api.deinit(self.render.handle);
+    self.render.deinit(io);
 }
 
-/// Returns true when the window asks the server to stop.
 pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
-    const window = self.renderer.window;
+    const window = self.window;
     try window.poll(.{ .text = null });
 
     if (window.keyboard.get(.escape) == .press) self.menu_open = !self.menu_open;
@@ -75,7 +101,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
         .left_click = window.pointer.buttons.left,
         .right_click = window.pointer.buttons.right,
-    }, &self.renderer.fonts[0], &self.renderer.texture_slots, world.delta_time);
+    }, self.assets.fonts.default(), world.delta_time);
     var quit = window.should_close;
     if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;
@@ -95,6 +121,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     }
 
     try extract.frame(world, self);
-    try self.renderer.reloadIfChanged(io);
+    self.render.trySwap(io);
+    self.assets.update(world.gpa, io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
     return quit;
 }

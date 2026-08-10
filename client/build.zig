@@ -13,8 +13,10 @@ pub fn build(b: *std.Build) void {
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
 
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
-    const render = render_dep.module("render");
+    const contract = render_dep.module("contract");
+        const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
+    const ui = render_dep.module("ui");
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
@@ -36,8 +38,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "render", .module = render },
+                .{ .name = "contract", .module = contract },
+                
+                .{ .name = "graphics", .module = graphics },
                 .{ .name = "Window", .module = window },
+                .{ .name = "ui", .module = ui },
                 .{ .name = "ztracy", .module = ztracy },
             },
             .link_libc = true,
@@ -56,7 +61,9 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
+                
                 .{ .name = "Window", .module = window },
+                .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "miniaudio", .module = miniaudio },

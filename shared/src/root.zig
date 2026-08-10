@@ -7,13 +7,14 @@ pub const Planet = @import("planet/root.zig");
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
-pub const Watcher = @import("Watcher.zig");
 pub const HotLib = @import("HotLib.zig").HotLib;
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
 pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
+
+pub const Font = @import("Font.zig");
 
 pub const entity = @import("entity.zig");
 

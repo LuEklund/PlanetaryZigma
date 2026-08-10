@@ -7,8 +7,8 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Options = @import("Options.zig");
-const Emitter = @import("render").Emitter;
-const DrawList = @import("render").DrawList;
+const Emitter = @import("graphics").Emitter;
+const DrawList = @import("contract").DrawList;
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,

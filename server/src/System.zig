@@ -14,7 +14,6 @@ const build_options = @import("build_options");
 /// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
 pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
 pub const Window = if (build_options.viewer) @import("Window") else void;
-pub const AssetServer = if (build_options.viewer) @import("render").AssetServer else void;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
@@ -39,7 +38,6 @@ pub const Data = struct {
     io: std.Io,
     steam_server: *shared.SteamNet.Server,
     window: if (build_options.viewer) *Window else void,
-    asset_server: if (build_options.viewer) *AssetServer else void,
 };
 
 pub fn init(self: *System, data: *const Data) !void {
@@ -55,7 +53,7 @@ pub fn init(self: *System, data: *const Data) !void {
     errdefer self.physics.deinit();
     data.world.physics = &self.physics;
     self.viewer = undefined;
-    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.asset_server, data.world.planet.radiusFloat());
+    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
     try data.world.loadPlace(.ship);
@@ -143,7 +141,7 @@ pub const ffi = struct {
         systemInit: *const fn (*System, data: *const Data) callconv(.c) bool,
         systemDeinit: *const fn (*System) callconv(.c) void,
         systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
-        systemReload: *const fn (*System, pre_reload: bool) callconv(.c) void,
+        reload: *const fn (*System, pre_reload: bool) callconv(.c) void,
     };
 
     pub export fn systemInit(system: *System, data: *const Data) bool {
@@ -176,7 +174,7 @@ pub const ffi = struct {
             return;
         };
     }
-    pub export fn systemReload(system: *System, pre_reload: bool) void {
+    pub export fn reload(system: *System, pre_reload: bool) void {
         const result = system.reload(pre_reload);
         result catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);

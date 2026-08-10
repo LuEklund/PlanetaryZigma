@@ -1,209 +1,164 @@
+const Chunk = @This();
+
 const std = @import("std");
 const nz = @import("numz");
 const tracy = @import("ztracy");
 const sdf = @import("sdf.zig");
-const mesh = @import("mesh.zig");
 const planet = @import("root.zig");
 
+pub const Mesh = @import("Mesh.zig");
+pub const NavGraph = @import("NavGraph.zig");
+
 pub const dim: i32 = 32;
+
+surface_cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
+density: DensityGrid,
+coord: Coord,
+
+pub fn init(gpa: std.mem.Allocator, planet_radius: u32, chunk_coord: Coord) !Chunk {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+    const radius_float: f32 = @floatFromInt(planet_radius);
+    const cell_min = min(chunk_coord);
+    const cell_max = max(chunk_coord);
+    const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
+    const apron_max = cell_max + @as(nz.Vec3(i32), @splat(1));
+
+    var density = try DensityGrid.initRegion(gpa, radius_float, apron_min, apron_max);
+    errdefer density.deinit(gpa);
+
+    var surface_cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
+    errdefer surface_cells.deinit(gpa);
+    try buildSurfaceCells(gpa, &surface_cells, &density, apron_min, apron_max);
+
+    return .{ .surface_cells = surface_cells, .density = density, .coord = chunk_coord };
+}
+
+pub fn deinit(self: *Chunk, gpa: std.mem.Allocator) void {
+    self.surface_cells.deinit(gpa);
+    self.density.deinit(gpa);
+}
 
 pub const CellRegion = struct {
     min: nz.Vec3(i32),
     max: nz.Vec3(i32),
 
-    fn contains(self: CellRegion, cell: nz.Vec3(i32)) bool {
+    pub fn contains(self: CellRegion, cell: nz.Vec3(i32)) bool {
         return @reduce(.And, cell >= self.min) and @reduce(.And, cell < self.max);
     }
 };
 
-const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
+pub const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
     .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
     .{ .edge_axis = .{ 0, 1, 0 }, .perp_b = .{ 0, 0, 1 }, .perp_c = .{ 1, 0, 0 } },
     .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
 };
 
-pub const Kind = enum {
-    mesh,
-    navmesh,
+pub const DensityGrid = struct {
+    // Grid-space coordinate stored at values[0, 0, 0].
+    origin_offset: nz.Vec3(i32),
+    resolution: usize,
+    values: []f32,
+
+    pub fn initRegion(gpa: std.mem.Allocator, planet_radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
+        const tracy_scope = tracy.zone(@src());
+        defer tracy_scope.end();
+        const origin = cell_min;
+        const size = cell_max - cell_min + @as(nz.Vec3(i32), @splat(1));
+        std.debug.assert(size[0] == size[1] and size[1] == size[2]);
+        const resolution: usize = @intCast(size[0]);
+        const plane_len = try std.math.mul(usize, resolution, resolution);
+        const value_count = try std.math.mul(usize, plane_len, resolution);
+        const values = try gpa.alloc(f32, value_count);
+
+        for (0..resolution) |x| {
+            const x_coord: i32 = origin[0] + @as(i32, @intCast(x));
+            for (0..resolution) |y| {
+                const y_coord: i32 = origin[1] + @as(i32, @intCast(y));
+                for (0..resolution) |z| {
+                    const z_coord: i32 = origin[2] + @as(i32, @intCast(z));
+                    const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
+                    values[(x * resolution + y) * resolution + z] = sdf.sdf(position, planet_radius);
+                }
+            }
+        }
+
+        return .{ .origin_offset = origin, .resolution = resolution, .values = values };
+    }
+
+    pub fn deinit(self: DensityGrid, gpa: std.mem.Allocator) void {
+        gpa.free(self.values);
+    }
+
+    fn densityAt(self: *const DensityGrid, grid_point: nz.Vec3(i32)) f32 {
+        const local_point = grid_point - self.origin_offset;
+        const x: usize = @intCast(local_point[0]);
+        const y: usize = @intCast(local_point[1]);
+        const z: usize = @intCast(local_point[2]);
+        return self.values[(x * self.resolution + y) * self.resolution + z];
+    }
+
+    pub fn isSolidAt(self: *const DensityGrid, grid_point: nz.Vec3(i32)) bool {
+        return self.densityAt(grid_point) < 0;
+    }
 };
 
-pub fn Product(kind: Kind) type {
-    return switch (kind) {
-        .mesh => Mesh,
-        .navmesh => NavGraph,
-    };
-}
+const cube_corner_offsets = [_]nz.Vec3(i32){
+    .{ 0, 0, 0 }, .{ 1, 0, 0 }, .{ 0, 1, 0 }, .{ 1, 1, 0 },
+    .{ 0, 0, 1 }, .{ 1, 0, 1 }, .{ 0, 1, 1 }, .{ 1, 1, 1 },
+};
 
-pub fn generate(comptime kind: Kind, gpa: std.mem.Allocator, raw: *const Raw, planet_radius: u32) !Product(kind) {
+const cube_edges = [_][2]u3{
+    .{ 0, 1 }, .{ 0, 2 }, .{ 0, 4 }, .{ 1, 3 },
+    .{ 1, 5 }, .{ 2, 3 }, .{ 2, 6 }, .{ 3, 7 },
+    .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
+};
+
+// Extracts all density-zero surfaces: exterior terrain, caves, and tunnels.
+fn buildSurfaceCells(gpa: std.mem.Allocator, surface_cells: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const owned: CellRegion = .{ .min = min(raw.coord), .max = max(raw.coord) };
-    const radius_float: f32 = @floatFromInt(planet_radius);
-
-    var mesh_vertices: std.ArrayList(Mesh.Vertex) = .empty;
-    var mesh_indices: std.ArrayList(u32) = .empty;
-    errdefer if (kind == .mesh) {
-        mesh_vertices.deinit(gpa);
-        mesh_indices.deinit(gpa);
-    };
-    var nav: NavGraph = if (kind == .navmesh) try NavGraph.prepare(gpa, raw, owned) else undefined;
-    errdefer if (kind == .navmesh) nav.deinit(gpa);
-
-    for (raw.node_map.keys()) |anchor| {
-        if (kind == .mesh and !owned.contains(anchor)) continue;
-        for (quad_axes) |quad_axis| {
-            const edge_start_solid = raw.density.isSolidAt(anchor);
-            const edge_end_solid = raw.density.isSolidAt(anchor + quad_axis.edge_axis);
-            if (edge_start_solid == edge_end_solid) continue;
-
-            const corner_b = anchor - quad_axis.perp_b;
-            const corner_c = anchor - quad_axis.perp_c;
-            const corner_bc = anchor - quad_axis.perp_b - quad_axis.perp_c;
-            const index_b = raw.node_map.getIndex(corner_b) orelse continue;
-            const index_c = raw.node_map.getIndex(corner_c) orelse continue;
-            const index_bc = raw.node_map.getIndex(corner_bc) orelse continue;
-
-            switch (kind) {
-                .mesh => {
-                    const index_anchor = raw.node_map.getIndex(anchor).?;
-                    const centroids = raw.node_map.values();
-                    const base_vertex_index: u32 = @intCast(mesh_vertices.items.len);
-                    try mesh_vertices.append(gpa, makeVertex(centroids[index_anchor], .{ 0, 0 }, radius_float));
-                    try mesh_vertices.append(gpa, makeVertex(centroids[index_b], .{ 1, 0 }, radius_float));
-                    try mesh_vertices.append(gpa, makeVertex(centroids[index_c], .{ 0, 1 }, radius_float));
-                    try mesh_vertices.append(gpa, makeVertex(centroids[index_bc], .{ 1, 1 }, radius_float));
-
-                    if (edge_start_solid) {
-                        try mesh_indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
-                    } else {
-                        try mesh_indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 1, base_vertex_index + 0, base_vertex_index + 2, base_vertex_index + 3 });
-                    }
-                },
-                .navmesh => {
-                    nav.link(raw, anchor, corner_b);
-                    nav.link(raw, anchor, corner_c);
-                    nav.link(raw, anchor, corner_bc);
-                    nav.link(raw, corner_b, corner_bc);
-                    nav.link(raw, corner_c, corner_bc);
-                },
+    var x = cell_min[0];
+    while (x < cell_max[0]) : (x += 1) {
+        var y = cell_min[1];
+        while (y < cell_max[1]) : (y += 1) {
+            var z = cell_min[2];
+            while (z < cell_max[2]) : (z += 1) {
+                const cell: nz.Vec3(i32) = .{ x, y, z };
+                const centroid = cellCentroid(density, cell) orelse continue;
+                try surface_cells.put(gpa, cell, centroid);
             }
         }
     }
-
-    switch (kind) {
-        .mesh => {
-            const owned_vertices = try mesh_vertices.toOwnedSlice(gpa);
-            errdefer gpa.free(owned_vertices);
-            const owned_indices = try mesh_indices.toOwnedSlice(gpa);
-            return .{ .vertices = owned_vertices, .indices = owned_indices };
-        },
-        .navmesh => return nav,
-    }
 }
 
-pub const Mesh = struct {
-    vertices: []Vertex,
-    indices: []u32,
-
-    pub const Vertex = @import("../vertex.zig").StaticVertex;
-
-    pub fn deinit(self: @This(), gpa: std.mem.Allocator) void {
-        gpa.free(self.vertices);
-        gpa.free(self.indices);
+fn cellCentroid(density: *const DensityGrid, cell: nz.Vec3(i32)) ?nz.Vec3(f32) {
+    var checksum: u8 = 0;
+    var corners: [8]nz.Vec3(f32) = undefined;
+    var corner_sdf: [8]f32 = undefined;
+    for (0..8) |i| {
+        const corner_cell = cell + cube_corner_offsets[i];
+        corners[i] = @floatFromInt(corner_cell);
+        corner_sdf[i] = density.densityAt(corner_cell);
+        if (corner_sdf[i] < 0) checksum += 1;
     }
-};
+    if (checksum == 0 or checksum == 8) return null;
 
-fn makeVertex(position: nz.Vec3(f32), uv: [2]f32, planet_radius: f32) Mesh.Vertex {
-    const height = nz.vec.length(position);
-    const height_fraction = std.math.clamp((height - planet_radius) / 30, 0, 1);
-    const low_color: nz.Vec3(f32) = .{ 1, 0.35, 0.2 };
-    const high_color: nz.Vec3(f32) = .{ 0.1, 0.75, 0.6 };
-    const color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
-    return .{
-        .position = position,
-        .normal = nz.vec.normalize(sdf.gradient(position, planet_radius)),
-        .color = .{ color[0], color[1], color[2], 1 },
-        .uv_x = uv[0],
-        .uv_y = uv[1],
-    };
-}
-
-pub const NavGraph = struct {
-    cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
-    neighbors: []Neighbor,
-    weights: []f32,
-
-    pub const Neighbor = enum(u16) {
-        boundary_edge = 0xFFFE,
-        none = 0xFFFF,
-        _,
-    };
-
-    pub const max_neighbor_count: usize = 12;
-
-    pub fn neighborCell(self: *const NavGraph, index: usize, slot: usize) nz.Vec3(i32) {
-        return self.cells.keys()[index] + neighbor_offsets[slot];
-    }
-
-    pub fn clone(self: *const NavGraph, gpa: std.mem.Allocator) !NavGraph {
-        var cells = try self.cells.clone(gpa);
-        errdefer cells.deinit(gpa);
-        const neighbors = try gpa.dupe(Neighbor, self.neighbors);
-        errdefer gpa.free(neighbors);
-        return .{ .cells = cells, .neighbors = neighbors, .weights = try gpa.dupe(f32, self.weights) };
-    }
-
-    pub const neighbor_offsets = [max_neighbor_count]nz.Vec3(i32){
-        .{ 1, 0, 0 }, .{ -1, 0, 0 },  .{ 0, 1, 0 }, .{ 0, -1, 0 },
-        .{ 0, 0, 1 }, .{ 0, 0, -1 },  .{ 1, 1, 0 }, .{ -1, -1, 0 },
-        .{ 0, 1, 1 }, .{ 0, -1, -1 }, .{ 1, 0, 1 }, .{ -1, 0, -1 },
-    };
-
-    fn prepare(gpa: std.mem.Allocator, raw: *const Raw, owned: CellRegion) !NavGraph {
-        var cells: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
-        errdefer cells.deinit(gpa);
-        for (raw.node_map.keys(), raw.node_map.values()) |cell, position| {
-            if (owned.contains(cell)) try cells.put(gpa, cell, position);
+    var crossing_count: f32 = 0;
+    var crossing_sum: nz.Vec3(f32) = @splat(0);
+    for (cube_edges) |edge| {
+        const start_distance = corner_sdf[edge[0]];
+        const end_distance = corner_sdf[edge[1]];
+        if ((start_distance < 0.0) != (end_distance < 0.0)) {
+            crossing_count += 1;
+            const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
+            const start_corner = corners[edge[0]];
+            const end_corner = corners[edge[1]];
+            crossing_sum += nz.vec.scale(start_corner, 1.0 - crossing_fraction) + nz.vec.scale(end_corner, crossing_fraction);
         }
-        const node_count = cells.count();
-        const neighbors = try gpa.alloc(Neighbor, node_count * max_neighbor_count);
-        errdefer gpa.free(neighbors);
-        @memset(neighbors, .none);
-        const weights = try gpa.alloc(f32, node_count * max_neighbor_count);
-        errdefer gpa.free(weights);
-        @memset(weights, 0);
-
-        return .{ .cells = cells, .neighbors = neighbors, .weights = weights };
     }
-
-    pub fn deinit(self: *NavGraph, gpa: std.mem.Allocator) void {
-        self.cells.deinit(gpa);
-        gpa.free(self.neighbors);
-        gpa.free(self.weights);
-    }
-
-    fn link(self: *NavGraph, raw: *const Raw, cell_a: nz.Vec3(i32), cell_b: nz.Vec3(i32)) void {
-        self.linkDirected(raw, cell_a, cell_b);
-        self.linkDirected(raw, cell_b, cell_a);
-    }
-
-    fn linkDirected(self: *NavGraph, raw: *const Raw, from_cell: nz.Vec3(i32), to_cell: nz.Vec3(i32)) void {
-        const from_index = self.cells.getIndex(from_cell) orelse return;
-        const offset = to_cell - from_cell;
-        const slot = for (neighbor_offsets, 0..) |candidate, candidate_slot| {
-            if (@reduce(.And, candidate == offset)) break candidate_slot;
-        } else unreachable;
-        const entry_index = from_index * max_neighbor_count + slot;
-        if (self.neighbors[entry_index] != .none) return;
-        const from_position = self.cells.values()[from_index];
-        const to_position = raw.node_map.get(to_cell).?;
-        const step = from_position - to_position;
-        const distance = nz.vec.length(step);
-        const slope = nz.vec.dot(nz.vec.scale(step, 1.0 / distance), nz.vec.normalize(to_position));
-        self.neighbors[entry_index] = if (self.cells.getIndex(to_cell)) |to_index| @enumFromInt(to_index) else .boundary_edge;
-        self.weights[entry_index] = distance * (1 + @max(0, slope));
-    }
-};
+    return nz.vec.scale(crossing_sum, 1 / crossing_count);
+}
 
 pub const Range = struct { min: i32, max: i32 };
 
@@ -230,36 +185,6 @@ pub const Coord = struct {
 
 pub const Box = struct { min: Coord, max: Coord };
 
-pub const Raw = struct {
-    node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
-    density: mesh.DensityGrid,
-    coord: Coord,
-
-    pub fn init(gpa: std.mem.Allocator, planet_radius: u32, chunk: Coord) !Raw {
-        const tracy_scope = tracy.zone(@src());
-        defer tracy_scope.end();
-        const radius_float: f32 = @floatFromInt(planet_radius);
-        const cell_min = min(chunk);
-        const cell_max = max(chunk);
-        const apron_min = cell_min - @as(nz.Vec3(i32), @splat(1));
-        const apron_max = cell_max + @as(nz.Vec3(i32), @splat(1));
-
-        var density = try mesh.DensityGrid.initRegion(gpa, radius_float, apron_min, apron_max);
-        errdefer density.deinit(gpa);
-
-        var node_map: std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)) = .empty;
-        errdefer node_map.deinit(gpa);
-        try mesh.surface_nodes.buildRegion(gpa, &node_map, &density, apron_min, apron_max);
-
-        return .{ .node_map = node_map, .density = density, .coord = chunk };
-    }
-
-    pub fn deinit(self: *Raw, gpa: std.mem.Allocator) void {
-        self.node_map.deinit(gpa);
-        self.density.deinit(gpa);
-    }
-};
-
 pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord {
     var chunks: std.ArrayList(Coord) = .empty;
     errdefer chunks.deinit(gpa);
@@ -280,9 +205,9 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
         while (y <= span_max[1]) : (y += 1) {
             var z = span_min[2];
             while (z <= span_max[2]) : (z += 1) {
-                const chunk: Coord = .{ .position = .{ x, y, z } };
-                const box_min: nz.Vec3(f32) = @floatFromInt(min(chunk));
-                const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk));
+                const chunk_coord: Coord = .{ .position = .{ x, y, z } };
+                const box_min: nz.Vec3(f32) = @floatFromInt(min(chunk_coord));
+                const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk_coord));
                 const chunk_nearest_point_to_planet = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
                 if (nz.vec.dot(chunk_nearest_point_to_planet, chunk_nearest_point_to_planet) > surface_reach_squared) continue;
                 // TODO: (CAVES): DELETE THIS SKIP when caves carve the sdf!
@@ -291,19 +216,19 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
                 // and this check will silently produce holes in the world.
                 const chunk_farthest_point_to_planet = @max(@abs(box_min), @abs(box_max));
                 if (nz.vec.dot(chunk_farthest_point_to_planet, chunk_farthest_point_to_planet) < solid_depth_squared) continue;
-                try chunks.append(gpa, chunk);
+                try chunks.append(gpa, chunk_coord);
             }
         }
     }
     return chunks.toOwnedSlice(gpa);
 }
 
-pub fn min(chunk: Coord) nz.Vec3(i32) {
-    return chunk.position * @as(nz.Vec3(i32), @splat(dim));
+pub fn min(chunk_coord: Coord) nz.Vec3(i32) {
+    return chunk_coord.position * @as(nz.Vec3(i32), @splat(dim));
 }
 
-pub fn max(chunk: Coord) nz.Vec3(i32) {
-    return min(chunk) + @as(nz.Vec3(i32), @splat(dim));
+pub fn max(chunk_coord: Coord) nz.Vec3(i32) {
+    return min(chunk_coord) + @as(nz.Vec3(i32), @splat(dim));
 }
 
 pub fn range(planet_radius: u32) Range {
@@ -315,9 +240,9 @@ pub fn range(planet_radius: u32) Range {
 }
 
 test "chunk coordinates cover dim cells" {
-    const chunk: Coord = .{ .position = .{ -2, 3, 0 } };
-    try std.testing.expectEqual(nz.Vec3(i32){ -64, 96, 0 }, min(chunk));
-    try std.testing.expectEqual(nz.Vec3(i32){ -32, 128, 32 }, max(chunk));
+    const chunk_coord: Coord = .{ .position = .{ -2, 3, 0 } };
+    try std.testing.expectEqual(nz.Vec3(i32){ -64, 96, 0 }, min(chunk_coord));
+    try std.testing.expectEqual(nz.Vec3(i32){ -32, 128, 32 }, max(chunk_coord));
 }
 
 test "chunk range contains the complete planet density field" {
@@ -327,12 +252,12 @@ test "chunk range contains the complete planet density field" {
 
 test "chunk coords respect the clamp box" {
     const box: Box = .{ .min = .{ .position = .{ 0, 0, 0 } }, .max = .{ .position = .{ 1, 1, 1 } } };
-    const chunks = try coords(std.testing.allocator, 67, box);
-    defer std.testing.allocator.free(chunks);
-    try std.testing.expect(chunks.len > 0);
-    for (chunks) |chunk| {
-        try std.testing.expect(@reduce(.And, chunk.position >= box.min.position));
-        try std.testing.expect(@reduce(.And, chunk.position <= box.max.position));
+    const clamped_coords = try coords(std.testing.allocator, 67, box);
+    defer std.testing.allocator.free(clamped_coords);
+    try std.testing.expect(clamped_coords.len > 0);
+    for (clamped_coords) |chunk_coord| {
+        try std.testing.expect(@reduce(.And, chunk_coord.position >= box.min.position));
+        try std.testing.expect(@reduce(.And, chunk_coord.position <= box.max.position));
     }
 }
 
@@ -341,10 +266,8 @@ pub const Job = struct {
     state: *State,
 
     pub const Result = struct {
-        coord: Coord,
-        raw: Raw,
-        vertices: []Mesh.Vertex,
-        indices: []u32,
+        chunk: Chunk,
+        mesh: Mesh,
         nav: NavGraph,
     };
 
@@ -376,9 +299,8 @@ pub const Job = struct {
     pub fn join(self: @This()) void {
         self.thread.join();
         for (self.state.results.items) |*result| {
-            result.raw.deinit(self.state.gpa);
-            self.state.gpa.free(result.vertices);
-            self.state.gpa.free(result.indices);
+            result.chunk.deinit(self.state.gpa);
+            result.mesh.deinit(self.state.gpa);
             result.nav.deinit(self.state.gpa);
         }
         self.state.results.deinit(self.state.gpa);
@@ -389,19 +311,19 @@ pub const Job = struct {
     fn run(state: *State) void {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        for (state.coords) |coord| {
-            var raw = Raw.init(state.gpa, state.planet_radius, coord) catch continue;
-            const chunk_mesh = generate(.mesh, state.gpa, &raw, state.planet_radius) catch {
-                raw.deinit(state.gpa);
+        for (state.coords) |job_coord| {
+            var chunk = init(state.gpa, state.planet_radius, job_coord) catch continue;
+            var chunk_mesh = Mesh.generate(state.gpa, &chunk, state.planet_radius) catch {
+                chunk.deinit(state.gpa);
                 continue;
             };
-            var nav = generate(.navmesh, state.gpa, &raw, state.planet_radius) catch {
-                raw.deinit(state.gpa);
+            var nav = NavGraph.generate(state.gpa, &chunk) catch {
+                chunk.deinit(state.gpa);
                 chunk_mesh.deinit(state.gpa);
                 continue;
             };
-            state.results.append(state.gpa, .{ .coord = coord, .raw = raw, .vertices = chunk_mesh.vertices, .indices = chunk_mesh.indices, .nav = nav }) catch {
-                raw.deinit(state.gpa);
+            state.results.append(state.gpa, .{ .chunk = chunk, .mesh = chunk_mesh, .nav = nav }) catch {
+                chunk.deinit(state.gpa);
                 chunk_mesh.deinit(state.gpa);
                 nav.deinit(state.gpa);
             };

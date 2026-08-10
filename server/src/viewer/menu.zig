@@ -1,5 +1,5 @@
 const std = @import("std");
-const Ui = @import("render").Ui;
+const Ui = @import("ui");
 const World = @import("../World.zig");
 
 /// Returns true when the menu asks the server to stop.

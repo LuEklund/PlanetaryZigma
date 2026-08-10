@@ -6,11 +6,13 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
-pub const AssetServer = @import("render").AssetServer;
-const Renderer = @import("render").Renderer;
+const Assets = @import("graphics").Assets;
+const Animator = @import("graphics").Animator;
+const Emitter = @import("graphics").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
-const DrawList = @import("render").DrawList;
+const contract = @import("contract");
+const DrawList = @import("contract").DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -32,8 +34,11 @@ pub const Entity = World.Entity;
 gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
-asset_server: *AssetServer,
-renderer: Renderer,
+render: shared.HotLib(contract.Api, *anyopaque),
+draw_list: DrawList,
+assets: Assets,
+animator: Animator,
+emitters: Emitter.List,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
@@ -43,7 +48,6 @@ pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     window: *Window,
-    asset_server: *AssetServer,
     world: *World,
     steam_client: *shared.SteamNet.Client,
 };
@@ -53,14 +57,28 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
-    self.asset_server = data.asset_server;
-    try self.renderer.init(.{
+
+    self.animator = try .init(data.gpa);
+    errdefer self.animator.deinit();
+    self.emitters = @splat(Emitter.free);
+
+    self.render = try .init("render", data.gpa, data.io);
+    errdefer self.render.deinit(data.io);
+    self.render.handle = self.render.api.init(&contract.InitOptions{
         .gpa = data.gpa,
         .io = data.io,
-        .window = data.window,
-        .asset_server = data.asset_server,
-    });
-    errdefer self.renderer.deinit(data.gpa, data.io);
+        .window = @ptrCast(data.window),
+    }) orelse return error.RenderInit;
+    errdefer self.render.api.deinit(self.render.handle);
+
+    self.assets = try .init(data.gpa, data.io);
+    errdefer self.assets.deinit(data.gpa, data.io);
+
+    self.draw_list = try .init(data.gpa);
+    errdefer self.draw_list.deinit(data.gpa);
+
+    try self.assets.update(data.gpa, data.io, &self.render);
+
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
@@ -73,12 +91,17 @@ pub fn init(self: *System, data: Data) !void {
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.hud.deinit(self.gpa);
-    self.renderer.deinit(self.gpa, self.io);
+    self.draw_list.deinit(self.gpa);
+    self.animator.deinit();
+    self.assets.deinit(self.gpa, self.io);
+    self.render.api.deinit(self.render.handle);
+    self.render.deinit(self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clear();
-    self.renderer.clear();
+    self.animator.clear();
+    self.emitters = @splat(Emitter.free);
     self.hud.resetScreen();
     switch (next) {
         .menu => try menu_world.populate(world),
@@ -98,8 +121,8 @@ pub fn update(self: *System, world: *World) !void {
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world);
-    if (self.scene == .particle_lab) particle_lab.update(&self.renderer, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.renderer.fonts[0], &self.renderer.texture_slots)) {
+    if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -121,9 +144,9 @@ pub fn update(self: *System, world: *World) !void {
         &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
-    try extract.frame(world, &self.renderer, &self.hud.ui, self.scene != .particle_lab);
-    self.renderer.reloadIfChanged(self.io) catch |err| std.log.err("render swap: {s}", .{@errorName(err)});
-    try self.asset_server.reloadChangedAssets();
+    try extract.frame(self, world, self.scene != .particle_lab);
+    self.render.trySwap(self.io);
+    self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
@@ -214,11 +237,11 @@ comptime {
     if (@import("builtin").output_mode == .Lib) _ = ffi;
 }
 
-pub const Table = struct {
+pub const Api = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
-    systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
+    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
 pub const ffi = struct {
@@ -253,7 +276,7 @@ pub const ffi = struct {
         return context.request_exit;
     }
 
-    pub export fn systemReload(handle: *anyopaque, pre_reload: bool) void {
+    pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         const context: *System = @ptrCast(@alignCast(handle));
         const result = context.reload(pre_reload);
         result catch |err| {

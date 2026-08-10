@@ -2,14 +2,17 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Renderer = @import("render").Renderer;
+const graphics = @import("graphics");
+const render = @import("contract");
+const Emitter = @import("graphics").Emitter;
 const Camera = @import("camera.zig");
-const Ui = @import("render").Ui;
-const DrawList = @import("render").DrawList;
+const Ui = @import("ui");
+const DrawList = @import("contract").DrawList;
 const Viewer = @import("Viewer.zig");
 
 pub fn frame(world: *World, viewer: *Viewer) !void {
-    const renderer = &viewer.renderer;
+    const list = &viewer.draw_list;
+    const models = &viewer.assets.models;
     const camera = viewer.camera;
     const ui = &viewer.ui;
     // The wire carries the client's real camera; `Entity.camera` holds only the yaw
@@ -25,25 +28,51 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
         camera_rotation = .lookAt(nz.vec.normalize(look_target - camera_position), planet_up);
     }
 
-    renderer.beginFrame(.{
-        .camera = .{
-            .position = camera_position,
-            .rotation = camera_rotation,
-            .fov_rad = 1.5,
-        },
-        .elapsed_time = world.elapsed_time,
-        .light_color = .{ 1, 1, 1, 1 },
-        .draw_sky = true,
-        .planet = .{
-            .radius = world.planet.radiusFloat(),
-            .uploads = world.planet.uploads.items,
-            .removes = world.planet.removes.items,
-        },
-        .surface_width = renderer.window.size.width,
-        .surface_height = renderer.window.size.height,
-    });
+    list.clear();
+    list.camera = .{
+        .position = camera_position,
+        .rotation = camera_rotation,
+        .fov_rad = 1.5,
+    };
+    list.time = world.elapsed_time;
+    list.light_color = .{ 1, 1, 1, 1 };
+    list.draw_sky = true;
+    list.planet_radius = world.planet.radiusFloat();
+    list.surface_width = viewer.window.size.width;
+    list.surface_height = viewer.window.size.height;
 
-    try renderer.animator.begin(.{
+    for (world.planet.removes.items) |removed| {
+        if (removed.mesh_handle == 0) continue;
+        viewer.render.api.freeMesh(viewer.render.handle, @enumFromInt(removed.mesh_handle));
+    }
+    for (world.planet.uploads.items) |chunk_upload| {
+        const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
+        const surfaces = [_]render.SurfaceUpload{.{
+            .index_start = 0,
+            .index_count = @intCast(chunk_upload.indices.len),
+            .texture_slot = render.blank_texture,
+        }};
+        entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(entry.mesh_handle), &.{
+            .name = "chunk",
+            .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
+            .skinned = false,
+            .indices = chunk_upload.indices,
+            .surfaces = &surfaces,
+        }));
+    }
+    for (world.planet.chunks.keys(), world.planet.chunks.values()) |coord, entry| {
+        if (entry.mesh_handle == 0) continue;
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = @enumFromInt(entry.mesh_handle),
+            .model_matrix = .identity,
+            .position = chunkCentre(coord),
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = false,
+        });
+    }
+
+    try viewer.animator.begin(.{
         .delta_time = world.delta_time,
         .elapsed_time = world.elapsed_time,
         .local_entity = if (followed) |player| player.id else .none,
@@ -52,27 +81,50 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, &.{}, &renderer.models);
+    }, &.{}, models);
 
     for (world.entities.values()) |*entity| {
-        try renderer.animator.observe(.{
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
+        const model_handle = models.get(entity.kind);
+        try viewer.animator.observe(.{
             .id = entity.id,
-            .kind = entity.kind,
+            .model = model_handle,
             .transform = entity.transform,
-            .velocity = entity.replicated_velocity,
+            .offset = model_spec.offset,
             .is_dying = false,
-            .stun_time = @max(0, entity.un_stun_at - world.elapsed_time),
-            .state_override = null,
-        }, &renderer.models);
+            .state = shared.entity.animationState(
+                entity.replicated_velocity,
+                @max(0, entity.un_stun_at - world.elapsed_time),
+                false,
+                null,
+            ),
+            .highlight = entity.kind == .teleporter,
+            .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
+            .shrink_on_death = entity.kind == .lootbox,
+            .effect = if (entity.kind == .item) .item_effect else null,
+        }, models);
     }
-    renderer.advanceAnimation(&.{});
-    renderer.drawAnimated();
+    viewer.animator.advance(&.{}, models);
+    viewer.animator.draw(list, &viewer.emitters, models);
 
-    if (world.options.draw_flow_field) renderer.drawLines(viewer.arrow_lines.items);
-    if (world.options.draw_chunk_borders) renderer.drawLines(viewer.border_lines.items);
+    if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
+    if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);
 
-    renderer.drawUi(ui.quads.items, ui.screen_width, ui.screen_height);
-    renderer.endFrame(world.elapsed_time);
+    list.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
+    list.ui.screen_width = ui.screen_width;
+    list.ui.screen_height = ui.screen_height;
+
+    for (&viewer.emitters) |emitter| {
+        if (!emitter.alive(world.elapsed_time)) continue;
+        list.emitters.appendAssumeCapacity(.{
+            .effect = emitter.effect,
+            .origin = emitter.origin,
+            .target = emitter.target,
+            .spawn_time = emitter.spawn_time,
+        });
+    }
+
+    viewer.render.api.update(viewer.render.handle, list);
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };
@@ -132,4 +184,12 @@ pub fn collectChunkBorders(world: *World, gpa: std.mem.Allocator, lines: *std.Ar
         };
         for (edges) |edge| try lines.append(gpa, .{ .a = corners[edge[0]], .b = corners[edge[1]], .color = chunk_border_color });
     }
+}
+
+/// Where the chunk sits, for the shadow-cascade test. Its geometry is already in world
+/// space, so the draw itself needs no transform.
+fn chunkCentre(coord: shared.Planet.Chunk.Coord) nz.Vec3(f32) {
+    const dim: f32 = @floatFromInt(shared.Planet.Chunk.dim);
+    const corner: nz.Vec3(f32) = @floatFromInt(coord.position);
+    return corner * @as(nz.Vec3(f32), @splat(dim)) + @as(nz.Vec3(f32), @splat(dim / 2));
 }
