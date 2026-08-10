@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const Physics = @import("system/Physics.zig");
+const Navmesh = @import("system/Navmesh.zig");
 const nz = shared.numz;
 
 gpa: std.mem.Allocator,
@@ -12,10 +13,15 @@ players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
 new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
-planet_radius: f32,
+planet: shared.Planet,
+navmesh: Navmesh,
+physics: *Physics,
+options: Options,
 place: Place,
 director: Director,
 client_updates: std.ArrayList(ClientUpdate),
+physics_commands: std.ArrayList(Physics.Command),
+impacts: std.ArrayList(Physics.Impact),
 next_stage_requested: bool,
 go_again_requested: bool,
 start_round_requested: bool,
@@ -29,10 +35,12 @@ elapsed_time: f32,
 delta_time: f32,
 tick: u32,
 
+world_unstun_at: f32 = 0,
+
 pub const ship_room_altitude_factor: f32 = 2.5;
 pub const ship_room_stand_height: f32 = 2;
+pub const ship_planet_radius: u32 = 26;
 
-pub const spawn_hover: f32 = 1.5;
 pub const item_throw_speed: f32 = 18;
 
 pub const item_launch_angle: f32 = std.math.pi / 4.0;
@@ -43,6 +51,11 @@ pub const PendingDespawn = struct {
 };
 
 pub const Place = enum { ship, planet };
+
+pub const Options = struct {
+    draw_flow_field: bool,
+    draw_chunk_borders: bool,
+};
 
 pub const Director = struct {
     credits: u32,
@@ -58,6 +71,7 @@ pub const ClientUpdate = union(enum) {
     inventory: shared.net.UpdateInventory,
     event: shared.net.Event,
     currency: shared.net.SetCurrency,
+    spawn_planet: u32,
 };
 
 pub const Camera = struct {
@@ -91,7 +105,7 @@ pub const Entity = struct {
     },
     controller: Controller = .{},
     camera: Camera = .{},
-    lifetime: ?f32 = null,
+    lifetime: f32 = 0,
     currency: u32 = 0,
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
@@ -106,8 +120,8 @@ pub const Entity = struct {
     last_utility: f32 = 0,
     mode: Mode = .falling,
 
-    pub fn stat(self: *const Entity, stat_kind: shared.Stat) f32 {
-        return shared.Stat.value(stat_kind, self.kind, self.inventory);
+    pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
+        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
 
     pub const Mode = enum {
@@ -116,7 +130,7 @@ pub const Entity = struct {
     };
 
     pub const Flags = packed struct {
-        invinsible: bool = false,
+        invincible: bool = false,
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
     };
@@ -146,13 +160,24 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
+        .physics_commands = try .initCapacity(gpa, shared.max_entities * 4),
+        .impacts = try .initCapacity(gpa, shared.max_entities),
         .next_stage_requested = false,
         .go_again_requested = false,
         .start_round_requested = false,
         .toggle_spawning_requested = false,
         .dev_mode = dev_mode,
         .teleporter_id = .none,
-        .planet_radius = 100,
+        .planet = .{
+            .planet_radius = ship_planet_radius,
+            .chunks = .empty,
+            .job = null,
+            .uploads = .empty,
+            .removes = .empty,
+        },
+        .navmesh = .empty,
+        .physics = undefined,
+        .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
         .next_entity_id = 1,
@@ -174,6 +199,10 @@ pub fn deinit(self: *World) void {
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
+    self.physics_commands.deinit(self.gpa);
+    self.impacts.deinit(self.gpa);
+    self.planet.deinit(self.gpa);
+    self.navmesh.deinit(self.gpa);
 }
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
@@ -198,7 +227,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const kind_spec = shared.entity.spec(entity.kind);
     if (kind_spec.base_stats != null) {
         entity.max_health = entity.stat(.health);
-        if (entity.kind == .enemy and entity.kind.enemy == .bloorp_lord) {
+        if (entity.kind == .enemy) {
             entity.max_health *= @as(f32, @floatFromInt(self.stage));
         }
         entity.health = entity.max_health;
@@ -221,6 +250,8 @@ pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
 }
 
 pub fn queueDespawn(self: *World, id: shared.entity.Id) void {
+    const entity = self.getPtr(id) orelse return;
+    entity.flags.is_dead = true;
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = false });
 }
 
@@ -228,7 +259,15 @@ pub fn queueRemove(self: *World, id: shared.entity.Id) void {
     self.pending_despawns.appendAssumeCapacity(.{ .id = id, .remove = true });
 }
 
-pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8 {
+pub fn act(self: *World, command: Physics.Command) void {
+    self.physics_commands.appendAssumeCapacity(command);
+}
+
+pub fn rayCast(self: *World, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Physics.Ray.Hit {
+    return Physics.Ray.cast(self.physics, start, translation);
+}
+
+pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8) ?u8 {
     if (player.inventory.get(item) >= 255) return null;
     const item_count = player.inventory.add(item, count);
     const old_max_health = player.max_health;
@@ -247,7 +286,7 @@ pub fn giveItem(self: *World, player: *Entity, item: shared.Item, count: u8) ?u8
 pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
-    if (entity.flags.invinsible) return .ignored;
+    if (entity.flags.invincible) return .ignored;
     const random = self.prng.random();
     var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
     new_amount = @min(new_amount, amount);
@@ -282,7 +321,10 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
         } });
         return .changed;
     }
-    if (current <= 0) self.queueDespawn(entity.id);
+    if (current <= 0) {
+        self.queueDespawn(entity.id);
+        self.dropBossReward(entity);
+    }
     self.client_updates.appendAssumeCapacity(.{ .health = .{
         .id = entity.id,
         .source = if (source) |source_entity| source_entity.id else .none,
@@ -291,39 +333,59 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
+/// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
+/// this tick's flush to give it a body and a spawn packet.
+fn dropBossReward(self: *World, entity: *Entity) void {
+    if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, entity.id) == null) return;
+    const teleporter = self.getPtr(self.teleporter_id) orelse return;
+    const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    _ = self.spawn(.{
+        .kind = .{ .item = .lightning },
+        .transform = .{
+            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
+            .rotation = teleporter.transform.rotation,
+        },
+        .spawn_impulse = shared.Planet.surfaceLaunch(
+            teleporter.transform.position,
+            nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
+            item_launch_angle,
+            item_throw_speed,
+        ),
+    }) catch {};
+}
+
 pub fn shipRoomPosition(self: *const World) nz.Vec3(f32) {
-    return nz.Vec3(f32){ 0, self.planet_radius * ship_room_altitude_factor, 0 };
+    return nz.Vec3(f32){ 0, self.planet.radiusFloat() * ship_room_altitude_factor, 0 };
 }
 
 pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
     return switch (self.place) {
         .ship => self.shipRoomPosition() + nz.Vec3(f32){ 0, ship_room_stand_height, 0 },
-        .planet => shared.planet.surfacePoint(.{ 0, 1, 0 }, self.planet_radius) + nz.Vec3(f32){ 0, 2, 0 },
+        .planet => self.planet.surfacePoint(.{ 0, 1, 0 }) + nz.Vec3(f32){ 0, 2, 0 },
     };
 }
 
-pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
+pub fn loadPlace(self: *World, place: Place) !void {
     self.place = place;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
-    try self.flush(physics);
+    try self.flush();
     const random = self.prng.random();
     self.teleporter_id = .none;
-    if (place == .planet) {
-        self.stage += 1;
-        self.planet_radius = @floatFromInt(if (self.dev_mode)
-            random.intRangeAtMost(u32, shared.planet.dev_radius_min, shared.planet.dev_radius_min + 1)
+    if (place == .planet) self.stage += 1;
+    const spawn_planet_radius: u32 = switch (place) {
+        .ship => ship_planet_radius,
+        .planet => if (self.dev_mode)
+            random.intRangeAtMost(u32, shared.Planet.dev_radius_min, shared.Planet.dev_radius_min + 1)
         else
-            shared.planet.radius_min + (self.stage - 1) * 9);
-    }
+            shared.Planet.radius_min + (self.stage - 1) * 9,
+    };
     self.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = self.stage } });
-    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), self.planet_radius });
-    _ = try self.spawn(.{
-        .kind = .planet,
-        .transform = .{},
-    });
-    try self.flush(physics);
+    self.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
+    std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
+    try self.planet.sync(self.gpa, spawn_planet_radius);
+    try self.flush();
 
     switch (place) {
         .ship => {
@@ -356,7 +418,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 .kind = .target_dummy,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){
                     slab.x * 0.5,
-                    slab.y + dummy_capsule.half_heigth + dummy_capsule.radius,
+                    slab.y + dummy_capsule.half_height + dummy_capsule.radius,
                     0,
                 } },
             });
@@ -368,7 +430,7 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
             portal.teleporter.state = .active;
             portal.teleporter.charged = portal.teleporter.max_charge;
             self.teleporter_id = portal.id;
-            try self.flush(physics);
+            try self.flush();
         },
         .planet => {
             self.director.spawning = true;
@@ -376,13 +438,13 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
                 nz.Vec3(f32){ 0, 1, 0 }
             else
                 nz.vec.randomUnitVector(nz.Vec3(f32), random);
-            const teleporter_position = shared.planet.surfacePoint(teleporter_direction, self.planet_radius);
+            const teleporter_position = self.planet.surfacePoint(teleporter_direction);
             for (0..25) |_| {
                 const vector_direction = if (self.dev_mode)
-                    nz.vec.normalize(shared.planet.surfacePointNear(teleporter_position, self.planet_radius, 5, 10, random))
+                    nz.vec.normalize(self.planet.surfacePointNear(teleporter_position, 5, 10, random))
                 else
                     nz.vec.randomUnitVector(nz.Vec3(f32), random);
-                const transform = shared.planet.surfaceTransform(vector_direction, self.planet_radius, spawn_hover);
+                const transform = self.planet.surfaceTransform(vector_direction, 0.2);
                 _ = try self.spawn(.{
                     .kind = .lootbox,
                     .transform = transform,
@@ -415,16 +477,16 @@ pub fn loadPlace(self: *World, place: Place, physics: *Physics) !void {
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
             player.health = player.max_health;
-            try physics.createBody(player);
+            try self.physics.createBody(player);
             self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.max_health) } } });
-        } else if (player.collider.body_id) |body_id| {
-            Physics.setPosition(body_id, player_spawn_position);
-            Physics.setLinearVelocity(body_id, .{ 0, 0, 0 });
+        } else {
+            self.act(.{ .id = player.id, .verb = .{ .teleport = player_spawn_position } });
+            self.act(.{ .id = player.id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
         }
     }
 }
 
-pub fn flush(self: *World, physics: *Physics) !void {
+pub fn flush(self: *World) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (shared.entity.hasCollider(entity.kind)) {
@@ -435,7 +497,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
                     .object_layer = kind_collider.layer,
                 };
             }
-            try physics.createBody(entity);
+            try self.physics.createBody(entity);
         }
         self.client_updates.appendAssumeCapacity(.{ .spawned = id });
     }
@@ -446,11 +508,10 @@ pub fn flush(self: *World, physics: *Physics) !void {
         const entity = self.getPtr(despawn.id) orelse continue;
 
         if (entity.collider.body_id) |body_id| {
-            physics.destroyBody(body_id);
+            self.physics.destroyBody(body_id);
             entity.collider.body_id = null;
         }
         if (entity.kind == .player and !despawn.remove) {
-            entity.flags.is_dead = true;
             entity.replicated_velocity = .{ 0, 0, 0 };
             continue;
         } else {
@@ -460,22 +521,6 @@ pub fn flush(self: *World, physics: *Physics) !void {
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
-                if (self.getPtr(self.teleporter_id)) |teleporter| {
-                    const teleporter_up = shared.planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                    _ = self.spawn(.{
-                        .kind = .{ .item = .lightning },
-                        .transform = .{
-                            .position = teleporter.transform.position + nz.vec.scale(teleporter_up, World.spawn_hover + 10),
-                            .rotation = teleporter.transform.rotation,
-                        },
-                        .spawn_impulse = shared.planet.surfaceLaunch(
-                            teleporter.transform.position,
-                            nz.vec.randomUnitVector(nz.Vec3(f32), self.prng.random()),
-                            item_launch_angle,
-                            item_throw_speed,
-                        ),
-                    }) catch {};
-                }
             }
             entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);

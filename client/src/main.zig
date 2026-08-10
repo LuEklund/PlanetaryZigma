@@ -25,23 +25,21 @@ pub fn main(init: std.process.Init) !void {
     var eng: miniaudio.ma_engine = undefined;
     if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
     defer miniaudio.ma_engine_uninit(&eng);
-    // _ = miniaudio.ma_engine_play_sound(&eng, "music.mp3", null);
-    // _ = miniaudio.ma_engine_set_volume(&eng, 1);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
     const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
     shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
-    std.log.info("\n====\nNET = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
-    var steam_client: shared.SteamNet.Client = try .init(gpa, io);
-    steam_client.handle_packets_future = try io.concurrent(shared.SteamNet.Client.handlePackets, .{&steam_client});
+    std.log.info("\n====\nNET-DEBUG = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
+
+    var steam_client: shared.SteamNet.Client = undefined;
+    try steam_client.init(gpa, io);
     steam_zone.end();
 
     defer steam_client.deinit();
 
-    var watcher: shared.Watcher = try .init("system_client", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
+    var system_lib: shared.HotLib(System.Api, *anyopaque) = try .init("system_client", gpa, io);
+    defer system_lib.deinit(io);
 
     var window: Window = undefined;
     const window_zone = tracy.zoneNamed(@src(), "WindowOpen");
@@ -54,27 +52,22 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close();
 
-    var asset_server = try System.AssetServer.init(gpa, init.io);
-    defer asset_server.deinit();
 
-    var world: World = try .init(gpa, io);
+    var world: World = try .init(gpa);
     defer world.deinit();
 
-    var system_table: System.Table = try .load(&watcher.dynlib.?);
-
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
-    const system: *anyopaque = system_table.systemInit(&System.Data{
+    system_lib.handle = system_lib.api.systemInit(&System.Data{
         .gpa = gpa,
-        .asset_server = &asset_server,
         .window = &window,
         .io = io,
         .world = &world,
         .steam_client = &steam_client,
     }) orelse return error.SystemInit;
     ctx_zone.end();
-    defer system_table.systemDeinit(system);
+    defer system_lib.api.systemDeinit(system_lib.handle);
 
-    var accumlated_time: f32 = 0;
+    var accumulated_time: f32 = 0;
     var fps_window_seconds: f32 = 0;
     var fps_window_frames: u32 = 0;
     const time_step: f32 = shared.tick_seconds;
@@ -82,14 +75,14 @@ pub fn main(init: std.process.Init) !void {
     while (!window.should_close) {
         tracy.frameMark();
         const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
-        accumlated_time += delta_time;
+        if (delta_time > 0.1) std.log.warn("client main loop stalled {d:.0}ms", .{delta_time * 1000});
+        accumulated_time += delta_time;
         fps_window_seconds += delta_time;
-        if (accumlated_time < time_step) {
-            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
+        if (accumulated_time < time_step) {
+            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch |err| std.log.err("main loop sleep: {s}", .{@errorName(err)});
             continue;
         }
-        accumlated_time -= time_step;
+        accumulated_time -= time_step;
         world.elapsed_time += time_step;
         world.delta_time = time_step;
         fps_window_frames += 1;
@@ -99,26 +92,8 @@ pub fn main(init: std.process.Init) !void {
             fps_window_seconds = 0;
         }
 
-        if (system_table.systemUpdate(system, &world)) break;
-
-        // numpad 0-9 toggles to that ring slot's lib version (contiguous enum values)
-        const np0 = @intFromEnum(Window.Keyboard.Key.keypad_0);
-        for (0..10) |n| {
-            if (window.keyboard.get(@enumFromInt(np0 + n)) != .release) continue;
-            if (watcher.version(n)) |lib| {
-                system_table.systemReload(system, true);
-                system_table = try .load(lib);
-                system_table.systemReload(system, false);
-                std.log.err("switched to version slot {d}", .{n});
-            }
-        }
-
-        if (try watcher.reload(io)) {
-            std.log.err("system table updated", .{});
-            system_table.systemReload(system, true);
-            system_table = try .load(&watcher.dynlib.?);
-            system_table.systemReload(system, false);
-        }
+        if (system_lib.api.systemUpdate(system_lib.handle, &world)) break;
+        system_lib.trySwap(io);
     }
 }
 

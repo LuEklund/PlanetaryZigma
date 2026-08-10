@@ -1,0 +1,34 @@
+const PipelineLayout = @This();
+
+const c = @import("vulkan");
+const Device = @import("device.zig").Logical;
+const check = @import("utils.zig").check;
+
+pub const Kind = enum { world, particle, sky, ui };
+handle: c.VkPipelineLayout,
+
+pub fn init(device: Device, push_constant_size: u32, stage_flags: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
+    const ranges: c.VkPushConstantRange = .{
+        .stageFlags = stage_flags,
+        .offset = 0,
+        .size = push_constant_size,
+    };
+
+    var layout_create_info: c.VkPipelineLayoutCreateInfo = .{
+        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pSetLayouts = descriptor_set_layouts.ptr,
+        .setLayoutCount = @intCast(descriptor_set_layouts.len),
+        .pPushConstantRanges = &ranges,
+        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
+    };
+
+    var layout: c.VkPipelineLayout = undefined;
+    try check(c.vkCreatePipelineLayout(device.handle, &layout_create_info, null, &layout));
+    return .{
+        .handle = layout,
+    };
+}
+
+pub fn deinit(self: PipelineLayout, device: Device) void {
+    c.vkDestroyPipelineLayout(device.handle, self.handle, null);
+}

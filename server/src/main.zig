@@ -4,6 +4,8 @@ const System = @import("system");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const World = System.World;
+const build_options = @import("build_options");
+const Window = System.Window;
 const nz = shared.numz;
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
@@ -40,42 +42,57 @@ pub fn main(init: std.process.Init) !void {
             dev_mode = true;
             continue;
         }
-        host_steam_id = std.fmt.parseInt(u64, arg, 10) catch continue;
+        host_steam_id = std.fmt.parseInt(u64, arg, 10) catch {
+            std.log.warn("ignoring unrecognised argument: {s}", .{arg});
+            continue;
+        };
         break;
     }
 
-    var steam_server: shared.SteamNet.Server = try .init(gpa, io, .{
+    var steam_server: shared.SteamNet.Server = undefined;
+    try steam_server.init(gpa, io, .{
         .mode = server_mode,
         .host_steam_id = host_steam_id,
     });
     defer steam_server.deinit();
-    steam_server.handle_packets_future = try io.concurrent(shared.SteamNet.Server.handlePackets, .{&steam_server});
 
-    var watcher: shared.Watcher = try .init("system_server", io);
-    defer watcher.deinit(io);
-    try watcher.load(io);
+    var system_lib: shared.HotLib(System.ffi.Table, *System) = try .init("system_server", gpa, io);
+    defer system_lib.deinit(io);
 
     var world: World = try .init(gpa, dev_mode);
     defer world.deinit();
 
-    var system_instance: System = undefined;
-    var system_table: System.ffi.Table = try .load(&watcher.dynlib.?);
+    var window: Window = undefined;
+    if (build_options.viewer) {
+        try window.open(gpa, init.minimal, .{
+            .app_id = "planetary_zigma_server",
+            .title = "PlanetaryZigma — server view",
+            .size = .{ .width = 854, .height = 480 },
+        });
+    }
+    defer if (build_options.viewer) {
+        window.close();
+    };
 
-    system_table.systemInit(&system_instance, &System.Data{
+    var system_instance: System = undefined;
+    system_lib.handle = &system_instance;
+
+    if (!system_lib.api.systemInit(&system_instance, &System.Data{
         .io = io,
         .world = &world,
         .gpa = gpa,
         .steam_server = &steam_server,
-    });
+        .window = if (build_options.viewer) &window else {},
+    })) return error.SystemInit;
 
-    defer system_table.systemDeinit(&system_instance);
+    defer system_lib.api.systemDeinit(&system_instance);
 
     var loop_time_tracker: f32 = 0;
     const time_step: f32 = shared.tick_seconds;
     while (true) {
         if (system_instance.request_exit) break;
         const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("main loop stalled {d:.0}ms", .{delta_time * 1000});
+        if (delta_time > 0.1) std.log.warn("server main loop stalled {d:.0}ms", .{delta_time * 1000});
         loop_time_tracker += delta_time;
         if (loop_time_tracker < time_step) {
             std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
@@ -86,18 +103,10 @@ pub fn main(init: std.process.Init) !void {
         world.delta_time = time_step;
         loop_time_tracker -= time_step;
 
-        system_table.systemUpdate(&system_instance, &world);
+        system_lib.api.systemUpdate(&system_instance, &world);
 
-        if (try watcher.reload(io)) {
-            system_table.systemReload(&system_instance, true);
-            std.log.info("system table updated", .{});
-            system_table = try .load(&watcher.dynlib.?);
-            system_table.systemReload(&system_instance, false);
-        }
+        system_lib.trySwap(io);
     }
-    steam_server.handle_packets_future.cancel(io) catch |err| {
-        std.log.err("packet pump exit: {s}", .{@errorName(err)});
-    };
 }
 
 pub fn getDeltaTime(io: std.Io) f32 {

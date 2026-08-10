@@ -6,22 +6,19 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const NetworkManager = @import("system/NetworkManager.zig");
-pub const AssetServer = @import("AssetServer.zig");
-const Animation = @import("system/Animations.zig");
-const AnimationInstance = @import("asset/AnimationInstance.zig");
+const Assets = @import("graphics").Assets;
+const Animator = @import("graphics").Animator;
+const Emitter = @import("graphics").Emitter;
 const motion = @import("system/motion.zig");
-const Emitter = @import("system/Emitter.zig");
+const extract = @import("system/extract.zig");
+const contract = @import("contract");
+const DrawList = @import("contract").DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
-pub const Options = @import("Options.zig");
-pub const Renderer = @import("Renderer.zig");
 
-pub const Camera = @import("system/Camera.zig");
 pub const Chat = @import("system/Chat.zig");
-pub const Controller = @import("system/Controller.zig");
-pub const Hud = @import("system/Hud.zig");
-pub const Ui = @import("Ui.zig");
+const Hud = @import("system/Hud.zig");
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
@@ -37,25 +34,20 @@ pub const Entity = World.Entity;
 gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
-steam_client: *shared.SteamNet.Client,
-asset_server: *AssetServer,
-renderer: Renderer,
+render: shared.HotLib(contract.Api, *anyopaque),
+draw_list: DrawList,
+assets: Assets,
+animator: Animator,
+emitters: Emitter.List,
 network_manager: NetworkManager,
-animation: Animation,
-animation_instances: std.AutoHashMap(shared.entity.Id, AnimationInstance),
-ui: Ui,
 scene: Scene,
 hud: Hud,
-options: Options,
 request_exit: bool = false,
-fullscreen_applied: bool = false,
-window_size_applied: Window.Size = .{},
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     window: *Window,
-    asset_server: *AssetServer,
     world: *World,
     steam_client: *shared.SteamNet.Client,
 };
@@ -65,37 +57,56 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
-    self.steam_client = data.steam_client;
-    self.asset_server = data.asset_server;
-    self.renderer = try .init(data.gpa, data.asset_server, data.window);
+
+    self.animator = try .init(data.gpa);
+    errdefer self.animator.deinit();
+    self.emitters = @splat(Emitter.free);
+
+    self.render = try .init("render", data.gpa, data.io);
+    errdefer self.render.deinit(data.io);
+    self.render.handle = self.render.api.init(&contract.InitOptions{
+        .gpa = data.gpa,
+        .io = data.io,
+        .window = @ptrCast(data.window),
+    }) orelse return error.RenderInit;
+    errdefer self.render.api.deinit(self.render.handle);
+
+    self.assets = try .init(data.gpa, data.io);
+    errdefer self.assets.deinit(data.gpa, data.io);
+
+    self.draw_list = try .init(data.gpa);
+    errdefer self.draw_list.deinit(data.gpa);
+
+    try self.assets.update(data.gpa, data.io, &self.render);
+
+
+    try self.hud.init(data.gpa, data.window.size);
+    errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.steam_client);
-    self.animation = .init(data.gpa);
-    self.animation_instances = .init(data.gpa);
-    self.ui = try .init(data.gpa, data.window.size.width, data.window.size.height);
-    self.ui.default_font = &self.renderer.inner.resources.font_loader.items[0];
-    self.options = .{};
+    errdefer self.network_manager.deinit();
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
-    self.fullscreen_applied = false;
-    self.window_size_applied = data.window.size;
 }
 
 pub fn deinit(self: *System) void {
-    var instance_iterator = self.animation_instances.valueIterator();
-    while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
-    self.animation_instances.deinit();
-    self.ui.deinit(self.gpa);
-    self.renderer.deinit(self.gpa);
     self.network_manager.deinit();
+    self.hud.deinit(self.gpa);
+    self.draw_list.deinit(self.gpa);
+    self.animator.deinit();
+    self.assets.deinit(self.gpa, self.io);
+    self.render.api.deinit(self.render.handle);
+    self.render.deinit(self.io);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
-    world.clearSession();
-    self.hud = .{};
+    world.clear();
+    self.animator.clear();
+    self.emitters = @splat(Emitter.free);
+    self.hud.resetScreen();
     switch (next) {
         .menu => try menu_world.populate(world),
         .game => {},
-        .particle_lab => particle_lab.populate(world),
+        .particle_lab => try particle_lab.populate(world),
     }
     self.scene = next;
 }
@@ -103,15 +114,15 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
 pub fn update(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    // tracy.frameMark();
-    var text_buffer: [64]u8 = undefined;
+    world.planet.clearOutboxes();
+    var text_buffer: [1024]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     try self.handleInput(world, text_buffer[0..text_writer.end]);
     const paused_before_hud = self.hud.overlay != .none;
-    if (self.scene == .menu) menu_world.update(world, world.elapsed_time);
-    if (self.scene == .particle_lab) particle_lab.update(world);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &self.ui, &self.renderer.inner.resources.texture_table, &world.controller, &self.options)) {
+    if (self.scene == .menu) menu_world.update(world);
+    if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
+    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
@@ -120,36 +131,37 @@ pub fn update(self: *System, world: *World) !void {
         world.controller.clearInput();
     }
     try self.applyOptions(world);
-    Emitter.update(world);
-    try self.renderer.update(world, &self.animation_instances, &self.ui, self.scene != .particle_lab);
-    try self.asset_server.reloadChangedAssets();
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
-    try world.flush(&self.animation_instances);
-    try self.renderer.inner.drainRenderCommands(self.gpa, &self.animation_instances, world);
-    try self.animation.updateStates(world, &self.animation_instances);
-    try self.animation.update(world, &self.animation_instances);
+    try world.flush();
+    for (world.entities.values()) |*entity| {
+        entity.stun_time = @max(0, entity.stun_time - world.delta_time);
+    }
+
+    try world.planet.update(
+        world.gpa,
+        &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
+        @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
+    );
+    try extract.frame(self, world, self.scene != .particle_lab);
+    self.render.trySwap(self.io);
+    self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
 
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
 
-    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &self.options);
+    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &world.options);
     world.controller.resetMouseDelta();
     world.controller.mouse_wheel = 0;
-    // std.log.debug("time : {d}", .{world.elapsed_time});
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     const window = self.window;
-    if (!window.size.eql(self.window_size_applied)) {
-        try self.renderer.resize(self.gpa, window);
-        self.ui.screen_width = @floatFromInt(window.size.width);
-        self.ui.screen_heigth = @floatFromInt(window.size.height);
-        self.window_size_applied = window.size;
-    }
+    self.hud.ui.screen_width = @floatFromInt(window.size.width);
+    self.hud.ui.screen_height = @floatFromInt(window.size.height);
     const keyboard = window.keyboard;
     if (world.controller.rebinding_action != null) {
         world.controller.update(window);
@@ -200,12 +212,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !void {
 }
 
 fn applyOptions(self: *System, world: *World) !void {
-    if (self.scene == .game) world.camera.fov_rad = self.options.fov_rad;
-    world.chunk_view_distance = @intFromFloat(@max(1.0, @round(self.options.chunk_view_distance)));
-    if (self.fullscreen_applied != self.options.fullscreen) {
-        try self.window.setFullscreen(self.options.fullscreen);
-        self.fullscreen_applied = self.options.fullscreen;
-    }
+    try self.window.setFullscreen(world.options.fullscreen);
     const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
     const was_locked = self.window.pointer.constraint == .locked;
     if (wants_cursor_lock) {
@@ -221,36 +228,20 @@ fn applyOptions(self: *System, world: *World) !void {
 }
 
 fn reload(self: *System, pre_reload: bool) !void {
-    if (pre_reload) {
-        std.log.debug("pre-hotreload", .{});
-    } else {
-        std.log.debug("post-hotreload", .{});
-        self.renderer.inner.rebindProcs();
-    }
+    // Each .so image has its own copy of shared's globals, so a fresh one starts with a
+    // null log_io and every line from it loses its timestamp.
+    if (!pre_reload) shared.log_io = self.io;
 }
 
 comptime {
     if (@import("builtin").output_mode == .Lib) _ = ffi;
 }
 
-pub const Table = struct {
+pub const Api = struct {
     systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
-    systemReload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
-
-    pub fn load(dynlib: *shared.DynLib) !Table {
-        var self: Table = undefined;
-        inline for (std.meta.fields(Table)) |field| {
-            std.log.debug("Looking up symbol: {s}", .{field.name});
-            const ptr = dynlib.lookup(field.type, field.name) orelse {
-                std.log.err("Failed to lookup symbol: {s}", .{field.name});
-                return error.DynlibLookup;
-            };
-            @field(self, field.name) = ptr;
-        }
-        return self;
-    }
+    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 };
 
 pub const ffi = struct {
@@ -285,7 +276,7 @@ pub const ffi = struct {
         return context.request_exit;
     }
 
-    pub export fn systemReload(handle: *anyopaque, pre_reload: bool) void {
+    pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         const context: *System = @ptrCast(@alignCast(handle));
         const result = context.reload(pre_reload);
         result catch |err| {

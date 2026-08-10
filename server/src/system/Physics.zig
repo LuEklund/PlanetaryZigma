@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 
-pub const c = @import("box3d");
+const c = @import("box3d");
 
 pub const gravity_accel: f32 = 50;
 const move_accel: f32 = 400;
@@ -46,11 +46,11 @@ pub const Collider = struct {
     object_layer: ObjectLayer,
 };
 
-pub fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
+fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
     return .{ v.x, v.y, v.z };
 }
 
-pub fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
+fn toB3(v: nz.Vec3(f32)) c.b3Vec3 {
     return .{ .x = v[0], .y = v[1], .z = v[2] };
 }
 
@@ -87,6 +87,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         self.world = undefined;
     } else {
         self.world = makeWorld();
+        for (world.entities.values()) |*entity| entity.collider.body_id = null;
         for (world.entities.values()) |*entity| {
             if (!shared.entity.hasCollider(entity.kind)) continue;
             if (shared.entity.collider(entity.kind)) |kind_collider| {
@@ -94,7 +95,6 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
                 entity.collider.motion_type = kind_collider.motion;
                 entity.collider.object_layer = kind_collider.layer;
             }
-            entity.collider.body_id = null;
             try self.createBody(entity);
         }
     }
@@ -104,6 +104,22 @@ pub fn update(self: *Physics, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
+    for (world.physics_commands.items) |command| {
+        const entity = world.getPtr(command.id) orelse continue;
+        const body_id = entity.collider.body_id orelse continue;
+        switch (command.verb) {
+            .walk => |walk| moveOnPlanet(entity, body_id, walk.direction, walk.speed, world.delta_time),
+            .hover => |hover| floatOnPlanet(entity, body_id, hover.direction, hover.speed, &world.planet, hover.height, world.delta_time),
+            .face => |direction| faceOnPlanet(entity, body_id, direction),
+            .jump => |force| jump(entity, body_id, force),
+            .arc_jump => |target| arcJumpTo(entity, body_id, target),
+            .teleport => |position| setPosition(body_id, position),
+            .set_velocity => |velocity| setLinearVelocity(body_id, velocity),
+            .set_rotation => |rotation| setRotation(body_id, rotation),
+        }
+    }
+    world.physics_commands.clearRetainingCapacity();
+
     for (world.entities.values()) |*entity| {
         if (!shared.entity.hasCollider(entity.kind)) continue;
         const body_id = entity.collider.body_id orelse continue;
@@ -112,7 +128,7 @@ pub fn update(self: *Physics, world: *World) !void {
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), world.prng.random());
-            var point = shared.planet.surfacePoint(direction, world.planet_radius);
+            var point = world.planet.surfacePoint(direction);
             point += nz.vec.scale(nz.vec.normalize(point), 5);
             c.b3Body_SetTransform(body_id, toB3(point), c.b3Body_GetRotation(body_id));
             c.b3Body_SetLinearVelocity(body_id, .{ .x = 0, .y = 0, .z = 0 });
@@ -121,10 +137,10 @@ pub fn update(self: *Physics, world: *World) !void {
         const planet_up = nz.vec.scale(entity.transform.position, 1.0 / distance_from_center);
         const radial_speed = nz.vec.dot(toVec(c.b3Body_GetLinearVelocity(body_id)), planet_up);
         switch (entity.mode) {
-            .walking => if (!self.isGrounded(entity, world.planet_radius)) {
+            .walking => if (!self.isGrounded(entity, &world.planet)) {
                 entity.mode = .falling;
             },
-            .falling => if (radial_speed <= 0 and self.isGrounded(entity, world.planet_radius)) {
+            .falling => if (radial_speed <= 0 and self.isGrounded(entity, &world.planet)) {
                 entity.mode = .walking;
             },
         }
@@ -166,9 +182,9 @@ pub fn update(self: *Physics, world: *World) !void {
         if (entity.mode == .falling and nz.vec.dot(entity.replicated_velocity, nz.vec.normalize(entity.transform.position)) > 0) continue;
 
         const clearance = colliderGroundExtent(entity.collider);
-        const value = shared.planet.sdf.sampled(entity.transform.position, world.planet_radius);
+        const value = world.planet.sample(entity.transform.position);
         if (value >= (clearance + ground_check_skin) * 2) continue;
-        const gradient = sdfGradient(entity.transform.position, world.planet_radius);
+        const gradient = sdfGradient(entity.transform.position, &world.planet);
         const gradient_length = nz.vec.length(gradient);
         const normal = if (gradient_length > 0.0001) nz.vec.scale(gradient, 1.0 / gradient_length) else nz.vec.normalize(entity.transform.position);
         const distance = if (gradient_length > 0.0001) value / gradient_length else value;
@@ -184,14 +200,45 @@ pub fn update(self: *Physics, world: *World) !void {
         c.b3Body_SetTransform(body_id, toB3(entity.transform.position), c.b3Body_GetRotation(body_id));
         c.b3Body_SetLinearVelocity(body_id, toB3(entity.replicated_velocity));
     }
+
+    for (world.entities.values()) |*entity| {
+        const projectile_kind = entity.kind.projectileKind() orelse continue;
+        const previous_position = entity.transform.position;
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
+        const travel = entity.transform.position - previous_position;
+
+        entity.lifetime -= world.delta_time;
+        if (entity.lifetime <= 0) {
+            world.queueDespawn(entity.id);
+            continue;
+        }
+
+        const ray_hit = Ray.cast(self, previous_position, travel) orelse {
+            if (world.planet.sample(entity.transform.position) < 0) {
+                world.impacts.appendAssumeCapacity(.{
+                    .projectile = entity.id,
+                    .what = .terrain,
+                    .point = entity.transform.position,
+                });
+            }
+            continue;
+        };
+        if (ray_hit.id == entity.owner_id) continue;
+        world.impacts.appendAssumeCapacity(.{
+            .projectile = entity.id,
+            .what = .{ .entity = ray_hit.id },
+            .point = ray_hit.point,
+        });
+    }
 }
 
-fn sdfGradient(position: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
+fn sdfGradient(position: nz.Vec3(f32), planet: *const shared.Planet) nz.Vec3(f32) {
     const epsilon: f32 = 0.05;
     return .{
-        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius)) / (2 * epsilon),
-        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius)) / (2 * epsilon),
-        (shared.planet.sdf.sampled(position + nz.Vec3(f32){ 0, 0, epsilon }, planet_radius) - shared.planet.sdf.sampled(position - nz.Vec3(f32){ 0, 0, epsilon }, planet_radius)) / (2 * epsilon),
+        (planet.sample(position + nz.Vec3(f32){ epsilon, 0, 0 }) - planet.sample(position - nz.Vec3(f32){ epsilon, 0, 0 })) / (2 * epsilon),
+        (planet.sample(position + nz.Vec3(f32){ 0, epsilon, 0 }) - planet.sample(position - nz.Vec3(f32){ 0, epsilon, 0 })) / (2 * epsilon),
+        (planet.sample(position + nz.Vec3(f32){ 0, 0, epsilon }) - planet.sample(position - nz.Vec3(f32){ 0, 0, epsilon })) / (2 * epsilon),
     };
 }
 
@@ -199,15 +246,15 @@ fn colliderGroundExtent(collider: Collider) f32 {
     return switch (collider.shape) {
         .primitive => |primitive| switch (primitive) {
             .box => |box| box.x,
-            .capsule => |capsule| capsule.half_heigth + capsule.radius,
+            .capsule => |capsule| capsule.half_height + capsule.radius,
         },
         .mesh => 0,
     };
 }
 
-pub fn isGrounded(self: *Physics, entity: *const system.Entity, planet_radius: f32) bool {
-    const value = shared.planet.sdf.sampled(entity.transform.position, planet_radius);
-    const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet_radius));
+fn isGrounded(self: *Physics, entity: *const system.Entity, planet: *const shared.Planet) bool {
+    const value = planet.sample(entity.transform.position);
+    const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;
     if (distance < colliderGroundExtent(entity.collider) + ground_check_skin) return true;
     const position = entity.transform.position;
@@ -258,8 +305,8 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
             },
             .capsule => |capsule| {
                 const cap: c.b3Capsule = .{
-                    .center1 = .{ .x = 0, .y = -capsule.half_heigth, .z = 0 },
-                    .center2 = .{ .x = 0, .y = capsule.half_heigth, .z = 0 },
+                    .center1 = .{ .x = 0, .y = -capsule.half_height, .z = 0 },
+                    .center2 = .{ .x = 0, .y = capsule.half_height, .z = 0 },
                     .radius = capsule.radius,
                 };
                 _ = c.b3CreateCapsuleShape(body_id, &shape_def, &cap);
@@ -290,22 +337,69 @@ pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {
     c.b3DestroyBody(body_id);
 }
 
-pub fn setRotation(body_id: c.b3BodyId, rotation: nz.quat.Hamiltonian(f32)) void {
+pub const Command = struct {
+    id: shared.entity.Id,
+    verb: Verb,
+
+    pub const Verb = union(enum) {
+        walk: struct { direction: nz.Vec3(f32), speed: f32 },
+        hover: struct { direction: nz.Vec3(f32), speed: f32, height: f32 },
+        face: nz.Vec3(f32),
+        jump: f32,
+        arc_jump: nz.Vec3(f32),
+        teleport: nz.Vec3(f32),
+        set_velocity: nz.Vec3(f32),
+        set_rotation: nz.quat.Hamiltonian(f32),
+    };
+};
+
+pub const Ray = struct {
+    pub const Hit = struct {
+        id: shared.entity.Id,
+        point: nz.Vec3(f32),
+    };
+
+    pub fn cast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Hit {
+        const ray = c.b3World_CastRayClosest(physics.world, toB3(start), toB3(translation), c.b3DefaultQueryFilter());
+        if (!ray.hit) return null;
+        const body = c.b3Shape_GetBody(ray.shapeId);
+        return .{
+            .id = @enumFromInt(@as(u32, @intCast(@intFromPtr(c.b3Body_GetUserData(body))))),
+            .point = toVec(ray.point),
+        };
+    }
+};
+
+pub const Impact = struct {
+    projectile: shared.entity.Id,
+    what: union(enum) { entity: shared.entity.Id, terrain },
+    point: nz.Vec3(f32),
+};
+
+fn setRotation(body_id: c.b3BodyId, rotation: nz.quat.Hamiltonian(f32)) void {
     c.b3Body_SetTransform(body_id, c.b3Body_GetPosition(body_id), quatToB3(rotation));
 }
 
-pub fn setPosition(body_id: c.b3BodyId, position: nz.Vec3(f32)) void {
+fn setPosition(body_id: c.b3BodyId, position: nz.Vec3(f32)) void {
     c.b3Body_SetTransform(body_id, toB3(position), c.b3Body_GetRotation(body_id));
 }
 
-pub fn setLinearVelocity(body_id: c.b3BodyId, velocity: nz.Vec3(f32)) void {
+fn setLinearVelocity(body_id: c.b3BodyId, velocity: nz.Vec3(f32)) void {
     c.b3Body_SetLinearVelocity(body_id, toB3(velocity));
 }
 
-pub fn moveOnPlanet(entity: *system.Entity, dir: nz.Vec3(f32), speed: f32, delta_time: f32) void {
+fn faceOnPlanet(entity: *system.Entity, body_id: c.b3BodyId, direction: nz.Vec3(f32)) void {
+    const planet_up = nz.vec.normalize(entity.transform.position);
+    const forward_projected = direction - nz.vec.scale(planet_up, nz.vec.dot(direction, planet_up));
+    if (nz.vec.length(forward_projected) <= 0.0001) return;
+    const forward = nz.vec.normalize(forward_projected);
+    const rotation = nz.quat.Hamiltonian(f32).lookAt(forward, planet_up).normalize();
+    setRotation(body_id, rotation);
+}
+
+fn moveOnPlanet(entity: *system.Entity, body_id: c.b3BodyId, dir: nz.Vec3(f32), speed: f32, delta_time: f32) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const body_id = entity.collider.body_id orelse return;
     const planet_up = nz.vec.normalize(entity.transform.position);
     const wish: nz.Vec3(f32) = if (nz.vec.length(dir) > 0.0001)
         nz.vec.scale(nz.vec.normalize(dir), speed)
@@ -323,8 +417,7 @@ pub fn moveOnPlanet(entity: *system.Entity, dir: nz.Vec3(f32), speed: f32, delta
     c.b3Body_SetLinearVelocity(body_id, toB3(radial + tangential));
 }
 
-pub fn jump(entity: *system.Entity, force: f32) void {
-    const body_id = entity.collider.body_id orelse return;
+fn jump(entity: *system.Entity, body_id: c.b3BodyId, force: f32) void {
     const planet_up = nz.vec.normalize(entity.transform.position);
     const v = toVec(c.b3Body_GetLinearVelocity(body_id));
     const tangential = v - nz.vec.scale(planet_up, nz.vec.dot(v, planet_up));
@@ -332,16 +425,8 @@ pub fn jump(entity: *system.Entity, force: f32) void {
     entity.mode = .falling;
 }
 
-pub fn launch(entity: *system.Entity, direction: nz.Vec3(f32), force: f32) void {
-    const body_id = entity.collider.body_id orelse return;
-    const v = toVec(c.b3Body_GetLinearVelocity(body_id));
-    c.b3Body_SetLinearVelocity(body_id, toB3(v + nz.vec.scale(nz.vec.normalize(direction), force)));
-    entity.mode = .falling;
-}
-
 const arc_jump_speed: f32 = 10;
-pub fn arcJumpTo(entity: *system.Entity, target: nz.Vec3(f32)) void {
-    const body_id = entity.collider.body_id orelse return;
+fn arcJumpTo(entity: *system.Entity, body_id: c.b3BodyId, target: nz.Vec3(f32)) void {
     const to_target = target - entity.transform.position;
     const flight_time = nz.vec.length(to_target) / arc_jump_speed;
     if (flight_time < 0.0001) return;
@@ -351,18 +436,18 @@ pub fn arcJumpTo(entity: *system.Entity, target: nz.Vec3(f32)) void {
     entity.mode = .falling;
 }
 
-pub fn floatOnPlanet(
+fn floatOnPlanet(
     entity: *system.Entity,
+    body_id: c.b3BodyId,
     dir: nz.Vec3(f32),
     speed: f32,
-    planet_radius: f32,
+    planet: *const shared.Planet,
     hover_height: f32,
     delta_time: f32,
 ) void {
-    const body_id = entity.collider.body_id orelse return;
     const planet_up = nz.vec.normalize(entity.transform.position);
-    moveOnPlanet(entity, dir, speed, delta_time);
-    const ground_distance = shared.planet.sdf.sampled(toVec(c.b3Body_GetPosition(body_id)), planet_radius);
+    moveOnPlanet(entity, body_id, dir, speed, delta_time);
+    const ground_distance = planet.sample(toVec(c.b3Body_GetPosition(body_id)));
     const lift = 2 * gravity_accel * c.b3Body_GetMass(body_id) * ground_distance;
     if (ground_distance < hover_height) c.b3Body_ApplyForceToCenter(body_id, toB3(nz.vec.scale(planet_up, lift)), true);
     const velocity = toVec(c.b3Body_GetLinearVelocity(body_id));

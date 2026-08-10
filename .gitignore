@@ -16,3 +16,10 @@ illustration/
 CLAUDE.md
 .claude
 *.spv
+balancing/
+
+# RenderDoc captures
+*.rdc
+*.cap
+renderdoc/
+blueprints/

@@ -3,17 +3,18 @@ const builtin = @import("builtin");
 
 pub const numz = @import("numz");
 pub const net = @import("net.zig");
-pub const planet = @import("planet/root.zig");
+pub const Planet = @import("planet/root.zig");
 pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
-pub const Watcher = @import("Watcher.zig");
+pub const HotLib = @import("HotLib.zig").HotLib;
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
-const item = @import("item.zig");
-pub const Item = item.Item;
-pub const Inventory = item.Inventory;
+pub const Item = @import("Item.zig");
+pub const Inventory = Item.Inventory;
+
+pub const Font = @import("Font.zig");
 
 pub const entity = @import("entity.zig");
 
@@ -65,7 +66,6 @@ pub fn redirectStderrToFile(io: std.Io, path: []const u8) void {
 }
 
 pub const teleporter = struct {
-    pub const intertact_distance: f32 = 6;
     pub const charge_distance: f32 = 12;
 
     pub const State = struct {
@@ -78,5 +78,3 @@ pub const teleporter = struct {
         max_charge: f32 = 100,
     };
 };
-
-pub const Stat = item.Stat;

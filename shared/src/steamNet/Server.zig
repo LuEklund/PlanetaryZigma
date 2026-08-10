@@ -15,6 +15,7 @@ mode: Mode,
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
 last_send_result: steam.EResult = .k_EResultOK,
+send_stats: SteamNet.PacketStats(@import("../net.zig").ServerPacket) = .{},
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -46,7 +47,9 @@ pub const HostState = enum(u8) {
     left,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
+/// Fills the caller's Server rather than returning one: the packet pump holds `self`, and
+/// a returned struct would be copied out from under it.
+pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !void {
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -140,7 +143,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         },
     }
 
-    return .{
+    self.* = .{
         .gpa = gpa,
         .pipe = pipe,
         .gs = gs,
@@ -154,6 +157,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         .host_state = if (options.host_steam_id != 0 or options.mode == .local_singleplayer) .waiting else .none,
         .mode = options.mode,
     };
+    self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
 pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
@@ -172,6 +176,9 @@ pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version
 }
 
 pub fn deinit(self: *Server) void {
+    self.handle_packets_future.cancel(self.io) catch |err| {
+        std.log.err("packet pump exit: {s}", .{@errorName(err)});
+    };
     if (self.listen_socket != 0) _ = self.socket.CloseListenSocket(self.listen_socket);
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
@@ -216,6 +223,7 @@ pub fn handlePackets(self: *Server) !void {
             for (self.connections) |conn| {
                 if (conn != 0) @import("../SteamNet.zig").logConnectionStatus(self.socket, conn);
             }
+            self.send_stats.logAndReset("server");
         }
         try self.io.checkCancel();
         {
@@ -223,8 +231,8 @@ pub fn handlePackets(self: *Server) !void {
             defer self.packet_mutex.unlock(self.io);
             _ = self.steamCallback(self.gpa, self.pipe, self.socket) catch |err|
                 std.log.err("steamCallback: {s}", .{@errorName(err)});
-            self.recievePackets() catch |err|
-                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.receivePackets() catch |err|
+                std.log.err("receivePackets: {s}", .{@errorName(err)});
             self.sendPackets() catch |err|
                 std.log.err("sendPackets: {s}", .{@errorName(err)});
         }
@@ -232,7 +240,7 @@ pub fn handlePackets(self: *Server) !void {
     }
 }
 
-pub fn recievePackets(self: *Server) !void {
+pub fn receivePackets(self: *Server) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
         if (conn == 0) continue;
@@ -265,6 +273,7 @@ pub fn recievePackets(self: *Server) !void {
 pub fn sendPackets(self: *Server) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
+        if (SteamNet.log_connection_status) self.send_stats.record(msg.bytes[0..msg.len]);
         var msg_num: i64 = 0;
         const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
         if (result != self.last_send_result) {
