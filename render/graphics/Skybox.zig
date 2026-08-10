@@ -57,15 +57,10 @@ const Cubemap = struct {
     }
 };
 
-/// One 4x3 cross in, six faces out.
-fn cross(gpa: std.mem.Allocator, bytes: []const u8) !Cubemap {
-    var decoded = try Bitmap.one(gpa, bytes);
+fn cross(gpa: std.mem.Allocator, file_bytes: []const u8) !Cubemap {
+    var decoded = try Bitmap.one(gpa, file_bytes);
     defer decoded.deinit();
-    return splitCross(gpa, decoded);
-}
 
-/// 4x3 cross layout -> six square faces in Vulkan cubemap order, all windows into one block.
-fn splitCross(gpa: std.mem.Allocator, decoded: Bitmap) !Cubemap {
     const width: u32 = @intCast(decoded.width);
     const face_size: u32 = @divTrunc(width, 4);
     const face_bytes = face_size * face_size * channels;

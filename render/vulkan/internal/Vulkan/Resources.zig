@@ -18,6 +18,7 @@ const contract = @import("contract");
 const Shaders = @import("Shaders.zig");
 const DrawList = @import("contract").DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
+const box = @import("../box.zig");
 
 const check = @import("utils.zig").check;
 
@@ -31,6 +32,12 @@ pub const RetiredMesh = struct {
     frame: u32,
 };
 
+pub const RetiredImage = struct {
+    image: Image,
+    slot: ?u32,
+    frame: u32,
+};
+
 pub const GPUCascades = extern struct {
     light_view_proj: [shadow_cascade_count][16]f32,
     splits: [4]f32,
@@ -41,19 +48,14 @@ vma: Vma,
 device: Device,
 
 texture_table: TextureTable,
-/// The GPU arrays themselves. A mesh handle is `index + 1`, so 0 stays `.none`; a texture
-/// is keyed by the descriptor slot, because that slot is the only name the producer holds.
 meshes: std.ArrayList(?Mesh),
-/// A freed mesh may still be referenced by a frame in flight, so it waits out the ring
-/// instead of stalling the device. Chunk streaming frees several a frame.
-retired_meshes: std.ArrayList(RetiredMesh),
 textures: std.AutoArrayHashMapUnmanaged(u32, Image),
-/// Bound wherever nothing has been uploaded yet, and never freed.
+retired_meshes: std.ArrayList(RetiredMesh),
+retired_images: std.ArrayList(RetiredImage),
+
 blank_texture: Image,
-/// The sky is one image with its own descriptor, so it is held here rather than in the
-/// table — nothing names it and nothing else can use it.
+default_mesh: contract.MeshHandle,
 skybox_image: ?Image,
-/// The checkerboard: a decode that failed is visible, not white and not stale.
 missing_texture: Image,
 shaders: Shaders,
 
@@ -230,8 +232,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .texture_table = undefined,
         .meshes = .empty,
         .retired_meshes = .empty,
+        .retired_images = .empty,
         .textures = .empty,
         .blank_texture = undefined,
+        .default_mesh = .none,
         .skybox_image = null,
         .missing_texture = undefined,
         .shaders = undefined,
@@ -263,7 +267,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .shadow = descriptor_layouts.get(.shadow).handle,
     }));
 
-var blank: Image = try .init(
+    var blank: Image = try .init(
         self.vma,
         self.device,
         c.VK_FORMAT_R8G8B8A8_UNORM,
@@ -302,6 +306,20 @@ var blank: Image = try .init(
     self.blank_texture = blank;
     self.missing_texture = missing;
 
+    const box_surfaces = [_]contract.SurfaceUpload{.{
+        .index_start = 0,
+        .index_count = @intCast(box.indices.len),
+        .texture_slot = contract.blank_texture,
+    }};
+    const box_handle = try self.uploadMesh(.none, 0, &.{
+        .name = "default",
+        .vertices = std.mem.sliceAsBytes(box.vertices),
+        .skinned = false,
+        .indices = box.indices,
+        .surfaces = &box_surfaces,
+    });
+    self.default_mesh = box_handle;
+
     return self;
 }
 
@@ -311,6 +329,8 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.meshes.deinit(gpa);
     for (self.retired_meshes.items) |*retired| retired.mesh.deinit(gpa, vma);
     self.retired_meshes.deinit(gpa);
+    for (self.retired_images.items) |*retired| retired.image.deinit(vma, device);
+    self.retired_images.deinit(gpa);
     for (self.textures.values()) |*image| image.deinit(vma, device);
     self.textures.deinit(gpa);
     if (self.skybox_image) |*sky| sky.deinit(vma, device);
@@ -340,8 +360,13 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
     );
 }
 
-
+/// A handle that names nothing draws the box rather than nothing at all — `.none`, a mesh
+/// that never uploaded, or one already freed. Null only before the box itself exists.
 pub fn meshAt(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
+    return self.meshFor(handle) orelse self.meshFor(self.default_mesh);
+}
+
+fn meshFor(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
     const raw = @intFromEnum(handle);
     if (raw == 0 or raw > self.meshes.items.len) return null;
     if (self.meshes.items[raw - 1]) |*mesh| return mesh;
@@ -362,8 +387,26 @@ pub fn freeMesh(self: *Resources, handle: contract.MeshHandle, frame: u32) void 
     slot.* = null;
 }
 
-/// Anything retired a full ring ago is no longer referenced by a frame in flight.
-pub fn drainRetiredMeshes(self: *Resources, frame: u32) void {
+pub fn drainRetired(self: *Resources, frame: u32) void {
+    self.drainRetiredImages(frame);
+    self.drainRetiredMeshes(frame);
+}
+
+fn drainRetiredImages(self: *Resources, frame: u32) void {
+    var index: usize = 0;
+    while (index < self.retired_images.items.len) {
+        const retired = &self.retired_images.items[index];
+        if (frame < retired.frame + FrameData.max_frames_inflight) {
+            index += 1;
+            continue;
+        }
+        var doomed = self.retired_images.swapRemove(index);
+        doomed.image.deinit(self.texture_table.vma, self.texture_table.device);
+        if (doomed.slot) |slot| self.texture_table.free(self.gpa, slot);
+    }
+}
+
+fn drainRetiredMeshes(self: *Resources, frame: u32) void {
     var index: usize = 0;
     while (index < self.retired_meshes.items.len) {
         const retired = &self.retired_meshes.items[index];
@@ -376,8 +419,6 @@ pub fn drainRetiredMeshes(self: *Resources, frame: u32) void {
     }
 }
 
-/// Build the GPU half from an upload command. No parser types cross: geometry arrives as
-/// bytes and `MeshUpload.skinned` says which layout to read the bytes as.
 pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, command: *const contract.MeshUpload) !contract.MeshHandle {
     const gpa = self.gpa;
     const surfaces = try gpa.alloc(Mesh.GeoSurface, command.surfaces.len);
@@ -393,7 +434,6 @@ pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, comman
     else
         try .init(gpa, self.texture_table.vma, command.name, self.texture_table.device, Mesh.StaticVertex, verticesAs(Mesh.StaticVertex, command.vertices), command.indices, surfaces);
 
-    // Reuse the old row so a reloaded mesh keeps its handle and callers need no fixup.
     const raw = @intFromEnum(old);
     if (raw != 0 and raw <= self.meshes.items.len) {
         self.freeMesh(old, frame);
@@ -404,49 +444,39 @@ pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, comman
     return @enumFromInt(self.meshes.items.len);
 }
 
-pub fn freeTexture(self: *Resources, slot: u32) void {
+pub fn freeTexture(self: *Resources, slot: u32, frame: u32) void {
     const entry = self.textures.fetchSwapRemove(slot) orelse return;
-    var image = entry.value;
-    check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
-    image.deinit(self.texture_table.vma, self.texture_table.device);
-    self.texture_table.free(self.gpa, slot);
+    self.retire(entry.value, slot, frame);
 }
 
-pub const ImageDesc = struct {
-    /// null asks the store to name it — that is what makes a handle a handle.
-    slot: ?u32,
-    width: u32,
-    height: u32,
-    pixels: []const u8,
-    r8: bool,
-    mips: bool,
-    mag_linear: bool,
-    min_linear: bool,
-};
+fn retire(self: *Resources, image: Image, slot: ?u32, frame: u32) void {
+    self.retired_images.append(self.gpa, .{ .image = image, .slot = slot, .frame = frame }) catch {
+        var doomed = image;
+        check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
+        doomed.deinit(self.texture_table.vma, self.texture_table.device);
+        if (slot) |taken| self.texture_table.free(self.gpa, taken);
+    };
+}
 
-pub fn uploadImage(self: *Resources, desc: ImageDesc) !u32 {
+pub fn uploadImage(self: *Resources, upload: *const contract.ImageUpload) !u32 {
     const table = &self.texture_table;
-    const slot: u32 = desc.slot orelse @intCast(table.alloc());
-
-    var image = try self.buildImage(&.{desc.pixels}, desc.width, desc.height, desc.r8, desc.mips, .@"2d");
+    var image = try self.buildImage(&.{upload.pixels}, upload.width, upload.height, upload.r8, upload.mips, .@"2d");
     errdefer image.deinit(table.vma, table.device);
-    const sampler = try self.samplerFor(desc.mag_linear, desc.min_linear);
+    const sampler = try self.samplerFor(upload.mag_linear, upload.min_linear);
 
-    self.dropTexture(slot);
+    const slot: u32 = @intCast(table.alloc());
     try self.textures.put(self.gpa, slot, image);
     table.write(slot, image.vk_imageview, sampler);
     return slot;
 }
 
-/// The sky owns its own descriptor rather than a table slot, so nothing names it and there
-/// is nothing to hand back. Always mipless and linear.
-pub fn uploadSkybox(self: *Resources, faces: [6][]const u8, size: u32) !void {
+pub fn uploadSkybox(self: *Resources, upload: *const contract.SkyboxUpload, frame: u32) !void {
     const table = &self.texture_table;
-    var image = try self.buildImage(&faces, size, size, false, false, .cube_map);
+    var image = try self.buildImage(&upload.faces, upload.size, upload.size, false, false, .cube_map);
     errdefer image.deinit(table.vma, table.device);
     const sampler = try self.samplerFor(true, true);
 
-    if (self.skybox_image) |*old| old.deinit(table.vma, table.device);
+    if (self.skybox_image) |old| self.retire(old, null, frame);
     self.skybox_image = image;
     table.writeSkybox(image.vk_imageview, sampler);
 }
@@ -457,7 +487,6 @@ fn samplerFor(self: *Resources, mag_linear: bool, min_linear: bool) !c.VkSampler
     return table.addSampler(self.gpa, mag_linear, min_linear);
 }
 
-/// Create the image and get the pixels into it. One face is a 2D image, six is a cubemap.
 fn buildImage(self: *Resources, faces: []const []const u8, width: u32, height: u32, r8: bool, mips: bool, kind: Image.Kind) !Image {
     const table = &self.texture_table;
     const usage: u32 = if (mips)
@@ -495,14 +524,6 @@ fn buildImage(self: *Resources, faces: []const []const u8, width: u32, height: u
     }
 
     return image;
-}
-
-/// Drop the GPU image in a slot but keep the slot: the caller is about to rewrite it.
-fn dropTexture(self: *Resources, slot: u32) void {
-    const entry = self.textures.fetchSwapRemove(slot) orelse return;
-    var image = entry.value;
-    check(c.vkDeviceWaitIdle(self.texture_table.device.handle)) catch {};
-    image.deinit(self.texture_table.vma, self.texture_table.device);
 }
 
 fn verticesAs(comptime VertexType: type, bytes: []const u8) []const VertexType {

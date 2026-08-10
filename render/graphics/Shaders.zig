@@ -1,5 +1,3 @@
-//! The shader files. There is nothing to parse — SPIR-V is already the data — so an entry IS
-//! the kind, and a reload is one call.
 
 const Shaders = @This();
 

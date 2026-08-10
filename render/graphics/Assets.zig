@@ -1,9 +1,6 @@
-//! Everything the game has on disk, one struct per kind. Each owns its watcher, its rows and
-//! its named lookups, and each knows how to push what changed at the renderer.
-//!
-//! The renderer arrives as a parameter and is never stored, so nothing here holds a pointer
-//! into a library that can be swapped underneath it. `assets` knows nothing about a renderer
-//! and the renderer knows nothing about a file — this is the one place that knows both.
+
+//! The renderer arrives as a parameter and is never stored: nothing here may hold a pointer
+//! into a library that can be swapped underneath it.
 
 const Assets = @This();
 
@@ -45,8 +42,6 @@ pub fn deinit(self: *Assets, gpa: std.mem.Allocator, io: std.Io) void {
     self.models.deinit(gpa, io);
 }
 
-/// Everything that changed on disk, in the order a frame needs it: nothing draws without
-/// shaders, and a mesh surface names a texture slot.
 pub fn update(self: *Assets, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
     try self.shaders.update(gpa, io, renderer);
     try self.textures.update(gpa, io, renderer);

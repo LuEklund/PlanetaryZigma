@@ -58,9 +58,6 @@ pub fn init(self: *System, data: Data) !void {
     self.io = data.io;
     self.window = data.window;
 
-    self.assets = try .init(data.gpa, data.io);
-    errdefer self.assets.deinit(data.gpa, data.io);
-
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
@@ -73,6 +70,9 @@ pub fn init(self: *System, data: Data) !void {
         .window = @ptrCast(data.window),
     }) orelse return error.RenderInit;
     errdefer self.render.api.deinit(self.render.handle);
+
+    self.assets = try .init(data.gpa, data.io);
+    errdefer self.assets.deinit(data.gpa, data.io);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);

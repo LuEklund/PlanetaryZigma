@@ -7,8 +7,6 @@ const AnimationClip = @import("AnimationClip.zig");
 const gltf = @import("gltf.zig");
 
 surfaces: std.ArrayList(Surface),
-/// One opaque render handle per glTF mesh, filled in after upload. A plain integer on
-/// purpose: assets does not import render, and does not need to know what it means.
 mesh_handles: []usize,
 nodes: std.ArrayList(Node),
 /// One per node, same order. The glTF names survive the parse so a lookup by name works
@@ -66,8 +64,6 @@ pub fn isSkinned(self: *const Model) bool {
     return self.skins.len > 0;
 }
 
-/// Everything the file contains, and nothing about what a game wants from it. Whether the
-/// model is skinned is a property of the file, so the caller does not say.
 pub fn parseGlb(
     self: *Model,
     comptime VertexType: type,

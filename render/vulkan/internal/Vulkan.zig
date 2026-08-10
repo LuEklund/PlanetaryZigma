@@ -131,7 +131,7 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    self.resources.drainRetiredMeshes(self.current_frame_inflight);
+    self.resources.drainRetired(self.current_frame_inflight);
     if (list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
         try self.resize(self.gpa, list.surface_width, list.surface_height);
     }

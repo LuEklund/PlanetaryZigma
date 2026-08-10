@@ -8,7 +8,6 @@ const contract = @import("root.zig");
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;
 pub const max_emitters: u32 = 1024;
-/// The packet's own ceiling, not the sim's: 1024 things on screen, up to 32 meshes each.
 pub const max_draw_meshes: u32 = 1024 * 32;
 
 camera: Camera,
@@ -30,7 +29,6 @@ pub const Camera = struct {
     fov_rad: f32,
 };
 
-/// One row is one draw unit, which is what makes depth sorting possible above the boundary.
 pub const DrawMesh = struct {
     mesh: contract.MeshHandle,
     model_matrix: nz.Mat4x4(f32),
@@ -55,8 +53,6 @@ pub const DrawEmitter = struct {
 
 pub const max_ui_quads: usize = 2048;
 
-/// The UI vertex layout. It is a GPU format, so it belongs with the renderer; the widget
-/// system that produces it is a separate module entirely.
 pub const UiVertex = extern struct {
     position: [2]f32,
     uv: [2]f32,

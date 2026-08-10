@@ -1,5 +1,3 @@
-//! The font files, and the glyph metrics they baked into. Only the atlas goes to the GPU —
-//! everything the UI measures with stays here.
 
 const Fonts = @This();
 
@@ -44,7 +42,6 @@ pub fn get(self: *const Fonts, handle: u32) *const shared.Font {
     return &self.entries.items[handle].font;
 }
 
-/// The one everything measures against until a caller has a reason to name another.
 pub fn default(self: *const Fonts) *const shared.Font {
     return self.get(0);
 }
@@ -58,8 +55,7 @@ pub fn update(self: *Fonts, gpa: std.mem.Allocator, io: std.Io, renderer: *const
         const coverage = try parse(&entry.font, gpa, bytes);
         defer gpa.free(coverage);
 
-        // Passing the old atlas back rewrites that slot, so there is nothing to free.
-        entry.font.atlas_texture_index = renderer.api.uploadImage(renderer.handle, entry.font.atlas_texture_index, &.{
+        const uploaded = renderer.api.uploadImage(renderer.handle, &.{
             .width = shared.Font.atlas_width,
             .height = shared.Font.atlas_height,
             .pixels = coverage,
@@ -68,11 +64,15 @@ pub fn update(self: *Fonts, gpa: std.mem.Allocator, io: std.Io, renderer: *const
             .mag_linear = true,
             .min_linear = true,
         });
+        if (uploaded == 0) {
+            std.log.err("upload font atlas {s}: keeping the one already bound", .{entry.path});
+            continue;
+        }
+        if (entry.font.atlas_texture_index != 0) renderer.api.freeImage(renderer.handle, entry.font.atlas_texture_index);
+        entry.font.atlas_texture_index = uploaded;
     }
 }
 
-/// Bakes an SDF atlas and fills in `self`'s glyph metrics. The coverage bitmap is returned
-/// for the caller to do what it likes with.
 fn parse(self: *shared.Font, gpa: std.mem.Allocator, content: []const u8) ![]u8 {
     const coverage = try gpa.alloc(u8, shared.Font.atlas_width * shared.Font.atlas_height);
     errdefer gpa.free(coverage);

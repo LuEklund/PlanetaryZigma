@@ -132,8 +132,6 @@ pub fn build(b: *std.Build) void {
 
 
 
-    // The widget system: it produces the contract's quad layout and knows nothing about a
-    // GPU. Its own module because client and server viewer both draw a UI.
     _ = b.addModule("ui", .{
         .root_source_file = b.path("ui/root.zig"),
         .target = target,

@@ -32,8 +32,6 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.surface_width = @intFromFloat(ui.screen_width);
     list.surface_height = @intFromFloat(ui.screen_height);
 
-    // Chunks are meshes like any other: the sim publishes geometry, we hand it to the
-    // renderer and keep the handle. Before the rows, so a chunk uploaded this frame draws.
     for (world.planet.removes.items) |removed| {
         if (removed.mesh_handle == 0) continue;
         system.render.api.freeMesh(system.render.handle, @enumFromInt(removed.mesh_handle));
@@ -78,8 +76,8 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     world.effects.clearRetainingCapacity();
 
     for (world.entities.values()) |*entity| {
-        const model_spec = shared.entity.modelSpec(entity.kind) orelse continue;
-        const model_handle = models.get(entity.kind) orelse continue;
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
+        const model_handle = models.get(entity.kind);
         try animator.observe(.{
             .id = entity.id,
             .model = model_handle,

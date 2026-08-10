@@ -102,7 +102,7 @@ pub fn spec(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,
-            .model = .{ .path = "default", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .player => .{
@@ -138,7 +138,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .platform => .{
             .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "default", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .target_dummy => .{
@@ -154,7 +154,7 @@ pub fn spec(kind: Kind) Spec {
         },
         .projectile_cube => .{
             .collider = null,
-            .model = .{ .path = "cube_projectile", .clip_names = null },
+            .model = null,
             .has_health = false,
         },
         .projectile_rocket => .{

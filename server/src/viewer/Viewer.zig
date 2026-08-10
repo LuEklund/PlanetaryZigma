@@ -30,9 +30,6 @@ arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, planet_radius: f32) !void {
-    self.assets = try .init(gpa, io);
-    errdefer self.assets.deinit(gpa, io);
-
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
@@ -46,6 +43,9 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
         .window = @ptrCast(window),
     }) orelse return error.RenderInit;
     errdefer self.render.api.deinit(self.render.handle);
+
+    self.assets = try .init(gpa, io);
+    errdefer self.assets.deinit(gpa, io);
 
     self.draw_list = try .init(gpa);
     errdefer self.draw_list.deinit(gpa);
@@ -75,7 +75,6 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.render.deinit(io);
 }
 
-/// Returns true when the window asks the server to stop.
 pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     const window = self.window;
     try window.poll(.{ .text = null });

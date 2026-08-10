@@ -37,19 +37,13 @@ pub const Frame = struct {
     camera_yaw_rotation: nz.Quat(f32),
 };
 
-/// One entity as the animator sees it — deliberately wire-shaped, so a server-side
-/// producer fills it from the sim and a client one from replicated state.
 pub const Entity = struct {
     id: shared.entity.Id,
-    /// Which model, decided by the caller. The animator never maps a game kind to an asset.
     model: u32,
     transform: nz.Transform3D(f32),
-    /// Applied after `transform`; comes from the caller's model spec.
     offset: nz.Transform3D(f32),
     is_dying: bool,
-    /// Which clip to play. Derived by the caller (shared.entity.animationState).
     state: shared.entity.State,
-    /// Presentation, decided by the caller — these used to be `switch (kind)` arms here.
     highlight: bool,
     spin_speed: f32,
     shrink_on_death: bool,
@@ -100,7 +94,6 @@ pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, mo
 pub fn observe(self: *Animator, entity: Entity, models: *Models) !void {
     if (!self.instances.contains(entity.id)) {
         const model = models.modelPtr(entity.model);
-        if (model.isEmpty()) std.log.err("model not loaded for entity {d}", .{entity.id});
         try self.instances.put(entity.id, try .init(self.gpa, entity.model, model, models.rig(entity.model)));
     }
     const instance = self.instances.getPtr(entity.id).?;
@@ -239,11 +232,21 @@ fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models
                 });
             }
         } else {
-            // The surface walk lives here now: one row per surface, so the backend never
-            // expands one row into many draws and the rows stay sortable. A generated model
-            // is one surface, so it comes through here with no special case.
             const model = models.modelPtr(instance.model);
-            if (model.isEmpty() or model.isSkinned()) continue;
+            if (model.isSkinned()) continue;
+            // Still one row, naming nothing: the backend draws its box for a handle it does
+            // not know, so a model that never arrived is visible rather than absent.
+            if (model.isEmpty()) {
+                list.draw_meshes.appendAssumeCapacity(.{
+                    .mesh = .none,
+                    .model_matrix = top_matrix,
+                    .position = instance.transform.position,
+                    .palette_offset = null,
+                    .skinned = false,
+                    .highlight = instance.highlight,
+                });
+                continue;
+            }
             for (model.surfaces.items) |surface| {
                 if (surface.mesh_id >= model.mesh_handles.len) continue;
                 list.draw_meshes.appendAssumeCapacity(.{

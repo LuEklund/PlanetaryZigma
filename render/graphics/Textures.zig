@@ -1,7 +1,7 @@
 //! The texture files and the handles they came back as.
 //!
-//! `add` hands back a handle and keeps it; `update` rewrites the same one when the file
-//! changes, so a handle is good for the life of the process. Callers ask by name.
+//! A handle is only good until that file reloads — `update` uploads the new one, then frees
+//! the old, then swaps. So callers ask by name every time they draw rather than keeping one.
 
 const Textures = @This();
 
@@ -18,15 +18,13 @@ const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 const Entry = struct {
     path: []const u8,
     mtime: std.Io.Timestamp,
-    /// The checkerboard until this file has a slot of its own. Handed straight back as
-    /// `old`, which the backend reads as "no slot yet" and replaces.
+    /// The checkerboard until this file has a slot of its own. A reload uploads the new one
+    /// first and frees this second, so what is drawn is never a slot in the middle of a swap.
     handle: u32,
 };
 
 dir: std.Io.Dir,
 entries: std.ArrayList(Entry),
-/// Which entry each name landed in, recorded by `add`. Nothing is computed from a position,
-/// so the entries can be added in any order and mixed with anything else.
 crosshair_entry: u32,
 icon_entries: std.EnumArray(shared.Item.Kind, u32),
 
@@ -53,8 +51,6 @@ pub fn deinit(self: *Textures, gpa: std.mem.Allocator, io: std.Io) void {
     self.entries.deinit(gpa);
 }
 
-/// Hands back which entry it went in. Until the first `update` gives it a real slot, that
-/// entry reads as the checkerboard — an asset that has not arrived should look like one.
 pub fn add(self: *Textures, gpa: std.mem.Allocator, path: []const u8) !u32 {
     const entry: u32 = @intCast(self.entries.items.len);
     try self.entries.append(gpa, .{ .path = path, .mtime = .zero, .handle = contract.missing_texture });
@@ -75,14 +71,12 @@ pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *co
         const bytes = try assets.read(gpa, io, self.dir, entry.path);
         defer gpa.free(bytes);
 
-        // Nothing to do on a bad file: a save caught mid-write keeps the slot that still
-        // works, and one that never loaded is still showing the checkerboard.
         var decoded = decode(gpa, bytes) catch |err| {
             std.log.warn("texture {s}: {t}", .{ entry.path, err });
             continue;
         };
         defer decoded.deinit(gpa);
-        entry.handle = renderer.api.uploadImage(renderer.handle, entry.handle, &.{
+        const uploaded = renderer.api.uploadImage(renderer.handle, &.{
             .width = decoded.width,
             .height = decoded.height,
             .pixels = decoded.pixels,
@@ -91,10 +85,17 @@ pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *co
             .mag_linear = true,
             .min_linear = true,
         });
+        if (uploaded == 0) {
+            std.log.err("upload texture {s}: keeping the one already bound", .{entry.path});
+            continue;
+        }
+        // The old one goes only now that the new one exists. On a first load there is no old
+        // one — the entry is still pointing at the backend's checkerboard, which is not ours.
+        if (entry.handle != contract.missing_texture) renderer.api.freeImage(renderer.handle, entry.handle);
+        entry.handle = uploaded;
     }
 }
 
-/// One 2D image.
 const Decoded = struct {
     pixels: []u8,
     width: u32,

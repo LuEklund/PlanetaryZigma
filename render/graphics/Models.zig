@@ -1,7 +1,3 @@
-//! The model files, what the parse produced, and the rig each one is read against.
-//!
-//! `Animator` takes this and reads `models`, `rigs` and `reloaded`. The files and the image
-//! slots are the loader's half — nothing downstream touches either.
 
 const Models = @This();
 
@@ -19,24 +15,17 @@ const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 pub const Entry = struct {
     path: []const u8,
     mtime: std.Io.Timestamp,
-    /// Which kind named this file first. The specs it loads against come from here.
-    kind: entity.Kind,
+    kind: ?entity.Kind,
     model: Model,
-    /// The entity spec read against the model's own node names. No .glb holds any of it.
     rig: Rig,
-    /// Texture slots the backend handed back for the embedded images. Ours to free on a
-    /// reload, because the backend allocated them at our request.
     image_slots: []u32,
 };
 
 dir: std.Io.Dir,
 entries: std.ArrayList(Entry),
-/// Handles whose file changed since the animator last looked. It drains this.
+default: u32,
 reloaded: std.ArrayList(u32),
 
-/// One pass over the specs: a distinct model file IS a handle, and the kind that named it first
-/// is the one its spec is read against. Two kinds sharing a .glb share a handle, or the same
-/// file would be parsed and uploaded twice.
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     const root = try assets.openDir(io);
     defer root.close(io);
@@ -44,14 +33,14 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
         .dir = try root.openDir(io, "objects", .{}),
         .entries = .empty,
         .reloaded = .empty,
+        .default = 0,
     };
     errdefer self.deinit(gpa, io);
 
+    self.default = try self.add(gpa, "", null);
     for (entity.all_kinds) |kind| {
         const model_spec = entity.modelSpec(kind) orelse continue;
-        const file = if (std.mem.startsWith(u8, model_spec.path, "objects/")) model_spec.path["objects/".len..] else model_spec.path;
-        if (self.get(kind) != null) continue;
-        _ = try self.add(gpa, file, kind);
+        _ = try self.add(gpa, std.fs.path.basename(model_spec.path), kind);
     }
     return self;
 }
@@ -61,15 +50,13 @@ pub fn deinit(self: *Models, gpa: std.mem.Allocator, io: std.Io) void {
     for (self.entries.items) |*entry| {
         entry.rig.deinit(gpa);
         gpa.free(entry.image_slots);
-        // An entry owns nodes, node names, clips, skins and surfaces. Freeing the array alone
-        // leaks all of it — one allocation per node name, per clip, per skin.
         entry.model.deinit(gpa);
     }
     self.entries.deinit(gpa);
     self.reloaded.deinit(gpa);
 }
 
-pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: entity.Kind) !u32 {
+pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: ?entity.Kind) !u32 {
     const handle: u32 = @intCast(self.entries.items.len);
     try self.entries.append(gpa, .{
         .path = path,
@@ -82,15 +69,13 @@ pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: entity
     return handle;
 }
 
-/// Which handle a kind draws from. A walk over a few dozen rows, and it stays that way — the
-/// alternative is a map keyed by a tagged union for a table this size.
-pub fn get(self: *const Models, kind: entity.Kind) ?u32 {
-    const wanted = (entity.modelSpec(kind) orelse return null).path;
+pub fn get(self: *const Models, kind: entity.Kind) u32 {
     for (self.entries.items, 0..) |entry, handle| {
-        // Every entry got here by having one, so this cannot be null.
-        if (std.mem.eql(u8, entity.modelSpec(entry.kind).?.path, wanted)) return @intCast(handle);
+        if (entry.kind) |owner| {
+            if (owner.eql(kind)) return @intCast(handle);
+        }
     }
-    return null;
+    return self.default;
 }
 
 pub fn modelPtr(self: *const Models, handle: u32) *const Model {
@@ -103,58 +88,39 @@ pub fn rig(self: *const Models, handle: u32) *const Rig {
 
 pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
     for (self.entries.items, 0..) |*entry, handle| {
-        // A model with no file behind it never changes, so it is the one entry that never has
-        // a mesh. That is the whole condition — no flag, and it heals itself if it failed.
-        if (!std.mem.endsWith(u8, entry.path, ".glb")) {
-            if (entry.model.mesh_handles.len == 0) try uploadBox(gpa, renderer, entry);
-            continue;
-        }
+        if (entry.path.len == 0) continue;
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
 
-        const kind_spec = entity.spec(entry.kind);
+        const kind_spec = entity.spec(entry.kind.?);
         const model_spec = kind_spec.model orelse continue;
         const bytes = try assets.read(gpa, io, self.dir, entry.path);
         defer gpa.free(bytes);
 
-        // Everything the last load put on the GPU goes first, and it has to go BEFORE the
-        // parse: that resets the entry, and the mesh handles are the only record of what to
-        // free. The entry names new ones a few lines down.
+        var fresh: Model = .empty;
+        var parsed = glb(gpa, bytes, &fresh, model_spec.clip_names != null) catch |err| {
+            std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
+            fresh.deinit(gpa);
+            continue;
+        };
+        defer parsed.deinit(gpa);
+
+        // The new data is good, so the old can go. The mesh handles are the only record of
+        // what this entry put on the GPU, which is why they are read before being replaced.
         for (entry.model.mesh_handles) |mesh| {
             if (mesh != 0) renderer.api.freeMesh(renderer.handle, @enumFromInt(mesh));
         }
         for (entry.image_slots) |slot| renderer.api.freeImage(renderer.handle, slot);
         gpa.free(entry.image_slots);
         entry.image_slots = &.{};
+        entry.model.deinit(gpa);
+        entry.model = fresh;
 
-        var parsed = try glb(gpa, bytes, &entry.model, model_spec.clip_names != null);
-        defer parsed.deinit(gpa);
         try entry.rig.init(gpa, &entry.model, kind_spec, model_spec);
-
         try uploadMeshes(gpa, renderer, entry, &parsed);
         try self.reloaded.append(gpa, @intCast(handle));
     }
 }
 
-/// The primitives are assets like any other: generated here, uploaded through the same door.
-fn uploadBox(gpa: std.mem.Allocator, renderer: *const RenderLib, entry: *Entry) !void {
-    const surfaces = [_]contract.SurfaceUpload{.{
-        .index_start = 0,
-        .index_count = @intCast(assets.box.indices.len),
-        .texture_slot = contract.blank_texture,
-    }};
-    const mesh_handle = renderer.api.uploadMesh(renderer.handle, .none, &.{
-        .name = entry.path,
-        .vertices = std.mem.sliceAsBytes(assets.box.vertices),
-        .skinned = false,
-        .indices = assets.box.indices,
-        .surfaces = &surfaces,
-    });
-    entry.model.mesh_handles = try gpa.alloc(usize, 1);
-    entry.model.mesh_handles[0] = @intFromEnum(mesh_handle);
-    try entry.model.surfaces.append(gpa, .{ .mesh_id = 0, .model_matrix = .identity });
-}
-
-/// Images first, because a surface names the slot one of them landed in.
 fn uploadMeshes(
     gpa: std.mem.Allocator,
     renderer: *const RenderLib,
@@ -169,7 +135,7 @@ fn uploadMeshes(
                 const sampler = if (sampler_index) |sampler| data.samplers[sampler] else null;
                 const width: u32 = @intCast(image.width);
                 const height: u32 = @intCast(image.height);
-                slot.* = renderer.api.uploadImage(renderer.handle, 0, &.{
+                slot.* = renderer.api.uploadImage(renderer.handle, &.{
                     .width = width,
                     .height = height,
                     .pixels = image.pixels[0 .. width * height * 4],
@@ -209,8 +175,6 @@ fn uploadMeshes(
     }
 }
 
-/// What came out of the file and still has to reach a GPU: vertices, indices, and any
-/// images the glb embedded. The CPU half went straight into the `Model`.
 const Parsed = union(enum) {
     static: gltf.UploadData(shared.StaticVertex),
     skinned: gltf.UploadData(shared.SkinnedVertex),
@@ -222,8 +186,6 @@ const Parsed = union(enum) {
     }
 };
 
-/// `skinned` picks the vertex layout to produce. The file decides whether it HAS skins; the
-/// caller decides which layout it wants the vertices in.
 fn glb(gpa: std.mem.Allocator, bytes: []const u8, model: *Model, skinned: bool) !Parsed {
     if (!model.isEmpty()) model.deinit(gpa);
     model.* = .empty;

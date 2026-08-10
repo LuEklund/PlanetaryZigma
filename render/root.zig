@@ -18,15 +18,12 @@ pub const reserved_textures: u32 = 3;
 pub const blank_texture: u32 = 0;
 pub const missing_texture: u32 = 1;
 pub const highlight_mask_texture: u32 = 2;
-/// Shader kinds, descriptor sets and push-constant layouts: all four are renderer facts,
-/// so they live with the renderer rather than in the game's wire contract.
+
 pub const Shader = @import("Shader.zig");
 
 pub const InitOptions = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    /// The platform window, opaque here on purpose: what a window is belongs to the
-    /// platform layer and the implementation, not to the ABI between them.
     window: *anyopaque,
 };
 
@@ -43,33 +40,22 @@ pub const Api = struct {
     uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
 
-    /// Pixels, not files. A model and a font are the caller's words for a file it parsed;
-    /// what arrives here is an image and a mesh, which is all a renderer has a name for.
-    ///
-    /// Nothing outside names a texture — the backend does, and hands the handle back. The
-    /// three reserved ones are the only fixed numbers, and it writes those itself.
-    ///
-    /// `old` is the handle from the last upload of the same image; passing it back rewrites
-    /// that slot instead of leaking it. Any reserved handle means "no slot yet" and gets a
-    /// fresh one — those three are shared and never written by a caller.
-    uploadImage: *const fn (*anyopaque, old: u32, upload: *const ImageUpload) callconv(.c) u32,
-    /// Its own call because it is its own thing: six faces, one of them in the whole scene,
-    /// and it goes to the sky rather than into the table. Nothing comes back to name.
+    uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) u32,
     uploadSkybox: *const fn (*anyopaque, upload: *const SkyboxUpload) callconv(.c) void,
-    /// `kind` is a Shader.Kind ordinal — enums are not allowed across a C boundary. Kind IS
-    /// the handle: the render passes bind shaders by kind, so nothing comes back.
     uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
+    /// Only ever a slot this caller was handed. The reserved three are the backend's own
+    /// and were never yours to give back.
     freeImage: *const fn (*anyopaque, slot: u32) callconv(.c) void,
 };
 
 /// What the backend hands back for an uploaded mesh. Its bits are the backend's business.
+/// `.none` is not "draw nothing" — the backend has a box for it, so an entity whose model
+/// never arrived is visible the same way a missing texture is a checkerboard.
 pub const MeshHandle = enum(usize) {
     none,
     _,
 };
 
-/// One mesh, one upload. Geometry arrives as bytes; `skinned` says which layout to read
-/// them as. Surfaces carry absolute texture slots, already resolved by the producer.
 pub const MeshUpload = struct {
     name: []const u8,
     vertices: []const u8,
@@ -78,20 +64,15 @@ pub const MeshUpload = struct {
     surfaces: []const SurfaceUpload,
 };
 
-/// The sky, as six square faces in Vulkan order. Always mipless and always linear — there
-/// is one of these and it fills the horizon.
 pub const SkyboxUpload = struct {
     size: u32,
     faces: [6][]const u8,
 };
 
-/// One 2D image. The sampler is described inline; there is no separate sampler table to
-/// index into.
 pub const ImageUpload = struct {
     width: u32,
     height: u32,
     pixels: []const u8,
-    /// Single-channel coverage rather than RGBA — a font atlas.
     r8: bool,
     mips: bool,
     mag_linear: bool,

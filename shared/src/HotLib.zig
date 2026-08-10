@@ -1,7 +1,3 @@
-//! One hot-reloadable library: the function table, the state block it owns, and what it
-//! takes to swap a fresh build in. One struct because that is one job — the caller holds
-//! a single field and calls straight through it.
-//!
 //! The library is copied to a scratch path before opening, so a rebuild can overwrite the
 //! original while this process still has the old one mapped.
 //!
@@ -26,8 +22,6 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
     return struct {
         const Self = @This();
 
-        /// By value, beside the handle it is called with: a swap rewrites both at once, so
-        /// there is no window where one is fresh and the other stale.
         api: Api,
         /// The state block every call is made against. Left undefined by `init` and set by
         /// the caller straight after, because it comes out of `api`'s own init — which

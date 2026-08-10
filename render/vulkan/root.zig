@@ -60,29 +60,17 @@ pub const ffi = struct {
         context.vulkan.rebindProcs();
     }
 
-    pub export fn uploadImage(handle: *anyopaque, old: u32, upload: *const contract.ImageUpload) u32 {
+    pub export fn uploadImage(handle: *anyopaque, upload: *const contract.ImageUpload) u32 {
         const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadImage(.{
-            // The reserved three are ours and shared: a caller still pointing at one has
-            // no slot of its own yet, and writing there would break it for everything else.
-            .slot = if (old >= contract.reserved_textures) old else null,
-            .width = upload.width,
-            .height = upload.height,
-            .pixels = upload.pixels,
-            .r8 = upload.r8,
-            .mips = upload.mips,
-            .mag_linear = upload.mag_linear,
-            .min_linear = upload.min_linear,
-        }) catch |err| {
+        return context.vulkan.resources.uploadImage(upload) catch |err| {
             std.log.err("upload image: {s}", .{@errorName(err)});
-            return old;
+            return 0;
         };
     }
 
-    /// One skybox, no handle: it goes to its own descriptor, not into the table.
     pub export fn uploadSkybox(handle: *anyopaque, upload: *const contract.SkyboxUpload) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.uploadSkybox(upload.faces, upload.size) catch |err| {
+        context.vulkan.resources.uploadSkybox(upload, context.vulkan.current_frame_inflight) catch |err| {
             std.log.err("upload skybox: {s}", .{@errorName(err)});
         };
     }
@@ -102,11 +90,9 @@ pub const ffi = struct {
 
     pub export fn freeImage(handle: *anyopaque, slot: u32) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.freeTexture(slot);
+        context.vulkan.resources.freeTexture(slot, context.vulkan.current_frame_inflight);
     }
 
-    /// SPIR-V is already the data, so there is nothing to parse and nothing comes back —
-    /// the kind IS the handle, and the render passes bind by kind.
     pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {
         const context: *Context = @ptrCast(@alignCast(handle));
         context.vulkan.resources.shaders.apply(@enumFromInt(kind), spirv[0..len]) catch |err| {
