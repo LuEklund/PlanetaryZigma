@@ -118,7 +118,7 @@ pub fn update(
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;
-            if (!entity.flags.is_dying) all_players_dead = false;
+            if (entity.health > 0) all_players_dead = false;
         }
         const wipe_delay = ui.animate("wipe_menu_delay", if (all_players_dead) 1 else 0, 1.0);
         if (all_players_dead and hud.overlay == .none and wipe_delay > 0.85) {

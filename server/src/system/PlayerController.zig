@@ -26,10 +26,18 @@ pub fn update(world: *World) !void {
         const planet_up = nz.vec.normalize(transform.position);
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
+        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+        const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
+        const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
+            nz.vec.normalize(fwd_proj)
+        else
+            nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
+        const speed = player.stat(.speed);
+
         switch (input.dev_command) {
             .f1 => {
-                // _ = world.giveItem(player, .freezer, 1);
-                _ = try world.spawn(.{ .kind = .{ .enemy = .acorn }, .transform = player.transform });
+                _ = world.giveItem(player, .energy_drink, 1);
+                // _ = try world.spawn(.{ .kind = .{ .enemy = .acorn }, .transform = player.transform });
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
@@ -72,12 +80,12 @@ pub fn update(world: *World) !void {
                 world.act(.{ .id = player_id, .verb = .{ .teleport = teleporter.transform.position + nz.vec.scale(teleporter_up, 10) } });
             },
             .f9 => world.start_round_requested = true,
+            .f10 => {},
 
             else => {},
         }
         input.dev_command = .none;
 
-        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
         const ray_position_end = nz.vec.scale(camera_forward, 5);
@@ -147,11 +155,6 @@ pub fn update(world: *World) !void {
             }
         };
 
-        const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
-        const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
-            nz.vec.normalize(fwd_proj)
-        else
-            nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
         const move_right = nz.vec.normalize(nz.vec.cross(move_fwd, planet_up));
         camera.yaw_rotation = .lookAt(move_fwd, planet_up);
 
@@ -163,7 +166,7 @@ pub fn update(world: *World) !void {
 
         if (input.keys.jump and player.mode == .walking) world.act(.{ .id = player_id, .verb = .{ .jump = 20 } });
 
-        world.act(.{ .id = player_id, .verb = .{ .walk = .{ .direction = dir, .speed = player.stat(.speed) } } });
+        world.act(.{ .id = player_id, .verb = .{ .walk = .{ .direction = dir, .speed = speed } } });
 
         world.act(.{ .id = player_id, .verb = .{ .set_rotation = camera.yaw_rotation } });
         transform.rotation = camera.yaw_rotation;
@@ -179,9 +182,7 @@ pub fn update(world: *World) !void {
             world.world_unstun_at = world.elapsed_time + 10;
         }
 
-        if (input.keys.attack and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) {
-            // _ = try world.spawn(.{ .kind = .{ .enemy = .healer }, .transform = player.transform });
-            player.last_attack = world.elapsed_time;
+        if (input.keys.attack and world.attackLands(player, null, .attack)) {
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
@@ -205,6 +206,12 @@ pub fn update(world: *World) !void {
                 .damage = player.stat(.damage),
             });
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = player_id, .state = .attack } } });
+        }
+        if (input.keys.utility and world.attackLands(player, null, .utility)) {
+            world.physics_commands.appendAssumeCapacity(.{
+                .verb = .{ .teleport = player.transform.position + nz.vec.scale(fwd_proj, 2 * speed) },
+                .id = player_id,
+            });
         }
     }
 }

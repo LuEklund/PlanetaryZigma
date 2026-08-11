@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
 
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
     const contract = render_dep.module("contract");
-        const graphics = render_dep.module("graphics");
+    const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
     const ui = render_dep.module("ui");
 
@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "contract", .module = contract },
-                
+
                 .{ .name = "graphics", .module = graphics },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "shared", .module = shared },
                 .{ .name = "system", .module = system.root_module },
-                
+
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },

@@ -333,6 +333,28 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
+pub fn attackLands(world: *World, attacker: *Entity, potential_target: ?*const Entity, attack: shared.entity.State) bool {
+    const last_used, const range, const cooldown = switch (attack) {
+        .attack => .{ &attacker.last_attack, shared.entity.spec(attacker.kind).primary_range, attacker.stat(.primary_cooldown) },
+        .utility => .{ &attacker.last_utility, shared.entity.spec(attacker.kind).utility_range, attacker.stat(.utility_cooldown) },
+        else => unreachable,
+    };
+
+    if (world.elapsed_time - last_used.* < cooldown) return false;
+    last_used.* = world.elapsed_time;
+
+    if (potential_target) |target| {
+        const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
+        if (distance < range) {
+            world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
+            return true;
+        } else return false;
+    }
+
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
+    return true;
+}
+
 /// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
 /// this tick's flush to give it a body and a spawn packet.
 fn dropBossReward(self: *World, entity: *Entity) void {

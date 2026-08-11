@@ -417,6 +417,15 @@ fn handleCommand(
                     world.stage = new_stage;
                 },
                 .trigger => |trigger| {
+                    //TODO: move out of NetworkManager.
+                    if (trigger.id == world.player_id) {
+                        const action_cooldown = switch (trigger.state) {
+                            .attack => &world.controller.primary_cooldown,
+                            .utility => &world.controller.uitility_cooldown,
+                            else => null,
+                        };
+                        if (action_cooldown) |cooldown| cooldown.* = world.elapsed_time;
+                    }
                     world.trigger_events.appendAssumeCapacity(trigger);
                 },
                 .stun => |stun| if (world.getPtr(stun.id)) |entity| {

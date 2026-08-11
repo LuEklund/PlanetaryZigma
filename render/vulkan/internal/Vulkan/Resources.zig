@@ -309,6 +309,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .index_start = 0,
         .index_count = @intCast(box.indices.len),
         .texture = .blank,
+        .transparent = false,
     }};
     const box_handle = try self.uploadMesh(.none, 0, &.{
         .name = "default",
@@ -420,18 +421,46 @@ fn drainRetiredMeshes(self: *Resources, frame: u32) void {
 
 pub fn uploadMesh(self: *Resources, old: contract.MeshHandle, frame: u32, command: *const contract.MeshUpload) !contract.MeshHandle {
     const gpa = self.gpa;
-    const surfaces = try gpa.alloc(Mesh.GeoSurface, command.surfaces.len);
-    defer gpa.free(surfaces);
-    for (command.surfaces, surfaces) |src, *surface| surface.* = .{
-        .index_start = src.index_start,
-        .index_count = src.index_count,
-        .texture = src.texture,
-    };
+    const surfaces = try gpa.alloc(Mesh.Surface, command.surfaces.len);
+    errdefer gpa.free(surfaces);
+    var write: usize = 0;
+    for (command.surfaces) |src| {
+        if (src.transparent) continue;
+        surfaces[write] = .{ .index_start = src.index_start, .index_count = src.index_count, .texture = src.texture };
+        write += 1;
+    }
+    const opaque_count: u32 = @intCast(write);
+    for (command.surfaces) |src| {
+        if (!src.transparent) continue;
+        surfaces[write] = .{ .index_start = src.index_start, .index_count = src.index_count, .texture = src.texture };
+        write += 1;
+    }
+    std.debug.assert(write == surfaces.len);
 
     const mesh: Mesh = if (command.skinned)
-        try .init(gpa, self.texture_table.vma, command.name, self.texture_table.device, Mesh.SkinnedVertex, verticesAs(Mesh.SkinnedVertex, command.vertices), command.indices, surfaces)
+        try .init(
+            gpa,
+            self.texture_table.vma,
+            command.name,
+            self.texture_table.device,
+            Mesh.SkinnedVertex,
+            verticesAs(Mesh.SkinnedVertex, command.vertices),
+            command.indices,
+            surfaces,
+            opaque_count,
+        )
     else
-        try .init(gpa, self.texture_table.vma, command.name, self.texture_table.device, Mesh.StaticVertex, verticesAs(Mesh.StaticVertex, command.vertices), command.indices, surfaces);
+        try .init(
+            gpa,
+            self.texture_table.vma,
+            command.name,
+            self.texture_table.device,
+            Mesh.StaticVertex,
+            verticesAs(Mesh.StaticVertex, command.vertices),
+            command.indices,
+            surfaces,
+            opaque_count,
+        );
 
     const raw = @intFromEnum(old);
     if (raw != 0 and raw <= self.meshes.items.len) {

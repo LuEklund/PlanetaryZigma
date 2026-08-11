@@ -94,6 +94,7 @@ pub const Layout = struct {
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     texture: contract.TextureHandle = .blank,
     gap: f32 = 0,
+    //TODO: Padding
     text: ?Text = null,
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
@@ -262,6 +263,8 @@ fn resolveLayout(self: *Ui) void {
             },
         }
     }
+    //TODO: grow parent to children
+    //TODO: fit children to parent
 
     // pass 2: each child adds its main-axis size (+gap) into its parent's children_size (bottom-up)
     var index = self.nodes.items.len;

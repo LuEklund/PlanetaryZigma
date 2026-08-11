@@ -82,4 +82,5 @@ pub const SurfaceUpload = struct {
     index_start: u32,
     index_count: u32,
     texture: TextureHandle,
+    transparent: bool,
 };

@@ -11,64 +11,67 @@ const Instance = @import("Animator/Instance.zig");
 const Rig = @import("Rig.zig");
 const Models = @import("Models.zig");
 const DrawList = @import("contract").DrawList;
-const Emitter = @import("Emitter.zig");
 const Shader = @import("contract").Shader;
 
-const max_skins = 8;
+pub const max_skins = 8;
 
-const look_pitch_sign: f32 = -1;
-const look_yaw_sign: f32 = 1;
-const look_yaw_deadzone: f32 = 0.05;
+pub const Handle = enum(u32) { none = 0, _ };
+
+pub const Aim = Instance.Aim;
 
 pub const item_spin_speed: f32 = 1.5;
 
-fn easeOutBack(x: f32) f32 {
-    const c1: f32 = 1.70158;
-    const c3: f32 = c1 + 1.0;
-    const xm1 = x - 1.0;
-    return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
-}
-
-pub const Frame = struct {
-    delta_time: f32,
-    elapsed_time: f32,
-    local_entity: shared.entity.Id,
-    camera_pitch: f32,
-    camera_yaw_rotation: nz.Quat(f32),
-};
-
-pub const Entity = struct {
-    id: shared.entity.Id,
+pub const Pose = struct {
     model: u32,
-    transform: nz.Transform3D(f32),
-    offset: nz.Transform3D(f32),
-    is_dying: bool,
-    state: shared.entity.State,
-    highlight: bool,
-    spin_speed: f32,
-    shrink_on_death: bool,
-    effect: ?Shader.Kind,
+    skeleton: ?*const Instance.Skeleton,
 };
 
 gpa: std.mem.Allocator,
-instances: std.AutoHashMap(shared.entity.Id, Instance),
-retiring: std.ArrayList(shared.entity.Id),
-frame: Frame,
+instances: std.ArrayList(?Instance),
+free_slots: std.ArrayList(u32),
 
 pub fn init(gpa: std.mem.Allocator) !Animator {
     return .{
         .gpa = gpa,
-        .instances = .init(gpa),
-        .retiring = try .initCapacity(gpa, shared.max_entities * 2),
-        .frame = .{ .delta_time = 0, .elapsed_time = 0, .local_entity = .none, .camera_pitch = 0, .camera_yaw_rotation = .identity },
+        .instances = try .initCapacity(gpa, shared.max_entities * 2),
+        .free_slots = try .initCapacity(gpa, shared.max_entities * 2),
     };
 }
 
 pub fn deinit(self: *Animator) void {
-    var instance_iterator = self.instances.valueIterator();
-    while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
-    self.instances.deinit();
-    self.retiring.deinit(self.gpa);
+    for (self.instances.items) |*slot| {
+        if (slot.*) |*instance| instance.deinit(self.gpa);
+    }
+    self.instances.deinit(self.gpa);
+    self.free_slots.deinit(self.gpa);
+}
+
+pub fn create(self: *Animator, model_handle: u32, models: *const Models) !Handle {
+    const instance: Instance = try .init(self.gpa, model_handle, models.modelPtr(model_handle));
+    if (self.free_slots.pop()) |slot| {
+        self.instances.items[slot] = instance;
+        return @enumFromInt(slot + 1);
+    }
+    self.instances.appendAssumeCapacity(instance);
+    return @enumFromInt(self.instances.items.len);
+}
+
+pub fn destroy(self: *Animator, handle: Handle) void {
+    const slot = self.slotOf(handle) orelse return;
+    if (self.instances.items[slot]) |*instance| instance.deinit(self.gpa);
+    self.instances.items[slot] = null;
+    self.free_slots.appendAssumeCapacity(@intCast(slot));
+}
+
+fn slotOf(self: *const Animator, handle: Handle) ?usize {
+    const raw = @intFromEnum(handle);
+    if (raw == 0 or raw > self.instances.items.len) return null;
+    return raw - 1;
+}
+
+fn instancePtr(self: *Animator, handle: Handle) ?*Instance {
+    const slot = self.slotOf(handle) orelse return null;
+    return if (self.instances.items[slot]) |*instance| instance else null;
 }
 
 fn resolveModel(models: *const Models, instance: *const Instance) *const Model {
@@ -79,190 +82,78 @@ fn resolveRig(models: *const Models, instance: *const Instance) *const Rig {
     return models.rig(instance.model);
 }
 
-pub fn begin(self: *Animator, frame: Frame, deaths: []const shared.entity.Id, models: *Models) !void {
-    self.frame = frame;
-    var instance_iterator = self.instances.valueIterator();
-    while (instance_iterator.next()) |instance| instance.seen = false;
-    for (deaths) |id| {
-        const instance = self.instances.getPtr(id) orelse continue;
-        instance.is_dying = true;
-        instance.state = .death;
+/// The walk threshold and the stun/override precedence are animation rules, so they live
+/// here rather than being decided twice by the client and the server viewer.
+pub fn setState(self: *Animator, handle: Handle, velocity: nz.Vec3(f32), stun_time: f32, override: ?shared.entity.State) void {
+    const instance = self.instancePtr(handle) orelse return;
+    if (override) |forced| {
+        instance.state = forced;
+        return;
     }
+    if (stun_time > 0) {
+        instance.state = .stun;
+        return;
+    }
+    instance.state = if (nz.vec.length(velocity) > 0.5) .walk else .idle;
+}
+
+pub fn setAim(self: *Animator, handle: Handle, aim: ?Instance.Aim) void {
+    const instance = self.instancePtr(handle) orelse return;
+    instance.aim = aim;
+}
+
+pub fn trigger(self: *Animator, handle: Handle, state: shared.entity.State, models: *const Models) void {
+    const instance = self.instancePtr(handle) orelse return;
+    const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
+    const clip_index = resolveRig(models, instance).state_clips.get(state) orelse return;
+    skeleton.playOverlay(resolveModel(models, instance), clip_index);
+}
+
+pub fn advance(self: *Animator, delta_time: f32, models: *Models) !void {
+    const tracy_scope = tracy.zone(@src());
+    defer tracy_scope.end();
+
     try self.applyReloads(models);
-}
-
-pub fn observe(self: *Animator, entity: Entity, models: *Models) !void {
-    if (!self.instances.contains(entity.id)) {
-        const model = models.modelPtr(entity.model);
-        try self.instances.put(entity.id, try .init(self.gpa, entity.model, model, models.rig(entity.model)));
-    }
-    const instance = self.instances.getPtr(entity.id).?;
-    instance.seen = true;
-    instance.model = entity.model;
-    instance.offset = entity.offset;
-    instance.highlight = entity.highlight;
-    instance.spin_speed = entity.spin_speed;
-    instance.shrink_on_death = entity.shrink_on_death;
-    instance.effect = entity.effect;
-    instance.transform = entity.transform;
-    instance.is_dying = entity.is_dying;
-    if (instance.skeleton == null) return;
-    instance.state = entity.state;
-}
-
-pub fn advance(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *Models) void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-
-    self.applyTriggers(triggers, models);
-    self.animate(models);
-}
-
-pub fn draw(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const Models) void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-
-    self.appendDraws(list, emitters, models);
-    self.retire();
+    self.animate(delta_time, models);
 }
 
 fn applyReloads(self: *Animator, models: *Models) !void {
     for (models.reloaded.items) |file_index| {
         const reloaded_model = models.modelPtr(file_index);
-        var instance_iterator = self.instances.valueIterator();
-        while (instance_iterator.next()) |instance| {
+        for (self.instances.items) |*slot| {
+            const instance = if (slot.*) |*live| live else continue;
             if (instance.model != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
             instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
-            instance.spawn_duration = models.rig(file_index).spawn_duration;
-            instance.death_duration = models.rig(file_index).death_duration;
         }
     }
     models.reloaded.clearRetainingCapacity();
 }
 
 pub fn clear(self: *Animator) void {
-    var instance_iterator = self.instances.valueIterator();
-    while (instance_iterator.next()) |instance| instance.deinit(self.gpa);
+    for (self.instances.items) |*slot| {
+        if (slot.*) |*instance| instance.deinit(self.gpa);
+    }
     self.instances.clearRetainingCapacity();
+    self.free_slots.clearRetainingCapacity();
 }
 
-fn retire(self: *Animator) void {
-    self.retiring.clearRetainingCapacity();
-    var instance_iterator = self.instances.iterator();
-    while (instance_iterator.next()) |entry| {
-        const instance = entry.value_ptr;
-        if (instance.seen) continue;
-        if (instance.is_dying and instance.death_time < instance.death_duration) continue;
-        self.retiring.appendAssumeCapacity(entry.key_ptr.*);
-    }
-    for (self.retiring.items) |id| {
-        var instance = self.instances.fetchRemove(id).?.value;
-        instance.deinit(self.gpa);
+fn animate(self: *Animator, delta_time: f32, models: *Models) void {
+    for (self.instances.items) |*slot| {
+        const instance = if (slot.*) |*live| live else continue;
+        playAnimation(delta_time, instance, resolveModel(models, instance), resolveRig(models, instance));
     }
 }
 
-fn applyTriggers(self: *Animator, triggers: []const shared.net.Event.Trigger, models: *Models) void {
-    for (triggers) |trigger| {
-        const instance = self.instances.getPtr(trigger.id) orelse continue;
-        const skeleton = if (instance.skeleton) |*skeleton| skeleton else continue;
-        const model = resolveModel(models, instance);
-        const clip_index = resolveRig(models, instance).state_clips.get(trigger.state) orelse continue;
-        skeleton.playOverlay(model, clip_index);
-    }
+pub fn pose(self: *Animator, handle: Handle) ?Pose {
+    const instance = self.instancePtr(handle) orelse return null;
+    return .{
+        .model = instance.model,
+        .skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else null,
+    };
 }
 
-fn animate(self: *Animator, models: *Models) void {
-    var instance_iterator = self.instances.iterator();
-    while (instance_iterator.next()) |entry| {
-        const instance = entry.value_ptr;
-        if (instance.is_dying) {
-            instance.death_time += self.frame.delta_time;
-        } else if (instance.death_time > 0) {
-            instance.death_time = 0;
-        }
-        if (instance.spin_speed != 0) {
-            instance.spawn_time = @min(instance.spawn_time + self.frame.delta_time, instance.spawn_duration);
-            instance.spin_time += self.frame.delta_time;
-        }
-        const model = resolveModel(models, instance);
-        playAnimation(self.frame, entry.key_ptr.*, instance, model, resolveRig(models, instance));
-    }
-}
-
-fn appendDraws(self: *Animator, list: *DrawList, emitters: *Emitter.List, models: *const Models) void {
-    var instance_iterator = self.instances.iterator();
-    while (instance_iterator.next()) |entry| {
-        const instance = entry.value_ptr;
-        if (instance.effect) |effect| {
-            const effect_offset = nz.vec.scale(nz.vec.normalize(instance.transform.position), 0.5);
-            Emitter.keepAlive(emitters, effect, @intFromEnum(entry.key_ptr.*), instance.transform.position - effect_offset, self.frame.elapsed_time);
-        }
-        var transform = instance.transform;
-        if (instance.shrink_on_death and instance.is_dying and instance.death_duration > 0) {
-            transform.scale = @splat(1.0 - std.math.clamp(instance.death_time / instance.death_duration, 0, 1));
-        }
-        if (instance.spin_speed != 0) {
-            if (instance.spawn_duration > 0) {
-                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(instance.spawn_time / instance.spawn_duration, 0, 1)));
-            }
-            transform.rotation = transform.rotation
-                .mul(nz.Quat(f32).angleAxis(instance.spin_speed * instance.spin_time, .{ 0, 1, 0 }))
-                .normalize();
-        }
-        const top_matrix = transform.toMat4x4().mul(instance.offset.toMat4x4());
-        if (instance.skeleton) |*instance_skeleton| {
-            var skin_offsets: [max_skins]u32 = undefined;
-            const palette_base: u32 = @intCast(list.joint_matrices.items.len);
-            list.joint_matrices.appendSliceAssumeCapacity(instance_skeleton.joints);
-            for (0..instance_skeleton.skin_starts.len - 1) |skin_index| {
-                skin_offsets[skin_index] = palette_base + instance_skeleton.skin_starts[skin_index];
-            }
-            const mesh_handles = models.modelPtr(instance.model).mesh_handles;
-            for (instance_skeleton.nodes) |node| {
-                const mesh_id = node.mesh_id orelse continue;
-                if (mesh_id >= mesh_handles.len) continue;
-                list.draw_meshes.appendAssumeCapacity(.{
-                    .mesh = @enumFromInt(mesh_handles[mesh_id]),
-                    .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
-                    .position = instance.transform.position,
-                    .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
-                    .skinned = true,
-                    .highlight = instance.highlight,
-                });
-            }
-        } else {
-            const model = models.modelPtr(instance.model);
-            if (model.isSkinned()) continue;
-            // Still one row, naming nothing: the backend draws its box for a handle it does
-            // not know, so a model that never arrived is visible rather than absent.
-            if (model.isEmpty()) {
-                list.draw_meshes.appendAssumeCapacity(.{
-                    .mesh = .none,
-                    .model_matrix = top_matrix,
-                    .position = instance.transform.position,
-                    .palette_offset = null,
-                    .skinned = false,
-                    .highlight = instance.highlight,
-                });
-                continue;
-            }
-            for (model.surfaces.items) |surface| {
-                if (surface.mesh_id >= model.mesh_handles.len) continue;
-                list.draw_meshes.appendAssumeCapacity(.{
-                    .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
-                    .model_matrix = top_matrix.mul(surface.model_matrix),
-                    .position = instance.transform.position,
-                    .palette_offset = null,
-                    .skinned = false,
-                    .highlight = instance.highlight,
-                });
-            }
-        }
-    }
-}
-
-fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model: *const Model, rig: *const Rig) void {
+fn playAnimation(delta_time: f32, instance: *Instance, model: *const Model, rig: *const Rig) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
     const clip_index = rig.state_clips.get(instance.state);
     if (clip_index) |index| {
@@ -272,7 +163,7 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
     }
 
     if (skeleton.overlay) |*overlay| {
-        overlay.current_time += frame.delta_time;
+        overlay.current_time += delta_time;
         if (overlay.current_time > model.clips[overlay.active].end) {
             skeleton.overlay = null;
             skeleton.startFade();
@@ -281,10 +172,10 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
 
     if (clip_index != null) {
         const animation = model.clips[skeleton.player.active];
-        skeleton.player.current_time += frame.delta_time;
+        skeleton.player.current_time += delta_time;
 
         if (skeleton.player.current_time > animation.end) {
-            if (instance.is_dying)
+            if (instance.state == .death)
                 skeleton.player.current_time = animation.end
             else
                 skeleton.player.current_time -= animation.end - animation.start;
@@ -301,7 +192,7 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
         sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, rig.overlay_mask);
     }
     if (skeleton.fade_time > 0) {
-        skeleton.fade_time -= frame.delta_time;
+        skeleton.fade_time -= delta_time;
         const alpha = @max(skeleton.fade_time, 0) / Instance.fade_duration;
         for (skeleton.nodes, skeleton.fade_joints) |*node, fade_joint| {
             node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
@@ -310,19 +201,15 @@ fn playAnimation(frame: Frame, id: shared.entity.Id, instance: *Instance, model:
         }
     }
     var saved_look_rotations: [3]nz.Quat(f32) = undefined;
-    const looking = id == frame.local_entity and rig.look_nodes.len > 0;
+    const looking = instance.aim != null and rig.look_nodes.len > 0;
     if (looking) {
+        const aim = instance.aim.?;
         for (rig.look_nodes, 0..) |node_index, saved_index| {
             saved_look_rotations[saved_index] = skeleton.nodes[node_index].rotation;
         }
-        const look_pitch = std.math.clamp(frame.camera_pitch * look_pitch_sign, -1.0, 1.0);
-        var yaw_offset = instance.transform.rotation.conjugate().mul(frame.camera_yaw_rotation);
-        if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
-        var look_yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w) * look_yaw_sign, -1.2, 1.2);
-        if (@abs(look_yaw) < look_yaw_deadzone) look_yaw = 0;
         const aim_nodes: []const usize = if (skeleton.overlay != null) rig.look_nodes[0..1] else rig.look_nodes;
-        const pitch_per_node = look_pitch / @as(f32, @floatFromInt(aim_nodes.len));
-        const yaw_per_node = look_yaw / @as(f32, @floatFromInt(aim_nodes.len));
+        const pitch_per_node = aim.pitch / @as(f32, @floatFromInt(aim_nodes.len));
+        const yaw_per_node = aim.yaw / @as(f32, @floatFromInt(aim_nodes.len));
         for (aim_nodes) |node_index| {
             const node = &skeleton.nodes[node_index];
             node.rotation = node.rotation

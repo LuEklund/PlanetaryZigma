@@ -29,28 +29,9 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
     list.draw_sky = draw_sky;
     list.planet_radius = world.planet.radiusFloat();
-    list.surface_width = @intFromFloat(ui.screen_width);
-    list.surface_height = @intFromFloat(ui.screen_height);
+    list.surface_width = system.window.size.width;
+    list.surface_height = system.window.size.height;
 
-    for (world.planet.removes.items) |removed| {
-        if (removed.mesh_handle == 0) continue;
-        system.render.api.freeMesh(system.render.handle, @enumFromInt(removed.mesh_handle));
-    }
-    for (world.planet.uploads.items) |chunk_upload| {
-        const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
-        const surfaces = [_]render.SurfaceUpload{.{
-            .index_start = 0,
-            .index_count = @intCast(chunk_upload.indices.len),
-            .texture = .blank,
-        }};
-        entry.mesh_handle = @intFromEnum(system.render.api.uploadMesh(system.render.handle, @enumFromInt(entry.mesh_handle), &.{
-            .name = "chunk",
-            .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
-            .skinned = false,
-            .indices = chunk_upload.indices,
-            .surfaces = &surfaces,
-        }));
-    }
     for (world.planet.chunks.keys(), world.planet.chunks.values()) |coord, entry| {
         if (entry.mesh_handle == 0) continue;
         list.draw_meshes.appendAssumeCapacity(.{
@@ -63,43 +44,56 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         });
     }
 
-    try animator.begin(.{
-        .delta_time = world.delta_time,
-        .elapsed_time = world.elapsed_time,
-        .local_entity = world.player_id,
-        .camera_pitch = world.camera.pitch,
-        .camera_yaw_rotation = world.camera.yaw_rotation,
-    }, world.deaths.items, models);
-    world.deaths.clearRetainingCapacity();
-
     for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
 
     const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
+        if (entity.kind == .item) {
+            const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+            Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
+        }
+        const pose = animator.pose(entity.animation) orelse continue;
         const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
-        const model_handle = models.get(entity.kind);
-        try animator.observe(.{
-            .id = entity.id,
-            .model = model_handle,
-            .transform = entity.transform,
-            .offset = model_spec.offset,
-            .is_dying = entity.flags.is_dying,
-            .state = shared.entity.animationState(
-                if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
-                entity.stun_time,
-                entity.flags.is_dying,
-                entity.override_animation_state,
-            ),
-            .highlight = player_interact == entity.id,
-            .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
-            .shrink_on_death = entity.kind == .lootbox,
-            .effect = if (entity.kind == .item) .item_effect else null,
-        }, models);
+        var transform = entity.transform;
+        if (entity.kind == .item) {
+            const rig = models.rig(models.get(entity.kind));
+            const alive_time = world.elapsed_time - entity.spawned_at;
+            if (rig.spawn_duration > 0) {
+                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(alive_time / rig.spawn_duration, 0, 1)));
+            }
+            transform.rotation = transform.rotation
+                .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * alive_time, .{ 0, 1, 0 }))
+                .normalize();
+        }
+        appendDraws(
+            list,
+            models,
+            pose,
+            transform.toMat4x4().mul(model_spec.offset.toMat4x4()),
+            entity.transform.position,
+            player_interact == entity.id,
+        );
     }
-    animator.advance(world.trigger_events.items, models);
-    world.trigger_events.clearRetainingCapacity();
-    animator.draw(list, emitters, models);
+    for (world.dying.items) |corpse| {
+        const pose = animator.pose(corpse.animation) orelse continue;
+        const corpse_spec: shared.entity.ModelSpec = shared.entity.modelSpec(corpse.kind) orelse .{ .path = "", .clip_names = null };
+        var transform = corpse.transform;
+        if (corpse.kind == .lootbox) {
+            const death_duration = models.rig(models.get(corpse.kind)).death_duration;
+            if (death_duration > 0) {
+                transform.scale = @splat(1.0 - std.math.clamp(corpse.elapsed / death_duration, 0, 1));
+            }
+        }
+        appendDraws(
+            list,
+            models,
+            pose,
+            transform.toMat4x4().mul(corpse_spec.offset.toMat4x4()),
+            corpse.transform.position,
+            false,
+        );
+    }
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {
@@ -128,6 +122,65 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     }
 
     system.render.api.update(system.render.handle, list);
+}
+
+fn easeOutBack(x: f32) f32 {
+    const c1: f32 = 1.70158;
+    const c3: f32 = c1 + 1.0;
+    const xm1 = x - 1.0;
+    return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
+}
+
+fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: graphics.Animator.Pose, top_matrix: nz.Mat4x4(f32), position: nz.Vec3(f32), highlight: bool) void {
+    if (pose.skeleton) |skeleton| {
+        var skin_offsets: [graphics.Animator.max_skins]u32 = undefined;
+        const palette_base: u32 = @intCast(list.joint_matrices.items.len);
+        list.joint_matrices.appendSliceAssumeCapacity(skeleton.joints);
+        for (0..skeleton.skin_starts.len - 1) |skin_index| {
+            skin_offsets[skin_index] = palette_base + skeleton.skin_starts[skin_index];
+        }
+        const mesh_handles = models.modelPtr(pose.model).mesh_handles;
+        for (skeleton.nodes) |node| {
+            const mesh_id = node.mesh_id orelse continue;
+            if (mesh_id >= mesh_handles.len) continue;
+            list.draw_meshes.appendAssumeCapacity(.{
+                .mesh = @enumFromInt(mesh_handles[mesh_id]),
+                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
+                .position = position,
+                .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
+                .skinned = true,
+                .highlight = highlight,
+            });
+        }
+        return;
+    }
+
+    const model = models.modelPtr(pose.model);
+    if (model.isSkinned()) return;
+    // Still one row, naming nothing: the backend draws its box for a handle it does
+    // not know, so a model that never arrived is visible rather than absent.
+    if (model.isEmpty()) {
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = .none,
+            .model_matrix = top_matrix,
+            .position = position,
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = highlight,
+        });
+        return;
+    }
+    for (model.surfaces.items) |surface| {
+        if (surface.mesh_id >= model.mesh_handles.len) continue;
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
+            .model_matrix = top_matrix.mul(surface.model_matrix),
+            .position = position,
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = highlight,
+        });
+    }
 }
 
 fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {

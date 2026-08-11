@@ -120,7 +120,7 @@ pub fn spec(kind: Kind) Spec {
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .has_health = true,
-            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1 }),
+            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1, .utility_cooldown = 5 }),
             .primary_range = 10,
             .currency = 100,
         },
@@ -325,13 +325,3 @@ pub const State = enum(u16) {
     utility = 4,
     stun = 5,
 };
-
-/// Which animation an entity should be playing. Lives here, not in the renderer: the 0.5
-/// threshold and the stun/death precedence are game rules, and both the client and the
-/// server viewer need the same answer.
-pub fn animationState(velocity: nz.Vec3(f32), stun_time: f32, is_dying: bool, override: ?State) State {
-    if (override) |forced| return forced;
-    if (is_dying) return .death;
-    if (stun_time > 0) return .stun;
-    return if (nz.vec.length(velocity) > 0.5) .walk else .idle;
-}

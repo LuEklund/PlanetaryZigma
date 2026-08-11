@@ -11,6 +11,8 @@ const Animator = @import("graphics").Animator;
 const Emitter = @import("graphics").Emitter;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
+const animate = @import("system/animate.zig");
+const chunks = @import("system/chunks.zig");
 const contract = @import("contract");
 const DrawList = @import("contract").DrawList;
 
@@ -144,6 +146,8 @@ pub fn update(self: *System, world: *World) !void {
         &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
+    chunks.update(&world.planet, &self.render.api, self.render.handle);
+    try animate.update(world, &self.animator, &self.assets.models);
     try extract.frame(self, world, self.scene != .particle_lab);
     self.render.trySwap(self.io);
     self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
