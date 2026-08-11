@@ -143,9 +143,12 @@ pub fn parseScene(
 
     var material_images: []?usize = &.{};
     defer gpa.free(material_images);
+    var material_transparent: []bool = &.{};
+    defer gpa.free(material_transparent);
     if (gltf.materials) |materials| {
+        material_transparent = try gpa.alloc(bool, materials.len);
         material_images = try gpa.alloc(?usize, materials.len);
-        for (materials, material_images) |material, *material_image| {
+        for (materials, material_images, material_transparent) |material, *material_image, *is_transparent| {
             material_image.* = null;
             if (material.pbrMetallicRoughness) |metallic_roughness| {
                 if (metallic_roughness.baseColorTexture) |base_texture| {
@@ -157,6 +160,7 @@ pub fn parseScene(
                     }
                 }
             }
+            is_transparent.* = canBlend(material, material_image.*, upload.images);
         }
     }
 
@@ -233,12 +237,10 @@ pub fn parseScene(
                     .index_start = indices_start,
                     .image_index = if (primitive.material) |material_index| material_images[material_index] else null,
                     .material_missing = primitive.material == null,
-                    .transparent = if (primitive.material) |material_index| transparent: {
-                        const material = gltf.materials.?[material_index];
-                        if (material.alphaMode != .BLEND) break :transparent false;
-                        const metallic_roughness = material.pbrMetallicRoughness orelse break :transparent false;
-                        break :transparent metallic_roughness.baseColorFactor[3] < 1;
-                    } else false,
+                    .transparent = if (primitive.material) |material_index|
+                        material_transparent[material_index]
+                    else
+                        false,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
@@ -486,4 +488,18 @@ pub fn parseScene(
     }
 
     return upload;
+}
+
+fn canBlend(material: zgltf.Material, image_index: ?usize, images: []const Bitmap) bool {
+    if (material.alphaMode != .BLEND) return false;
+    const metallic_roughness = material.pbrMetallicRoughness orelse return false;
+    if (metallic_roughness.baseColorFactor[3] < 1) return true;
+    const index = image_index orelse return false;
+    const image = images[index];
+    if (image.nr_channel < 4 or image.pixels == null) return false;
+    const pixel_count: usize = @intCast(image.width * image.height);
+    for (0..pixel_count) |pixel| {
+        if (image.pixels[pixel * 4 + 3] < 255) return true;
+    }
+    return false;
 }

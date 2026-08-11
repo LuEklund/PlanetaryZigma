@@ -259,6 +259,7 @@ pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, 
     beginRendering(self, cmd);
     renderWorldPass(self, cmd, current_frame, list);
     if (list.draw_sky) renderSkyPass(self, cmd, current_frame);
+    renderWorldTransparentPass(self, cmd, current_frame, list);
     renderParticlePass(self, cmd, current_frame, list, particle_batches);
     renderOutlinePass(self, cmd, current_frame);
     if (list.draw_lines.items.len != 0) renderDebugPass(self, cmd, current_frame, list);
@@ -583,12 +584,23 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, row.model_matrix);
     }
 
+}
+
+/// Runs AFTER the sky, because these draws do not write depth — the sky fills anything left
+/// at the far plane, so anything blended before it gets painted over.
+fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
     const transparent_blend: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &transparent_blend);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+    ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
+    ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_TRUE);
     ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
 
+    self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
+
     bindVertexShader(cmd, self.resources.shaders.vert(.static));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.mesh));
     for (self.sorted_draws.items) |draw_index| {
         const row = list.draw_meshes.items[draw_index];
         if (row.skinned) continue;
