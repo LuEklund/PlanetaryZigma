@@ -263,6 +263,8 @@ fn resolveLayout(self: *Ui) void {
             },
         }
     }
+    //TODO: grow parent to children
+    //TODO: fit children to parent
 
     // pass 2: each child adds its main-axis size (+gap) into its parent's children_size (bottom-up)
     var index = self.nodes.items.len;

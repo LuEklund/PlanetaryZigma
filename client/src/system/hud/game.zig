@@ -109,9 +109,38 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .gap = 10,
         });
         ui.add("action_bar", .{
+            .name = "primary",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
             .offset = .{ .left = 5, .top = 5 },
+            .children = &.{
+                .{
+                    .size = .{
+                        .percent = .{
+                            .width = 1,
+                            .height = std.math.clamp((world.controller.primary_cooldown + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
+                        },
+                    },
+                    .color = .new(1, 0, 0, 0.4),
+                },
+            },
+        });
+        ui.add("action_bar", .{
+            .name = "utility",
+            .size = .{ .fixed = action_item },
+            .color = .new(1, 1, 0, 1),
+            .offset = .{ .left = 5, .top = 5 },
+            .children = &.{
+                .{
+                    .size = .{
+                        .percent = .{
+                            .width = 1,
+                            .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                        },
+                    },
+                    .color = .new(1, 0, 0, 0.4),
+                },
+            },
         });
         ui.add("action_bar", .{
             .size = .{ .fixed = action_item },
@@ -119,41 +148,42 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .offset = .{ .left = 5, .top = 5 },
         });
         ui.add("action_bar", .{
-            .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
-            .offset = .{ .left = 5, .top = 5 },
-        });
-        ui.add("action_bar", .{
+            .name = "equipment",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
             .offset = .{ .left = 5, .top = 5 },
         });
         var icon_index: usize = 0;
         inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
-            const equipment_size: Ui.Size2D = .{ .height = 100, .width = 100 };
             const amount = player.inventory.get(item_kind);
             if (amount > 0) {
                 const amount_text = ui.print("{d}", .{amount});
                 if (shared.Item.get(item_kind).is_equipment) {
-                    ui.add(null, .{
-                        .size = .{ .fixed = .{
-                            .height = equipment_size.height,
-                            .width = equipment_size.width,
-                        } },
-
-                        .offset = .{ .left = ui.screen_width - equipment_size.width, .top = ui.screen_height - equipment_size.height },
+                    ui.add("equipment", .{
+                        .size = .{ .percent = .{ .height = 1, .width = 1 } },
                         .color = .new(1, 1, 1, 1),
                         .name = @tagName(item_kind),
                         .texture = game_assets.textures.get(item_kind),
                         .child_anchor = .{ .x = .start, .y = .end },
-                        .children = &.{.{
-                            .size = .{ .fixed = ui.textSize(amount_text, 48) },
-                            .text = .{
-                                .data = amount_text,
-                                .color = .new(0, 0, 0, 1),
-                                .size = 48,
+                        .children = &.{
+                            .{
+                                .size = .{ .fixed = ui.textSize(amount_text, 48) },
+                                .text = .{
+                                    .data = amount_text,
+                                    .color = .new(0, 0, 0, 1),
+                                    .size = 48,
+                                },
                             },
-                        }},
+                        },
+                    });
+                    ui.add("equipment", .{
+                        .size = .{
+                            .percent = .{
+                                .width = 1,
+                                .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                            },
+                        },
+                        .color = .new(1, 0, 0, 0.4),
                     });
                 } else {
                     const row_name = ui.print("inventory_row_{d}", .{icon_index / icons_per_row});

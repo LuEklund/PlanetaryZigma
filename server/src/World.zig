@@ -350,6 +350,8 @@ pub fn attackLands(world: *World, attacker: *Entity, potential_target: ?*const E
             return true;
         } else return false;
     }
+
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
     return true;
 }
 
