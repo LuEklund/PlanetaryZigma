@@ -10,8 +10,8 @@ const Vma = @import("Vma.zig");
 const Image = @import("Image.zig");
 const contract = @import("contract");
 
-
-surfaces: std.ArrayList(GeoSurface),
+surfaces: []Surface,
+opaque_count: u32,
 index_buffer: Buffer,
 vertex_buffer: Buffer,
 name: []const u8,
@@ -19,7 +19,7 @@ name: []const u8,
 pub const StaticVertex = shared.StaticVertex;
 pub const SkinnedVertex = shared.SkinnedVertex;
 
-pub const GeoSurface = struct {
+pub const Surface = struct {
     index_start: u32,
     index_count: u32,
     texture: contract.TextureHandle,
@@ -33,7 +33,8 @@ pub fn init(
     comptime VertexType: type,
     vertices: []const VertexType,
     indices: []const u32,
-    surfaces: []const GeoSurface,
+    surfaces: []Surface,
+    opaque_count: u32,
 ) !Mesh {
     var vertex_buffer: Buffer = try .init(
         device,
@@ -61,14 +62,12 @@ pub fn init(
     );
     index_buffer.copy(u32, indices);
 
-    var allocated_surfaces: std.ArrayList(GeoSurface) = try .initCapacity(gpa, surfaces.len);
-    allocated_surfaces.appendSliceAssumeCapacity(surfaces);
-
     return .{
         .index_buffer = index_buffer,
         .vertex_buffer = vertex_buffer,
-        .surfaces = allocated_surfaces,
+        .surfaces = surfaces,
         .name = try gpa.dupe(u8, name),
+        .opaque_count = opaque_count,
     };
 }
 
@@ -76,5 +75,13 @@ pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, vma: Vma) void {
     self.index_buffer.deinit(vma);
     self.vertex_buffer.deinit(vma);
     gpa.free(self.name);
-    self.surfaces.deinit(gpa);
+    gpa.free(self.surfaces);
 }
+
+// pub fn opaques(self: ) []const Surface {
+//     return self.data[0..self.opaque_count];
+// }
+//
+// pub fn transparents(self: Surfaces) []const Surface {
+//     return self.data[self.opaque_count..];
+// }

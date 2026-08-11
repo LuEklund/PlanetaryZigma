@@ -1,4 +1,3 @@
-
 const Models = @This();
 
 const std = @import("std");
@@ -155,6 +154,7 @@ fn uploadMeshes(
                 for (mesh.surfaces, surfaces) |src, *surface| surface.* = .{
                     .index_start = src.index_start,
                     .index_count = src.index_count,
+                    .transparent = src.transparent,
                     .texture = if (src.material_missing)
                         .missing
                     else if (src.image_index) |image_index|

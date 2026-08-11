@@ -29,8 +29,8 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
     list.draw_sky = draw_sky;
     list.planet_radius = world.planet.radiusFloat();
-    list.surface_width = @intFromFloat(ui.screen_width);
-    list.surface_height = @intFromFloat(ui.screen_height);
+    list.surface_width = system.window.size.width;
+    list.surface_height = system.window.size.height;
 
     for (world.planet.removes.items) |removed| {
         if (removed.mesh_handle == 0) continue;
@@ -41,6 +41,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         const surfaces = [_]render.SurfaceUpload{.{
             .index_start = 0,
             .index_count = @intCast(chunk_upload.indices.len),
+            .transparent = false,
             .texture = .blank,
         }};
         entry.mesh_handle = @intFromEnum(system.render.api.uploadMesh(system.render.handle, @enumFromInt(entry.mesh_handle), &.{
@@ -69,8 +70,19 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         .local_entity = world.player_id,
         .camera_pitch = world.camera.pitch,
         .camera_yaw_rotation = world.camera.yaw_rotation,
-    }, world.deaths.items, models);
-    world.deaths.clearRetainingCapacity();
+    }, models);
+
+    var dying_index: usize = 0;
+    while (dying_index < world.dying.items.len) {
+        const corpse = &world.dying.items[dying_index];
+        corpse.elapsed += world.delta_time;
+        if (corpse.elapsed < models.rig(models.get(corpse.kind)).death_duration) {
+            dying_index += 1;
+            continue;
+        }
+        animator.destroy(corpse.animation);
+        _ = world.dying.swapRemove(dying_index);
+    }
 
     for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
@@ -79,28 +91,51 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     for (world.entities.values()) |*entity| {
         const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
         const model_handle = models.get(entity.kind);
-        try animator.observe(.{
-            .id = entity.id,
+        if (entity.animation == .none) entity.animation = try animator.create(model_handle, models);
+        animator.observe(entity.animation, .{
             .model = model_handle,
             .transform = entity.transform,
             .offset = model_spec.offset,
-            .is_dying = entity.flags.is_dying,
+            .is_dying = false,
             .state = shared.entity.animationState(
                 if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
                 entity.stun_time,
-                entity.flags.is_dying,
                 entity.override_animation_state,
             ),
             .highlight = player_interact == entity.id,
             .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
-            .effect = if (entity.kind == .item) .item_effect else null,
-        }, models);
+            .is_local = entity.id == world.player_id,
+        });
+        if (entity.kind == .item) {
+            const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+            Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
+        }
     }
 
-    animator.advance(world.trigger_events.items, models);
+    for (world.dying.items) |corpse| {
+        const corpse_spec: shared.entity.ModelSpec = shared.entity.modelSpec(corpse.kind) orelse .{ .path = "", .clip_names = null };
+        animator.observe(corpse.animation, .{
+            .model = models.get(corpse.kind),
+            .transform = corpse.transform,
+            .offset = corpse_spec.offset,
+            .is_dying = true,
+            .state = .death,
+            .highlight = false,
+            .spin_speed = 0,
+            .shrink_on_death = corpse.kind == .lootbox,
+            .is_local = false,
+        });
+    }
+
+    for (world.trigger_events.items) |trigger_event| {
+        const entity = world.getPtr(trigger_event.id) orelse continue;
+        animator.trigger(entity.animation, trigger_event.state, models);
+    }
     world.trigger_events.clearRetainingCapacity();
-    animator.draw(list, emitters, models);
+
+    animator.advance(models);
+    animator.draw(list, models);
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {

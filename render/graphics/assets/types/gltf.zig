@@ -42,6 +42,7 @@ pub fn UploadData(comptime VertexType: type) type {
             index_count: u32,
             image_index: ?usize,
             material_missing: bool,
+            transparent: bool,
         };
 
         pub const MeshData = struct {
@@ -232,6 +233,7 @@ pub fn parseScene(
                     .index_start = indices_start,
                     .image_index = if (primitive.material) |material_index| material_images[material_index] else null,
                     .material_missing = primitive.material == null,
+                    .transparent = if (primitive.material) |material_index| gltf.materials.?[material_index].alphaMode == .BLEND else false,
                 });
 
                 const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {

@@ -20,6 +20,7 @@ draw_list: DrawList,
 window: *Window,
 assets: graphics.Assets,
 animator: graphics.Animator,
+animations: std.AutoHashMapUnmanaged(shared.entity.Id, graphics.Animator.Handle),
 emitters: Emitter.List,
 camera: Camera,
 ui: Ui,
@@ -32,6 +33,7 @@ border_lines_field: ?u1,
 pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, planet_radius: f32) !void {
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
+    self.animations = .empty;
     self.emitters = @splat(Emitter.free);
 
     self.window = window;
@@ -69,6 +71,7 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.border_lines.deinit(gpa);
     self.ui.deinit(gpa);
     self.draw_list.deinit(gpa);
+    self.animations.deinit(gpa);
     self.animator.deinit();
     self.assets.deinit(gpa, io);
     self.render.api.deinit(self.render.handle);
@@ -120,7 +123,7 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
         self.border_lines_field = world.navmesh.internal.active;
     }
 
-    try extract.frame(world, self);
+    try extract.frame(world, self, world.gpa);
     self.render.trySwap(io);
     self.assets.update(world.gpa, io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
     return quit;

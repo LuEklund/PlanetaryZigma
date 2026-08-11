@@ -499,14 +499,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             if (row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMeshNode(self, cmd, current_frame, mesh, null, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], null, cascade_vp.mul(row.model_matrix));
         }
         bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], row.palette_offset, cascade_vp.mul(row.model_matrix));
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -546,14 +546,14 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
     for (list.draw_meshes.items) |row| {
         if (row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, row.model_matrix);
     }
 
     bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
     for (list.draw_meshes.items) |row| {
         if (!row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, row.model_matrix);
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, row.model_matrix);
     }
 }
 
@@ -630,18 +630,18 @@ fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *co
 
     bindVertexShader(cmd, self.resources.shaders.vert(.highlight_static));
     bindFragmentShader(cmd, self.resources.shaders.frag(.highlight_static));
-    for (list.draw_meshes.items) |row| {
-        if (!row.highlight or row.skinned) continue;
-        const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMeshNode(self, cmd, current_frame, mesh, null, row.model_matrix);
+    for (list.draw_meshes.items) |draw_mesh| {
+        if (!draw_mesh.highlight or draw_mesh.skinned) continue;
+        const mesh = self.resources.meshAt(draw_mesh.mesh) orelse continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, draw_mesh.model_matrix);
     }
 
     bindVertexShader(cmd, self.resources.shaders.vert(.highlight_skinned));
     bindFragmentShader(cmd, self.resources.shaders.frag(.highlight_static));
-    for (list.draw_meshes.items) |row| {
-        if (!row.highlight or !row.skinned) continue;
-        const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMeshNode(self, cmd, current_frame, mesh, row.palette_offset, row.model_matrix);
+    for (list.draw_meshes.items) |draw_mesh| {
+        if (!draw_mesh.highlight or !draw_mesh.skinned) continue;
+        const mesh = self.resources.meshAt(draw_mesh.mesh) orelse continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, draw_mesh.palette_offset, draw_mesh.model_matrix);
     }
 
     ext.vkCmdEndRendering(cmd);
@@ -859,11 +859,12 @@ fn bindFragmentShader(cmd: c.VkCommandBuffer, shader: *Shaders.Object) void {
     ext.vkCmdBindShadersEXT(cmd, 1, &stage[0], &handle[0]);
 }
 
-fn drawMeshNode(
+fn drawMesh(
     self: *Vulkan,
     cmd: c.VkCommandBuffer,
     current_frame: *const FrameData,
-    mesh: *Mesh,
+    mesh: *const Mesh,
+    surfaces: []const Mesh.Surface,
     palette_offset: ?u32,
     top_matrix: nz.Mat4x4(f32),
 ) void {
@@ -876,20 +877,11 @@ fn drawMeshNode(
             self.resources.identity_joint_buffer.getGPUAddress(),
         .texture_index = 0,
     };
-    emitNode(self, cmd, mesh, &push);
-}
-
-fn emitNode(
-    self: *Vulkan,
-    cmd: c.VkCommandBuffer,
-    mesh: *const Mesh,
-    push: *Shader.WorldPushConstant,
-) void {
     const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
     c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-    for (mesh.surfaces.items) |surface| {
+    for (surfaces) |surface| {
         push.texture_index = @intFromEnum(surface.texture);
-        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), push);
+        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
         c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
 }

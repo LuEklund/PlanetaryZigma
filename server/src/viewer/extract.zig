@@ -10,7 +10,7 @@ const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
 const Viewer = @import("Viewer.zig");
 
-pub fn frame(world: *World, viewer: *Viewer) !void {
+pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     const list = &viewer.draw_list;
     const models = &viewer.assets.models;
     const camera = viewer.camera;
@@ -51,6 +51,7 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             .index_start = 0,
             .index_count = @intCast(chunk_upload.indices.len),
             .texture = .blank,
+            .transparent = false,
         }};
         entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(entry.mesh_handle), &.{
             .name = "chunk",
@@ -81,13 +82,14 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
         } else camera.pitch,
         .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, &.{}, models);
+    }, models);
 
     for (world.entities.values()) |*entity| {
         const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
         const model_handle = models.get(entity.kind);
-        try viewer.animator.observe(.{
-            .id = entity.id,
+        const slot = try viewer.animations.getOrPut(gpa, entity.id);
+        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(model_handle, models);
+        viewer.animator.observe(slot.value_ptr.*, .{
             .model = model_handle,
             .transform = entity.transform,
             .offset = model_spec.offset,
@@ -95,17 +97,25 @@ pub fn frame(world: *World, viewer: *Viewer) !void {
             .state = shared.entity.animationState(
                 entity.replicated_velocity,
                 @max(0, entity.un_stun_at - world.elapsed_time),
-                false,
                 null,
             ),
             .highlight = entity.kind == .teleporter,
             .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
             .shrink_on_death = entity.kind == .lootbox,
-            .effect = if (entity.kind == .item) .item_effect else null,
-        }, models);
+            .is_local = if (followed) |player| player.id == entity.id else false,
+        });
     }
-    viewer.animator.advance(&.{}, models);
-    viewer.animator.draw(list, &viewer.emitters, models);
+
+    var animation_iterator = viewer.animations.iterator();
+    while (animation_iterator.next()) |slot| {
+        if (world.getPtr(slot.key_ptr.*) != null) continue;
+        viewer.animator.destroy(slot.value_ptr.*);
+        _ = viewer.animations.remove(slot.key_ptr.*);
+        animation_iterator = viewer.animations.iterator();
+    }
+
+    viewer.animator.advance(models);
+    viewer.animator.draw(list, models);
 
     if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);

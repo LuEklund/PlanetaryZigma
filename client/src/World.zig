@@ -8,6 +8,7 @@ const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Options = @import("Options.zig");
 const Emitter = @import("graphics").Emitter;
+const Animator = @import("graphics").Animator;
 const DrawList = @import("contract").DrawList;
 
 pub const DamageEvent = struct {
@@ -25,7 +26,7 @@ pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
-deaths: std.ArrayList(shared.entity.Id) = .empty,
+dying: std.ArrayList(Dying) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 options: Options = .{},
@@ -42,6 +43,13 @@ go_again_pending: bool = false,
 stage: u32 = 0,
 prng: std.Random.DefaultPrng,
 
+pub const Dying = struct {
+    kind: shared.entity.Kind,
+    transform: nz.Transform3D(f32),
+    animation: Animator.Handle,
+    elapsed: f32,
+};
+
 pub const Entity = struct {
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
@@ -56,6 +64,7 @@ pub const Entity = struct {
     override_animation_state: ?shared.entity.State = null,
     stun_time: f32 = 0,
     flags: Flags = .{},
+    animation: Animator.Handle = .none,
 
     transform: nz.Transform3D(f32) = .{},
 
@@ -66,7 +75,6 @@ pub const Entity = struct {
     };
 
     pub const Flags = packed struct {
-        is_dying: bool = false,
         is_teleporter_boss: bool = false,
     };
 
@@ -84,7 +92,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .trigger_events = try .initCapacity(gpa, shared.max_entities),
-        .deaths = try .initCapacity(gpa, shared.max_entities),
+        .dying = try .initCapacity(gpa, shared.max_entities),
         .effects = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
@@ -99,7 +107,7 @@ pub fn deinit(self: *World) void {
     self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
     self.trigger_events.deinit(self.gpa);
-    self.deaths.deinit(self.gpa);
+    self.dying.deinit(self.gpa);
     self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
     self.planet.deinit(self.gpa);
@@ -115,7 +123,7 @@ pub fn clear(self: *World) void {
     self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
     self.trigger_events.clearRetainingCapacity();
-    self.deaths.clearRetainingCapacity();
+    self.dying.clearRetainingCapacity();
     self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
@@ -190,9 +198,12 @@ pub fn flush(self: *World) !void {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
         }
         if (id == self.player_id) self.controller.free_camera = true;
-        if (entity.flags.is_dying or shared.entity.spec(entity.kind).death_duration > 0) {
-            self.deaths.appendAssumeCapacity(id);
-        }
+        self.dying.appendAssumeCapacity(.{
+            .kind = entity.kind,
+            .transform = entity.transform,
+            .animation = entity.animation,
+            .elapsed = 0,
+        });
         _ = self.despawn(id);
     }
 }
@@ -217,19 +228,17 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
             });
         }
     }
+    const was_downed = entity.health <= 0;
     switch (command.amount) {
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
     }
     if (!entity.kind.hasHealth()) return;
-    if (entity.health <= 0 and !entity.flags.is_dying) {
-        entity.flags.is_dying = true;
-        entity.motion.update = null;
-        if (entity.id == self.player_id) self.controller.free_camera = true;
-    } else if (entity.health > 0 and entity.flags.is_dying) {
-        entity.flags.is_dying = false;
-        if (entity.id == self.player_id) {
-            self.controller.free_camera = false;
+    if (entity.id != self.player_id) return;
+    const downed = entity.health <= 0;
+    if (downed != was_downed) {
+        self.controller.free_camera = downed;
+        if (!downed) {
             self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
         }
     }

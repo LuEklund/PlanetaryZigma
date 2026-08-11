@@ -307,7 +307,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             });
         }
 
-        const death_time = ui.animate("death_screen", if (player.flags.is_dying) 1 else 0, 1.2);
+        const death_time = ui.animate("death_screen", if (player.health <= 0) 1 else 0, 1.2);
         if (death_time > 0) {
             const death_message = ui.print("Died of cringe", .{});
             ui.add(null, .{
