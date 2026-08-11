@@ -46,6 +46,7 @@ resources: *Resources,
 highlight_mask: contract.TextureHandle,
 current_frame_inflight: u32 = 0,
 frames: [FrameData.max_frames_inflight]FrameData,
+sorted_draws: std.ArrayList(u32),
 
 pub fn init(data: *const contract.InitOptions) !*Vulkan {
     const gpa = data.gpa;
@@ -82,12 +83,15 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
     self.highlight_mask = self.resources.texture_table.alloc();
     self.writeHighlightMask();
 
+    self.sorted_draws = try .initCapacity(gpa, DrawList.max_draw_meshes);
+
     return self;
 }
 
 pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
     check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
 
+    self.sorted_draws.deinit(gpa);
     self.resources.deinit(gpa, self.vma, self.device);
 
     for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
@@ -499,14 +503,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             if (row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], null, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, cascade_vp.mul(row.model_matrix));
         }
         bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], row.palette_offset, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, cascade_vp.mul(row.model_matrix));
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -531,6 +535,16 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
     ext.vkCmdSetScissorWithCountEXT(cmd, 1, &full_scissor);
 }
 
+const Farhest = struct {
+    rows: []const DrawList.DrawMesh,
+    camera: nz.Vec3(f32),
+
+    fn first(self: @This(), a: u32, b: u32) bool {
+        const to_a = self.rows[a].position - self.camera;
+        const to_b = self.rows[b].position - self.camera;
+        return nz.vec.dot(to_a, to_a) > nz.vec.dot(to_b, to_b);
+    }
+};
 fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
     const color_blend_enables: c.VkBool32 = c.VK_FALSE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
@@ -541,19 +555,55 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
 
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 
+    self.sorted_draws.clearRetainingCapacity();
+    for (0..list.draw_meshes.items.len) |index| self.sorted_draws.appendAssumeCapacity(@intCast(index));
+    std.sort.insertion(u32, self.sorted_draws.items, Farhest{
+        .rows = list.draw_meshes.items,
+        .camera = list.camera.position,
+    }, Farhest.first);
+
     bindVertexShader(cmd, self.resources.shaders.vert(.static));
     bindFragmentShader(cmd, self.resources.shaders.frag(.mesh));
-    for (list.draw_meshes.items) |row| {
+    var near_first = std.mem.reverseIterator(self.sorted_draws.items);
+    while (near_first.next()) |draw_index| {
+        const row = list.draw_meshes.items[draw_index];
         if (row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, row.model_matrix);
+        if (mesh.opaque_count == 0) continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, row.model_matrix);
     }
 
     bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
-    for (list.draw_meshes.items) |row| {
+    near_first = std.mem.reverseIterator(self.sorted_draws.items);
+    while (near_first.next()) |draw_index| {
+        const row = list.draw_meshes.items[draw_index];
         if (!row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, row.model_matrix);
+        if (mesh.opaque_count == 0) continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, row.model_matrix);
+    }
+
+    const transparent_blend: c.VkBool32 = c.VK_TRUE;
+    ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &transparent_blend);
+    ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
+    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
+
+    bindVertexShader(cmd, self.resources.shaders.vert(.static));
+    for (self.sorted_draws.items) |draw_index| {
+        const row = list.draw_meshes.items[draw_index];
+        if (row.skinned) continue;
+        const mesh = self.resources.meshAt(row.mesh) orelse continue;
+        if (mesh.opaque_count == mesh.surfaces.len) continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], null, row.model_matrix);
+    }
+
+    bindVertexShader(cmd, self.resources.shaders.vert(.skinned));
+    for (self.sorted_draws.items) |draw_index| {
+        const row = list.draw_meshes.items[draw_index];
+        if (!row.skinned) continue;
+        const mesh = self.resources.meshAt(row.mesh) orelse continue;
+        if (mesh.opaque_count == mesh.surfaces.len) continue;
+        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], row.palette_offset, row.model_matrix);
     }
 }
 

@@ -325,4 +325,3 @@ pub const State = enum(u16) {
     utility = 4,
     stun = 5,
 };
-
