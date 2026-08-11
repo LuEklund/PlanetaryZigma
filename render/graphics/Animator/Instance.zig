@@ -7,18 +7,14 @@ const Model = @import("../assets/root.zig").Model;
 const Node = @import("../assets/root.zig").Node;
 
 model: u32,
-offset: nz.Transform3D(f32),
-highlight: bool,
-spin_speed: f32,
-shrink_on_death: bool,
-transform: nz.Transform3D(f32),
-is_dying: bool,
-is_local: bool,
+aim: ?Aim,
 state: shared.entity.State,
-spawn_time: f32,
-death_time: f32,
-spin_time: f32,
 skeleton: ?Skeleton,
+
+pub const Aim = struct {
+    pitch: f32,
+    yaw: f32,
+};
 
 pub const fade_duration: f32 = 0.15;
 
@@ -127,17 +123,8 @@ pub const Skeleton = struct {
 pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *const Model) !Instance {
     return .{
         .model = model_handle,
-        .offset = .{ .position = @splat(0), .rotation = .identity, .scale = @splat(1) },
-        .highlight = false,
-        .spin_speed = 0,
-        .shrink_on_death = false,
-        .transform = .{},
-        .is_dying = false,
-        .is_local = false,
+        .aim = null,
         .state = .idle,
-        .spawn_time = 0,
-        .death_time = 0,
-        .spin_time = 0,
         .skeleton = if (model.isSkinned()) try Skeleton.init(gpa, model) else null,
     };
 }

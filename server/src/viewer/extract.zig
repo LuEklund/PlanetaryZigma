@@ -73,37 +73,27 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
         });
     }
 
-    try viewer.animator.begin(.{
-        .delta_time = world.delta_time,
-        .elapsed_time = world.elapsed_time,
-        .local_entity = if (followed) |player| player.id else .none,
-        .camera_pitch = if (followed) |player| pitch: {
-            const planet_up = shared.Planet.up(player.transform.position) orelse break :pitch 0;
-            break :pitch std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
-        } else camera.pitch,
-        .camera_yaw_rotation = if (followed) |player| player.camera.yaw_rotation else camera.yaw_rotation,
-    }, models);
+    const followed_aim: ?graphics.Animator.Aim = if (followed) |player| aim: {
+        const planet_up = shared.Planet.up(player.transform.position) orelse break :aim null;
+        const pitch = std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
+        var yaw_offset = player.transform.rotation.conjugate().mul(player.camera.yaw_rotation);
+        if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
+        var yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w), -1.2, 1.2);
+        if (@abs(yaw) < 0.05) yaw = 0;
+        break :aim .{ .pitch = std.math.clamp(-pitch, -1.0, 1.0), .yaw = yaw };
+    } else null;
 
     for (world.entities.values()) |*entity| {
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
-        const model_handle = models.get(entity.kind);
         const slot = try viewer.animations.getOrPut(gpa, entity.id);
-        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(model_handle, models);
-        viewer.animator.observe(slot.value_ptr.*, .{
-            .model = model_handle,
-            .transform = entity.transform,
-            .offset = model_spec.offset,
-            .is_dying = false,
-            .state = shared.entity.animationState(
-                entity.replicated_velocity,
-                @max(0, entity.un_stun_at - world.elapsed_time),
-                null,
-            ),
-            .highlight = entity.kind == .teleporter,
-            .spin_speed = if (entity.kind == .item) graphics.Animator.item_spin_speed else 0,
-            .shrink_on_death = entity.kind == .lootbox,
-            .is_local = if (followed) |player| player.id == entity.id else false,
-        });
+        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(models.get(entity.kind), models);
+        viewer.animator.setState(
+            slot.value_ptr.*,
+            entity.replicated_velocity,
+            @max(0, entity.un_stun_at - world.elapsed_time),
+            null,
+        );
+        const is_followed = if (followed) |player| player.id == entity.id else false;
+        viewer.animator.setAim(slot.value_ptr.*, if (is_followed) followed_aim else null);
     }
 
     var animation_iterator = viewer.animations.iterator();
@@ -114,8 +104,27 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
         animation_iterator = viewer.animations.iterator();
     }
 
-    viewer.animator.advance(models);
-    viewer.animator.draw(list, models);
+    try viewer.animator.advance(world.delta_time, models);
+
+    for (world.entities.values()) |*entity| {
+        const handle = viewer.animations.get(entity.id) orelse continue;
+        const pose = viewer.animator.pose(handle) orelse continue;
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
+        var transform = entity.transform;
+        if (entity.kind == .item) {
+            transform.rotation = transform.rotation
+                .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * world.elapsed_time, .{ 0, 1, 0 }))
+                .normalize();
+        }
+        appendDraws(
+            list,
+            models,
+            pose,
+            transform.toMat4x4().mul(model_spec.offset.toMat4x4()),
+            entity.transform.position,
+            entity.kind == .teleporter,
+        );
+    }
 
     if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);
@@ -135,6 +144,56 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     }
 
     viewer.render.api.update(viewer.render.handle, list);
+}
+
+fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: graphics.Animator.Pose, top_matrix: nz.Mat4x4(f32), position: nz.Vec3(f32), highlight: bool) void {
+    if (pose.skeleton) |skeleton| {
+        var skin_offsets: [graphics.Animator.max_skins]u32 = undefined;
+        const palette_base: u32 = @intCast(list.joint_matrices.items.len);
+        list.joint_matrices.appendSliceAssumeCapacity(skeleton.joints);
+        for (0..skeleton.skin_starts.len - 1) |skin_index| {
+            skin_offsets[skin_index] = palette_base + skeleton.skin_starts[skin_index];
+        }
+        const mesh_handles = models.modelPtr(pose.model).mesh_handles;
+        for (skeleton.nodes) |node| {
+            const mesh_id = node.mesh_id orelse continue;
+            if (mesh_id >= mesh_handles.len) continue;
+            list.draw_meshes.appendAssumeCapacity(.{
+                .mesh = @enumFromInt(mesh_handles[mesh_id]),
+                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
+                .position = position,
+                .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
+                .skinned = true,
+                .highlight = highlight,
+            });
+        }
+        return;
+    }
+
+    const model = models.modelPtr(pose.model);
+    if (model.isSkinned()) return;
+    if (model.isEmpty()) {
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = .none,
+            .model_matrix = top_matrix,
+            .position = position,
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = highlight,
+        });
+        return;
+    }
+    for (model.surfaces.items) |surface| {
+        if (surface.mesh_id >= model.mesh_handles.len) continue;
+        list.draw_meshes.appendAssumeCapacity(.{
+            .mesh = @enumFromInt(model.mesh_handles[surface.mesh_id]),
+            .model_matrix = top_matrix.mul(surface.model_matrix),
+            .position = position,
+            .palette_offset = null,
+            .skinned = false,
+            .highlight = highlight,
+        });
+    }
 }
 
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };

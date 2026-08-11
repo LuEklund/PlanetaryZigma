@@ -65,6 +65,7 @@ pub const Entity = struct {
     stun_time: f32 = 0,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
+    spawned_at: f32 = 0,
 
     transform: nz.Transform3D(f32) = .{},
 
@@ -245,7 +246,7 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
 }
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {
-    try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
+    try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time });
     return self.entities.getPtr(id).?;
 }
 
