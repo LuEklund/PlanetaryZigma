@@ -562,7 +562,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
     for (world.entities.values()) |*entity| {
         var bar_min_scale: f32 = 0.35;
         var bar_max_scale: f32 = 1;
-        if (!entity.kind.hasHealth()) continue;
+        if (entity.max_health <= 0) continue;
         if (entity.id == world.player_id) continue;
         const health_current = entity.health;
         const health_max = entity.max_health;

@@ -305,7 +305,7 @@ pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const 
 }
 
 pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
-    if (!entity.kind.hasHealth()) return .ignored;
+    if (entity.max_health <= 0) return .ignored;
     const before = entity.health;
     if (before <= 0) return .ignored;
     var current = @min(entity.max_health, entity.health + amount);
@@ -343,14 +343,164 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
     if (!ready(attacker, action, world.elapsed_time)) return .on_cooldown;
 
     if (potential_target) |target| {
+        const assigned = shared.entity.spec(attacker.kind).skills.get(action) orelse return .out_of_range;
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
-        const range = shared.entity.spec(attacker.kind).range.get(action);
-        if (distance >= range) return .out_of_range;
+        if (distance >= assigned.range) return .out_of_range;
     }
 
     attacker.last_used.set(action, world.elapsed_time);
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .action = .{ .id = attacker.id, .action = action } } });
     return .fired;
+}
+
+pub const aim_range: f32 = 300;
+const rocket_speed: f32 = 65;
+const bullet_speed: f32 = 100;
+const rocket_lifetime: f32 = 2.5;
+const bullet_lifetime: f32 = 1;
+
+pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: shared.entity.Skill) !void {
+    const planet_up = shared.Planet.up(caster.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    switch (skill) {
+        .shoot => {
+            //TODO: muzzle socket per model; every skill assumes position + up * 0.8.
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const start_direction = if (target) |target_entity|
+                nz.vec.normalize(target_entity.transform.position - muzzle_position)
+            else if (caster.kind == .player) direction: {
+                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
+                const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+                const aim_point = aimPoint(world, caster.transform.position, caster.controller.input.camera_position, camera_forward);
+                break :direction nz.vec.normalize(aim_point - muzzle_position);
+            } else nz.vec.normalize(caster.transform.forward());
+            const rocket_chance = caster.stat(.rocket_chance);
+            const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
+            const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
+            _ = try world.spawn(.{
+                .kind = switch (projectile_kind) {
+                    .cube => .projectile_cube,
+                    .rocket => .projectile_rocket,
+                },
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
+                    .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(start_direction, if (fires_rocket) rocket_speed else bullet_speed),
+                .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
+                .damage = caster.stat(.damage),
+            });
+        },
+        .spread_shot => {
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            var start_direction: nz.Vec3(f32) = undefined;
+            var spread_right: nz.Vec3(f32) = undefined;
+            var spread_up: nz.Vec3(f32) = undefined;
+            if (target == null and caster.kind == .player) {
+                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
+                const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+                const aim_point = aimPoint(world, caster.transform.position, caster.controller.input.camera_position, camera_forward);
+                start_direction = nz.vec.normalize(aim_point - muzzle_position);
+                spread_right = nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
+                spread_up = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 1, 0 }));
+            } else {
+                start_direction = if (target) |target_entity|
+                    nz.vec.normalize(target_entity.transform.position - muzzle_position)
+                else
+                    nz.vec.normalize(caster.transform.forward());
+                spread_right = nz.vec.normalize(nz.vec.cross(start_direction, planet_up));
+                spread_up = nz.vec.cross(spread_right, start_direction);
+            }
+            const rocket_chance = caster.stat(.rocket_chance);
+            const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
+            const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
+            for (0..10) |_| {
+                const theta = world.prng.random().float(f32) * std.math.tau;
+                const spread = world.prng.random().float(f32) * 0.1;
+                const off_set = nz.vec.scale(spread_right, @cos(theta) * spread) + nz.vec.scale(spread_up, @sin(theta) * spread);
+                _ = try world.spawn(.{
+                    .kind = switch (projectile_kind) {
+                        .cube => .projectile_cube,
+                        .rocket => .projectile_rocket,
+                    },
+                    .owner_id = caster.id,
+                    .transform = .{
+                        .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
+                        .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
+                    },
+                    .replicated_velocity = nz.vec.scale(start_direction + off_set, if (fires_rocket) rocket_speed else bullet_speed),
+                    .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
+                    .damage = caster.stat(.damage),
+                    .flags = .{ .invincible = true },
+                });
+            }
+        },
+        .dash => {
+            const forward = if (target) |target_entity|
+                nz.vec.normalize(target_entity.transform.position - caster.transform.position)
+            else if (caster.kind == .player) camera: {
+                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
+                break :camera nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+            } else nz.vec.normalize(caster.transform.forward());
+            const fwd_proj = forward - nz.vec.scale(planet_up, nz.vec.dot(forward, planet_up));
+            world.physics_commands.appendAssumeCapacity(.{
+                .verb = .{ .teleport = caster.transform.position + nz.vec.scale(fwd_proj, 2 * caster.stat(.speed)) },
+                .id = caster.id,
+            });
+        },
+        .use_equipment => {
+            const effect = shared.Item.equippedEffect(caster.inventory) orelse return;
+            switch (effect) {
+                .freeze_world => world.world_unstun_at = world.elapsed_time + 10,
+            }
+        },
+        .shoot_cube => {
+            const target_entity = target orelse return;
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
+            _ = try world.spawn(.{
+                .kind = .projectile_cube,
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                    .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(aim_dir, 50),
+                .lifetime = 2,
+                .damage = caster.stat(.damage),
+            });
+        },
+        .melee => {
+            const target_entity = target orelse return;
+            _ = world.removeHealth(target_entity, caster.stat(.damage), caster);
+        },
+        .arc_jump => {
+            const target_entity = target orelse return;
+            world.act(.{ .id = caster.id, .verb = .{ .arc_jump = target_entity.transform.position } });
+        },
+        .plant => {},
+    }
+}
+
+fn aimPoint(world: *World, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+    const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
+    const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
+    const translation = nz.vec.scale(camera_forward, aim_range);
+    const entity_distance: f32 = if (world.rayCast(ray_start, translation)) |hit| nz.vec.length(hit.point - ray_start) else aim_range;
+
+    var terrain_distance: f32 = aim_range;
+    var traveled: f32 = 0;
+    for (0..128) |_| {
+        const sample = ray_start + nz.vec.scale(camera_forward, traveled);
+        const distance = world.planet.sample(sample);
+        if (distance < 0.05) {
+            terrain_distance = traveled;
+            break;
+        }
+        traveled += @max(distance * 0.5, 0.05);
+        if (traveled >= aim_range) break;
+    }
+    return ray_start + nz.vec.scale(camera_forward, @min(entity_distance, terrain_distance));
 }
 
 /// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for

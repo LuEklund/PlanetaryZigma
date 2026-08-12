@@ -70,11 +70,10 @@ pub fn init(
             self.death_duration = death_clip.end - death_clip.start;
         }
     }
-    if (spec.action_clips) |action_clips| {
-        for (action_clips.values, &self.action_clips.values) |maybe_name, *slot_clip| {
-            slot_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
-                return reportMissingClip(model, clip_name, spec) else null;
-        }
+    for (kind_spec.skills.values, &self.action_clips.values) |maybe_assigned, *action_clip| {
+        const assigned = maybe_assigned orelse continue;
+        const clip_name = assigned.clip orelse continue;
+        action_clip.* = model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, spec);
     }
 }
 

@@ -234,7 +234,7 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
     }
-    if (!entity.kind.hasHealth()) return;
+    if (entity.max_health <= 0) return;
     if (entity.id != self.player_id) return;
     const downed = entity.health <= 0;
     if (downed != was_downed) {

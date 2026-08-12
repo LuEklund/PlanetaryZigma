@@ -8,6 +8,11 @@ flat: std.EnumArray(Stat, f32) = .initFill(0),
 percent: std.EnumArray(Stat, f32) = .initFill(0),
 description: []const u8,
 is_equipment: bool = false,
+on_use: ?Effect = null,
+
+pub const Effect = enum {
+    freeze_world,
+};
 
 pub const items: []const Item = &.{
     .{
@@ -64,6 +69,7 @@ pub const items: []const Item = &.{
         .id = .freezer,
         .description = "freeze time for 20s",
         .is_equipment = true,
+        .on_use = .freeze_world,
     },
 };
 
@@ -152,6 +158,15 @@ pub const Stat = enum(u16) {
         };
     }
 };
+
+pub fn equippedEffect(inv: Inventory) ?Effect {
+    inline for (std.enums.values(Kind)) |kind| {
+        if (get(kind).on_use) |effect| {
+            if (inv.get(kind) > 0) return effect;
+        }
+    }
+    return null;
+}
 
 pub fn cooldownStat(action: entity.Action) Stat {
     return switch (action) {

@@ -64,6 +64,7 @@ pub fn collider(kind: Kind) ?Collider {
 }
 
 const no_clip: ?[]const u8 = null;
+const no_skill: ?AssignedSkill = null;
 
 pub const ModelLookNodeNames = struct {
     spine: ?[]const u8,
@@ -75,7 +76,6 @@ pub const ModelSpec = struct {
     path: []const u8,
     offset: nz.Transform3D(f32) = .{},
     loop_clips: ?std.EnumArray(Loop, ?[]const u8),
-    action_clips: ?std.EnumArray(Action, ?[]const u8),
     look_node_names: ?ModelLookNodeNames = null,
     overlay_root_name: ?[]const u8 = null,
 };
@@ -90,12 +90,11 @@ pub fn modelSpec(kind: Kind) ?ModelSpec {
 pub const Spec = struct {
     collider: ?Collider,
     model: ?ModelSpec,
-    has_health: bool,
     base_stats: ?std.EnumArray(Stat, f32) = null,
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
-    range: std.EnumArray(Action, f32) = .initFill(0),
+    skills: std.EnumArray(Action, ?AssignedSkill) = .initFill(null),
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -103,7 +102,6 @@ pub fn spec(kind: Kind) Spec {
         .unknown => .{
             .collider = null,
             .model = null,
-            .has_health = false,
         },
         .player => .{
             .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } }, .motion = .dynamic, .layer = .moving },
@@ -115,13 +113,9 @@ pub fn spec(kind: Kind) Spec {
                     .walk = "Run",
                     .death = "Death",
                 }),
-                .action_clips = .initDefault(no_clip, .{
-                    .primary = "Run",
-                }),
                 .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
             },
-            .has_health = true,
             .base_stats = .initDefault(0, .{
                 .health = 100,
                 .speed = 10,
@@ -132,25 +126,27 @@ pub fn spec(kind: Kind) Spec {
                 .secondary_cooldown = 5,
                 .equipment_cooldown = 5,
             }),
-            .range = .initDefault(0, .{ .primary = 10 }),
+            .skills = .initDefault(no_skill, .{
+                .primary = .{ .skill = .shoot, .range = 10, .clip = "Run" },
+                .secondary = .{ .skill = .spread_shot },
+                .utility = .{ .skill = .dash },
+                .equipment = .{ .skill = .use_equipment },
+            }),
             .currency = 100,
         },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .path = "objects/pillar.glb", .loop_clips = null, .action_clips = null },
-            .has_health = false,
+            .model = .{ .path = "objects/pillar.glb", .loop_clips = null },
         },
         .lootbox => .{
             .collider = .{ .shape = .{ .box = .{ .x = 0.6, .y = 0.6, .z = 0.6 } }, .motion = .static, .layer = .moving },
-            .model = .{ .path = "objects/lootbox.glb", .loop_clips = null, .action_clips = null },
-            .has_health = false,
+            .model = .{ .path = "objects/lootbox.glb", .loop_clips = null },
             .death_duration = 0.35,
             .currency = 10,
         },
         .platform => .{
             .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
             .model = null,
-            .has_health = false,
         },
         .target_dummy => .{
             .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
@@ -158,22 +154,18 @@ pub fn spec(kind: Kind) Spec {
                 .idle = "idle",
                 .walk = "walk",
                 .death = "Death",
-            }), .action_clips = .initDefault(no_clip, .{
-                .primary = "attack",
             }) },
-            .has_health = true,
             .base_stats = .initDefault(0, .{ .health = 1000 }),
+            .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .clip = "attack" } }),
         },
         .projectile_cube => .{
             .collider = null,
             .model = null,
-            .has_health = true,
             .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .projectile_rocket => .{
             .collider = null,
-            .model = .{ .path = "objects/rocket.glb", .loop_clips = null, .action_clips = null },
-            .has_health = true,
+            .model = .{ .path = "objects/rocket.glb", .loop_clips = null },
             .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
@@ -183,12 +175,9 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "idle",
                     .walk = "walk",
                     .death = "Death",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .primary = "attack",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .primary_cooldown = 1 }),
-                .range = .initDefault(0, .{ .primary = 2 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .range = 2, .clip = "attack" } }),
                 .currency = 5,
             },
             .tubloida => .{
@@ -197,12 +186,9 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "idle",
                     .walk = "walk",
                     .death = "Death",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .primary = "attack_range",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .primary_cooldown = 5 }),
-                .range = .initDefault(0, .{ .primary = 10 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 10, .clip = "attack_range" } }),
                 .currency = 7,
             },
             .hunkloid => .{
@@ -211,13 +197,12 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "Idle",
                     .walk = "Walk",
                     .death = "Death",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .primary = "Attack",
-                    .utility = "Secondary",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .primary_cooldown = 5, .utility_cooldown = 5 }),
-                .range = .initDefault(0, .{ .primary = 3, .utility = 12 }),
+                .skills = .initDefault(no_skill, .{
+                    .primary = .{ .skill = .melee, .range = 3, .clip = "Attack" },
+                    .utility = .{ .skill = .arc_jump, .range = 12, .clip = "Secondary" },
+                }),
                 .currency = 30,
             },
             .bloorp_lord => .{
@@ -226,20 +211,16 @@ pub fn spec(kind: Kind) Spec {
                     .idle = "Idle",
                     .walk = "Walking",
                     .death = "Death",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .primary = "Spawn_Enemy",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.01 }),
-                .range = .initDefault(0, .{ .primary = 40 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 40, .clip = "Spawn_Enemy" } }),
                 .currency = 100,
             },
             .blooploid => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .loop_clips = null, .action_clips = null },
-                .has_health = true,
+                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .loop_clips = null },
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
-                .range = .initDefault(0, .{ .primary = 15 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
                 .currency = 7,
             },
             .acorn => .{
@@ -247,12 +228,12 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .path = "objects/acorn.glb", .offset = .{ .position = .{ 0, -0.4, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Run",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .utility = "Planted",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),
-                .range = .initDefault(0, .{ .primary = 2 }),
+                .skills = .initDefault(no_skill, .{
+                    .primary = .{ .skill = .melee, .range = 2 },
+                    .utility = .{ .skill = .plant, .clip = "Planted" },
+                }),
                 .currency = 5,
             },
             .grass1 => .{
@@ -260,27 +241,22 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .path = "objects/grass1.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walk",
-                }), .action_clips = .initDefault(no_clip, .{
-                    .primary = "Attack",
                 }) },
-                .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 30, .speed = 3, .damage = 10, .primary_cooldown = 0.75 }),
-                .range = .initDefault(0, .{ .primary = 2 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .range = 2, .clip = "Attack" } }),
                 .currency = 25,
             },
             .healer => .{
                 .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .path = "objects/Healer.glb", .offset = enemy_model_offset, .loop_clips = null, .action_clips = null },
-                .has_health = true,
+                .model = .{ .path = "objects/Healer.glb", .offset = enemy_model_offset, .loop_clips = null },
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
-                .range = .initDefault(0, .{ .primary = 15 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
                 .currency = 7,
             },
         },
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
-            .model = .{ .path = Item.getModel(item_kind), .loop_clips = null, .action_clips = null },
-            .has_health = false,
+            .model = .{ .path = Item.getModel(item_kind), .loop_clips = null },
             .spawn_duration = 0.35,
         },
     };
@@ -323,10 +299,6 @@ pub const Kind = union(enum) {
         return std.meta.eql(kind, other_kind);
     }
 
-    pub fn hasHealth(kind: Kind) bool {
-        return spec(kind).has_health;
-    }
-
     pub fn projectileKind(kind: Kind) ?ProjectileKind {
         return switch (kind) {
             .projectile_cube => .cube,
@@ -341,6 +313,23 @@ pub const Action = enum(u16) {
     secondary,
     utility,
     equipment,
+};
+
+pub const Skill = enum {
+    shoot,
+    spread_shot,
+    dash,
+    use_equipment,
+    shoot_cube,
+    melee,
+    arc_jump,
+    plant,
+};
+
+pub const AssignedSkill = struct {
+    skill: Skill,
+    range: f32 = 0,
+    clip: ?[]const u8 = null,
 };
 
 pub const Loop = enum(u16) {

@@ -70,7 +70,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
         }
         const pose = animator.pose(entity.animation) orelse continue;
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null, .action_clips = null };
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
         if (entity.kind == .item) {
             const rig = models.rig(models.get(entity.kind));
@@ -93,7 +93,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     }
     for (world.dying.items) |corpse| {
         const pose = animator.pose(corpse.animation) orelse continue;
-        const corpse_spec: shared.entity.ModelSpec = shared.entity.modelSpec(corpse.kind) orelse .{ .path = "", .loop_clips = null, .action_clips = null };
+        const corpse_spec: shared.entity.ModelSpec = shared.entity.modelSpec(corpse.kind) orelse .{ .path = "", .loop_clips = null };
         var transform = corpse.transform;
         if (corpse.kind == .lootbox) {
             const death_duration = models.rig(models.get(corpse.kind)).death_duration;

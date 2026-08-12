@@ -110,7 +110,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const handle = viewer.animations.get(entity.id) orelse continue;
         const pose = viewer.animator.pose(handle) orelse continue;
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null, .action_clips = null };
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
         if (entity.kind == .item) {
             transform.rotation = transform.rotation
