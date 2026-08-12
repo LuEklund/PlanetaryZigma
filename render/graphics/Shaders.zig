@@ -1,4 +1,3 @@
-
 const Shaders = @This();
 
 const std = @import("std");
@@ -22,6 +21,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Shaders {
     defer root.close(io);
     var self: Shaders = .{ .dir = try root.openDir(io, "shaders", .{}), .entries = .empty };
     errdefer self.deinit(gpa, io);
+
     for (std.enums.values(contract.Shader.Kind)) |kind| _ = try self.add(gpa, contract.Shader.get(kind).path);
     return self;
 }
