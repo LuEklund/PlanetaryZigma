@@ -592,7 +592,7 @@ fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_fra
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_TRUE);
-    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_TRUE);
+    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
 
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 

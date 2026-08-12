@@ -22,8 +22,9 @@ pub const Entry = struct {
 
 dir: std.Io.Dir,
 entries: std.ArrayList(Entry),
-default: u32,
 reloaded: std.ArrayList(u32),
+
+default: u32,
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     const root = try assets.openDir(io);
@@ -90,13 +91,13 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         if (entry.path.len == 0) continue;
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
 
-        const kind_spec = entity.spec(entry.kind.?);
-        const model_spec = kind_spec.model orelse continue;
+        const kind_spec: ?entity.Spec = if (entry.kind) |kind| entity.spec(kind) else null;
+        const model_spec: ?entity.ModelSpec = if (kind_spec) |spec| (spec.model orelse continue) else null;
         const bytes = try assets.read(gpa, io, self.dir, entry.path);
         defer gpa.free(bytes);
 
         var fresh: Model = .empty;
-        var parsed = glb(gpa, bytes, &fresh, model_spec.clip_names != null) catch |err| {
+        var parsed = glb(gpa, bytes, &fresh, if (model_spec) |spec| spec.clip_names != null else false) catch |err| {
             std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
             fresh.deinit(gpa);
             continue;
@@ -114,7 +115,7 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         entry.model.deinit(gpa);
         entry.model = fresh;
 
-        try entry.rig.init(gpa, &entry.model, kind_spec, model_spec);
+        if (kind_spec) |spec| try entry.rig.init(gpa, &entry.model, spec, model_spec.?);
         try uploadMeshes(gpa, renderer, entry, &parsed);
         try self.reloaded.append(gpa, @intCast(handle));
     }

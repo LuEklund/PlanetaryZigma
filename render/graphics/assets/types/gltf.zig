@@ -160,7 +160,7 @@ pub fn parseScene(
                     }
                 }
             }
-            is_transparent.* = canBlend(material, material_image.*, upload.images);
+            is_transparent.* = material.alphaMode == .BLEND;
         }
     }
 
@@ -490,16 +490,4 @@ pub fn parseScene(
     return upload;
 }
 
-fn canBlend(material: zgltf.Material, image_index: ?usize, images: []const Bitmap) bool {
-    if (material.alphaMode != .BLEND) return false;
-    const metallic_roughness = material.pbrMetallicRoughness orelse return false;
-    if (metallic_roughness.baseColorFactor[3] < 1) return true;
-    const index = image_index orelse return false;
-    const image = images[index];
-    if (image.nr_channel < 4 or image.pixels == null) return false;
-    const pixel_count: usize = @intCast(image.width * image.height);
-    for (0..pixel_count) |pixel| {
-        if (image.pixels[pixel * 4 + 3] < 255) return true;
-    }
-    return false;
-}
+
