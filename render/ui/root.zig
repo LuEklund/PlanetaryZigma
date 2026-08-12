@@ -94,7 +94,8 @@ pub const Layout = struct {
     child_anchor: struct { x: Anchor = .start, y: Anchor = .start } = .{},
     texture: contract.TextureHandle = .blank,
     gap: f32 = 0,
-    //TODO: Padding
+    padding: f32 = 0,
+    floating: bool = false,
     text: ?Text = null,
     name: ?[]const u8 = null,
     children: []const Layout = &.{},
@@ -238,11 +239,11 @@ pub fn textSize(self: *const Ui, text: []const u8, size: f32) Size2D {
     return .{ .width = metrics.width, .height = metrics.bottom - metrics.top };
 }
 
-fn startOffset(anchor: Layout.Anchor, available: f32, request: f32) f32 {
+fn startOffset(anchor: Layout.Anchor, available: f32, request: f32, padding: f32) f32 {
     return switch (anchor) {
-        .start => 0,
+        .start => padding,
         .center => (available - request) / 2,
-        .end => available - request,
+        .end => available - padding - request,
     };
 }
 
@@ -271,6 +272,7 @@ fn resolveLayout(self: *Ui) void {
     while (index > 0) {
         index -= 1;
         const child = self.nodes.items[index];
+        if (child.layout.floating) continue;
         const parent_id = child.parent_id orelse continue;
         const parent = &self.nodes.items[parent_id];
         parent.children_size += parent.layout.gap + switch (parent.layout.axis_align) {
@@ -286,26 +288,27 @@ fn resolveLayout(self: *Ui) void {
 
         node.rect.left = origin.left + node.layout.offset.left;
         node.rect.top = origin.top + node.layout.offset.top;
-        if (parent_node) |parent| {
+        if (parent_node) |parent| if (!node.layout.floating) {
             const child_anchor = parent.layout.child_anchor;
             if (parent.layout.axis_align == .horizontal) {
                 node.rect.left += parent.offset;
-                node.rect.top += startOffset(child_anchor.y, origin.height, node.rect.height);
+                node.rect.top += startOffset(child_anchor.y, origin.height, node.rect.height, parent.layout.padding);
             } else {
                 node.rect.top += parent.offset;
-                node.rect.left += startOffset(child_anchor.x, origin.width, node.rect.width);
+                node.rect.left += startOffset(child_anchor.x, origin.width, node.rect.width, parent.layout.padding);
             }
+
             parent.offset += parent.layout.gap + switch (parent.layout.axis_align) {
                 .horizontal => node.rect.width,
                 .vertical => node.rect.height,
             };
-        }
+        };
 
         // initialize this node's offset (where its first child starts) from its main-axis anchor
         const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
         node.offset = switch (node.layout.axis_align) {
-            .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent),
-            .vertical => startOffset(node.layout.child_anchor.y, node.rect.height, extent),
+            .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent, node.layout.padding),
+            .vertical => startOffset(node.layout.child_anchor.y, node.rect.height, extent, node.layout.padding),
         };
     }
 }
@@ -336,8 +339,8 @@ fn pushQuads(self: *Ui) void {
                 x: f32,
                 y: f32,
             } = .{
-                .x = node.rect.left + startOffset(anchor.x, node.rect.width, metrics.width),
-                .y = node.rect.top + startOffset(anchor.y, node.rect.height, metrics.bottom - metrics.top) - metrics.top,
+                .x = node.rect.left + startOffset(anchor.x, node.rect.width, metrics.width, node.layout.padding),
+                .y = node.rect.top + startOffset(anchor.y, node.rect.height, metrics.bottom - metrics.top, node.layout.padding) - metrics.top,
             };
             for (text.data) |char| {
                 const index: usize = @intCast(std.math.clamp(@as(i32, char) - 32, 0, 95));
