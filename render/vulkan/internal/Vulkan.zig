@@ -504,14 +504,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             if (row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, cascade_vp.mul(row.model_matrix));
         }
         bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, cascade_vp.mul(row.model_matrix));
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -592,7 +592,7 @@ fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_fra
     ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
     ext.vkCmdSetPrimitiveTopologyEXT(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     ext.vkCmdSetDepthTestEnableEXT(cmd, c.VK_TRUE);
-    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_FALSE);
+    ext.vkCmdSetDepthWriteEnableEXT(cmd, c.VK_TRUE);
 
     self.bindWorldDescriptors(cmd, current_frame, self.resources.pipeline_layouts.get(.world).handle);
 

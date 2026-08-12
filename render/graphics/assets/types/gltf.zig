@@ -161,13 +161,6 @@ pub fn parseScene(
                 }
             }
             is_transparent.* = canBlend(material, material_image.*, upload.images);
-            std.debug.print("material '{s}' alphaMode={t} baseColorAlpha={d:.3} image={?d} -> transparent={}\n", .{
-                material.name orelse "<unnamed>",
-                material.alphaMode,
-                if (material.pbrMetallicRoughness) |pbr| pbr.baseColorFactor[3] else 1,
-                material_image.*,
-                is_transparent.*,
-            });
         }
     }
 
