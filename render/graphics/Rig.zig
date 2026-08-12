@@ -10,14 +10,16 @@ const std = @import("std");
 const shared = @import("shared");
 const Model = @import("assets/root.zig").Model;
 
-state_clips: std.EnumArray(shared.entity.State, ?usize),
+loop_clips: std.EnumArray(shared.entity.Loop, ?usize),
+action_clips: std.EnumArray(shared.entity.Action, ?usize),
 look_nodes: []usize,
 overlay_mask: ?[]bool,
 spawn_duration: f32,
 death_duration: f32,
 
 pub const empty: Rig = .{
-    .state_clips = .initFill(null),
+    .loop_clips = .initFill(null),
+    .action_clips = .initFill(null),
     .look_nodes = &.{},
     .overlay_mask = null,
     .spawn_duration = 0,
@@ -57,15 +59,21 @@ pub fn init(
         self.overlay_mask = overlay_mask;
     }
 
-    if (spec.clip_names) |clip_names| {
-        for (clip_names.values, &self.state_clips.values) |maybe_name, *state_clip| {
-            state_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
+    if (spec.loop_clips) |loop_clips| {
+        for (loop_clips.values, &self.loop_clips.values) |maybe_name, *loop_clip| {
+            loop_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
                 return reportMissingClip(model, clip_name, spec) else null;
         }
         // The death animation's own length beats whatever the spec guessed.
-        if (self.state_clips.get(.death)) |index| {
+        if (self.loop_clips.get(.death)) |index| {
             const death_clip = model.clips[index];
             self.death_duration = death_clip.end - death_clip.start;
+        }
+    }
+    if (spec.action_clips) |action_clips| {
+        for (action_clips.values, &self.action_clips.values) |maybe_name, *slot_clip| {
+            slot_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
+                return reportMissingClip(model, clip_name, spec) else null;
         }
     }
 }

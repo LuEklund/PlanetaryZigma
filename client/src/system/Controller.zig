@@ -114,7 +114,7 @@ suppress_escape_release: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 show_stats: bool = false,
-cooldown: std.EnumArray(shared.entity.Slot, f32) = .initFill(0),
+cooldown: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};

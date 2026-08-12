@@ -182,11 +182,11 @@ pub fn update(world: *World) !void {
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
         //TODO: equipment to be with skills? and not with items?
-        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0 and world.useAbility(player, null, .equipment) == .fired) {
+        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0 and world.useAction(player, null, .equipment) == .fired) {
             world.world_unstun_at = world.elapsed_time + 10;
         }
 
-        if (input.keys.attack and world.useAbility(player, null, .primary) == .fired) {
+        if (input.keys.attack and world.useAction(player, null, .primary) == .fired) {
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
@@ -210,7 +210,7 @@ pub fn update(world: *World) !void {
                 .damage = player.stat(.damage),
             });
         }
-        if (input.keys.secondary and world.useAbility(player, null, .secondary) == .fired) {
+        if (input.keys.secondary and world.useAction(player, null, .secondary) == .fired) {
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
@@ -240,7 +240,7 @@ pub fn update(world: *World) !void {
             }
         }
 
-        if (input.keys.utility and world.useAbility(player, null, .utility) == .fired) {
+        if (input.keys.utility and world.useAction(player, null, .utility) == .fired) {
             world.physics_commands.appendAssumeCapacity(.{
                 .verb = .{ .teleport = player.transform.position + nz.vec.scale(fwd_proj, 2 * speed) },
                 .id = player_id,

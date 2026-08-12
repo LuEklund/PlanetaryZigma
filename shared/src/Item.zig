@@ -153,8 +153,8 @@ pub const Stat = enum(u16) {
     }
 };
 
-pub fn cooldownStat(slot: entity.Slot) Stat {
-    return switch (slot) {
+pub fn cooldownStat(action: entity.Action) Stat {
+    return switch (action) {
         .primary => .primary_cooldown,
         .secondary => .secondary_cooldown,
         .utility => .utility_cooldown,

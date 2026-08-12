@@ -208,9 +208,9 @@ pub const Event = union(enum) {
         interacted: entity.Id,
     };
 
-    pub const Trigger = struct {
+    pub const Action = struct {
         id: entity.Id,
-        state: entity.State,
+        action: entity.Action,
     };
 
     pub const Stun = struct {
@@ -233,7 +233,7 @@ pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
-    trigger: Trigger,
+    action: Action,
     stun: Stun,
     interact: Interact,
     effect: Effect,
