@@ -94,10 +94,7 @@ pub const Spec = struct {
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
-    primary_range: f32 = 0,
-    utility_range: f32 = 0,
-    secondary_range: f32 = 0,
-    equipment_range: f32 = 0,
+    range: std.EnumArray(Slot, f32) = .initFill(0),
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -132,7 +129,7 @@ pub fn spec(kind: Kind) Spec {
                 .secondary_cooldown = 5,
                 .equipment_cooldown = 5,
             }),
-            .primary_range = 10,
+            .range = .initDefault(0, .{ .primary = 10 }),
             .currency = 100,
         },
         .teleporter => .{
@@ -186,7 +183,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .primary_cooldown = 1 }),
-                .primary_range = 2,
+                .range = .initDefault(0, .{ .primary = 2 }),
                 .currency = 5,
             },
             .tubloida => .{
@@ -199,7 +196,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .primary_cooldown = 5 }),
-                .primary_range = 10,
+                .range = .initDefault(0, .{ .primary = 10 }),
                 .currency = 7,
             },
             .hunkloid => .{
@@ -213,8 +210,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .primary_cooldown = 5, .utility_cooldown = 5 }),
-                .primary_range = 3,
-                .utility_range = 12,
+                .range = .initDefault(0, .{ .primary = 3, .utility = 12 }),
                 .currency = 30,
             },
             .bloorp_lord => .{
@@ -227,7 +223,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.01 }),
-                .primary_range = 40,
+                .range = .initDefault(0, .{ .primary = 40 }),
                 .currency = 100,
             },
             .blooploid => .{
@@ -235,7 +231,7 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .clip_names = null },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
-                .primary_range = 15,
+                .range = .initDefault(0, .{ .primary = 15 }),
                 .currency = 7,
             },
             .acorn => .{
@@ -247,7 +243,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),
-                .primary_range = 2,
+                .range = .initDefault(0, .{ .primary = 2 }),
                 .currency = 5,
             },
             .grass1 => .{
@@ -259,7 +255,7 @@ pub fn spec(kind: Kind) Spec {
                 }) },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 30, .speed = 3, .damage = 10, .primary_cooldown = 0.75 }),
-                .primary_range = 2,
+                .range = .initDefault(0, .{ .primary = 2 }),
                 .currency = 25,
             },
             .healer => .{
@@ -267,7 +263,7 @@ pub fn spec(kind: Kind) Spec {
                 .model = .{ .path = "objects/Healer.glb", .offset = enemy_model_offset, .clip_names = null },
                 .has_health = true,
                 .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
-                .primary_range = 15,
+                .range = .initDefault(0, .{ .primary = 15 }),
                 .currency = 7,
             },
         },
@@ -330,6 +326,28 @@ pub const Kind = union(enum) {
     }
 };
 
+pub const Slot = enum {
+    primary,
+    secondary,
+    utility,
+    equipment,
+
+    pub fn state(slot: Slot) State {
+        return switch (slot) {
+            .primary => .attack,
+            .secondary => .secondary,
+            .utility => .utility,
+            .equipment => .equipment,
+        };
+    }
+};
+
+pub fn animationState(velocity: nz.Vec3(f32), stun_time: f32, override: ?State) State {
+    if (override) |forced| return forced;
+    if (stun_time > 0) return .stun;
+    return if (nz.vec.length(velocity) > 0.5) .walk else .idle;
+}
+
 pub const State = enum(u16) {
     idle,
     walk,
@@ -339,4 +357,14 @@ pub const State = enum(u16) {
     secondary,
     equipment,
     stun,
+
+    pub fn slot(state: State) ?Slot {
+        return switch (state) {
+            .attack => .primary,
+            .secondary => .secondary,
+            .utility => .utility,
+            .equipment => .equipment,
+            .idle, .walk, .death, .stun => null,
+        };
+    }
 };

@@ -86,12 +86,13 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const slot = try viewer.animations.getOrPut(gpa, entity.id);
         if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(models.get(entity.kind), models);
-        viewer.animator.setState(
-            slot.value_ptr.*,
+        const state = shared.entity.animationState(
             entity.replicated_velocity,
             @max(0, entity.un_stun_at - world.elapsed_time),
             null,
         );
+        const rig = models.rig(models.get(entity.kind));
+        viewer.animator.setLoop(slot.value_ptr.*, rig.state_clips.get(state), if (state == .death) .hold_last else .loop);
         const is_followed = if (followed) |player| player.id == entity.id else false;
         viewer.animator.setAim(slot.value_ptr.*, if (is_followed) followed_aim else null);
     }

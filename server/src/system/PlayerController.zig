@@ -10,6 +10,7 @@ const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
+const interact_cooldown: f32 = 0.3;
 
 pub fn update(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
@@ -109,8 +110,8 @@ pub fn update(world: *World) !void {
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
         }
 
-        if (player.controller.input.keys.interact and world.elapsed_time - player.last_attack >= player.stat(.primary_cooldown)) if (world.getPtr(player.interacting)) |entity| {
-            player.last_attack = world.elapsed_time;
+        if (player.controller.input.keys.interact and world.elapsed_time - player.last_interact >= interact_cooldown) if (world.getPtr(player.interacting)) |entity| {
+            player.last_interact = world.elapsed_time;
             switch (entity.kind) {
                 .lootbox => if (player.currency >= entity.currency) {
                     world.queueDespawn(entity.id);
@@ -141,7 +142,7 @@ pub fn update(world: *World) !void {
                             .kind = .{ .enemy = .bloorp_lord },
                             .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
                             .flags = .{ .is_teleporter_boss = true },
-                            .last_attack = world.elapsed_time,
+                            .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
                         });
                     } else {
                         if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
@@ -181,11 +182,11 @@ pub fn update(world: *World) !void {
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
         //TODO: equipment to be with skills? and not with items?
-        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0 and world.attackLands(player, null, .equipment)) {
+        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0 and world.useAbility(player, null, .equipment) == .fired) {
             world.world_unstun_at = world.elapsed_time + 10;
         }
 
-        if (input.keys.attack and world.attackLands(player, null, .attack)) {
+        if (input.keys.attack and world.useAbility(player, null, .primary) == .fired) {
             //TODO: hardcoded capsule half-height; becomes a muzzle socket.
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
@@ -209,7 +210,7 @@ pub fn update(world: *World) !void {
                 .damage = player.stat(.damage),
             });
         }
-        if (input.keys.secondary and world.attackLands(player, null, .secondary)) {
+        if (input.keys.secondary and world.useAbility(player, null, .secondary) == .fired) {
             const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
             const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
             const start_direction = nz.vec.normalize(aim_point - muzzle_position);
@@ -239,7 +240,7 @@ pub fn update(world: *World) !void {
             }
         }
 
-        if (input.keys.utility and world.attackLands(player, null, .utility)) {
+        if (input.keys.utility and world.useAbility(player, null, .utility) == .fired) {
             world.physics_commands.appendAssumeCapacity(.{
                 .verb = .{ .teleport = player.transform.position + nz.vec.scale(fwd_proj, 2 * speed) },
                 .id = player_id,

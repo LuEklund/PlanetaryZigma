@@ -117,7 +117,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .size = .{
                         .percent = .{
                             .width = 1,
-                            .height = std.math.clamp((world.controller.primary_cooldown + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
+                            .height = std.math.clamp((world.controller.cooldown.get(.primary) + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),
@@ -133,7 +133,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .size = .{
                         .percent = .{
                             .width = 1,
-                            .height = std.math.clamp((world.controller.secondary_cooldown + player.stat(.secondary_cooldown) - world.elapsed_time) / player.stat(.secondary_cooldown), 0, 1),
+                            .height = std.math.clamp((world.controller.cooldown.get(.secondary) + player.stat(.secondary_cooldown) - world.elapsed_time) / player.stat(.secondary_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),
@@ -149,7 +149,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .size = .{
                         .percent = .{
                             .width = 1,
-                            .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                            .height = std.math.clamp((world.controller.cooldown.get(.utility) + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),
@@ -189,7 +189,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         .size = .{
                             .percent = .{
                                 .width = 1,
-                                .height = std.math.clamp((world.controller.equipment_cooldown + player.stat(.equipment_cooldown) - world.elapsed_time) / player.stat(.equipment_cooldown), 0, 1),
+                                .height = std.math.clamp((world.controller.cooldown.get(.equipment) + player.stat(.equipment_cooldown) - world.elapsed_time) / player.stat(.equipment_cooldown), 0, 1),
                             },
                         },
                         .floating = true,

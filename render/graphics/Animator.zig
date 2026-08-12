@@ -82,19 +82,12 @@ fn resolveRig(models: *const Models, instance: *const Instance) *const Rig {
     return models.rig(instance.model);
 }
 
-/// The walk threshold and the stun/override precedence are animation rules, so they live
-/// here rather than being decided twice by the client and the server viewer.
-pub fn setState(self: *Animator, handle: Handle, velocity: nz.Vec3(f32), stun_time: f32, override: ?shared.entity.State) void {
+pub const LoopMode = Instance.LoopMode;
+
+pub fn setLoop(self: *Animator, handle: Handle, clip: ?usize, mode: LoopMode) void {
     const instance = self.instancePtr(handle) orelse return;
-    if (override) |forced| {
-        instance.state = forced;
-        return;
-    }
-    if (stun_time > 0) {
-        instance.state = .stun;
-        return;
-    }
-    instance.state = if (nz.vec.length(velocity) > 0.5) .walk else .idle;
+    instance.loop_clip = clip;
+    instance.loop_mode = mode;
 }
 
 pub fn setAim(self: *Animator, handle: Handle, aim: ?Instance.Aim) void {
@@ -102,11 +95,10 @@ pub fn setAim(self: *Animator, handle: Handle, aim: ?Instance.Aim) void {
     instance.aim = aim;
 }
 
-pub fn trigger(self: *Animator, handle: Handle, state: shared.entity.State, models: *const Models) void {
+pub fn playOverlay(self: *Animator, handle: Handle, clip: usize, models: *const Models) void {
     const instance = self.instancePtr(handle) orelse return;
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
-    const clip_index = resolveRig(models, instance).state_clips.get(state) orelse return;
-    skeleton.playOverlay(resolveModel(models, instance), clip_index);
+    skeleton.playOverlay(resolveModel(models, instance), clip);
 }
 
 pub fn advance(self: *Animator, delta_time: f32, models: *Models) !void {
@@ -155,7 +147,7 @@ pub fn pose(self: *Animator, handle: Handle) ?Pose {
 
 fn playAnimation(delta_time: f32, instance: *Instance, model: *const Model, rig: *const Rig) void {
     const skeleton = if (instance.skeleton) |*instance_skeleton| instance_skeleton else return;
-    const clip_index = rig.state_clips.get(instance.state);
+    const clip_index = instance.loop_clip;
     if (clip_index) |index| {
         if (index != skeleton.player.active) {
             skeleton.playClip(model, index);
@@ -175,7 +167,7 @@ fn playAnimation(delta_time: f32, instance: *Instance, model: *const Model, rig:
         skeleton.player.current_time += delta_time;
 
         if (skeleton.player.current_time > animation.end) {
-            if (instance.state == .death)
+            if (instance.loop_mode == .hold_last)
                 skeleton.player.current_time = animation.end
             else
                 skeleton.player.current_time -= animation.end - animation.start;

@@ -116,10 +116,8 @@ pub const Entity = struct {
 
     un_stun_at: f32 = 0,
 
-    last_attack: f32 = 0,
-    last_utility: f32 = 0,
-    last_secondary: f32 = 0,
-    last_equipment: f32 = 0,
+    last_used: std.EnumArray(shared.entity.Slot, f32) = .initFill(0),
+    last_interact: f32 = 0,
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
@@ -335,29 +333,24 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
     return if (current <= 0) .killed else .changed;
 }
 
-pub fn attackLands(world: *World, attacker: *Entity, potential_target: ?*const Entity, attack: shared.entity.State) bool {
-    const last_used, const range, const cooldown = switch (attack) {
-        .attack => .{ &attacker.last_attack, shared.entity.spec(attacker.kind).primary_range, attacker.stat(.primary_cooldown) },
-        .utility => .{ &attacker.last_utility, shared.entity.spec(attacker.kind).utility_range, attacker.stat(.utility_cooldown) },
-        .secondary => .{ &attacker.last_secondary, shared.entity.spec(attacker.kind).secondary_range, attacker.stat(.secondary_cooldown) },
-        .equipment => .{ &attacker.last_equipment, shared.entity.spec(attacker.kind).equipment_range, attacker.stat(.equipment_cooldown) },
-        .death, .idle, .stun, .walk => @panic("WTF you doing"),
-        //TODO: should skills triggers be seperated from movement/states?
-    };
+pub fn ready(entity: *const Entity, slot: shared.entity.Slot, now: f32) bool {
+    return now - entity.last_used.get(slot) >= entity.stat(shared.Item.cooldownStat(slot));
+}
 
-    if (world.elapsed_time - last_used.* < cooldown) return false;
-    last_used.* = world.elapsed_time;
+pub const Outcome = enum { fired, on_cooldown, out_of_range };
+
+pub fn useAbility(world: *World, attacker: *Entity, potential_target: ?*const Entity, slot: shared.entity.Slot) Outcome {
+    if (!ready(attacker, slot, world.elapsed_time)) return .on_cooldown;
 
     if (potential_target) |target| {
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
-        if (distance < range) {
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
-            return true;
-        } else return false;
+        const range = shared.entity.spec(attacker.kind).range.get(slot);
+        if (distance >= range) return .out_of_range;
     }
 
-    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = attack } } });
-    return true;
+    attacker.last_used.set(slot, world.elapsed_time);
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = attacker.id, .state = slot.state() } } });
+    return .fired;
 }
 
 /// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
