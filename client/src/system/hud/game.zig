@@ -117,7 +117,23 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .size = .{
                         .percent = .{
                             .width = 1,
-                            .height = std.math.clamp((world.controller.primary_cooldown + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
+                            .height = std.math.clamp((world.controller.cooldown.get(.primary) + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
+                        },
+                    },
+                    .color = .new(1, 0, 0, 0.4),
+                },
+            },
+        });
+        ui.add("action_bar", .{
+            .name = "secondary",
+            .size = .{ .fixed = action_item },
+            .color = .new(1, 1, 0, 1),
+            .children = &.{
+                .{
+                    .size = .{
+                        .percent = .{
+                            .width = 1,
+                            .height = std.math.clamp((world.controller.cooldown.get(.secondary) + player.stat(.secondary_cooldown) - world.elapsed_time) / player.stat(.secondary_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),
@@ -133,17 +149,14 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .size = .{
                         .percent = .{
                             .width = 1,
-                            .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                            .height = std.math.clamp((world.controller.cooldown.get(.utility) + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),
                 },
             },
         });
-        ui.add("action_bar", .{
-            .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
-        });
+
         ui.add("action_bar", .{
             .name = "equipment",
             .size = .{ .fixed = action_item },
@@ -176,7 +189,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         .size = .{
                             .percent = .{
                                 .width = 1,
-                                .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                                .height = std.math.clamp((world.controller.cooldown.get(.equipment) + player.stat(.equipment_cooldown) - world.elapsed_time) / player.stat(.equipment_cooldown), 0, 1),
                             },
                         },
                         .floating = true,
@@ -549,7 +562,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
     for (world.entities.values()) |*entity| {
         var bar_min_scale: f32 = 0.35;
         var bar_max_scale: f32 = 1;
-        if (!entity.kind.hasHealth()) continue;
+        if (entity.max_health <= 0) continue;
         if (entity.id == world.player_id) continue;
         const health_current = entity.health;
         const health_max = entity.max_health;

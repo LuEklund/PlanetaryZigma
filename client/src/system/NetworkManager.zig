@@ -416,17 +416,12 @@ fn handleCommand(
                     world.teleporter_id = .none;
                     world.stage = new_stage;
                 },
-                .trigger => |trigger| {
+                .action => |action| {
                     //TODO: move out of NetworkManager.
-                    if (trigger.id == world.player_id) {
-                        const action_cooldown = switch (trigger.state) {
-                            .attack => &world.controller.primary_cooldown,
-                            .utility => &world.controller.uitility_cooldown,
-                            else => null,
-                        };
-                        if (action_cooldown) |cooldown| cooldown.* = world.elapsed_time;
+                    if (action.id == world.player_id) {
+                        world.controller.cooldown.set(action.action, world.elapsed_time);
                     }
-                    world.trigger_events.appendAssumeCapacity(trigger);
+                    world.action_events.appendAssumeCapacity(action);
                 },
                 .stun => |stun| if (world.getPtr(stun.id)) |entity| {
                     entity.stun_time = stun.duration;

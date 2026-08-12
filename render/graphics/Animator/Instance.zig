@@ -1,15 +1,17 @@
 const Instance = @This();
 
 const std = @import("std");
-const shared = @import("shared");
 const nz = @import("numz");
 const Model = @import("../assets/root.zig").Model;
 const Node = @import("../assets/root.zig").Node;
 
 model: u32,
 aim: ?Aim,
-state: shared.entity.State,
+loop_clip: ?usize,
+loop_mode: LoopMode,
 skeleton: ?Skeleton,
+
+pub const LoopMode = enum { loop, hold_last };
 
 pub const Aim = struct {
     pitch: f32,
@@ -124,7 +126,8 @@ pub fn init(gpa: std.mem.Allocator, model_handle: u32, model: *const Model) !Ins
     return .{
         .model = model_handle,
         .aim = null,
-        .state = .idle,
+        .loop_clip = null,
+        .loop_mode = .loop,
         .skeleton = if (model.isSkinned()) try Skeleton.init(gpa, model) else null,
     };
 }

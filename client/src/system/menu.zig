@@ -29,5 +29,5 @@ pub fn update(world: *World) void {
     const bozo = world.getPtr(bozo_id) orelse return;
     bozo.motion.update = null;
     bozo.transform.scale = @splat(bozo_scale);
-    bozo.override_animation_state = .walk;
+    bozo.override_animation_loop = .walk;
 }

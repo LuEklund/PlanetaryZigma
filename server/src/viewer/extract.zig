@@ -86,12 +86,13 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const slot = try viewer.animations.getOrPut(gpa, entity.id);
         if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(models.get(entity.kind), models);
-        viewer.animator.setState(
-            slot.value_ptr.*,
+        const loop = shared.entity.animationLoop(
             entity.replicated_velocity,
             @max(0, entity.un_stun_at - world.elapsed_time),
             null,
         );
+        const rig = models.rig(models.get(entity.kind));
+        viewer.animator.setLoop(slot.value_ptr.*, rig.loop_clips.get(loop), if (loop == .death) .hold_last else .loop);
         const is_followed = if (followed) |player| player.id == entity.id else false;
         viewer.animator.setAim(slot.value_ptr.*, if (is_followed) followed_aim else null);
     }
@@ -109,7 +110,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const handle = viewer.animations.get(entity.id) orelse continue;
         const pose = viewer.animator.pose(handle) orelse continue;
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .clip_names = null };
+        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
         if (entity.kind == .item) {
             transform.rotation = transform.rotation

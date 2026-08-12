@@ -25,7 +25,7 @@ pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
 pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
-trigger_events: std.ArrayList(shared.net.Event.Trigger) = .empty,
+action_events: std.ArrayList(shared.net.Event.Action) = .empty,
 dying: std.ArrayList(Dying) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
@@ -61,7 +61,7 @@ pub const Entity = struct {
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
     motion: Motion = .{},
-    override_animation_state: ?shared.entity.State = null,
+    override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
@@ -92,7 +92,7 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
         .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
-        .trigger_events = try .initCapacity(gpa, shared.max_entities),
+        .action_events = try .initCapacity(gpa, shared.max_entities),
         .dying = try .initCapacity(gpa, shared.max_entities),
         .effects = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
@@ -107,7 +107,7 @@ pub fn deinit(self: *World) void {
     self.pending_despawn.deinit(self.gpa);
     self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
-    self.trigger_events.deinit(self.gpa);
+    self.action_events.deinit(self.gpa);
     self.dying.deinit(self.gpa);
     self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
@@ -123,7 +123,7 @@ pub fn clear(self: *World) void {
     self.pending_despawn.clearRetainingCapacity();
     self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
-    self.trigger_events.clearRetainingCapacity();
+    self.action_events.clearRetainingCapacity();
     self.dying.clearRetainingCapacity();
     self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
@@ -234,7 +234,7 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
         .set_current => |value| entity.health = value,
         .set_max => |value| entity.max_health = value,
     }
-    if (!entity.kind.hasHealth()) return;
+    if (entity.max_health <= 0) return;
     if (entity.id != self.player_id) return;
     const downed = entity.health <= 0;
     if (downed != was_downed) {

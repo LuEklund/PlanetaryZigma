@@ -23,24 +23,26 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
 
     for (world.entities.values()) |*entity| {
         if (entity.animation == .none) entity.animation = try animator.create(models.get(entity.kind), models);
-        animator.setState(
-            entity.animation,
+        const loop = shared.entity.animationLoop(
             if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
             entity.stun_time,
-            if (entity.max_health > 0 and entity.health <= 0) .death else entity.override_animation_state,
+            if (entity.max_health > 0 and entity.health <= 0) .death else entity.override_animation_loop,
         );
+        const rig = models.rig(models.get(entity.kind));
+        animator.setLoop(entity.animation, rig.loop_clips.get(loop), if (loop == .death) .hold_last else .loop);
         animator.setAim(entity.animation, if (entity.id == world.player_id) aimAt(entity.transform.rotation, world) else null);
     }
 
     for (world.dying.items) |corpse| {
-        animator.setState(corpse.animation, @splat(0), 0, .death);
+        animator.setLoop(corpse.animation, models.rig(models.get(corpse.kind)).loop_clips.get(.death), .hold_last);
     }
 
-    for (world.trigger_events.items) |trigger_event| {
-        const entity = world.getPtr(trigger_event.id) orelse continue;
-        animator.trigger(entity.animation, trigger_event.state, models);
+    for (world.action_events.items) |action_event| {
+        const entity = world.getPtr(action_event.id) orelse continue;
+        if (models.rig(models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
+            animator.playOverlay(entity.animation, clip, models);
     }
-    world.trigger_events.clearRetainingCapacity();
+    world.action_events.clearRetainingCapacity();
 
     try animator.advance(world.delta_time, models);
 }

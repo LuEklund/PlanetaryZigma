@@ -338,7 +338,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
 }
 
 fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
-    if (!entity.kind.hasHealth()) return;
+    if (entity.max_health <= 0) return;
     try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
     try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
 }

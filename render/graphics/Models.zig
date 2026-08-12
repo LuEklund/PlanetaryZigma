@@ -97,7 +97,14 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         defer gpa.free(bytes);
 
         var fresh: Model = .empty;
-        var parsed = glb(gpa, bytes, &fresh, if (model_spec) |spec| spec.clip_names != null else false) catch |err| {
+        const animated = if (model_spec) |spec| animated: {
+            if (spec.loop_clips != null) break :animated true;
+            for (kind_spec.?.skills.values) |maybe_assigned| {
+                if (maybe_assigned) |assigned| if (assigned.clip != null) break :animated true;
+            }
+            break :animated false;
+        } else false;
+        var parsed = glb(gpa, bytes, &fresh, animated) catch |err| {
             std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
             fresh.deinit(gpa);
             continue;
