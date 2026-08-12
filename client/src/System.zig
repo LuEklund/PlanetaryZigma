@@ -45,6 +45,7 @@ network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
 request_exit: bool = false,
+teleport_sphere_model: u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -74,13 +75,13 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.render.api.deinit(self.render.handle);
 
     self.assets = try .init(data.gpa, data.io);
+    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalSphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
 
     try self.assets.update(data.gpa, data.io, &self.render);
-
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);

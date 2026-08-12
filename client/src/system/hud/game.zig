@@ -98,7 +98,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .axis_align = .vertical,
             .gap = icon_gap,
         });
-        //TODO: padding ples
         const action_item: Ui.Size2D = .{ .height = 90, .width = 90 };
         const action_bar: Ui.Size2D = .{ .height = 100, .width = 400 };
         ui.add(null, .{
@@ -107,12 +106,12 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .offset = .{ .left = ui.screen_width - action_bar.width, .top = ui.screen_height - action_bar.height },
             .color = .new(1, 0, 0, 1),
             .gap = 10,
+            .padding = 5,
         });
         ui.add("action_bar", .{
             .name = "primary",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
-            .offset = .{ .left = 5, .top = 5 },
             .children = &.{
                 .{
                     .size = .{
@@ -129,7 +128,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .name = "utility",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
-            .offset = .{ .left = 5, .top = 5 },
             .children = &.{
                 .{
                     .size = .{
@@ -145,13 +143,11 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         ui.add("action_bar", .{
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
-            .offset = .{ .left = 5, .top = 5 },
         });
         ui.add("action_bar", .{
             .name = "equipment",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
-            .offset = .{ .left = 5, .top = 5 },
         });
         var icon_index: usize = 0;
         inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
@@ -183,6 +179,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                                 .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
                             },
                         },
+                        .floating = true,
                         .color = .new(1, 0, 0, 0.4),
                     });
                 } else {

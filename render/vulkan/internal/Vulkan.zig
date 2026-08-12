@@ -504,14 +504,14 @@ fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const
             if (row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, cascade_vp.mul(row.model_matrix));
         }
         bindVertexShader(cmd, self.resources.shaders.vert(.shadow_skinned));
         for (list.draw_meshes.items) |row| {
             if (!row.skinned) continue;
             if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, cascade_vp.mul(row.model_matrix));
+            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, cascade_vp.mul(row.model_matrix));
         }
     }
     ext.vkCmdEndRendering(cmd);
@@ -583,11 +583,8 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         if (mesh.opaque_count == 0) continue;
         drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, row.model_matrix);
     }
-
 }
 
-/// Runs AFTER the sky, because these draws do not write depth — the sky fills anything left
-/// at the far plane, so anything blended before it gets painted over.
 fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
     const transparent_blend: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &transparent_blend);

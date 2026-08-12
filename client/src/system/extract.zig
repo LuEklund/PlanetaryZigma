@@ -43,6 +43,22 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             .highlight = false,
         });
     }
+    if (world.getPtr(world.teleporter_id)) |teleporter| {
+        if (teleporter.teleporter.state == .active) {
+            const sphere: nz.Transform3D(f32) = .{
+                .position = teleporter.transform.position,
+                .scale = @splat(shared.teleporter.charge_distance),
+            };
+            appendDraws(
+                list,
+                models,
+                .{ .model = system.teleport_sphere_model, .skeleton = null },
+                sphere.toMat4x4(),
+                teleporter.transform.position,
+                false,
+            );
+        }
+    }
 
     for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
     world.effects.clearRetainingCapacity();
