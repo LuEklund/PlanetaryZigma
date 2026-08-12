@@ -125,6 +125,22 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             },
         });
         ui.add("action_bar", .{
+            .name = "secondary",
+            .size = .{ .fixed = action_item },
+            .color = .new(1, 1, 0, 1),
+            .children = &.{
+                .{
+                    .size = .{
+                        .percent = .{
+                            .width = 1,
+                            .height = std.math.clamp((world.controller.secondary_cooldown + player.stat(.secondary_cooldown) - world.elapsed_time) / player.stat(.secondary_cooldown), 0, 1),
+                        },
+                    },
+                    .color = .new(1, 0, 0, 0.4),
+                },
+            },
+        });
+        ui.add("action_bar", .{
             .name = "utility",
             .size = .{ .fixed = action_item },
             .color = .new(1, 1, 0, 1),
@@ -140,10 +156,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                 },
             },
         });
-        ui.add("action_bar", .{
-            .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
-        });
+
         ui.add("action_bar", .{
             .name = "equipment",
             .size = .{ .fixed = action_item },
@@ -176,7 +189,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         .size = .{
                             .percent = .{
                                 .width = 1,
-                                .height = std.math.clamp((world.controller.uitility_cooldown + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                                .height = std.math.clamp((world.controller.equipment_cooldown + player.stat(.equipment_cooldown) - world.elapsed_time) / player.stat(.equipment_cooldown), 0, 1),
                             },
                         },
                         .floating = true,

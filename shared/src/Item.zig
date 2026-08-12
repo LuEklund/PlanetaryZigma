@@ -126,6 +126,8 @@ pub const Stat = enum(u16) {
     damage,
     primary_cooldown,
     utility_cooldown,
+    secondary_cooldown,
+    equipment_cooldown,
     regen,
     rocket_chance,
     lightning_chance,
@@ -145,7 +147,7 @@ pub const Stat = enum(u16) {
         const linear = (base_base.get(stat) + flat) * (1 + percent);
         return switch (stat) {
             .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance => linear,
-            .primary_cooldown, .utility_cooldown => @max(0.1, base_base.get(stat) + flat) / (1 + percent),
+            .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown => @max(0.1, base_base.get(stat) + flat) / (1 + percent),
             .block_chance => 1 - 1 / (1 + linear),
         };
     }

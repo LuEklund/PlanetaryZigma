@@ -27,6 +27,8 @@ pub fn update(world: *World) !void {
         const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
 
         const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+        const camera_right = nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
+        const camera_up = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 1, 0 }));
         const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
         const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
             nz.vec.normalize(fwd_proj)
@@ -178,7 +180,8 @@ pub fn update(world: *World) !void {
             world.act(.{ .id = player_id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
-        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0) {
+        //TODO: equipment to be with skills? and not with items?
+        if (input.keys.use_equipment and player.inventory.get(.freezer) > 0 and world.attackLands(player, null, .equipment)) {
             world.world_unstun_at = world.elapsed_time + 10;
         }
 
@@ -205,8 +208,37 @@ pub fn update(world: *World) !void {
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
                 .damage = player.stat(.damage),
             });
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .trigger = .{ .id = player_id, .state = .attack } } });
         }
+        if (input.keys.secondary and world.attackLands(player, null, .secondary)) {
+            const muzzle_position = transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_point = aimPoint(world, transform.position, input.camera_position, camera_forward);
+            const start_direction = nz.vec.normalize(aim_point - muzzle_position);
+
+            const rocket_chance = player.stat(.rocket_chance);
+            const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
+            const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
+            for (0..10) |_| {
+                const theta = world.prng.random().float(f32) * std.math.tau;
+                const spread = world.prng.random().float(f32) * 0.1;
+                const off_set = nz.vec.scale(camera_right, @cos(theta) * spread) + nz.vec.scale(camera_up, @sin(theta) * spread);
+                _ = try world.spawn(.{
+                    .kind = switch (projectile_kind) {
+                        .cube => .projectile_cube,
+                        .rocket => .projectile_rocket,
+                    },
+                    .owner_id = player.id,
+                    .transform = .{
+                        .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
+                        .rotation = shared.entity.projectileRotation(projectile_kind, start_direction, planet_up),
+                    },
+                    .replicated_velocity = nz.vec.scale(start_direction + off_set, if (fires_rocket) rocket_speed else bullet_speed),
+                    .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
+                    .damage = player.stat(.damage),
+                    .flags = .{ .invincible = true },
+                });
+            }
+        }
+
         if (input.keys.utility and world.attackLands(player, null, .utility)) {
             world.physics_commands.appendAssumeCapacity(.{
                 .verb = .{ .teleport = player.transform.position + nz.vec.scale(fwd_proj, 2 * speed) },

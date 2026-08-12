@@ -295,7 +295,7 @@ pub fn updateProjectiles(world: *World) void {
         const projectile_kind = projectile.kind.projectileKind() orelse continue;
         switch (impact.what) {
             .terrain => {
-                world.queueDespawn(impact.projectile);
+                _ = world.removeHealth(projectile, projectile.max_health, null);
                 const owner_entity = world.getPtr(projectile.owner_id) orelse continue;
                 switch (projectile_kind) {
                     .cube => {},
@@ -321,7 +321,7 @@ pub fn updateProjectiles(world: *World) void {
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
                     },
                 }
-                world.queueDespawn(impact.projectile);
+                _ = world.removeHealth(projectile, projectile.max_health, null);
             },
         }
     }

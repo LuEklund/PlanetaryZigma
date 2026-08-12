@@ -422,6 +422,8 @@ fn handleCommand(
                         const action_cooldown = switch (trigger.state) {
                             .attack => &world.controller.primary_cooldown,
                             .utility => &world.controller.uitility_cooldown,
+                            .secondary => &world.controller.secondary_cooldown,
+                            .equipment => &world.controller.equipment_cooldown,
                             else => null,
                         };
                         if (action_cooldown) |cooldown| cooldown.* = world.elapsed_time;

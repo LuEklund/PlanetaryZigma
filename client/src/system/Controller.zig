@@ -55,6 +55,7 @@ pub const actions: []const Action = &.{
     .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = .{ .label = "Free Camera" } },
     .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = .{ .label = "Debug Colliders" } },
     .{ .id = .utility, .default = .{ .key = .left_shift }, .bindable = .{ .label = "Utility" } },
+    .{ .id = .secondary, .default = .{ .mouse = .right }, .bindable = .{ .label = "Secondary" } },
     .{ .id = .dev_f1, .default = .{ .key = .f1 }, .dev_command = .f1 },
     .{ .id = .dev_f2, .default = .{ .key = .f2 }, .dev_command = .f2 },
     .{ .id = .dev_f3, .default = .{ .key = .f3 }, .dev_command = .f3 },
@@ -116,6 +117,7 @@ show_stats: bool = false,
 primary_cooldown: f32 = 0,
 uitility_cooldown: f32 = 0,
 equipment_cooldown: f32 = 0,
+secondary_cooldown: f32 = 0,
 
 pub fn clearInput(self: *Controller) void {
     self.input_map = .{};

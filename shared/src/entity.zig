@@ -96,6 +96,8 @@ pub const Spec = struct {
     currency: u32 = 0,
     primary_range: f32 = 0,
     utility_range: f32 = 0,
+    secondary_range: f32 = 0,
+    equipment_range: f32 = 0,
 };
 
 pub fn spec(kind: Kind) Spec {
@@ -120,7 +122,16 @@ pub fn spec(kind: Kind) Spec {
                 .overlay_root_name = "mixamorig:Spine1",
             },
             .has_health = true,
-            .base_stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .primary_cooldown = 0.3, .regen = 1, .utility_cooldown = 5 }),
+            .base_stats = .initDefault(0, .{
+                .health = 100,
+                .speed = 10,
+                .damage = 1,
+                .regen = 1,
+                .primary_cooldown = 0.3,
+                .utility_cooldown = 5,
+                .secondary_cooldown = 5,
+                .equipment_cooldown = 5,
+            }),
             .primary_range = 10,
             .currency = 100,
         },
@@ -155,12 +166,14 @@ pub fn spec(kind: Kind) Spec {
         .projectile_cube => .{
             .collider = null,
             .model = null,
-            .has_health = false,
+            .has_health = true,
+            .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .projectile_rocket => .{
             .collider = null,
             .model = .{ .path = "objects/rocket.glb", .clip_names = null },
-            .has_health = false,
+            .has_health = true,
+            .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
@@ -318,10 +331,12 @@ pub const Kind = union(enum) {
 };
 
 pub const State = enum(u16) {
-    idle = 0,
-    walk = 1,
-    attack = 2,
-    death = 3,
-    utility = 4,
-    stun = 5,
+    idle,
+    walk,
+    attack,
+    death,
+    utility,
+    secondary,
+    equipment,
+    stun,
 };

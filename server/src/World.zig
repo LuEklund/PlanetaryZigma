@@ -118,6 +118,8 @@ pub const Entity = struct {
 
     last_attack: f32 = 0,
     last_utility: f32 = 0,
+    last_secondary: f32 = 0,
+    last_equipment: f32 = 0,
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
@@ -337,7 +339,10 @@ pub fn attackLands(world: *World, attacker: *Entity, potential_target: ?*const E
     const last_used, const range, const cooldown = switch (attack) {
         .attack => .{ &attacker.last_attack, shared.entity.spec(attacker.kind).primary_range, attacker.stat(.primary_cooldown) },
         .utility => .{ &attacker.last_utility, shared.entity.spec(attacker.kind).utility_range, attacker.stat(.utility_cooldown) },
-        else => unreachable,
+        .secondary => .{ &attacker.last_secondary, shared.entity.spec(attacker.kind).secondary_range, attacker.stat(.secondary_cooldown) },
+        .equipment => .{ &attacker.last_equipment, shared.entity.spec(attacker.kind).equipment_range, attacker.stat(.equipment_cooldown) },
+        .death, .idle, .stun, .walk => @panic("WTF you doing"),
+        //TODO: should skills triggers be seperated from movement/states?
     };
 
     if (world.elapsed_time - last_used.* < cooldown) return false;
