@@ -111,7 +111,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         ui.add("action_bar", .{
             .name = "primary",
             .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
+            .color = .new(1, 1, 1, 1),
             .children = &.{
                 .{
                     .size = .{

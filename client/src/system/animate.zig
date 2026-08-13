@@ -36,14 +36,11 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
     for (world.dying.items) |corpse| {
         animator.setLoop(corpse.animation, models.rig(models.get(corpse.kind)).loop_clips.get(.death), .hold_last);
     }
-
     for (world.action_events.items) |action_event| {
         const entity = world.getPtr(action_event.id) orelse continue;
         if (models.rig(models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
             animator.playOverlay(entity.animation, clip, models);
     }
-    world.action_events.clearRetainingCapacity();
-
     try animator.advance(world.delta_time, models);
 }
 

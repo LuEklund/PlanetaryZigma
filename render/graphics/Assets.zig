@@ -1,4 +1,3 @@
-
 //! The renderer arrives as a parameter and is never stored: nothing here may hold a pointer
 //! into a library that can be swapped underneath it.
 
@@ -26,10 +25,10 @@ models: Models,
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Assets {
     var self: Assets = .{
         .root = try @import("assets/root.zig").findRoot(io),
+        .fonts = try .init(gpa, io),
         .shaders = try .init(gpa, io),
         .textures = try .init(gpa, io),
         .skybox = try .init(io),
-        .fonts = try .init(gpa, io),
         .models = try .init(gpa, io),
     };
     errdefer self.deinit(gpa, io);
