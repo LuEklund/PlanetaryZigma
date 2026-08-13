@@ -2,7 +2,6 @@ const Vulkan = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const shared = @import("shared");
 const nz = @import("numz");
 const Window = @import("Window");
 const TextureTable = @import("Vulkan/TextureTable.zig");

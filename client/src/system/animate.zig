@@ -22,7 +22,7 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
     }
 
     for (world.entities.values()) |*entity| {
-        if (entity.animation == .none) entity.animation = try animator.create(models.get(entity.kind), models);
+        if (entity.animation == .none) entity.animation = try animator.create(if (entity.kind == .item_pickup) models.getItem(entity.item.?) else models.get(entity.kind), models);
         const loop = shared.entity.animationLoop(
             if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
             entity.stun_time,

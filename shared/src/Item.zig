@@ -1,9 +1,7 @@
 const Item = @This();
 
 const std = @import("std");
-const entity = @import("entity.zig");
 
-name: []const u8,
 flat: std.EnumArray(Stat, f32) = .initFill(0),
 percent: std.EnumArray(Stat, f32) = .initFill(0),
 description: []const u8,
@@ -14,94 +12,102 @@ pub const Effect = enum {
     freeze_world,
 };
 
-pub const items: []const Item = &.{
-    .{
-        .name = "oxygen_tank",
+pub const items = struct {
+    pub const oxygen_tank: Item = .{
         .flat = .initDefault(0, .{ .health = 10 }),
         .description = "+10 max health",
-    },
-    .{
-        .name = "energy_drink",
+    };
+
+    pub const energy_drink: Item = .{
         .flat = .initDefault(0, .{ .speed = 1 }),
         .description = "+1 speed",
-    },
-    .{
-        .name = "gun",
+    };
+
+    pub const gun: Item = .{
         .flat = .initDefault(0, .{ .damage = 1 }),
         .description = "+1 damage",
-    },
-    .{
-        .name = "pickaxe",
+    };
+
+    pub const pickaxe: Item = .{
         .percent = .initDefault(0, .{ .primary_cooldown = 0.15 }),
         .description = "+15% attack speed",
-    },
-    .{
-        .name = "rocket",
+    };
+
+    pub const rocket: Item = .{
         .flat = .initDefault(0, .{ .rocket_chance = 0.05 }),
         .description = "5% chance to fire a rocket, stacks grow the blast",
-    },
-    .{
-        .name = "lightning",
+    };
+
+    pub const lightning: Item = .{
         .flat = .initDefault(0, .{ .lightning_chance = 0.05 }),
         .description = "5% chance to chain lightning, stacks add jumps",
-    },
-    .{
-        .name = "scope",
+    };
+
+    pub const scope: Item = .{
         .flat = .initDefault(0, .{ .critical_chance = 0.1 }),
         .description = "10% chance to deal double damage",
-    },
-    .{
-        .name = "rabbits_foot",
+    };
+
+    pub const rabbits_foot: Item = .{
         .flat = .initDefault(0, .{ .block_chance = 0.15 }),
         .description = "15% chance to block damage, diminishing",
-    },
-    .{
-        .name = "icicle",
+    };
+
+    pub const icicle: Item = .{
         .flat = .initDefault(0, .{ .stun_chance = 0.05 }),
         .description = "5% chance to stun on hit",
-    },
-    .{
-        .name = "heart",
+    };
+
+    pub const heart: Item = .{
         .flat = .initDefault(0, .{ .regen = 1 }),
         .description = "+1 health regen",
-    },
-    .{
-        .name = "freezer",
+    };
+
+    pub const freezer: Item = .{
         .description = "freeze time for 20s",
         .is_equipment = true,
         .on_use = .freeze_world,
-    },
+    };
 };
 
-pub const model_paths: [items.len][]const u8 = paths: {
-    var paths: [items.len][]const u8 = undefined;
-    for (items, &paths) |item, *path| {
-        path.* = "objects/" ++ item.name ++ ".glb";
+const item_count: usize = @typeInfo(items).@"struct".decls.len;
+
+const items_array: [item_count]Item = rows: {
+    var rows: [item_count]Item = undefined;
+    for (@typeInfo(items).@"struct".decls, &rows) |decl, *row| row.* = @field(items, decl.name);
+    break :rows rows;
+};
+
+pub const model_paths: [item_count][]const u8 = paths: {
+    var paths: [item_count][]const u8 = undefined;
+    for (@typeInfo(items).@"struct".decls, &paths) |decl, *path| {
+        path.* = "objects/" ++ decl.name ++ ".glb";
     }
     break :paths paths;
 };
 
-pub const icon_paths: [items.len][]const u8 = paths: {
-    var paths: [items.len][]const u8 = undefined;
-    for (items, &paths) |item, *path| {
-        path.* = "textures/" ++ item.name ++ ".png";
+pub const icon_paths: [item_count][]const u8 = paths: {
+    var paths: [item_count][]const u8 = undefined;
+    for (@typeInfo(items).@"struct".decls, &paths) |decl, *path| {
+        path.* = "textures/" ++ decl.name ++ ".png";
     }
     break :paths paths;
 };
 
 pub const Kind = kind: {
+    const decls = @typeInfo(items).@"struct".decls;
     const TagInt = u16;
-    var field_names: [items.len][]const u8 = undefined;
-    var field_values: [field_names.len]TagInt = undefined;
-    for (items, &field_names, &field_values, 0..) |spec, *name, *value, i| {
-        name.* = spec.name;
-        value.* = i;
+    var field_names: [item_count][]const u8 = undefined;
+    var field_values: [item_count]TagInt = undefined;
+    for (decls, &field_names, &field_values, 0..) |decl, *name, *value, index| {
+        name.* = decl.name;
+        value.* = index;
     }
     break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
 };
 
 pub fn get(kind: Kind) *const Item {
-    return &items[@intFromEnum(kind)];
+    return &items_array[@intFromEnum(kind)];
 }
 
 pub fn getModel(kind: Kind) []const u8 {
@@ -140,8 +146,6 @@ pub const Stat = enum(u16) {
     critical_chance,
     block_chance,
     stun_chance,
-
-    pub const zero: std.EnumArray(Stat, f32) = .initFill(0);
 
     pub fn value(stat: Stat, base: *const std.EnumArray(Stat, f32), inv: Inventory) f32 {
         var flat: f32 = 0;
@@ -190,13 +194,4 @@ pub fn equippedEffect(inv: Inventory) ?Effect {
         }
     }
     return null;
-}
-
-pub fn cooldownStat(action: entity.Action) Stat {
-    return switch (action) {
-        .primary => .primary_cooldown,
-        .secondary => .secondary_cooldown,
-        .utility => .utility_cooldown,
-        .equipment => .equipment_cooldown,
-    };
 }

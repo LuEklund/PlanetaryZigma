@@ -345,7 +345,8 @@ fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Ent
 
 fn tracksMotion(entity: *const system.Entity) bool {
     if (entity.flags.is_dead) return false;
-    return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
+    const kind_collider = entity.kind.collider() orelse return true;
+    return kind_collider.motion != .static;
 }
 
 fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMotion {
@@ -378,7 +379,8 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
         .data = switch (entity.kind) {
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform, .target_dummy => .none,
+            .item_pickup => .{ .item = entity.item.? },
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .lootbox, .platform, .target_dummy => .none,
         },
     };
 }

@@ -25,6 +25,7 @@ entries: std.ArrayList(Entry),
 reloaded: std.ArrayList(u32),
 
 default: u32,
+item_models: std.EnumArray(shared.Item.Kind, u32),
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     const root = try assets.openDir(io);
@@ -34,15 +35,24 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
         .entries = .empty,
         .reloaded = .empty,
         .default = 0,
+        .item_models = .initFill(0),
     };
     errdefer self.deinit(gpa, io);
 
     self.default = try self.add(gpa, "", null);
     for (entity.all_kinds) |kind| {
-        const model_spec = entity.modelSpec(kind) orelse continue;
+        const model_spec = kind.modelSpec() orelse continue;
         _ = try self.add(gpa, std.fs.path.basename(model_spec.path), kind);
     }
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        const handle = try self.add(gpa, std.fs.path.basename(shared.Item.model_paths[@intFromEnum(item_kind)]), null);
+        self.item_models.set(item_kind, handle);
+    }
     return self;
+}
+
+pub fn getItem(self: *const Models, item: shared.Item.Kind) u32 {
+    return self.item_models.get(item);
 }
 
 pub fn deinit(self: *Models, gpa: std.mem.Allocator, io: std.Io) void {
@@ -91,7 +101,7 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         if (entry.path.len == 0) continue;
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
 
-        const kind_spec: ?*const entity.Spec = if (entry.kind) |kind| entity.spec(kind) else null;
+        const kind_spec: ?*const entity.Spec = if (entry.kind) |kind| kind.spec() else null;
         const model_spec: ?entity.ModelSpec = if (kind_spec) |spec| (spec.model orelse continue) else null;
         const bytes = try assets.read(gpa, io, self.dir, entry.path);
         defer gpa.free(bytes);

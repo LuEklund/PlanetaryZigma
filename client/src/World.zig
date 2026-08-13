@@ -64,6 +64,7 @@ pub const Entity = struct {
     override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
     stats: std.EnumArray(shared.Item.Stat, f32) = .initFill(0),
+    item: ?shared.Item.Kind = null,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
     spawned_at: f32 = 0,
@@ -85,8 +86,7 @@ pub const Entity = struct {
     }
 
     pub fn refreshStats(self: *Entity) void {
-        const base_stats = if (shared.entity.spec(self.kind).base_stats) |*base| base else &shared.Item.Stat.zero;
-        self.stats = shared.Item.Stat.all(base_stats, self.inventory);
+        self.stats = shared.Item.Stat.all(&self.kind.spec().base_stats, self.inventory);
     }
 };
 
@@ -185,7 +185,10 @@ pub fn flush(self: *World) !void {
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },
-            .unknown, .item, .lootbox, .platform, .target_dummy => {},
+            .item_pickup => {
+                if (entity_info.data == .item) entity.item = entity_info.data.item;
+            },
+            .unknown, .lootbox, .platform, .target_dummy => {},
         }
     }
 

@@ -85,7 +85,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
 
     for (world.entities.values()) |*entity| {
         const slot = try viewer.animations.getOrPut(gpa, entity.id);
-        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(models.get(entity.kind), models);
+        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(if (entity.kind == .item_pickup) models.getItem(entity.item.?) else models.get(entity.kind), models);
         const loop = shared.entity.animationLoop(
             entity.replicated_velocity,
             @max(0, entity.un_stun_at - world.elapsed_time),
@@ -110,9 +110,9 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const handle = viewer.animations.get(entity.id) orelse continue;
         const pose = viewer.animator.pose(handle) orelse continue;
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null };
+        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
-        if (entity.kind == .item) {
+        if (entity.kind == .item_pickup) {
             transform.rotation = transform.rotation
                 .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * world.elapsed_time, .{ 0, 1, 0 }))
                 .normalize();

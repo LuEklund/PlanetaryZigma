@@ -43,7 +43,7 @@ pub fn updateDirector(world: *World) !void {
             // 0...50 => .tubloid,
             // else => .acorn,
         };
-        const cost = shared.entity.spec(.{ .enemy = enemy_kind }).currency;
+        const cost = shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {
@@ -96,7 +96,7 @@ pub fn updateEnemies(world: *World) !void {
     for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy or enemy.flags.is_dead) continue;
         if (enemy.un_stun_at > world.elapsed_time) continue;
-        // const body_id = enemy.collider.body_id orelse continue;
+        // const body_id = enemy.body_id orelse continue;
 
         var closest_player: ?*system.Entity = null;
         var closest_distance: f32 = std.math.floatMax(f32);
@@ -118,7 +118,7 @@ pub fn updateEnemies(world: *World) !void {
 
         const forward_dir = enemy.transform.forward();
         const speed = enemy.stat(.speed);
-        const enemy_skills = shared.entity.spec(enemy.kind).skills;
+        const enemy_skills = enemy.kind.spec().skills;
         const range = enemy_skills.get(.primary).?.range;
         switch (enemy.kind.enemy) {
             .tubloida => {
@@ -354,8 +354,8 @@ pub fn updateWipe(world: *World) !void {
 
 pub fn updateItems(world: *World) !void {
     for (world.entities.values()) |*entity| {
-        if (entity.kind != .item or entity.flags.is_dead) continue;
-        const item_kind = entity.kind.item;
+        if (entity.kind != .item_pickup or entity.flags.is_dead) continue;
+        const item_kind = entity.item.?;
         for (world.players.items) |player_id| {
             const player = world.getPtr(player_id) orelse return error.PlayerNotFound;
             if (player.flags.is_dead) continue;

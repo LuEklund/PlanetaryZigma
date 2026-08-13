@@ -1,15 +1,12 @@
 const Hud = @This();
 
 const std = @import("std");
-const nz = @import("shared").numz;
-const shared = @import("shared");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Ui = @import("ui");
 const Assets = @import("graphics").Assets;
 const Window = @import("Window");
-const Font = @import("shared").Font;
 const NetworkManager = @import("NetworkManager.zig");
 const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
