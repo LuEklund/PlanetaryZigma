@@ -41,7 +41,7 @@ struct PushConstant {
 PushConstant push_constant;
 
 struct VertexOutput {
-    float4 position : SV_Position;
+    float4 view_position : SV_Position;
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
     float3 normal : NORMAL0;
@@ -54,7 +54,7 @@ VertexOutput static_vert(uint vertex_index: SV_VertexID) {
     float4 world_position = mul(push_constant.model_matrix, float4(vertex.position, 1.0));
 
     VertexOutput output;
-    output.position = mul(scene_data.proj_view, world_position);
+    output.view_position = mul(scene_data.proj_view, world_position);
     output.color = vertex.color;
     output.uv = float2(vertex.uv_x, vertex.uv_y);
     output.normal = mul(push_constant.model_matrix, float4(vertex.normal, 0.0)).xyz;
@@ -75,7 +75,7 @@ VertexOutput skinned_vert(uint vertex_index: SV_VertexID) {
     float4 world_position = mul(push_constant.model_matrix, mul(skin_matrix, float4(vertex.position, 1.0)));
 
     VertexOutput output;
-    output.position = mul(scene_data.proj_view, world_position);
+    output.view_position = mul(scene_data.proj_view, world_position);
     output.color = vertex.color;
     output.uv = float2(vertex.uv_x, vertex.uv_y);
     output.normal = mul(push_constant.model_matrix, mul(skin_matrix, float4(vertex.normal, 0.0))).xyz;
@@ -124,12 +124,24 @@ float shadowFactor(float3 world_position, float3 normal) {
 float4 mesh_frag(VertexOutput input) : SV_Target {
     const float ambient = 0.4;
 
+    // Rim lighting
+    float3 incoming = scene_data.camera_position - input.world_position;
+    incoming = normalize(incoming);
+    float facing = dot(incoming, input.normal);
+    float rim_intensity = .3;
+    float rim = 0;
+    if (facing > .3) {
+        rim = rim_intensity;
+    }
+
     const float3 norm_to_sun = normalize(scene_data.to_sun);
     const float t = dot(-input.world_position, norm_to_sun);
     const float d = sqrt(dot(input.world_position, input.world_position) - t * t);
     const float sun_visibility = (t > 0) ? smoothstep(scene_data.planet_radius - 8, scene_data.planet_radius - 5, d) : 1;
+    
     float direct = max(dot(normalize(input.normal), norm_to_sun), 0.0) * sun_visibility;
-    float shading = ambient + (direct > 0.0 ? (1.0 - ambient) * direct * shadowFactor(input.world_position, input.normal) : 0.0);
+    
+    float shading = ambient + rim + (direct > 0.0 ? (1.0 - ambient) * direct * shadowFactor(input.world_position, input.normal) : 0.0);
 
     float dist = distance(scene_data.camera_position.xyz, input.world_position);
     float fog = (1 - exp(-dist * 0.005));
