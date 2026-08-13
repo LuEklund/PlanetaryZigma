@@ -23,9 +23,14 @@ mouse_state: MouseState = .{},
 screen_width: f32,
 screen_height: f32,
 default_font: *const Font,
+
 hot_item: ?u64 = null,
 active_item: ?u64 = null,
-fire_item: ?u64 = null,
+last_hot_item: ?u64 = null,
+last_active_item: ?u64 = null,
+
+play_sound: enum { none, hot, clicked } = .none,
+
 left_click_prev: bool = false,
 pressed: bool = false,
 released: bool = false,
@@ -131,6 +136,9 @@ pub fn deinit(self: *Ui, gpa: std.mem.Allocator) void {
 pub fn start(self: *Ui, mouse_state: MouseState, font: *const Font, delta_time: f32) void {
     self.default_font = font;
     const left_click_prev = self.mouse_state.left_click;
+    self.last_active_item = self.active_item;
+    self.last_hot_item = self.hot_item;
+    self.play_sound = .none;
     self.mouse_state = mouse_state;
     self.delta_time = delta_time;
     self.frame_index += 1;
@@ -465,21 +473,33 @@ pub fn addSlider(self: *Ui, parent: ?[]const u8, name: []const u8, label: []cons
         .color = .new(0, 0, 0, 0),
     });
 
-    if (!self.isActive(name) and !self.isDragging(name)) return null;
+    if (!self.isDragging(name)) return null;
     const mouse_x = std.math.clamp(self.mouse_state.position.left, track_left, track_left + track_width);
     return min + ((mouse_x - track_left) / track_width) * (max - min);
 }
 
 pub fn isHot(self: *Ui, name: []const u8) bool {
-    return self.hot_item == key(name);
-}
+    if (self.hot_item == key(name)) {
+        if (self.last_hot_item != self.hot_item) {
+            std.log.debug("hot: {any}", .{self.hot_item});
+            self.play_sound = .hot;
+        }
 
-pub fn isActive(self: *Ui, name: []const u8) bool {
-    return (self.hot_item == key(name) and self.mouse_state.left_click);
+        return true;
+    }
+    return false;
 }
 
 pub fn isClicked(self: *Ui, name: []const u8) bool {
-    return (self.hot_item == key(name) and self.pressed);
+    if (self.hot_item == key(name) and self.pressed) {
+        if (self.active_item != self.last_active_item) {
+            std.log.debug("clciked: {any}", .{self.active_item});
+
+            self.play_sound = .clicked;
+        }
+        return true;
+    }
+    return false;
 }
 
 pub fn isDragging(self: *Ui, name: []const u8) bool {

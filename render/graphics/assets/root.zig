@@ -6,18 +6,23 @@ pub const Model = @import("types/Model.zig");
 pub const Node = @import("types/Node.zig");
 pub const AnimationClip = @import("types/AnimationClip.zig");
 
-pub fn openDir(io: std.Io) !std.Io.Dir {
+pub fn findRoot(io: std.Io) ![:0]const u8 {
     const candidates: []const [:0]const u8 = &.{ "assets", "../assets", "../../../assets" };
     for (candidates) |path| {
-        const dir = std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true }) catch |err| {
+        var dir = std.Io.Dir.cwd().openDir(io, path, .{}) catch |err| {
             std.log.info("assets: not at {s}: {t}", .{ path, err });
             continue;
         };
+        dir.close(io);
         std.log.info("assets: using {s}", .{path});
-        return dir;
+        return path;
     }
     std.log.err("assets: no candidate dir found from cwd", .{});
     return error.NoAssetDir;
+}
+
+pub fn openDir(io: std.Io) !std.Io.Dir {
+    return std.Io.Dir.cwd().openDir(io, try findRoot(io), .{ .iterate = true });
 }
 
 pub fn changed(io: std.Io, dir: std.Io.Dir, path: []const u8, mtime: *std.Io.Timestamp) bool {

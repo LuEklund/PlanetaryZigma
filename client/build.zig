@@ -40,6 +40,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
                 .{ .name = "contract", .module = contract },
 
+                .{ .name = "miniaudio", .module = miniaudio },
                 .{ .name = "graphics", .module = graphics },
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },
@@ -66,7 +67,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
-                .{ .name = "miniaudio", .module = miniaudio },
             },
             .link_libc = true,
         }),

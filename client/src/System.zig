@@ -5,6 +5,7 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
+const Audio = @import("system/Audio.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
@@ -38,6 +39,7 @@ io: std.Io,
 window: *Window,
 render: shared.HotLib(contract.Api, *anyopaque),
 draw_list: DrawList,
+audio: Audio,
 assets: Assets,
 animator: Animator,
 emitters: Emitter.List,
@@ -46,6 +48,7 @@ scene: Scene,
 hud: Hud,
 request_exit: bool = false,
 teleport_sphere_model: u32,
+hover_sound: u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -60,6 +63,8 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
+
+    try self.audio.init();
 
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
@@ -78,6 +83,9 @@ pub fn init(self: *System, data: Data) !void {
     self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalSphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
 
+    var sound_path_buffer: [128]u8 = undefined;
+    self.hover_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-hover.mp3", .{self.assets.root}));
+
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
 
@@ -93,6 +101,7 @@ pub fn init(self: *System, data: Data) !void {
 
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
+    self.audio.deinit();
     self.hud.deinit(self.gpa);
     self.draw_list.deinit(self.gpa);
     self.animator.deinit();
@@ -130,6 +139,10 @@ pub fn update(self: *System, world: *World) !void {
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
     }
+    if (self.hud.ui.play_sound == .hot) try self.audio.playSound(self.hover_sound);
+    // std.log.debug("hot: {any}", .{self.hud.ui.last_hot_item});
+    // std.log.debug("active: {any}", .{self.hud.ui.last_active_item});
+    // std.log.debug("playsound: {t}", .{self.hud.ui.play_sound});
     if (paused_before_hud or self.hud.overlay != .none or world.chat.open) {
         world.controller.clearInput();
     }

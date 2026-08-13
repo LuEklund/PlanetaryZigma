@@ -45,13 +45,13 @@ pub fn update(ui: *Ui, hud: *Hud) !Request {
     addPauseButton(ui, "pause_options", "Options", panel_width * 0.82, button_height);
     addPauseButton(ui, "pause_main_menu", "Main Menu", panel_width * 0.82, button_height);
 
-    if (ui.isActive("pause_resume")) {
+    if (ui.isClicked("pause_resume")) {
         hud.overlay = .none;
     }
-    if (ui.isActive("pause_options")) {
+    if (ui.isClicked("pause_options")) {
         hud.overlay = .{ .options = .{ .return_to_pause = true } };
     }
-    if (ui.isActive("pause_main_menu")) {
+    if (ui.isClicked("pause_main_menu")) {
         return .main_menu;
     }
     return .none;

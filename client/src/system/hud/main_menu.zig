@@ -42,23 +42,23 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
         options.dev_planet = !options.dev_planet;
     }
 
-    if (ui.isActive("menu_singleplayer")) {
+    if (ui.isClicked("menu_singleplayer")) {
         hud.screen = .main;
         network_manager.requestHost(.singleplayer, options.dev_planet);
     }
-    if (steam_logged_on and ui.isActive("menu_multiplayer")) {
+    if (steam_logged_on and ui.isClicked("menu_multiplayer")) {
         hud.screen = .multiplayer;
         if (!network_manager.server_list.refresh and network_manager.server_list.count == 0) {
             network_manager.server_list.refresh = true;
         }
-    } else if (!steam_logged_on and ui.isActive("menu_multiplayer")) {
+    } else if (!steam_logged_on and ui.isClicked("menu_multiplayer")) {
         hud.screen = .multiplayer;
     }
-    if (ui.isActive("menu_settings")) {
+    if (ui.isClicked("menu_settings")) {
         hud.screen = .main;
         hud.overlay = .{ .options = .{ .return_to_pause = false } };
     }
-    if (ui.isActive("menu_quit")) {
+    if (ui.isClicked("menu_quit")) {
         return .quit;
     }
 
@@ -149,7 +149,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{ .data = "Refresh Servers", .size = 26, .color = if (steam_logged_on) .new(0.94, 0.96, 0.9, 1) else .new(0.44, 0.46, 0.42, 1) },
     });
-    if (steam_logged_on and ui.isActive("menu_refresh") and network_manager.server_list.refresh == false) {
+    if (steam_logged_on and ui.isClicked("menu_refresh") and network_manager.server_list.refresh == false) {
         network_manager.server_list.refresh = true;
     }
     ui.add(null, .{
@@ -164,7 +164,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
             .color = if (!steam_logged_on) .new(0.44, 0.46, 0.42, 1) else if (hosting or ui.isHot("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
-    if (ui.isActive("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline)) {
+    if (ui.isClicked("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline)) {
         network_manager.requestHost(.multiplayer, options.dev_planet);
     }
 
@@ -235,7 +235,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
                 },
             },
         });
-        if (ui.isActive(id) and !bad_version and network_manager.steam_client.server_conn == 0) {
+        if (ui.isClicked(id) and !bad_version and network_manager.steam_client.server_conn == 0) {
             try network_manager.steam_client.connectToServer(server.steam_id);
             std.log.info("connect to {d}", .{server.steam_id});
         }

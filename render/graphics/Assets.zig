@@ -16,6 +16,7 @@ pub const Models = @import("Models.zig");
 
 const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 
+root: [:0]const u8,
 shaders: Shaders,
 textures: Textures,
 skybox: Skybox,
@@ -24,6 +25,7 @@ models: Models,
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Assets {
     var self: Assets = .{
+        .root = try @import("assets/root.zig").findRoot(io),
         .shaders = try .init(gpa, io),
         .textures = try .init(gpa, io),
         .skybox = try .init(io),
