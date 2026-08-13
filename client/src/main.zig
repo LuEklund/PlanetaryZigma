@@ -5,7 +5,6 @@ const System = @import("system");
 const World = System.World;
 const Window = @import("Window");
 const tracy = @import("ztracy");
-const miniaudio = @import("miniaudio");
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
@@ -21,10 +20,6 @@ pub fn main(init: std.process.Init) !void {
     const gpa = if (builtin.mode == .Debug) gpa_impl.allocator() else gpa_impl;
     const io = init.io;
     shared.log_io = io;
-
-    var eng: miniaudio.ma_engine = undefined;
-    if (miniaudio.ma_engine_init(null, &eng) != miniaudio.MA_SUCCESS) return error.MiniaudioFailed;
-    defer miniaudio.ma_engine_uninit(&eng);
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
@@ -51,7 +46,6 @@ pub fn main(init: std.process.Init) !void {
     try window.setMinSize(.{ .width = 300, .height = 200 });
     window_zone.end();
     defer window.close();
-
 
     var world: World = try .init(gpa);
     defer world.deinit();

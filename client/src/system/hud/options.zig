@@ -216,7 +216,7 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
         .color = .new(0, 0, 0, 0),
     });
 
-    if (!ui.isActive(name) and !ui.isDragging(name)) return null;
+    if (!ui.isDragging(name)) return null;
     const mouse_x = std.math.clamp(ui.mouse_state.position.left, track_left, track_left + track_width);
     const next = min + ((mouse_x - track_left) / track_width) * (max - min);
     return next;

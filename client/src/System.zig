@@ -5,6 +5,7 @@ const shared = @import("shared");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
+const Audio = @import("system/Audio.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
@@ -13,7 +14,7 @@ const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const animate = @import("system/animate.zig");
 const chunks = @import("system/chunks.zig");
-const contract = @import("contract");
+const renderer_contract = @import("contract");
 const DrawList = @import("contract").DrawList;
 
 const menu_world = @import("system/menu.zig");
@@ -36,16 +37,20 @@ pub const Entity = World.Entity;
 gpa: std.mem.Allocator,
 io: std.Io,
 window: *Window,
-render: shared.HotLib(contract.Api, *anyopaque),
+render: shared.HotLib(renderer_contract.Api, *anyopaque),
 draw_list: DrawList,
+audio: Audio,
 assets: Assets,
 animator: Animator,
 emitters: Emitter.List,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
-request_exit: bool = false,
+request_exit: bool,
 teleport_sphere_model: u32,
+hover_sound: u32,
+click_sound: u32,
+primary_sound: u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -61,13 +66,15 @@ pub fn init(self: *System, data: Data) !void {
     self.io = data.io;
     self.window = data.window;
 
+    try self.audio.init();
+
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
 
     self.render = try .init("render", data.gpa, data.io);
     errdefer self.render.deinit(data.io);
-    self.render.handle = self.render.api.init(&contract.InitOptions{
+    self.render.handle = self.render.api.init(&renderer_contract.InitOptions{
         .gpa = data.gpa,
         .io = data.io,
         .window = @ptrCast(data.window),
@@ -77,6 +84,11 @@ pub fn init(self: *System, data: Data) !void {
     self.assets = try .init(data.gpa, data.io);
     self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalSphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
+
+    var sound_path_buffer: [128]u8 = undefined;
+    self.hover_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-hover.mp3", .{self.assets.root}));
+    self.click_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-click.mp3", .{self.assets.root}));
+    self.primary_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/laser-gun.mp3", .{self.assets.root}));
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
@@ -93,6 +105,7 @@ pub fn init(self: *System, data: Data) !void {
 
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
+    self.audio.deinit();
     self.hud.deinit(self.gpa);
     self.draw_list.deinit(self.gpa);
     self.animator.deinit();
@@ -130,6 +143,14 @@ pub fn update(self: *System, world: *World) !void {
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
     }
+    switch (self.hud.ui.play_sound) {
+        .hot => try self.audio.playSound(self.hover_sound),
+        .clicked => try self.audio.playSound(self.click_sound),
+        .none => {},
+    }
+    // std.log.debug("hot: {any}", .{self.hud.ui.last_hot_item});
+    // std.log.debug("active: {any}", .{self.hud.ui.last_active_item});
+    // std.log.debug("playsound: {t}", .{self.hud.ui.play_sound});
     if (paused_before_hud or self.hud.overlay != .none or world.chat.open) {
         world.controller.clearInput();
     }
@@ -149,6 +170,15 @@ pub fn update(self: *System, world: *World) !void {
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
     try animate.update(world, &self.animator, &self.assets.models);
+
+    for (world.action_events.items) |action| {
+        switch (action.action) {
+            .primary => try self.audio.playSound(self.primary_sound),
+            else => {},
+        }
+    }
+    world.action_events.clearRetainingCapacity();
+
     try extract.frame(self, world, self.scene != .particle_lab);
     self.render.trySwap(self.io);
     self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});

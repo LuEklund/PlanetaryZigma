@@ -111,7 +111,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         ui.add("action_bar", .{
             .name = "primary",
             .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
+            .color = .new(1, 1, 1, 1),
             .children = &.{
                 .{
                     .size = .{
@@ -394,13 +394,13 @@ pub fn wipeMenu(world: *World, network_manager: *NetworkManager, ui: *Ui) Reques
     addWipeButton(ui, "wipe_main_menu", "Exit to Menu", panel_width * 0.82, button_height);
     addWipeButton(ui, "wipe_quit", "Exit to Desktop", panel_width * 0.82, button_height);
 
-    if (is_host and ui.isActive("wipe_go_again")) {
+    if (is_host and ui.isClicked("wipe_go_again")) {
         world.go_again_pending = true;
     }
-    if (ui.isActive("wipe_main_menu")) {
+    if (ui.isClicked("wipe_main_menu")) {
         return .main_menu;
     }
-    if (ui.isActive("wipe_quit")) {
+    if (ui.isClicked("wipe_quit")) {
         return .quit;
     }
     return .none;
