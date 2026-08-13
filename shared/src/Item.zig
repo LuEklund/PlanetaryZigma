@@ -115,18 +115,18 @@ pub fn getModel(kind: Kind) []const u8 {
 }
 
 pub const Inventory = struct {
-    counts: std.EnumMap(Item.Kind, u8) = .initFull(0),
+    counts: std.EnumArray(Item.Kind, u8) = .initFill(0),
 
     pub fn get(self: Inventory, item: Item.Kind) u8 {
-        return self.counts.get(item).?;
+        return self.counts.get(item);
     }
 
     pub fn set(self: *Inventory, item: Item.Kind, count: u8) void {
-        self.counts.getPtr(item).?.* = count;
+        self.counts.set(item, count);
     }
 
     pub fn add(self: *Inventory, item: Item.Kind, delta: u8) u8 {
-        const count = self.counts.getPtr(item).?;
+        const count = self.counts.getPtr(item);
         count.* += delta;
         return count.*;
     }
@@ -152,36 +152,15 @@ pub const Stat = enum(u16) {
         var percent: f32 = 0;
         for (std.enums.values(Item.Kind)) |item_kind| {
             const count: f32 = @floatFromInt(inv.get(item_kind));
-            flat += get(item_kind).flat.get(stat) * count;
-            percent += get(item_kind).percent.get(stat) * count;
-        }
-        return shape(stat, base.get(stat), flat, percent);
-    }
-
-    pub fn all(base: *const std.EnumArray(Stat, f32), inv: Inventory) std.EnumArray(Stat, f32) {
-        var flat: std.EnumArray(Stat, f32) = .initFill(0);
-        var percent: std.EnumArray(Stat, f32) = .initFill(0);
-        for (std.enums.values(Item.Kind)) |item_kind| {
-            const count: f32 = @floatFromInt(inv.get(item_kind));
             if (count == 0) continue;
-            const row = get(item_kind);
-            for (std.enums.values(Stat)) |stat| {
-                flat.getPtr(stat).* += row.flat.get(stat) * count;
-                percent.getPtr(stat).* += row.percent.get(stat) * count;
-            }
+            const item = get(item_kind);
+            flat += item.flat.get(stat) * count;
+            percent += item.percent.get(stat) * count;
         }
-        var shaped: std.EnumArray(Stat, f32) = undefined;
-        for (std.enums.values(Stat)) |stat| {
-            shaped.set(stat, shape(stat, base.get(stat), flat.get(stat), percent.get(stat)));
-        }
-        return shaped;
-    }
-
-    fn shape(stat: Stat, base: f32, flat: f32, percent: f32) f32 {
-        const linear = (base + flat) * (1 + percent);
+        const linear = (base.get(stat) + flat) * (1 + percent);
         return switch (stat) {
             .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance => linear,
-            .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown => @max(0.1, base + flat) / (1 + percent),
+            .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown => @max(0.1, base.get(stat) + flat) / @max(0.01, 1 + percent),
             .block_chance => 1 - 1 / (1 + linear),
         };
     }

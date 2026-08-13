@@ -32,7 +32,7 @@ pub const bloorp_lord: Spec = .{
         .walk = "Walking",
         .death = "Death",
     }) },
-    .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.01 }),
+    .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.1 }),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 40, .clip = "Spawn_Enemy" } }),
     .currency = 100,
 };

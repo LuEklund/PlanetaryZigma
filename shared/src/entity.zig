@@ -3,7 +3,7 @@ const nz = @import("numz");
 const Item = @import("Item.zig");
 const Stat = Item.Stat;
 const enemies = @import("entity/enemies.zig");
-const simples = @import("entity/simples.zig");
+const plain = @import("entity/plain.zig");
 
 pub const Id = enum(u32) {
     none = 0,
@@ -37,11 +37,11 @@ pub const Kind = union(enum) {
         };
     }
 
-    // Returned pointers are call-scoped: copy what you need, never store one across a hot reload.
+    //TODO: BAD RETURN POINTER! Hot-Relaod with stored pointer will keep old data. PAY ATTENTION!
     pub fn spec(kind: Kind) *const Spec {
         return switch (kind) {
             .enemy => |enemy_kind| &enemy_specs[@intFromEnum(enemy_kind)],
-            inline else => |_, tag| &@field(simples, @tagName(tag)),
+            inline else => |_, tag| &@field(plain, @tagName(tag)),
         };
     }
 
@@ -182,8 +182,8 @@ const enemy_specs: [enemy_kind_count]Spec = blk: {
 };
 
 const enemy_kind_count: usize = @typeInfo(enemies).@"struct".decls.len;
-const simple_kind_count: usize = @typeInfo(simples).@"struct".decls.len;
-const all_kind_count: usize = simple_kind_count + enemy_kind_count;
+const plain_kind_count: usize = @typeInfo(plain).@"struct".decls.len;
+const all_kind_count: usize = plain_kind_count + enemy_kind_count;
 
 pub const all_kinds: []const Kind = &all_kinds_array;
 const all_kinds_array: [all_kind_count]Kind = blk: {

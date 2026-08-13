@@ -63,7 +63,6 @@ pub const Entity = struct {
     motion: Motion = .{},
     override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
-    stats: std.EnumArray(shared.Item.Stat, f32) = .initFill(0),
     item: ?shared.Item.Kind = null,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
@@ -82,11 +81,7 @@ pub const Entity = struct {
     };
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return self.stats.get(stat_kind);
-    }
-
-    pub fn refreshStats(self: *Entity) void {
-        self.stats = shared.Item.Stat.all(&self.kind.spec().base_stats, self.inventory);
+        return shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
     }
 };
 
@@ -165,7 +160,6 @@ pub fn flush(self: *World) !void {
                 .tick = entity_info.tick,
             } },
         };
-        entity.refreshStats();
         switch (entity_info.kind) {
             .player => {
                 if (entity_info.data == .player_name) {
@@ -225,7 +219,6 @@ pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
 
 pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {
     entity.inventory.set(command.item_kind, command.set);
-    entity.refreshStats();
 }
 
 pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {
