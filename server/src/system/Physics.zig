@@ -35,16 +35,7 @@ fn layerFilter(layer: ObjectLayer) c.b3Filter {
     };
 }
 
-pub const Collider = struct {
-    pub const Mesh = struct {
-        indices: []u32,
-        vertices: [][4]f32,
-    };
-    shape: union(enum) { primitive: shared.entity.ColliderShape, mesh: Mesh },
-    body_id: ?c.b3BodyId = null,
-    motion_type: MotionType,
-    object_layer: ObjectLayer,
-};
+pub const BodyId = c.b3BodyId;
 
 fn toVec(v: c.b3Vec3) nz.Vec3(f32) {
     return .{ v.x, v.y, v.z };
@@ -87,14 +78,9 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         self.world = undefined;
     } else {
         self.world = makeWorld();
-        for (world.entities.values()) |*entity| entity.collider.body_id = null;
+        for (world.entities.values()) |*entity| entity.body_id = null;
         for (world.entities.values()) |*entity| {
-            if (!shared.entity.hasCollider(entity.kind)) continue;
-            if (shared.entity.collider(entity.kind)) |kind_collider| {
-                entity.collider.shape = .{ .primitive = kind_collider.shape };
-                entity.collider.motion_type = kind_collider.motion;
-                entity.collider.object_layer = kind_collider.layer;
-            }
+            if (entity.kind.collider() == null) continue;
             try self.createBody(entity);
         }
     }
@@ -106,7 +92,7 @@ pub fn update(self: *Physics, world: *World) !void {
 
     for (world.physics_commands.items) |command| {
         const entity = world.getPtr(command.id) orelse continue;
-        const body_id = entity.collider.body_id orelse continue;
+        const body_id = entity.body_id orelse continue;
         switch (command.verb) {
             .walk => |walk| moveOnPlanet(entity, body_id, walk.direction, walk.speed, world.delta_time),
             .hover => |hover| floatOnPlanet(entity, body_id, hover.direction, hover.speed, &world.planet, hover.height, world.delta_time),
@@ -121,9 +107,9 @@ pub fn update(self: *Physics, world: *World) !void {
     world.physics_commands.clearRetainingCapacity();
 
     for (world.entities.values()) |*entity| {
-        if (!shared.entity.hasCollider(entity.kind)) continue;
-        const body_id = entity.collider.body_id orelse continue;
-        if (entity.collider.motion_type != .dynamic) continue;
+        const kind_collider = entity.kind.collider() orelse continue;
+        const body_id = entity.body_id orelse continue;
+        if (kind_collider.motion != .dynamic) continue;
 
         const distance_from_center = nz.vec.length(entity.transform.position);
         if (distance_from_center < 4) {
@@ -166,8 +152,7 @@ pub fn update(self: *Physics, world: *World) !void {
     c.b3World_Step(self.world, world.delta_time, 4);
 
     for (world.entities.values()) |*entity| {
-        if (!shared.entity.hasCollider(entity.kind)) continue;
-        const body_id = entity.collider.body_id orelse continue;
+        const body_id = entity.body_id orelse continue;
 
         const pos = c.b3Body_GetPosition(body_id);
         entity.transform.position = .{ pos.x, pos.y, pos.z };
@@ -176,12 +161,12 @@ pub fn update(self: *Physics, world: *World) !void {
     }
 
     for (world.entities.values()) |*entity| {
-        if (!shared.entity.hasCollider(entity.kind)) continue;
-        const body_id = entity.collider.body_id orelse continue;
-        if (entity.collider.motion_type != .dynamic) continue;
+        const kind_collider = entity.kind.collider() orelse continue;
+        const body_id = entity.body_id orelse continue;
+        if (kind_collider.motion != .dynamic) continue;
         if (entity.mode == .falling and nz.vec.dot(entity.replicated_velocity, nz.vec.normalize(entity.transform.position)) > 0) continue;
 
-        const clearance = colliderGroundExtent(entity.collider);
+        const clearance = colliderGroundExtent(kind_collider.shape);
         const value = world.planet.sample(entity.transform.position);
         if (value >= (clearance + ground_check_skin) * 2) continue;
         const gradient = sdfGradient(entity.transform.position, &world.planet);
@@ -242,21 +227,19 @@ fn sdfGradient(position: nz.Vec3(f32), planet: *const shared.Planet) nz.Vec3(f32
     };
 }
 
-fn colliderGroundExtent(collider: Collider) f32 {
-    return switch (collider.shape) {
-        .primitive => |primitive| switch (primitive) {
-            .box => |box| box.x,
-            .capsule => |capsule| capsule.half_height + capsule.radius,
-        },
-        .mesh => 0,
+fn colliderGroundExtent(shape: shared.entity.ColliderShape) f32 {
+    return switch (shape) {
+        .box => |box| box.x,
+        .capsule => |capsule| capsule.half_height + capsule.radius,
     };
 }
 
 fn isGrounded(self: *Physics, entity: *const system.Entity, planet: *const shared.Planet) bool {
+    const kind_collider = entity.kind.collider() orelse return false;
     const value = planet.sample(entity.transform.position);
     const gradient_length = nz.vec.length(sdfGradient(entity.transform.position, planet));
     const distance = if (gradient_length > 0.0001) value / gradient_length else value;
-    if (distance < colliderGroundExtent(entity.collider) + ground_check_skin) return true;
+    if (distance < colliderGroundExtent(kind_collider.shape) + ground_check_skin) return true;
     const position = entity.transform.position;
     const direction = -nz.vec.normalize(position);
     const ray_hit = Physics.c.b3World_CastRayClosest(
@@ -269,11 +252,11 @@ fn isGrounded(self: *Physics, entity: *const system.Entity, planet: *const share
 }
 
 pub fn createBody(self: *Physics, entity: *system.Entity) !void {
-    const collider = &entity.collider;
+    const kind_collider = entity.kind.collider().?;
     const transform = entity.transform;
 
     var body_def = c.b3DefaultBodyDef();
-    body_def.type = switch (collider.motion_type) {
+    body_def.type = switch (kind_collider.motion) {
         .static => c.b3_staticBody,
         .kinematic => c.b3_kinematicBody,
         .dynamic => c.b3_dynamicBody,
@@ -291,45 +274,27 @@ pub fn createBody(self: *Physics, entity: *system.Entity) !void {
     body_def.enableSleep = false;
     body_def.userData = @ptrFromInt(@intFromEnum(entity.id));
     const body_id = c.b3CreateBody(self.world, &body_def);
-    if (collider.motion_type == .dynamic) c.b3Body_SetLinearVelocity(body_id, toB3(entity.spawn_impulse));
+    if (kind_collider.motion == .dynamic) c.b3Body_SetLinearVelocity(body_id, toB3(entity.spawn_impulse));
 
     var shape_def = c.b3DefaultShapeDef();
     shape_def.density = 1;
-    shape_def.filter = layerFilter(collider.object_layer);
+    shape_def.filter = layerFilter(kind_collider.layer);
 
-    switch (collider.shape) {
-        .primitive => |primitive| switch (primitive) {
-            .box => |box| {
-                var hull = c.b3MakeBoxHull(box.x, box.y, box.z);
-                _ = c.b3CreateHullShape(body_id, &shape_def, &hull.base);
-            },
-            .capsule => |capsule| {
-                const cap: c.b3Capsule = .{
-                    .center1 = .{ .x = 0, .y = -capsule.half_height, .z = 0 },
-                    .center2 = .{ .x = 0, .y = capsule.half_height, .z = 0 },
-                    .radius = capsule.radius,
-                };
-                _ = c.b3CreateCapsuleShape(body_id, &shape_def, &cap);
-            },
+    switch (kind_collider.shape) {
+        .box => |box| {
+            var hull = c.b3MakeBoxHull(box.x, box.y, box.z);
+            _ = c.b3CreateHullShape(body_id, &shape_def, &hull.base);
         },
-        .mesh => |mesh_shape| {
-            const vertices = try self.gpa.alloc(c.b3Vec3, mesh_shape.vertices.len);
-            defer self.gpa.free(vertices);
-            for (vertices, mesh_shape.vertices) |*out, in| out.* = .{ .x = in[0], .y = in[1], .z = in[2] };
-            const indices = try self.gpa.alloc(i32, mesh_shape.indices.len);
-            defer self.gpa.free(indices);
-            for (indices, mesh_shape.indices) |*out, in| out.* = @intCast(in);
-
-            var mesh_def = std.mem.zeroes(c.b3MeshDef);
-            mesh_def.vertices = vertices.ptr;
-            mesh_def.indices = indices.ptr;
-            mesh_def.vertexCount = @intCast(vertices.len);
-            mesh_def.triangleCount = @intCast(@divExact(indices.len, 3));
-            const mesh_data = c.b3CreateMesh(&mesh_def, null, 0);
-            _ = c.b3CreateMeshShape(body_id, &shape_def, mesh_data, .{ .x = 1, .y = 1, .z = 1 });
+        .capsule => |capsule| {
+            const cap: c.b3Capsule = .{
+                .center1 = .{ .x = 0, .y = -capsule.half_height, .z = 0 },
+                .center2 = .{ .x = 0, .y = capsule.half_height, .z = 0 },
+                .radius = capsule.radius,
+            };
+            _ = c.b3CreateCapsuleShape(body_id, &shape_def, &cap);
         },
     }
-    collider.body_id = body_id;
+    entity.body_id = body_id;
 }
 
 pub fn destroyBody(self: *Physics, body_id: c.b3BodyId) void {

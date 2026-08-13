@@ -345,7 +345,8 @@ fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Ent
 
 fn tracksMotion(entity: *const system.Entity) bool {
     if (entity.flags.is_dead) return false;
-    return !(shared.entity.hasCollider(entity.kind) and entity.collider.motion_type == .static);
+    const kind_collider = entity.kind.collider() orelse return true;
+    return kind_collider.motion != .static;
 }
 
 fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMotion {
@@ -360,7 +361,7 @@ fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMo
 
 fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (entity.kind != .player) return;
-    inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const count = entity.inventory.get(item_kind);
         if (count > 0) try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
     }
@@ -378,7 +379,8 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
         .data = switch (entity.kind) {
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .item, .lootbox, .platform, .target_dummy => .none,
+            .item_pickup => .{ .item = entity.item.? },
+            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .lootbox, .platform, .target_dummy => .none,
         },
     };
 }

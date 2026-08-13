@@ -63,6 +63,7 @@ pub const Entity = struct {
     motion: Motion = .{},
     override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
+    item: ?shared.Item.Kind = null,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
     spawned_at: f32 = 0,
@@ -80,7 +81,7 @@ pub const Entity = struct {
     };
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
+        return shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
     }
 };
 
@@ -178,7 +179,10 @@ pub fn flush(self: *World) !void {
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },
-            .unknown, .item, .lootbox, .platform, .target_dummy => {},
+            .item_pickup => {
+                if (entity_info.data == .item) entity.item = entity_info.data.item;
+            },
+            .unknown, .lootbox, .platform, .target_dummy => {},
         }
     }
 

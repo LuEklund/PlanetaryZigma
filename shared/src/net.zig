@@ -138,6 +138,7 @@ pub const SpawnEntityData = union(enum) {
     none: void,
     is_teleporter_boss: void,
     player_name: PlayerName,
+    item: root.Item.Kind,
 };
 
 pub const DespawnEntity = struct {

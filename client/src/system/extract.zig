@@ -65,18 +65,18 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
 
     const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
-        if (entity.kind == .item) {
+        if (entity.kind == .item_pickup) {
             const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
             Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
         }
         const pose = animator.pose(entity.animation) orelse continue;
-        const model_spec: shared.entity.ModelSpec = shared.entity.modelSpec(entity.kind) orelse .{ .path = "", .loop_clips = null };
+        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
-        if (entity.kind == .item) {
-            const rig = models.rig(models.get(entity.kind));
+        if (entity.kind == .item_pickup) {
+            const spawn_duration = shared.entity.Kind.spec(.item_pickup).spawn_duration;
             const alive_time = world.elapsed_time - entity.spawned_at;
-            if (rig.spawn_duration > 0) {
-                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(alive_time / rig.spawn_duration, 0, 1)));
+            if (spawn_duration > 0) {
+                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(alive_time / spawn_duration, 0, 1)));
             }
             transform.rotation = transform.rotation
                 .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * alive_time, .{ 0, 1, 0 }))
@@ -93,7 +93,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     }
     for (world.dying.items) |corpse| {
         const pose = animator.pose(corpse.animation) orelse continue;
-        const corpse_spec: shared.entity.ModelSpec = shared.entity.modelSpec(corpse.kind) orelse .{ .path = "", .loop_clips = null };
+        const corpse_spec: shared.entity.ModelSpec = corpse.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = corpse.transform;
         if (corpse.kind == .lootbox) {
             const death_duration = models.rig(models.get(corpse.kind)).death_duration;
@@ -113,7 +113,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
 
     if (world.controller.debug_draw_colliders) {
         for (world.entities.values()) |*entity| {
-            const collider_shape = (shared.entity.collider(entity.kind) orelse continue).shape;
+            const collider_shape = (entity.kind.collider() orelse continue).shape;
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
             switch (collider_shape) {

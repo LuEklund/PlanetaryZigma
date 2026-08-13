@@ -49,7 +49,8 @@ pub fn update(world: *World) !void {
                 const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 const random = world.prng.random();
                 _ = world.spawn(.{
-                    .kind = .{ .item = random.enumValue(shared.Item.Kind) },
+                    .kind = .item_pickup,
+                    .item = random.enumValue(shared.Item.Kind),
                     .transform = .{
                         .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
                         .rotation = teleporter.transform.rotation,
@@ -90,7 +91,7 @@ pub fn update(world: *World) !void {
             player.interacting = hit_id;
             const interact_id: shared.entity.Id = if (world.getPtr(hit_id)) |hit_entity|
                 switch (hit_entity.kind) {
-                    .lootbox, .item => hit_id,
+                    .lootbox, .item_pickup => hit_id,
                     .teleporter => switch (hit_entity.teleporter.state) {
                         .active => .none,
                         .completed => if (world.teleport_bosses.items.len > 0) .none else hit_id,
@@ -114,7 +115,8 @@ pub fn update(world: *World) !void {
                     if (item_kind == .lightning) item_kind = .oxygen_tank;
                     const chest_up = shared.Planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = try world.spawn(.{
-                        .kind = .{ .item = item_kind },
+                        .kind = .item_pickup,
+                        .item = item_kind,
                         .transform = .{
                             .position = entity.transform.position + nz.vec.scale(chest_up, 1),
                             .rotation = entity.transform.rotation,
@@ -143,8 +145,8 @@ pub fn update(world: *World) !void {
                         }
                     }
                 },
-                .item => |item_kind| {
-                    _ = world.giveItem(player, item_kind, 1) orelse continue;
+                .item_pickup => {
+                    _ = world.giveItem(player, entity.item.?, 1) orelse continue;
                     world.queueDespawn(entity.id);
                 },
                 else => {},
@@ -174,7 +176,7 @@ pub fn update(world: *World) !void {
             world.act(.{ .id = player_id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
-        const player_skills = shared.entity.spec(.player).skills;
+        const player_skills = shared.entity.Kind.spec(.player).skills;
         if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and world.useAction(player, null, .equipment) == .fired) {
             try world.executeSkill(player, null, player_skills.get(.equipment).?.skill);
         }

@@ -86,7 +86,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         // count below. One icon overflowing the panel beats not drawing the frame.
         const icons_per_row: usize = @intFromFloat(@max(1, inventory_width / (icon_size + icon_gap)));
         var shown_icons: usize = 0;
-        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
             if (player.inventory.get(item_kind) > 0 and !shared.Item.get(item_kind).is_equipment) shown_icons += 1;
         }
         const row_count = (shown_icons + icons_per_row - 1) / icons_per_row;
@@ -163,7 +163,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .color = .new(1, 1, 0, 1),
         });
         var icon_index: usize = 0;
-        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount > 0) {
                 const amount_text = ui.print("{d}", .{amount});
@@ -228,12 +228,12 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             }
         }
         addObjectivePanel(world, ui);
-        inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+        for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount > 0 and ui.isHot(ui.print("{t}", .{item_kind}))) {
-                const item = shared.Item.get(item_kind);
+                const description = shared.Item.get(item_kind).description;
                 const line_size: f32 = 18;
-                const text_size = ui.textSize(item.description, line_size);
+                const text_size = ui.textSize(description, line_size);
                 ui.add(null, .{
                     .name = "item_tooltip",
                     .offset = .{ .left = ui.mouse_state.position.left + 16, .top = ui.mouse_state.position.top + 16 },
@@ -242,7 +242,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .child_anchor = .{ .x = .center, .y = .center },
                     .children = &.{.{
                         .size = .{ .fixed = text_size },
-                        .text = .{ .data = item.description, .size = line_size },
+                        .text = .{ .data = description, .size = line_size },
                     }},
                 });
             }

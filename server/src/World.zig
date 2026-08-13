@@ -98,11 +98,8 @@ pub const Entity = struct {
     transform: nz.Transform3D(f32) = .{},
     replicated_velocity: nz.Vec3(f32) = .{ 0, 0, 0 },
     spawn_impulse: nz.Vec3(f32) = .{ 0, 0, 0 },
-    collider: Physics.Collider = .{
-        .shape = .{ .primitive = .{ .box = .{ .x = 1, .y = 1, .z = 1 } } },
-        .motion_type = .dynamic,
-        .object_layer = .moving,
-    },
+    body_id: ?Physics.BodyId = null,
+    item: ?shared.Item.Kind = null,
     controller: Controller = .{},
     camera: Camera = .{},
     lifetime: f32 = 0,
@@ -121,7 +118,7 @@ pub const Entity = struct {
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
+        return shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
     }
 
     pub const Mode = enum {
@@ -134,18 +131,6 @@ pub const Entity = struct {
         is_teleporter_boss: bool = false,
         is_dead: bool = false,
     };
-
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (shared.entity.hasCollider(self.kind)) {
-            switch (self.collider.shape) {
-                .mesh => |*mesh| {
-                    gpa.free(mesh.indices);
-                    gpa.free(mesh.vertices);
-                },
-                .primitive => {},
-            }
-        }
-    }
 };
 
 pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
@@ -190,9 +175,6 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
 }
 
 pub fn deinit(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        entity.deinit(self.gpa);
-    }
     self.entities.deinit(self.gpa);
     self.players.deinit(self.gpa);
     self.teleport_bosses.deinit(self.gpa);
@@ -224,15 +206,12 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
-    const kind_spec = shared.entity.spec(entity.kind);
-    if (kind_spec.base_stats != null) {
-        entity.max_health = entity.stat(.health);
-        if (entity.kind == .enemy) {
-            entity.max_health *= @as(f32, @floatFromInt(self.stage));
-        }
-        entity.health = entity.max_health;
+    entity.max_health = entity.stat(.health);
+    if (entity.kind == .enemy) {
+        entity.max_health *= @as(f32, @floatFromInt(self.stage));
     }
-    entity.currency = kind_spec.currency;
+    entity.health = entity.max_health;
+    entity.currency = entity.kind.spec().currency;
     self.new_spawns.appendAssumeCapacity(id);
     return entity;
 }
@@ -334,7 +313,7 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
 }
 
 pub fn ready(entity: *const Entity, action: shared.entity.Action, now: f32) bool {
-    return now - entity.last_used.get(action) >= entity.stat(shared.Item.cooldownStat(action));
+    return now - entity.last_used.get(action) >= entity.stat(action.cooldownStat());
 }
 
 pub const Outcome = enum { fired, on_cooldown, out_of_range };
@@ -343,7 +322,7 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
     if (!ready(attacker, action, world.elapsed_time)) return .on_cooldown;
 
     if (potential_target) |target| {
-        const assigned = shared.entity.spec(attacker.kind).skills.get(action) orelse return .out_of_range;
+        const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
         if (distance >= assigned.range) return .out_of_range;
     }
@@ -510,7 +489,8 @@ fn dropBossReward(self: *World, entity: *Entity) void {
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
     const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
     _ = self.spawn(.{
-        .kind = .{ .item = .lightning },
+        .kind = .item_pickup,
+        .item = .lightning,
         .transform = .{
             .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
             .rotation = teleporter.transform.rotation,
@@ -564,7 +544,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
                 .kind = .platform,
                 .transform = .{ .position = floor_position },
             });
-            const slab: shared.entity.ColliderShape.HalfBoxExtent = shared.entity.collider(.platform).?.shape.box;
+            const slab: shared.entity.ColliderShape.HalfBoxExtent = shared.entity.Kind.collider(.platform).?.shape.box;
             const wall_center: nz.Vec3(f32) = floor_position + nz.Vec3(f32){ 0, slab.x, 0 };
             const wall_distance: f32 = slab.x + slab.y;
             const walls: [4]struct { offset: nz.Vec3(f32), axis: nz.Vec3(f32) } = .{
@@ -583,7 +563,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
                 });
             }
 
-            const dummy_capsule = shared.entity.collider(.target_dummy).?.shape.capsule;
+            const dummy_capsule = shared.entity.Kind.collider(.target_dummy).?.shape.capsule;
             _ = try self.spawn(.{
                 .kind = .target_dummy,
                 .transform = .{ .position = floor_position + nz.Vec3(f32){
@@ -659,16 +639,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
 pub fn flush(self: *World) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
-        if (shared.entity.hasCollider(entity.kind)) {
-            if (shared.entity.collider(entity.kind)) |kind_collider| {
-                entity.collider = .{
-                    .shape = .{ .primitive = kind_collider.shape },
-                    .motion_type = kind_collider.motion,
-                    .object_layer = kind_collider.layer,
-                };
-            }
-            try self.physics.createBody(entity);
-        }
+        if (entity.kind.collider() != null) try self.physics.createBody(entity);
         self.client_updates.appendAssumeCapacity(.{ .spawned = id });
     }
     self.new_spawns.clearRetainingCapacity();
@@ -677,9 +648,9 @@ pub fn flush(self: *World) !void {
     for (self.pending_despawns.items) |despawn| {
         const entity = self.getPtr(despawn.id) orelse continue;
 
-        if (entity.collider.body_id) |body_id| {
+        if (entity.body_id) |body_id| {
             self.physics.destroyBody(body_id);
-            entity.collider.body_id = null;
+            entity.body_id = null;
         }
         if (entity.kind == .player and !despawn.remove) {
             entity.replicated_velocity = .{ 0, 0, 0 };
@@ -692,7 +663,6 @@ pub fn flush(self: *World) !void {
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
             }
-            entity.deinit(self.gpa);
             _ = self.entities.swapRemove(despawn.id);
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
