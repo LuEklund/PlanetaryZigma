@@ -30,7 +30,7 @@ pub fn init(
     self: *Rig,
     gpa: std.mem.Allocator,
     model: *const Model,
-    kind_spec: shared.entity.Spec,
+    kind_spec: *const shared.entity.Spec,
     spec: shared.entity.ModelSpec,
 ) !void {
     self.deinit(gpa);

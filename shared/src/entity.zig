@@ -97,7 +97,35 @@ pub const Spec = struct {
     skills: std.EnumArray(Action, ?AssignedSkill) = .initFill(null),
 };
 
-pub fn spec(kind: Kind) Spec {
+pub fn spec(kind: Kind) *const Spec {
+    return &specs[kindIndex(kind)];
+}
+
+const specs: [all_kind_count]Spec = blk: {
+    for (all_kinds_array, 0..) |kind, index| {
+        if (kindIndex(kind) != index) @compileError("kindIndex disagrees with all_kinds_array order");
+    }
+    var table: [all_kind_count]Spec = undefined;
+    for (all_kinds_array, &table) |kind, *slot| slot.* = specOf(kind);
+    break :blk table;
+};
+
+fn kindIndex(kind: Kind) usize {
+    return switch (kind) {
+        .unknown => 0,
+        .player => 1,
+        .teleporter => 2,
+        .lootbox => 3,
+        .platform => 4,
+        .target_dummy => 5,
+        .projectile_cube => 6,
+        .projectile_rocket => 7,
+        .enemy => |enemy_kind| 8 + @as(usize, @intFromEnum(enemy_kind)),
+        .item => |item_kind| 8 + EnemyKind.count + @as(usize, @intFromEnum(item_kind)),
+    };
+}
+
+fn specOf(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,

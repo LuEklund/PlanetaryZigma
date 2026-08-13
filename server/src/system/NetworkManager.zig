@@ -360,7 +360,7 @@ fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMo
 
 fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (entity.kind != .player) return;
-    inline for (std.enums.values(shared.Item.Kind)) |item_kind| {
+    for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const count = entity.inventory.get(item_kind);
         if (count > 0) try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
     }

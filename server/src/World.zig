@@ -119,9 +119,15 @@ pub const Entity = struct {
     last_used: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
     last_interact: f32 = 0,
     mode: Mode = .falling,
+    stats: std.EnumArray(shared.Item.Stat, f32) = .initFill(0),
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
+        return self.stats.get(stat_kind);
+    }
+
+    pub fn refreshStats(self: *Entity) void {
+        const base_stats = if (shared.entity.spec(self.kind).base_stats) |*base| base else &shared.Item.Stat.zero;
+        self.stats = shared.Item.Stat.all(base_stats, self.inventory);
     }
 
     pub const Mode = enum {
@@ -224,6 +230,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
+    entity.refreshStats();
     const kind_spec = shared.entity.spec(entity.kind);
     if (kind_spec.base_stats != null) {
         entity.max_health = entity.stat(.health);
@@ -270,6 +277,7 @@ pub fn rayCast(self: *World, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Ph
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8) ?u8 {
     if (player.inventory.get(item) >= 255) return null;
     const item_count = player.inventory.add(item, count);
+    player.refreshStats();
     const old_max_health = player.max_health;
     player.max_health = player.stat(.health);
     player.health = @min(player.max_health, player.health + @max(0, player.max_health - old_max_health));

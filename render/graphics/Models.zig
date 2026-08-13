@@ -91,7 +91,7 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         if (entry.path.len == 0) continue;
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
 
-        const kind_spec: ?entity.Spec = if (entry.kind) |kind| entity.spec(kind) else null;
+        const kind_spec: ?*const entity.Spec = if (entry.kind) |kind| entity.spec(kind) else null;
         const model_spec: ?entity.ModelSpec = if (kind_spec) |spec| (spec.model orelse continue) else null;
         const bytes = try assets.read(gpa, io, self.dir, entry.path);
         defer gpa.free(bytes);
