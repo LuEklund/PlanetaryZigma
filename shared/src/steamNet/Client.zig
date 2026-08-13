@@ -53,7 +53,7 @@ const Browser = extern struct {
         });
     }
     fn complete(self: *Browser, request: steam.HServerListRequest, response: steam.EMatchMakingServerResponse) callconv(.c) void {
-        std.log.info("server list refresh compele: {s}", .{@tagName(response)});
+        std.log.info("server list refresh complete: {s}", .{@tagName(response)});
         const servers = steam.SteamMatchmakingServers();
         const server_count = servers.GetServerCount(request);
         std.log.info("refresh complete: {s} ({d} servers)", .{ @tagName(response), server_count });
@@ -85,11 +85,14 @@ user_steam_id: u64,
 server_conn: steam.HSteamNetConnection = 0,
 own_lobby: u64 = 0,
 last_send_result: steam.EResult = .k_EResultOK,
+send_stats: SteamNet.PacketStats(@import("../net.zig").ClientPacket) = .{},
 packets: Packets,
 pipe: steam.HSteamPipe,
 browser: Browser,
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
+/// Fills the caller's Client rather than returning one: the packet pump holds `self`, and
+/// a returned struct would be copied out from under it.
+pub fn init(self: *Client, gpa: std.mem.Allocator, io: std.Io) !void {
     if (!steam.SteamAPI_Init()) {
         std.log.err("SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.", .{});
         return error.InitSteamworks;
@@ -97,7 +100,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
     steam.SteamAPI_ManualDispatch_Init();
     const steam_pipe = steam.SteamAPI_GetHSteamPipe();
 
-    return .{
+    self.* = .{
         .pipe = steam_pipe,
         .packets = .{},
         .gpa = gpa,
@@ -106,6 +109,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Client {
         .user_steam_id = steam.SteamUser().GetSteamID(),
         .browser = .{},
     };
+    self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
 pub fn personaName(_: *const Client) []const u8 {
@@ -223,6 +227,7 @@ pub fn handlePackets(self: *Client) !void {
         if (@import("../SteamNet.zig").log_connection_status and self.server_conn != 0 and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
             last_status_log = now;
             @import("../SteamNet.zig").logConnectionStatus(steam.SteamNetworkingSockets_SteamAPI(), self.server_conn);
+            self.send_stats.logAndReset("client");
         }
         try self.io.checkCancel();
         {
@@ -230,15 +235,15 @@ pub fn handlePackets(self: *Client) !void {
             defer self.packet_mutex.unlock(self.io);
             self.steamPump() catch |err|
                 std.log.err("steamPump: {s}", .{@errorName(err)});
-            self.recievePackets() catch |err|
-                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.receivePackets() catch |err|
+                std.log.err("receivePackets: {s}", .{@errorName(err)});
             self.sendPackets() catch |err|
                 std.log.err("sendPackets: {s}", .{@errorName(err)});
             if (self.browser.list.refresh_state == .request) {
                 self.browser.list.refresh_state = .refreshing;
                 const servers = steam.SteamMatchmakingServers();
                 const app_id = steam.SteamUtils().GetAppID();
-                std.log.info("requsting internet server list for app {d}...", .{app_id});
+                std.log.info("requesting internet server list for app {d}...", .{app_id});
                 self.browser.request = servers.RequestInternetServerList(app_id, null, 0, @ptrCast(&self.browser));
             }
         }
@@ -288,7 +293,7 @@ fn steamPump(self: *Client) !void {
     }
 }
 
-pub fn recievePackets(self: *Client) !void {
+pub fn receivePackets(self: *Client) !void {
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;
@@ -311,6 +316,7 @@ pub fn sendPackets(self: *Client) !void {
     if (self.packets.outgoing.items.len == 0) return;
     const sockets = steam.SteamNetworkingSockets_SteamAPI();
     for (self.packets.outgoing.items) |*message| {
+        if (SteamNet.log_connection_status) self.send_stats.record(message.bytes[0..message.len]);
         var message_number: i64 = 0;
         const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
         if (result != self.last_send_result) {

@@ -15,6 +15,7 @@ mode: Mode,
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
 packet_mutex: std.Io.Mutex = .init,
 last_send_result: steam.EResult = .k_EResultOK,
+send_stats: SteamNet.PacketStats(@import("../net.zig").ServerPacket) = .{},
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -26,6 +27,8 @@ packets: Packets,
 
 pub const max_connections: usize = 32;
 pub const server_file_name = "server_id";
+const auth_poll_milliseconds: u32 = 50;
+const auth_timeout_milliseconds: u32 = 8000;
 
 pub const Mode = enum(u8) {
     steam_p2p,
@@ -44,7 +47,9 @@ pub const HostState = enum(u8) {
     left,
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
+/// Fills the caller's Server rather than returning one: the packet pump holds `self`, and
+/// a returned struct would be copied out from under it.
+pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !void {
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -93,6 +98,25 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
     std.log.info("\nSTEAM_ID {d}\n", .{gs.GetSteamID()});
 
     const sock = steam.SteamGameServerNetworkingSockets_SteamAPI();
+
+    if (options.mode == .steam_p2p) {
+        _ = sock.InitAuthentication();
+        var auth_status: steam.SteamNetAuthenticationStatus_t = undefined;
+        var availability: steam.ESteamNetworkingAvailability = sock.GetAuthenticationStatus(&auth_status);
+        var waited_milliseconds: u32 = 0;
+        while (availability != .k_ESteamNetworkingAvailability_Current and waited_milliseconds < auth_timeout_milliseconds) : (waited_milliseconds += auth_poll_milliseconds) {
+            _ = try steamCallback(null, gpa, pipe, null);
+            try io.sleep(.{ .nanoseconds = auth_poll_milliseconds * std.time.ns_per_ms }, .real);
+            availability = sock.GetAuthenticationStatus(&auth_status);
+        }
+        std.log.info("networking auth {t} after {d}ms: {s}", .{
+            availability,
+            waited_milliseconds,
+            std.mem.sliceTo(&auth_status.m_debugMsg, 0),
+        });
+        if (availability != .k_ESteamNetworkingAvailability_Current) return error.NetworkingAuthTimeout;
+    }
+
     const listen = switch (options.mode) {
         .steam_p2p => sock.CreateListenSocketP2P(0, &.{}),
         .local_singleplayer => listen: {
@@ -119,7 +143,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         },
     }
 
-    return .{
+    self.* = .{
         .gpa = gpa,
         .pipe = pipe,
         .gs = gs,
@@ -133,6 +157,7 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !Server {
         .host_state = if (options.host_steam_id != 0 or options.mode == .local_singleplayer) .waiting else .none,
         .mode = options.mode,
     };
+    self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
 pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
@@ -151,6 +176,9 @@ pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version
 }
 
 pub fn deinit(self: *Server) void {
+    self.handle_packets_future.cancel(self.io) catch |err| {
+        std.log.err("packet pump exit: {s}", .{@errorName(err)});
+    };
     if (self.listen_socket != 0) _ = self.socket.CloseListenSocket(self.listen_socket);
     steam.Server.SteamGameServer_Shutdown();
     self.packets.deinit(self.gpa);
@@ -195,6 +223,7 @@ pub fn handlePackets(self: *Server) !void {
             for (self.connections) |conn| {
                 if (conn != 0) @import("../SteamNet.zig").logConnectionStatus(self.socket, conn);
             }
+            self.send_stats.logAndReset("server");
         }
         try self.io.checkCancel();
         {
@@ -202,8 +231,8 @@ pub fn handlePackets(self: *Server) !void {
             defer self.packet_mutex.unlock(self.io);
             _ = self.steamCallback(self.gpa, self.pipe, self.socket) catch |err|
                 std.log.err("steamCallback: {s}", .{@errorName(err)});
-            self.recievePackets() catch |err|
-                std.log.err("recievePackets: {s}", .{@errorName(err)});
+            self.receivePackets() catch |err|
+                std.log.err("receivePackets: {s}", .{@errorName(err)});
             self.sendPackets() catch |err|
                 std.log.err("sendPackets: {s}", .{@errorName(err)});
         }
@@ -211,7 +240,7 @@ pub fn handlePackets(self: *Server) !void {
     }
 }
 
-pub fn recievePackets(self: *Server) !void {
+pub fn receivePackets(self: *Server) !void {
     var msgs: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     for (self.connections) |conn| {
         if (conn == 0) continue;
@@ -244,6 +273,7 @@ pub fn recievePackets(self: *Server) !void {
 pub fn sendPackets(self: *Server) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
+        if (SteamNet.log_connection_status) self.send_stats.record(msg.bytes[0..msg.len]);
         var msg_num: i64 = 0;
         const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
         if (result != self.last_send_result) {
@@ -279,7 +309,7 @@ fn steamCallback(
                     },
                     .k_ESteamNetworkingConnectionState_Connected => {
                         var remote_identity = event.m_info.m_identityRemote;
-                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id) {
+                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id and self.?.host_state != .connected) {
                             self.?.host_conn = event.m_hConn;
                             self.?.host_state = .connected;
                             std.log.info("host connected (conn={d})", .{event.m_hConn});

@@ -1,10 +1,13 @@
 # PlanetaryZigma
 A multiplayer 3D game set across procedurally generated planets, with gameplay heavily inspired by [Risk of Rain 2](https://store.steampowered.com/app/632360/Risk_of_Rain_2/). Each stage takes place on a unique planet filled with enemies, chests, and a boss that must be defeated before the teleporter can be charged and the players can progress to the next stage.
 
-Planetary Zigma uses [Zig](https://ziglang.org/), [Vulkan](https://www.vulkan.org/), [Box3D](https://box2d.org/documentation3d/) and the [Steamworks SDK](https://partner.steamgames.com/).
+## Latest gameplay: [https://youtu.be/dQSKI70bBEo?t=8653](https://youtu.be/dQSKI70bBEo?t=8653)
 
 ### **[Steam Page](https://store.steampowered.com/app/3167780/Planetary_Zigma/)**
 ### *[Discord](https://discord.gg/7t4tNTqad)*
+
+
+Planetary Zigma uses [Zig](https://ziglang.org/), [Vulkan](https://www.vulkan.org/), [Box3D](https://box2d.org/documentation3d/) and the [Steamworks SDK](https://partner.steamgames.com/).
 
 # These are people who have helped multiple times, and deserves a shoutout. (dm if I forgot anyone)
 

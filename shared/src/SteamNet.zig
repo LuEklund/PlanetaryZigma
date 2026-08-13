@@ -4,8 +4,6 @@ const steam = @import("steamworks");
 pub const Server = @import("steamNet/Server.zig");
 pub const Client = @import("steamNet/Client.zig");
 
-/// Mirrors steam.HSteamNetConnection (u32). Defined locally so the dynlib
-/// doesn't need to import the steamworks package.
 pub const max_msg_bytes: usize = 1024;
 pub const local_server_port: u16 = 27018;
 
@@ -43,10 +41,45 @@ pub const Event = union(enum) {
 
 pub var log_connection_status: bool = false;
 
+pub const send_warn_bytes_per_second: u64 = 131072;
+
+pub fn PacketStats(comptime Packet: type) type {
+    return struct {
+        counts: [kind_count]u32 = @splat(0),
+        bytes: [kind_count]u64 = @splat(0),
+
+        const kind_count = std.meta.fields(std.meta.Tag(Packet)).len;
+        const endian = @import("net.zig").endian;
+
+        pub fn record(self: *@This(), message_bytes: []const u8) void {
+            if (message_bytes.len < 2) return;
+            const tag = std.enums.fromInt(std.meta.Tag(Packet), std.mem.readInt(u16, message_bytes[0..2], endian)) orelse return;
+            self.counts[@intFromEnum(tag)] += 1;
+            self.bytes[@intFromEnum(tag)] += message_bytes.len;
+        }
+
+        pub fn logAndReset(self: *@This(), side: []const u8) void {
+            var buffer: [512]u8 = undefined;
+            var len: usize = 0;
+            var total_bytes: u64 = 0;
+            inline for (std.meta.fields(std.meta.Tag(Packet)), 0..) |field, kind| {
+                total_bytes += self.bytes[kind];
+                if (self.counts[kind] != 0) {
+                    const part = std.fmt.bufPrint(buffer[len..], "{s}={d}x/{d}B ", .{ field.name, self.counts[kind], self.bytes[kind] }) catch break;
+                    len += part.len;
+                }
+            }
+            std.log.info("{s} send/s: {s}total={d}B", .{ side, buffer[0..len], total_bytes });
+            if (total_bytes > send_warn_bytes_per_second) std.log.warn("{s} send rate HIGH: {d}B/s", .{ side, total_bytes });
+            self.* = .{};
+        }
+    };
+}
+
 pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.HSteamNetConnection) void {
     var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
     if (sockets.GetConnectionRealTimeStatus(conn, &status, &.{}) != .k_EResultOK) return;
-    std.log.debug("conn={d} ping={d}ms qual={d:.2}/{d:.2} out={d:.0}pps in={d:.0}pps rate={d}Bps pending={d}u/{d}r unacked={d}", .{
+    std.log.info("conn={d} ping={d}ms qual={d:.2}/{d:.2} out={d:.0}pps in={d:.0}pps rate={d}Bps pending={d}u/{d}r unacked={d}", .{
         conn,
         status.m_nPing,
         status.m_flConnectionQualityLocal,

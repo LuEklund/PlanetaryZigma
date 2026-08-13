@@ -1,7 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
-const Item = @import("inventory.zig").Item;
-const Stats = @import("Stats.zig");
+const Item = @import("Item.zig");
+const Stat = Item.Stat;
 
 pub const Id = enum(u32) {
     none = 0,
@@ -9,14 +9,21 @@ pub const Id = enum(u32) {
 };
 
 pub const EnemyKind = enum(u16) {
-    tubloid = 0,
-    tubloida = 1,
-    bloorpLord = 2,
+    tubloid,
+    tubloida,
+    bloorp_lord,
+    hunkloid,
+    blooploid,
+
+    acorn,
+    grass1,
+    healer,
+    pub const count: usize = @typeInfo(EnemyKind).@"enum".fields.len;
 };
 
 pub const ProjectileKind = enum(u16) {
-    cube = 0,
-    rocket = 1,
+    cube,
+    rocket,
 };
 
 pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
@@ -29,12 +36,12 @@ pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint
 }
 
 pub fn hasCollider(kind: Kind) bool {
-    return kind == .planet or spec(kind).collider != null;
+    return spec(kind).collider != null;
 }
 
 pub const ColliderShape = union(enum) {
     box: HalfBoxExtent,
-    capsule: struct { half_heigth: f32, radius: f32 },
+    capsule: struct { half_height: f32, radius: f32 },
     pub const HalfBoxExtent = struct {
         x: f32,
         y: f32,
@@ -56,13 +63,8 @@ pub fn collider(kind: Kind) ?Collider {
     return spec(kind).collider;
 }
 
-//TODO: merge with entiy.State
-pub const ModelClipNames = struct {
-    idle: ?[]const u8,
-    walk: []const u8,
-    attack: []const u8,
-    death: ?[]const u8,
-};
+const no_clip: ?[]const u8 = null;
+const no_skill: ?AssignedSkill = null;
 
 pub const ModelLookNodeNames = struct {
     spine: ?[]const u8,
@@ -71,154 +73,210 @@ pub const ModelLookNodeNames = struct {
 };
 
 pub const ModelSpec = struct {
-    key: []const u8,
+    path: []const u8,
     offset: nz.Transform3D(f32) = .{},
-    skinned: bool,
-    clip_names: ?ModelClipNames,
+    loop_clips: ?std.EnumArray(Loop, ?[]const u8),
     look_node_names: ?ModelLookNodeNames = null,
     overlay_root_name: ?[]const u8 = null,
 };
 
 const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-const player_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
-const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.6, 0 }, .rotation = face_camera };
+const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
 
-pub fn modelSpec(kind: Kind) ModelSpec {
+pub fn modelSpec(kind: Kind) ?ModelSpec {
     return spec(kind).model;
 }
 
 pub const Spec = struct {
     collider: ?Collider,
-    model: ModelSpec,
-    icon: ?[]const u8 = null,
-    has_health: bool,
-    expects_model: bool,
-    stats: ?Stats.Values = null,
+    model: ?ModelSpec,
+    base_stats: ?std.EnumArray(Stat, f32) = null,
     spawn_duration: f32 = 0,
     death_duration: f32 = 0,
     currency: u32 = 0,
+    skills: std.EnumArray(Action, ?AssignedSkill) = .initFill(null),
 };
 
 pub fn spec(kind: Kind) Spec {
     return switch (kind) {
         .unknown => .{
             .collider = null,
-            .model = .{ .key = "default", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = false,
+            .model = null,
         },
         .player => .{
-            .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } }, .motion = .dynamic, .layer = .moving },
             .model = .{
-                .key = "objects/BenBozo.glb",
-                .offset = player_model_offset,
-                .skinned = true,
-                .clip_names = .{
+                .path = "objects/BenBozo.glb",
+                .offset = .{ .position = .{ 0, -0.5, 0 }, .rotation = face_camera },
+                .loop_clips = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Run",
-                    .attack = "shoot",
                     .death = "Death",
-                },
+                }),
                 .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
                 .overlay_root_name = "mixamorig:Spine1",
             },
-            .has_health = true,
-            .expects_model = true,
-            .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 6, .range = 10, .regen = 1 }),
+            .base_stats = .initDefault(0, .{
+                .health = 100,
+                .speed = 10,
+                .damage = 1,
+                .regen = 1,
+                .primary_cooldown = 0.3,
+                .utility_cooldown = 5,
+                .secondary_cooldown = 5,
+                .equipment_cooldown = 5,
+            }),
+            .skills = .initDefault(no_skill, .{
+                .primary = .{ .skill = .shoot, .range = 10, .clip = "Run" },
+                .secondary = .{ .skill = .spread_shot },
+                .utility = .{ .skill = .dash },
+                .equipment = .{ .skill = .use_equipment },
+            }),
             .currency = 100,
-            .death_duration = 5,
-        },
-        .planet => .{
-            .collider = null,
-            .model = .{ .key = "planet", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = true,
         },
         .teleporter => .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
-            .model = .{ .key = "objects/pillar.glb", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = false,
+            .model = .{ .path = "objects/pillar.glb", .loop_clips = null },
         },
         .lootbox => .{
-            .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .static, .layer = .moving },
-            .model = .{ .key = "objects/lootbox.glb", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = true,
+            .collider = .{ .shape = .{ .box = .{ .x = 0.6, .y = 0.6, .z = 0.6 } }, .motion = .static, .layer = .moving },
+            .model = .{ .path = "objects/lootbox.glb", .loop_clips = null },
             .death_duration = 0.35,
             .currency = 10,
         },
+        .platform => .{
+            .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
+            .model = null,
+        },
+        .target_dummy => .{
+            .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
+            .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .loop_clips = .initDefault(no_clip, .{
+                .idle = "idle",
+                .walk = "walk",
+                .death = "Death",
+            }) },
+            .base_stats = .initDefault(0, .{ .health = 1000 }),
+            .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .clip = "attack" } }),
+        },
         .projectile_cube => .{
             .collider = null,
-            .model = .{ .key = "cube_projectile", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = true,
+            .model = null,
+            .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .projectile_rocket => .{
             .collider = null,
-            .model = .{ .key = "objects/rocket.glb", .skinned = false, .clip_names = null },
-            .has_health = false,
-            .expects_model = true,
+            .model = .{ .path = "objects/rocket.glb", .loop_clips = null },
+            .base_stats = .initDefault(0, .{ .health = 1 }),
         },
         .enemy => |enemy_kind| switch (enemy_kind) {
             .tubloid => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloid.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Tubloid.glb", .offset = enemy_model_offset, .loop_clips = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
-                    .attack = "attack",
                     .death = "Death",
-                } },
-                .has_health = true,
-                .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 1, .range = 2 }),
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 25, .speed = 3, .damage = 10, .primary_cooldown = 1 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .range = 2, .clip = "attack" } }),
                 .currency = 5,
-                .death_duration = 3,
             },
             .tubloida => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/Tubloida.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Tubloida.glb", .offset = enemy_model_offset, .loop_clips = .initDefault(no_clip, .{
                     .idle = "idle",
                     .walk = "walk",
-                    .attack = "attack_range",
                     .death = "Death",
-                } },
-                .has_health = true,
-                .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 20, .speed = 3, .damage = 1, .attack_speed = 0.2, .range = 10 }),
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 3, .damage = 5, .primary_cooldown = 5 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 10, .clip = "attack_range" } }),
                 .currency = 7,
-                .death_duration = 3,
             },
-            .bloorpLord => .{
-                .collider = .{ .shape = .{ .capsule = .{ .half_heigth = 2, .radius = 2 } }, .motion = .dynamic, .layer = .moving },
-                .model = .{ .key = "objects/BloorpLord.glb", .offset = enemy_model_offset, .skinned = true, .clip_names = .{
+            .hunkloid => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
+                    .idle = "Idle",
+                    .walk = "Walk",
+                    .death = "Death",
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 50, .speed = 1, .damage = 25, .primary_cooldown = 5, .utility_cooldown = 5 }),
+                .skills = .initDefault(no_skill, .{
+                    .primary = .{ .skill = .melee, .range = 3, .clip = "Attack" },
+                    .utility = .{ .skill = .arc_jump, .range = 12, .clip = "Secondary" },
+                }),
+                .currency = 30,
+            },
+            .bloorp_lord => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/BloorpLord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
                     .idle = "Idle",
                     .walk = "Walking",
-                    .attack = "Spawn_Enemy",
                     .death = "Death",
-                } },
-                .has_health = true,
-                .expects_model = true,
-                .stats = .initDefault(0, .{ .health = 100, .speed = 10, .damage = 1, .attack_speed = 0.25, .range = 40 }),
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 100, .speed = 30, .damage = 10, .primary_cooldown = 0.01 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 40, .clip = "Spawn_Enemy" } }),
                 .currency = 100,
-                .death_duration = 3,
+            },
+            .blooploid => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Blooploid.glb", .offset = enemy_model_offset, .loop_clips = null },
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
+                .currency = 7,
+            },
+            .acorn => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.05, .radius = 0.4 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/acorn.glb", .offset = .{ .position = .{ 0, -0.4, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
+                    .idle = "Idle",
+                    .walk = "Run",
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 5, .speed = 10, .damage = 1, .primary_cooldown = 2 }),
+                .skills = .initDefault(no_skill, .{
+                    .primary = .{ .skill = .melee, .range = 2 },
+                    .utility = .{ .skill = .plant, .clip = "Planted" },
+                }),
+                .currency = 5,
+            },
+            .grass1 => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.45, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/grass1.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = face_camera }, .loop_clips = .initDefault(no_clip, .{
+                    .idle = "Idle",
+                    .walk = "Walk",
+                }) },
+                .base_stats = .initDefault(0, .{ .health = 30, .speed = 3, .damage = 10, .primary_cooldown = 0.75 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .melee, .range = 2, .clip = "Attack" } }),
+                .currency = 25,
+            },
+            .healer => .{
+                .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+                .model = .{ .path = "objects/Healer.glb", .offset = enemy_model_offset, .loop_clips = null },
+                .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
+                .skills = .initDefault(no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
+                .currency = 7,
             },
         },
         .item => |item_kind| .{
             .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
-            .model = .{ .key = Item.spec(item_kind).model, .skinned = false, .clip_names = null },
-            .icon = Item.spec(item_kind).icon,
-            .has_health = false,
-            .expects_model = true,
+            .model = .{ .path = Item.getModel(item_kind), .loop_clips = null },
             .spawn_duration = 0.35,
         },
     };
 }
 
-pub const all_kinds: []const Kind = blk: {
-    var kinds: []const Kind = &.{ .unknown, .player, .planet, .teleporter, .lootbox, .projectile_cube, .projectile_rocket };
-    for (std.enums.values(EnemyKind)) |enemy_kind| kinds = kinds ++ .{Kind{ .enemy = enemy_kind }};
-    for (std.enums.values(Item)) |item_kind| kinds = kinds ++ .{Kind{ .item = item_kind }};
+pub const all_kinds: []const Kind = &all_kinds_array;
+
+const all_kind_count: usize = 8 + EnemyKind.count + Item.items.len;
+const all_kinds_array: [all_kind_count]Kind = blk: {
+    var kinds: [all_kind_count]Kind = undefined;
+    kinds[0..8].* = .{ .unknown, .player, .teleporter, .lootbox, .platform, .target_dummy, .projectile_cube, .projectile_rocket };
+    var kind_index: usize = 8;
+    for (std.enums.values(EnemyKind)) |enemy_kind| {
+        kinds[kind_index] = .{ .enemy = enemy_kind };
+        kind_index += 1;
+    }
+    for (std.enums.values(Item.Kind)) |item_kind| {
+        kinds[kind_index] = .{ .item = item_kind };
+        kind_index += 1;
+    }
     break :blk kinds;
 };
 
@@ -227,21 +285,18 @@ pub const Kind = union(enum) {
 
     player,
     enemy: EnemyKind,
-    item: Item,
+    item: Item.Kind,
 
-    planet,
     teleporter,
     lootbox,
+    platform,
+    target_dummy,
 
     projectile_cube,
     projectile_rocket,
 
     pub fn eql(kind: Kind, other_kind: Kind) bool {
         return std.meta.eql(kind, other_kind);
-    }
-
-    pub fn hasHealth(kind: Kind) bool {
-        return spec(kind).has_health;
     }
 
     pub fn projectileKind(kind: Kind) ?ProjectileKind {
@@ -251,16 +306,41 @@ pub const Kind = union(enum) {
             else => null,
         };
     }
-
-    pub fn expectsModel(kind: Kind) bool {
-        return spec(kind).expects_model;
-    }
 };
 
-//TODO: merge with model clipstate
-pub const State = enum(u16) {
-    idle = 0,
-    walk = 1,
-    attack = 2,
-    death = 3,
+pub const Action = enum(u16) {
+    primary,
+    secondary,
+    utility,
+    equipment,
 };
+
+pub const Skill = enum {
+    shoot,
+    spread_shot,
+    dash,
+    use_equipment,
+    shoot_cube,
+    melee,
+    arc_jump,
+    plant,
+};
+
+pub const AssignedSkill = struct {
+    skill: Skill,
+    range: f32 = 0,
+    clip: ?[]const u8 = null,
+};
+
+pub const Loop = enum(u16) {
+    idle,
+    walk,
+    death,
+    stun,
+};
+
+pub fn animationLoop(velocity: nz.Vec3(f32), stun_time: f32, override: ?Loop) Loop {
+    if (override) |forced| return forced;
+    if (stun_time > 0) return .stun;
+    return if (nz.vec.length(velocity) > 0.5) .walk else .idle;
+}

@@ -7,33 +7,25 @@
         .shared = .{
             .path = "../shared/",
         },
-        .yes = .{
-            .url = "git+https://github.com/HaraldWik/yes#d90fc69dda727ff6fcc4521a916653993d20d202",
-            .hash = "yes-3.0.0-pN7MXdTWAwBbayfqKjUe4cojVSoGNUTrjmsS6GI7cAYV",
+        .render = .{
+            .path = "../render/",
         },
-        .vulkan_headers = .{ // TODO: Update to v1.4.354
-            .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#33d7f512583b8de44d1b6384aa1cf482f92e53e9",
-            .hash = "N-V-__8AABoW_QEK-3TzuDEzM4iIfxXkfm2qHw0hBj0rutkl",
-        },
-        .vma = .{ //TODO: Update to v3.4.0
-            .url = "git+https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator#v3.3.0",
-            .hash = "N-V-__8AAIutPgABk6NlXZhlJ5P8qVECvakZIKoO94h7xUOw",
-        },
+
+
+
         .zig_steamworks = .{
             .url = "git+https://github.com/menduz/zig-steamworks.git#7ef8943e7aa9e47abc057e32bc1e1ad63b8ca86d",
             .hash = "zig_steamworks-0.0.0-QF-Y-5rWxgB893nUytb-BxR5B8XE8FS4CUA2YoaolUSB",
         },
-        .zgltf = .{
-            .url = "git+https://github.com/LuEklund/zgltf.git#82765fa577fece6febcc5ce2b0e83864ca6ea5fe",
-            .hash = "zgltf-0.6.0-i6Tcb00kAQAGE6vERq4z6PxP4hdlKR6kb-TFhAO-6_ad",
-        },
-        .stb = .{
-            .url = "git+https://github.com/nothings/stb#fede005abaf93d9d7f3a679d1999b2db341b360f",
-            .hash = "N-V-__8AACIvTgCTqOj6KM32YnqNx1bcsaMuGAeKQEIWZ8Ph",
-        },
+
+
         .ztracy = .{
             .url = "git+https://github.com/HTRMC/ztracy?ref=v0.2.1#822b2eb73d18995fbc8d9c52fc9edf8d0e84fff2",
             .hash = "ztracy-0.2.0-q8LWRV4dAACRTyehcC2WT4l1rGZvx3vppsbwDr8GoWlv",
+        },
+        .miniaudio = .{
+            .url = "git+https://github.com/mackron/miniaudio.git#9634bedb5b5a2ca38c1ee7108a9358a4e233f14d",
+            .hash = "N-V-__8AAHNWwAASlNuYbrP1-3UqXdwbYvZ_6nIJhpAcRMfi",
         },
     },
     .paths = .{

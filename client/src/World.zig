@@ -4,62 +4,83 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const Camera = @import("system/Camera.zig");
+const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
-const Emitter = @import("system/Emitter.zig");
-const DamagePopup = @import("system/DamagePopup.zig");
-const Model = @import("Renderer/Vulkan/Model.zig");
+const Options = @import("Options.zig");
+const Emitter = @import("graphics").Emitter;
+const Animator = @import("graphics").Animator;
+const DrawList = @import("contract").DrawList;
 
-pub const RenderCommand = union(enum) {
-    entity_spawned: struct { id: shared.entity.Id, kind: shared.entity.Kind },
-    entity_despawned: shared.entity.Id,
-    planet_spawned: u32,
+pub const DamageEvent = struct {
+    target: shared.entity.Id,
+    source: shared.entity.Id,
+    position: nz.Vec3(f32),
+    delta: f32,
 };
 
-mutex: std.Io.Mutex = .init,
 gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-pending_stats: std.ArrayList(shared.net.UpdateStat) = .empty,
+pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
 pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
-pending_player_names: std.ArrayList(shared.net.PlayerNameUpdate) = .empty,
-attack_events: std.ArrayList(shared.entity.Id) = .empty,
-render_outbox: std.ArrayList(RenderCommand) = .empty,
-emitters: std.ArrayList(Emitter) = .empty,
-damage_popups: std.ArrayList(DamagePopup) = .empty,
+action_events: std.ArrayList(shared.net.Event.Action) = .empty,
+dying: std.ArrayList(Dying) = .empty,
+effects: std.ArrayList(Emitter.Spawn) = .empty,
+damage_events: std.ArrayList(DamageEvent) = .empty,
+options: Options = .{},
 camera: Camera = .{},
 controller: Controller = .{},
+chat: Chat = .{},
 teleporter_id: shared.entity.Id = .none,
 player_id: shared.entity.Id = .none,
-planet_radius: f32 = 0,
+planet: shared.Planet = .empty,
+elapsed_time: f32 = 0,
+delta_time: f32 = 0,
+fps: f32 = 0,
+go_again_pending: bool = false,
 stage: u32 = 0,
 prng: std.Random.DefaultPrng,
+
+pub const Dying = struct {
+    kind: shared.entity.Kind,
+    transform: nz.Transform3D(f32),
+    animation: Animator.Handle,
+    elapsed: f32,
+};
 
 pub const Entity = struct {
     id: shared.entity.Id = .none,
     kind: shared.entity.Kind,
-    player_name: []const u8 = "",
+    player_name: shared.net.PlayerName = .copy(""),
     teleporter: shared.teleporter.State = .{},
     inventory: shared.Inventory = .{},
-    stats: shared.Stats = .init(.initFill(0)),
+    health: f32 = 0,
+    max_health: f32 = 0,
     currency: u32 = 0,
     interacting: shared.entity.Id = .none,
-    update_motion: ?shared.net.UpdateMotion = null,
-    smoothed_moiton_tick: u32 = 0,
-    position_error: nz.Vec3(f32) = @splat(0),
-    override_animation_state: ?shared.entity.State = null,
-    spawn_anim: f32 = 0,
-    death_anim: f32 = 0,
-    model: Model.Handle = .default,
+    motion: Motion = .{},
+    override_animation_loop: ?shared.entity.Loop = null,
+    stun_time: f32 = 0,
+    flags: Flags = .{},
+    animation: Animator.Handle = .none,
+    spawned_at: f32 = 0,
 
     transform: nz.Transform3D(f32) = .{},
 
-    pub fn deinit(self: *Entity, gpa: std.mem.Allocator) void {
-        if (self.player_name.len != 0) {
-            gpa.free(self.player_name);
-            self.player_name = "";
-        }
+    pub const Motion = struct {
+        update: ?shared.net.UpdateMotion = null,
+        smoothed_tick: u32 = 0,
+        position_error: nz.Vec3(f32) = @splat(0),
+    };
+
+    pub const Flags = packed struct {
+        is_teleporter_boss: bool = false,
+    };
+
+    pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
+        return shared.Item.Stat.value(stat_kind, self.kind, self.inventory);
     }
 };
 
@@ -69,78 +90,58 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
-        .pending_stats = try .initCapacity(gpa, shared.max_entities),
+        .pending_healths = try .initCapacity(gpa, shared.max_entities),
         .pending_inventory = try .initCapacity(gpa, shared.max_entities),
-        .pending_player_names = try .initCapacity(gpa, shared.max_entities),
-        .attack_events = try .initCapacity(gpa, shared.max_entities),
-        .render_outbox = try .initCapacity(gpa, shared.max_entities * 2 + 8),
-        .emitters = try .initCapacity(gpa, 256),
-        .damage_popups = try .initCapacity(gpa, 128),
+        .action_events = try .initCapacity(gpa, shared.max_entities),
+        .dying = try .initCapacity(gpa, shared.max_entities),
+        .effects = try .initCapacity(gpa, shared.max_entities),
+        .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
 }
 
 pub fn deinit(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        entity.deinit(self.gpa);
-    }
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
-    self.pending_stats.deinit(self.gpa);
+    self.pending_healths.deinit(self.gpa);
     self.pending_inventory.deinit(self.gpa);
-    clearPendingPlayerNames(self);
-    self.pending_player_names.deinit(self.gpa);
-    self.attack_events.deinit(self.gpa);
-    self.render_outbox.deinit(self.gpa);
-    self.emitters.deinit(self.gpa);
-    self.damage_popups.deinit(self.gpa);
+    self.action_events.deinit(self.gpa);
+    self.dying.deinit(self.gpa);
+    self.effects.deinit(self.gpa);
+    self.damage_events.deinit(self.gpa);
+    self.planet.deinit(self.gpa);
 }
 
-pub fn clearSession(self: *World) void {
-    for (self.entities.values()) |*entity| {
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = entity.id });
-        entity.deinit(self.gpa);
-    }
+pub fn clear(self: *World) void {
+    self.go_again_pending = false;
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
-    self.clearPendingSpawns();
+    self.pending_spawn.clearRetainingCapacity();
+
     self.pending_despawn.clearRetainingCapacity();
-    self.pending_stats.clearRetainingCapacity();
+    self.pending_healths.clearRetainingCapacity();
     self.pending_inventory.clearRetainingCapacity();
-    clearPendingPlayerNames(self);
-    self.attack_events.clearRetainingCapacity();
-    self.damage_popups.clearRetainingCapacity();
+    self.action_events.clearRetainingCapacity();
+    self.dying.clearRetainingCapacity();
+    self.effects.clearRetainingCapacity();
+    self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
+    self.chat = .{};
     self.controller.clearInput();
     self.controller.releaseMouseButtons();
     self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
-    self.planet_radius = 0;
     self.stage = 0;
 }
 
-pub fn clearPendingSpawns(self: *World) void {
+pub fn flush(self: *World) !void {
+    defer self.pending_spawn.clearRetainingCapacity();
     for (self.pending_spawn.items) |entity_info| {
-        switch (entity_info.data) {
-            .player_name => |player_name| if (player_name.name.len != 0) self.gpa.free(player_name.name),
-            .none, .planet_radius, .is_teleporter_boss => {},
-        }
-    }
-    self.pending_spawn.clearRetainingCapacity();
-}
-
-pub fn flush(self: *World, delta_time: f32) !void {
-    defer self.clearPendingSpawns();
-
-    for (self.pending_spawn.items) |entity_info| {
-        if (self.getPtr(entity_info.id)) |entity| {
-            try self.applySpawnData(entity, entity_info);
-            continue;
-        }
+        if (self.getPtr(entity_info.id) != null) continue;
         const entity = try self.spawn(entity_info.id);
         entity.* = .{
             .id = entity_info.id,
@@ -150,120 +151,102 @@ pub fn flush(self: *World, delta_time: f32) !void {
                 .position = entity_info.position,
                 .rotation = .fromVec(entity_info.rotation),
             },
-            .update_motion = .{
+            .motion = .{ .update = .{
                 .id = entity_info.id,
                 .position = entity_info.position,
                 .velocity = entity_info.velocity,
                 .rotation = entity_info.rotation,
                 .tick = entity_info.tick,
-            },
+            } },
         };
-        try self.applySpawnData(entity, entity_info);
         switch (entity_info.kind) {
             .player => {
+                if (entity_info.data == .player_name) {
+                    setPlayerName(entity, entity_info.data.player_name.slice());
+                }
                 if (entity_info.id == self.player_id) {
                     self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
                     self.controller.free_camera = false;
                 }
-            },
-            .planet => {
-                const radius: u32 = entity_info.data.planet_radius;
-                self.planet_radius = @floatFromInt(radius);
-                self.render_outbox.appendAssumeCapacity(.{ .planet_spawned = radius });
-                std.log.debug("SPAWNED: Planet {d}", .{radius});
             },
             .projectile_cube => entity.transform.scale = @splat(0.3),
             .projectile_rocket => entity.transform.scale = @splat(0.9),
             .teleporter => self.teleporter_id = entity.id,
             .enemy => {
                 if (entity_info.data == .is_teleporter_boss) {
-                    entity.transform.scale = @splat(5);
+                    entity.flags.is_teleporter_boss = true;
                     self.teleporter_bosses.appendAssumeCapacity(entity.id);
                 }
             },
-            .unknown, .item, .lootbox => {},
-        }
-        self.render_outbox.appendAssumeCapacity(.{ .entity_spawned = .{ .id = entity.id, .kind = entity.kind } });
-    }
-
-    for (self.pending_player_names.items) |player_name| {
-        if (self.getPtr(player_name.id)) |entity| {
-            if (entity.kind == .player) try self.setPlayerName(entity, player_name.name);
+            .unknown, .item, .lootbox, .platform, .target_dummy => {},
         }
     }
-    self.clearPendingPlayerNames();
 
-    for (self.pending_stats.items) |command| {
-        if (self.getPtr(command.id)) |entity| self.applyStat(entity, command);
+    for (self.pending_healths.items) |command| {
+        if (self.getPtr(command.id)) |entity| self.applyHealth(entity, command);
     }
-    self.pending_stats.clearRetainingCapacity();
+    self.pending_healths.clearRetainingCapacity();
 
     for (self.pending_inventory.items) |command| {
-        if (self.getPtr(command.id)) |entity| entity.inventory.set(command.item_kind, command.set);
+        if (self.getPtr(command.id)) |entity| applyInventory(entity, command);
     }
     self.pending_inventory.clearRetainingCapacity();
 
-    var despawn_index: usize = 0;
-    while (despawn_index < self.pending_despawn.items.len) {
-        const id = self.pending_despawn.items[despawn_index];
-        if (self.getPtr(id)) |entity| {
-            entity.update_motion = null;
-            //TODO: retrieve death animation time from clip.
-            entity.override_animation_state = .death;
-            const death_duration = shared.entity.spec(entity.kind).death_duration;
-            if (death_duration > 0) {
-                entity.death_anim = @min(entity.death_anim + delta_time / death_duration, 1.0);
-                if (entity.death_anim < 1.0) {
-                    despawn_index += 1;
-                    continue;
-                }
-            }
-        }
-        _ = self.pending_despawn.swapRemove(despawn_index);
-        if (self.getPtr(id) == null) continue;
+    defer self.pending_despawn.clearRetainingCapacity();
+    for (self.pending_despawn.items) |id| {
+        const entity = self.getPtr(id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
         }
         if (id == self.player_id) self.controller.free_camera = true;
-        self.render_outbox.appendAssumeCapacity(.{ .entity_despawned = id });
+        self.dying.appendAssumeCapacity(.{
+            .kind = entity.kind,
+            .transform = entity.transform,
+            .animation = entity.animation,
+            .elapsed = 0,
+        });
         _ = self.despawn(id);
     }
 }
 
-pub fn applySpawnData(self: *World, entity: *Entity, entity_info: shared.net.SpawnEntity) !void {
-    switch (entity_info.data) {
-        .player_name => |player_name| {
-            if (entity.kind == .player) try self.setPlayerName(entity, player_name.name);
-        },
-        .none, .planet_radius, .is_teleporter_boss => {},
-    }
+pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
+    self.pending_spawn.appendAssumeCapacity(spawn_entity);
 }
 
-pub fn applyStat(self: *World, entity: *Entity, command: shared.net.UpdateStat) void {
-    if (command.stat_kind == .health and command.source != .none and command.amount == .set_current) {
-        const delta = entity.stats.current.get(.health) - command.amount.set_current;
-        self.addDamagePopup(entity, command.source, delta);
+pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {
+    entity.inventory.set(command.item_kind, command.set);
+}
+
+pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {
+    if (command.source != .none and command.amount == .set_current) {
+        const delta = entity.health - command.amount.set_current;
+        if (delta != 0 and self.damage_events.items.len < self.damage_events.capacity) {
+            self.damage_events.appendAssumeCapacity(.{
+                .target = entity.id,
+                .source = command.source,
+                .position = entity.transform.position,
+                .delta = delta,
+            });
+        }
     }
+    const was_downed = entity.health <= 0;
     switch (command.amount) {
-        .set_current => |value| entity.stats.current.set(command.stat_kind, value),
-        .set_max => |value| entity.stats.max.set(command.stat_kind, value),
+        .set_current => |value| entity.health = value,
+        .set_max => |value| entity.max_health = value,
     }
-}
-
-fn addDamagePopup(self: *World, target: *const Entity, source: shared.entity.Id, delta: f32) void {
-    if (delta == 0) return;
-    if (source != self.player_id and target.id != self.player_id) return;
-    const color: [3]f32 = if (delta < 0)
-        .{ 0.3, 0.95, 0.35 }
-    else if (target.id == self.player_id)
-        .{ 0.95, 0.25, 0.2 }
-    else
-        .{ 1, 1, 1 };
-    DamagePopup.spawn(&self.damage_popups, self.prng.random(), target.transform.position, delta, color);
+    if (entity.max_health <= 0) return;
+    if (entity.id != self.player_id) return;
+    const downed = entity.health <= 0;
+    if (downed != was_downed) {
+        self.controller.free_camera = downed;
+        if (!downed) {
+            self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+        }
+    }
 }
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {
-    try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown });
+    try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time });
     return self.entities.getPtr(id).?;
 }
 
@@ -271,15 +254,9 @@ pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
-pub fn setPlayerName(self: *World, entity: *Entity, name: []const u8) !void {
+pub fn setPlayerName(entity: *Entity, name: []const u8) void {
     var name_buffer: [shared.max_player_name_len]u8 = undefined;
-    const sanitized = sanitizePlayerName(&name_buffer, name);
-    if (std.mem.eql(u8, entity.player_name, sanitized)) return;
-    if (entity.player_name.len != 0) {
-        self.gpa.free(entity.player_name);
-        entity.player_name = "";
-    }
-    entity.player_name = if (sanitized.len == 0) "" else try self.gpa.dupe(u8, sanitized);
+    entity.player_name = .copy(sanitizePlayerName(&name_buffer, name));
 }
 
 fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) []const u8 {
@@ -294,13 +271,5 @@ fn sanitizePlayerName(buffer: *[shared.max_player_name_len]u8, raw: []const u8) 
 }
 
 pub fn despawn(self: *World, id: shared.entity.Id) bool {
-    if (self.entities.getPtr(id)) |entity| entity.deinit(self.gpa);
     return self.entities.swapRemove(id);
-}
-
-pub fn clearPendingPlayerNames(self: *World) void {
-    for (self.pending_player_names.items) |player_name| {
-        if (player_name.name.len != 0) self.gpa.free(player_name.name);
-    }
-    self.pending_player_names.clearRetainingCapacity();
 }

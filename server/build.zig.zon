@@ -7,6 +7,9 @@
         .shared = .{
             .path = "../shared/",
         },
+        .render = .{
+            .path = "../render/",
+        },
         .zig_steamworks = .{
             .url = "git+https://github.com/menduz/zig-steamworks.git#7ef8943e7aa9e47abc057e32bc1e1ad63b8ca86d",
             .hash = "zig_steamworks-0.0.0-QF-Y-5rWxgB893nUytb-BxR5B8XE8FS4CUA2YoaolUSB",

@@ -1,10 +1,9 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const system = @import("../../system.zig");
-const Info = system.Info;
-const Ui = @import("../../Renderer/Vulkan/Ui.zig");
-const Resources = @import("../../Renderer/Vulkan/Resources.zig");
+const system = @import("../../System.zig");
+const World = system.World;
+const Ui = @import("ui");
 const NetworkManager = @import("../NetworkManager.zig");
 const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
@@ -14,11 +13,11 @@ const OptionsTab = Hud.OptionsTab;
 
 pub fn update(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) void {
     const max_width = @max(@as(f32, 260), ui.screen_width - 8);
-    const max_height = @max(@as(f32, 320), ui.screen_heigth - 8);
+    const max_height = @max(@as(f32, 320), ui.screen_height - 8);
     const panel_width = @min(max_width, @max(@as(f32, 740), ui.screen_width * 0.9));
-    const panel_height = @min(max_height, @max(@as(f32, 460), ui.screen_heigth * 0.88));
+    const panel_height = @min(max_height, @max(@as(f32, 460), ui.screen_height * 0.88));
     const left = (ui.screen_width - panel_width) * 0.5;
-    const top = (ui.screen_heigth - panel_height) * 0.5;
+    const top = (ui.screen_height - panel_height) * 0.5;
     const padding = std.math.clamp(panel_width * 0.035, @as(f32, 18), @as(f32, 30));
     const content_left = left + padding;
     const content_width = panel_width - padding * 2;
@@ -32,17 +31,17 @@ pub fn update(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) vo
     const body_height = panel_height - (body_top - top) - padding - 48;
 
     ui.add(null, .{
-        .size = .{ .percent = .{ .width = 1, .heigth = 1 } },
+        .size = .{ .percent = .{ .width = 1, .height = 1 } },
         .color = .new(0, 0, 0, 0.52),
     });
     ui.add(null, .{
         .name = "options_panel",
-        .size = .{ .fixed = .{ .width = panel_width, .heigth = panel_height } },
+        .size = .{ .fixed = .{ .width = panel_width, .height = panel_height } },
         .offset = .{ .left = left, .top = top },
         .color = .new(0.02, 0.025, 0.025, 0.92),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = content_width, .heigth = title_height } },
+        .size = .{ .fixed = .{ .width = content_width, .height = title_height } },
         .offset = .{ .left = content_left, .top = top + padding },
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{ .data = "Options", .size = 34, .color = .new(0.94, 0.96, 0.9, 1) },
@@ -70,11 +69,7 @@ pub fn update(ui: *Ui, hud: *Hud, options: *Options, controller: *Controller) vo
 
 fn optionsGameplay(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) void {
     const row_height: f32 = 44;
-    const row_gap: f32 = 10;
-    if (addOptionToggle(ui, "options_hud_stats", "HUD Stats", boolText(options.show_hud_stats), left, top, width, row_height)) {
-        options.show_hud_stats = !options.show_hud_stats;
-    }
-    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top + (row_height + row_gap), width, row_height)) {
+    if (addOptionToggle(ui, "options_crosshair", "Crosshair", boolText(options.show_crosshair), left, top, width, row_height)) {
         options.show_crosshair = !options.show_crosshair;
     }
 }
@@ -94,15 +89,18 @@ fn optionsKeyboardMouse(ui: *Ui, options: *Options, controller: *Controller, lef
     const bindings_top = top + slider_height + toggle_height + 18;
     const column_gap: f32 = 14;
     const column_width = (width - column_gap) * 0.5;
-    for (Controller.bindable_actions, 0..) |action, i| {
-        const column: f32 = if (i < 6) 0 else 1;
-        const row: f32 = @floatFromInt(if (i < 6) i else i - 6);
+    var listed: usize = 0;
+    for (std.enums.values(Controller.Kind)) |action| {
+        const bindable = Controller.bindable.get(action) orelse continue;
+        const column: f32 = if (listed < 6) 0 else 1;
+        const row: f32 = @floatFromInt(if (listed < 6) listed else listed - 6);
         const row_left = left + column * (column_width + column_gap);
         const row_top = bindings_top + row * (binding_height + binding_gap);
-        if (addBindingRow(ui, controller, action, row_left, row_top, column_width, binding_height)) {
+        if (addBindingRow(ui, controller, action, bindable.label, row_left, row_top, column_width, binding_height)) {
             controller.rebinding_action = action;
             controller.clearInput();
         }
+        listed += 1;
     }
 }
 
@@ -115,6 +113,9 @@ fn optionsVideo(ui: *Ui, options: *Options, left: f32, top: f32, width: f32) voi
     const fov_degrees = options.fov_rad * 180.0 / std.math.pi;
     if (addOptionSlider(ui, "options_fov", "Field of View", fov_degrees, 65, 115, left, top + (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{fov_degrees}))) |value| {
         options.fov_rad = value * std.math.pi / 180.0;
+    }
+    if (addOptionSlider(ui, "options_chunk_view_distance", "Chunk View Distance", options.chunk_view_distance, 1, 8, left, top + 2 * (row_height + row_gap), width, row_height, ui.print("{d:.0}", .{options.chunk_view_distance}))) |value| {
+        options.chunk_view_distance = @round(value);
     }
 }
 
@@ -130,7 +131,7 @@ fn addOptionsTab(ui: *Ui, tab: OptionsTab, selected: bool, left: f32, top: f32, 
     const hot = ui.isHot(name);
     ui.add(null, .{
         .name = name,
-        .size = .{ .fixed = .{ .width = width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
         .color = if (selected or hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -146,12 +147,12 @@ fn addOptionToggle(ui: *Ui, name: []const u8, label: []const u8, value: []const 
     const value_width = std.math.clamp(width * 0.32, @as(f32, 150), @as(f32, 220));
     const label_width = width - value_width - 14;
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
         .color = .new(0.035, 0.04, 0.038, 0.82),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = label_width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = label_width, .height = height } },
         .offset = .{ .left = left + 14, .top = top },
         .child_anchor = .{ .x = .start, .y = .center },
         .text = .{ .data = label, .size = 22, .color = .new(0.9, 0.93, 0.86, 1) },
@@ -160,10 +161,10 @@ fn addOptionToggle(ui: *Ui, name: []const u8, label: []const u8, value: []const 
     return ui.isClicked(name);
 }
 
-fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.Action, left: f32, top: f32, width: f32, height: f32) bool {
+fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.Kind, label: []const u8, left: f32, top: f32, width: f32, height: f32) bool {
     const name = bindingRowName(action);
     const value = if (controller.rebinding_action == action) "Listening" else Controller.bindingLabel(controller.bindings.get(action));
-    return addOptionToggle(ui, name, Controller.actionLabel(action), value, left, top, width, height);
+    return addOptionToggle(ui, name, label, value, left, top, width, height);
 }
 
 fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min: f32, max: f32, left: f32, top: f32, width: f32, height: f32, value_text: []const u8) ?f32 {
@@ -176,33 +177,33 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     const normalized = std.math.clamp((value - min) / (max - min), @as(f32, 0), @as(f32, 1));
 
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
         .color = .new(0.035, 0.04, 0.038, 0.82),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = label_width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = label_width, .height = height } },
         .offset = .{ .left = left + 14, .top = top },
         .child_anchor = .{ .x = .start, .y = .center },
         .text = .{ .data = label, .size = 20, .color = .new(0.9, 0.93, 0.86, 1) },
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = track_width, .heigth = track_height } },
+        .size = .{ .fixed = .{ .width = track_width, .height = track_height } },
         .offset = .{ .left = track_left, .top = track_top },
         .color = .new(0.09, 0.1, 0.095, 1),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = track_width * normalized, .heigth = track_height } },
+        .size = .{ .fixed = .{ .width = track_width * normalized, .height = track_height } },
         .offset = .{ .left = track_left, .top = track_top },
         .color = .new(0.88, 0.55, 0.08, 0.96),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = 10, .heigth = height - 10 } },
+        .size = .{ .fixed = .{ .width = 10, .height = height - 10 } },
         .offset = .{ .left = track_left + track_width * normalized - 5, .top = top + 5 },
         .color = .new(0.94, 0.96, 0.9, 1),
     });
     ui.add(null, .{
-        .size = .{ .fixed = .{ .width = value_width, .heigth = height - 8 } },
+        .size = .{ .fixed = .{ .width = value_width, .height = height - 8 } },
         .offset = .{ .left = left + width - value_width, .top = top + 4 },
         .color = .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
@@ -210,7 +211,7 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     });
     ui.add(null, .{
         .name = name,
-        .size = .{ .fixed = .{ .width = track_width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = track_width, .height = height } },
         .offset = .{ .left = track_left, .top = top },
         .color = .new(0, 0, 0, 0),
     });
@@ -221,20 +222,9 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     return next;
 }
 
-fn bindingRowName(action: Controller.Action) []const u8 {
+fn bindingRowName(action: Controller.Kind) []const u8 {
     return switch (action) {
-        .move_forward => "bind_move_forward",
-        .move_backward => "bind_move_backward",
-        .move_left => "bind_move_left",
-        .move_right => "bind_move_right",
-        .jump => "bind_jump",
-        .move_down => "bind_move_down",
-        .reload => "bind_reload",
-        .interact => "bind_interact",
-        .attack => "bind_attack",
-        .aim => "bind_aim",
-        .free_camera => "bind_free_camera",
-        .debug_colliders => "bind_debug_colliders",
+        inline else => |inline_action| "bind_" ++ @tagName(inline_action),
     };
 }
 
@@ -264,7 +254,7 @@ fn addOptionsButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top:
     const hot = ui.isHot(name);
     ui.add(null, .{
         .name = name,
-        .size = .{ .fixed = .{ .width = width, .heigth = height } },
+        .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
         .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },

@@ -16,33 +16,29 @@ pub fn PacketQueue(comptime Packet: type) type {
     };
 }
 
-// ── Packets, split by direction ─────────────────────────────────────────────
-// Each side only ever receives one direction, so its switch over the packet is
-// naturally exhaustive (no `else` swallowing a forgotten variant). Opcode spaces
-// are independent because direction is known from the socket.
-
-/// client → server
+// Split by direction so each side's switch is exhaustive without an `else` that
+// would swallow a forgotten variant.
 pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
     input: Input,
+    chat: ChatSend,
+    go_again: void,
 };
 
-/// server → client
 pub const ServerPacket = union(enum) {
     acknowledge: Acknowledge,
     spawn_entity: SpawnEntity,
+    spawn_planet: u32,
     despawn_entity: DespawnEntity,
     update_motion: UpdateMotion,
     server_tick: u32,
-    update_stat: UpdateStat,
+    update_health: UpdateHealth,
     update_event: Event,
     update_inventory: UpdateInventory,
-    update_player_name: PlayerNameUpdate,
     set_currency: SetCurrency,
+    chat_message: ChatMessage,
 };
-
-// ── Payloads ────────────────────────────────────────────────────────────────
 
 pub const DevCommand = enum(u8) {
     none,
@@ -62,15 +58,14 @@ pub const DevCommand = enum(u8) {
 
 pub const Connect = struct {
     protocol_version: u32,
-    name_len: u16,
-    name: []const u8,
+    player_name: PlayerName,
 };
 
-// Comptime fingerprint of the entire wire format. Changes if and only if the
-// structural layout reachable from ClientPacket/ServerPacket changes;
+// `root.version` is the manual lever for behaviour changes that keep the wire
+// layout identical — terrain math, gameplay rules.
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
-    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket));
+    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);
 };
 
 fn protocolDescription(comptime T: type) []const u8 {
@@ -98,14 +93,29 @@ fn protocolDescription(comptime T: type) []const u8 {
 }
 
 pub const PlayerName = struct {
-    name_len: u16,
-    name: []const u8,
+    name: [root.max_player_name_len]u8,
+
+    pub fn copy(text: []const u8) PlayerName {
+        var self: PlayerName = .{ .name = @splat(0) };
+        const length = @min(text.len, root.max_player_name_len);
+        @memcpy(self.name[0..length], text[0..length]);
+        return self;
+    }
+
+    pub fn slice(self: *const PlayerName) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
 };
 
-pub const PlayerNameUpdate = struct {
+pub const ChatSend = struct {
+    text_len: u16,
+    text: []const u8,
+};
+
+pub const ChatMessage = struct {
     id: entity.Id,
-    name_len: u16,
-    name: []const u8,
+    text_len: u16,
+    text: []const u8,
 };
 
 pub const Acknowledge = struct {
@@ -126,7 +136,6 @@ pub const SpawnEntity = struct {
 
 pub const SpawnEntityData = union(enum) {
     none: void,
-    planet_radius: u32,
     is_teleporter_boss: void,
     player_name: PlayerName,
 };
@@ -137,17 +146,20 @@ pub const DespawnEntity = struct {
 
 pub const Input = struct {
     keys: packed struct(u16) {
-        w: bool = false,
-        s: bool = false,
-        d: bool = false,
-        a: bool = false,
-        space: bool = false,
-        l_shift: bool = false,
-        r: bool = false,
-        e: bool = false,
-        mouse_button_left: bool = false,
-        mouse_button_right: bool = false,
-        _padding: u6 = 0,
+        move_forward: bool = false,
+        move_backward: bool = false,
+        move_right: bool = false,
+        move_left: bool = false,
+        jump: bool = false,
+        move_down: bool = false,
+        reload: bool = false,
+        interact: bool = false,
+        use_equipment: bool = false,
+        attack: bool = false,
+        utility: bool = false,
+        aim: bool = false,
+        secondary: bool = false,
+        _padding: u3 = 0,
     } = .{},
     dev_command: DevCommand = .none,
     camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
@@ -168,21 +180,20 @@ pub const UpdateTransform = struct {
     rotation: @Vector(4, f16),
 };
 
-pub const UpdateStat = struct {
+pub const UpdateHealth = struct {
     id: entity.Id,
-    stat_kind: root.Stats.Kind,
     source: entity.Id,
-    amount: UpdateStatAmount,
+    amount: UpdateHealthAmount,
 };
 
-pub const UpdateStatAmount = union(enum) {
+pub const UpdateHealthAmount = union(enum) {
     set_current: f16,
     set_max: f16,
 };
 
 pub const UpdateInventory = struct {
     id: entity.Id,
-    item_kind: root.Item,
+    item_kind: root.Item.Kind,
     set: u8,
 };
 
@@ -195,6 +206,16 @@ pub const Event = union(enum) {
     pub const Interact = struct {
         interactor: entity.Id,
         interacted: entity.Id,
+    };
+
+    pub const Action = struct {
+        id: entity.Id,
+        action: entity.Action,
+    };
+
+    pub const Stun = struct {
+        id: entity.Id,
+        duration: f32,
     };
 
     pub const Effect = union(enum) {
@@ -212,7 +233,8 @@ pub const Event = union(enum) {
     teleport_start: void,
     teleporter_charge: f16,
     new_stage: u32,
-    attack: entity.Id,
+    action: Action,
+    stun: Stun,
     interact: Interact,
     effect: Effect,
 };
@@ -237,7 +259,7 @@ pub fn parse(comptime Packet: type, reader: *std.Io.Reader) !Packet {
 fn parseFromOpcode(comptime Packet: type, reader: *std.Io.Reader, comptime opcode: std.meta.Tag(Packet)) !Packet {
     const tag_name = @tagName(opcode);
     const T = @FieldType(Packet, tag_name);
-    const out = try unmarshal(null, reader, T, true);
+    const out = try unmarshal(null, reader, T);
     return @unionInit(Packet, tag_name, out);
 }
 
@@ -283,7 +305,7 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
     }
 }
 
-fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: type, deserialize_slices: bool) !Out {
+fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: type) !Out {
     return switch (@typeInfo(Out)) {
         .void => return,
         .bool => try reader.takeByte() == 1,
@@ -299,7 +321,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         .vector => |vector| out: {
             var val: Out = @splat(0);
-            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);
+            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child);
             break :out val;
         },
         .@"struct" => {
@@ -309,42 +331,42 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                 .bool => try reader.takeByte() == 1,
                 .int => try reader.takeInt(field.type, endian),
                 .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
-                .pointer => |ptr| if (deserialize_slices) slice: {
+                .pointer => |ptr| slice: {
                     const element_len_name = field.name ++ "_len";
                     std.debug.assert(@typeInfo(@FieldType(Out, element_len_name)) == .int);
                     const element_len: usize = @field(out, element_len_name);
                     if (ptr.child == u8) {
                         const slice = try reader.take(element_len);
-                        reader.toss((4 - (slice.len % 4)) % 4);
+                        try reader.discardAll((4 - (slice.len % 4)) % 4);
                         break :slice if (opt_allocator) |allocator| try allocator.dupe(u8, slice) else slice;
                     } else {
                         if (opt_allocator) |allocator| {
                             const slice = try allocator.alloc(ptr.child, element_len);
 
                             for (0..element_len) |i| {
-                                slice[i] = try unmarshal(allocator, reader, ptr.child, endian, true);
+                                slice[i] = try unmarshal(allocator, reader, ptr.child);
                             }
                             break :slice slice;
                         } else {
                             for (0..element_len) |_| {
-                                _ = try unmarshal(null, reader, ptr.child, endian, true);
+                                _ = try unmarshal(null, reader, ptr.child);
                             }
 
                             break :slice &.{};
                         }
                     }
-                } else &.{},
+                },
                 .array => |array| if (array.child == u8) (try reader.takeArray(array.len)).* else array: {
                     var val: field.type = std.mem.zeroes(field.type);
                     for (0..array.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, array.child, deserialize_slices);
+                        val[i] = try unmarshal(opt_allocator, reader, array.child);
                     }
                     break :array val;
                 },
                 .vector => |vector| vector: {
                     var val: field.type = @splat(0);
                     inline for (0..vector.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, vector.child, deserialize_slices);
+                        val[i] = try unmarshal(opt_allocator, reader, vector.child);
                     }
                     break :vector val;
                 },
@@ -355,10 +377,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     };
                 },
                 .@"struct" => |s| switch (s.layout) {
-                    .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
+                    .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type),
                     .@"packed" => try reader.takeStruct(field.type, endian),
                 },
-                .@"union" => try unmarshal(opt_allocator, reader, field.type, deserialize_slices),
+                .@"union" => try unmarshal(opt_allocator, reader, field.type),
                 else => @compileError("can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(@typeInfo(field.type))),
             };
             return out;
@@ -369,7 +391,7 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
             switch (tag) {
                 inline else => |t| {
                     const name = @tagName(t);
-                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name), deserialize_slices));
+                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name)));
                 },
             }
         },
