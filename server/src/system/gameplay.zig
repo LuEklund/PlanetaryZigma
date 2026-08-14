@@ -121,6 +121,7 @@ pub fn updateEnemies(world: *World) !void {
         const enemy_skills = enemy.kind.spec().skills;
         const range = enemy_skills.get(.primary).?.range;
         switch (enemy.kind.enemy) {
+            .grass_tank => {},
             .tubloida => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });

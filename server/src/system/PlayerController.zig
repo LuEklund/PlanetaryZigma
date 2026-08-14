@@ -32,8 +32,8 @@ pub fn update(world: *World) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                _ = world.giveItem(player, .energy_drink, 1);
-                // _ = try world.spawn(.{ .kind = .{ .enemy = .acorn }, .transform = player.transform });
+                // _ = world.giveItem(player, .energy_drink, 1);
+                _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
@@ -191,4 +191,3 @@ pub fn update(world: *World) !void {
         }
     }
 }
-
