@@ -12,8 +12,7 @@ pub fn update(world: *World) !void {
     defer tracy_scope.end();
 
     for (world.players.items) |player_id| {
-        const player = world.getPtr(player_id).?;
-        if (player.flags.is_dead) continue;
+        const player = world.getPtr(player_id) orelse continue;
         const camera = &player.camera;
         const transform = &player.transform;
         const controller = &player.controller;
@@ -105,7 +104,6 @@ pub fn update(world: *World) !void {
         }
 
         if (player.controller.input.keys.interact and world.elapsed_time - player.last_interact >= interact_cooldown) if (world.getPtr(player.interacting)) |entity| {
-            if (entity.flags.is_dead) continue;
             player.last_interact = world.elapsed_time;
             switch (entity.kind) {
                 .lootbox => if (player.currency >= entity.currency) {

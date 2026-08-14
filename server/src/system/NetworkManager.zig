@@ -212,7 +212,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                     std.log.info("player disconnect", .{});
                 },
                 .input => {
-                    if (world.getPtr(client.entity_id)) |entity| {
+                    if (world.getPtrRaw(client.entity_id)) |entity| {
                         entity.controller.input = command.input;
                     }
                 },
@@ -283,7 +283,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
 
         try client.sendCommand(writer, .{ .server_tick = world.tick }, .unreliable_no_delay);
 
-        if (world.getPtr(client.entity_id)) |player_entity| {
+        if (world.getPtrRaw(client.entity_id)) |player_entity| {
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.reload;
         }
 

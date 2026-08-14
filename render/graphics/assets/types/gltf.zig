@@ -22,6 +22,11 @@ pub const Glb = struct {
         return .{ .content = content, .loaded = loaded, .gltf = loaded.parsed.value, .bin = bin };
     }
 
+    pub fn isSkinned(self: *const Glb) bool {
+        const skins = self.gltf.skins orelse return false;
+        return skins.len > 0;
+    }
+
     pub fn deinit(self: *Glb, gpa: std.mem.Allocator) void {
         _ = gpa;
         self.loaded.deinit();
