@@ -39,7 +39,6 @@ pub const Event = union(enum) {
     disconnected: Connection,
 };
 
-pub var log_connection_status: bool = false;
 
 pub const send_warn_bytes_per_second: u64 = 131072;
 

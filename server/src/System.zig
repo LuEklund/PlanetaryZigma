@@ -26,7 +26,6 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 gpa: std.mem.Allocator,
 io: std.Io,
 world: *World,
-steam_server: *shared.SteamNet.Server,
 network_manager: NetworkManager,
 physics: Physics,
 request_exit: bool,
@@ -36,7 +35,9 @@ pub const Data = struct {
     gpa: std.mem.Allocator,
     world: *World,
     io: std.Io,
-    steam_server: *shared.SteamNet.Server,
+    mode: shared.SteamNet.Server.Mode,
+    host_steam_id: u64,
+    log_connection_status: bool,
     window: if (build_options.viewer) *Window else void,
 };
 
@@ -45,9 +46,8 @@ pub fn init(self: *System, data: *const Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.world = data.world;
-    self.steam_server = data.steam_server;
     self.request_exit = false;
-    self.network_manager = try .init(data.gpa, data.io, data.steam_server);
+    try self.network_manager.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
     errdefer self.network_manager.deinit() catch {};
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();

@@ -9,11 +9,11 @@ const nz = shared.numz;
 
 gpa: std.mem.Allocator,
 io: std.Io,
-steam_server: *shared.SteamNet.Server,
+steam_server: shared.SteamNet.Server,
 clients: std.AutoHashMap(shared.SteamNet.Connection, Client),
 last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion),
-pending_motions: std.ArrayList(shared.net.UpdateMotion) = .empty,
-session_metadata_dirty: bool = true,
+pending_motions: std.ArrayList(shared.net.UpdateMotion),
+session_metadata_dirty: bool,
 
 pub const WireStatus = enum {
     running,
@@ -45,16 +45,26 @@ pub const Client = struct {
     }
 };
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io, net: *shared.SteamNet.Server) !NetworkManager {
-    var last_motions: std.AutoHashMap(shared.entity.Id, shared.net.UpdateMotion) = .init(gpa);
-    try last_motions.ensureTotalCapacity(shared.max_entities);
-    return .{
-        .gpa = gpa,
-        .io = io,
-        .steam_server = net,
-        .clients = .init(gpa),
-        .last_motions = last_motions,
-    };
+pub fn init(
+    self: *NetworkManager,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    mode: shared.SteamNet.Server.Mode,
+    host_steam_id: u64,
+    log_connection_status: bool,
+) !void {
+    self.gpa = gpa;
+    self.io = io;
+    self.clients = .init(gpa);
+    self.last_motions = .init(gpa);
+    try self.last_motions.ensureTotalCapacity(shared.max_entities);
+    self.pending_motions = .empty;
+    self.session_metadata_dirty = true;
+    try self.steam_server.init(gpa, io, .{
+        .mode = mode,
+        .host_steam_id = host_steam_id,
+        .log_connection_status = log_connection_status,
+    });
 }
 
 pub fn deinit(self: *NetworkManager) !void {
@@ -63,6 +73,7 @@ pub fn deinit(self: *NetworkManager) !void {
     self.clients.deinit();
     self.pending_motions.deinit(self.gpa);
     self.last_motions.deinit();
+    self.steam_server.deinit();
 }
 
 fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
@@ -109,7 +120,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                 gop.value_ptr.* = .{
                     .gpa = self.gpa,
                     .io = self.io,
-                    .steam_server = self.steam_server,
+                    .steam_server = &self.steam_server,
                     .conn = conn,
                 };
                 std.log.info("client connected: conn={d}", .{conn});

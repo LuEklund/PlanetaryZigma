@@ -23,16 +23,6 @@ pub fn main(init: std.process.Init) !void {
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "client.log");
 
-    const steam_zone = tracy.zoneNamed(@src(), "SteamInit");
-    shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
-    std.log.info("\n====\nNET-DEBUG = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
-
-    var steam_client: shared.SteamNet.Client = undefined;
-    try steam_client.init(gpa, io);
-    steam_zone.end();
-
-    defer steam_client.deinit();
-
     var system_lib: shared.HotLib(System.Api, *anyopaque) = try .init("system_client", gpa, io);
     defer system_lib.deinit(io);
 
@@ -56,7 +46,8 @@ pub fn main(init: std.process.Init) !void {
         .window = &window,
         .io = io,
         .world = &world,
-        .steam_client = &steam_client,
+        .log_connection_status = init.environ_map.contains("NET"),
+        .discord_dir = init.environ_map.get("XDG_RUNTIME_DIR"),
     }) orelse return error.SystemInit;
     ctx_zone.end();
     defer system_lib.api.systemDeinit(system_lib.handle);
