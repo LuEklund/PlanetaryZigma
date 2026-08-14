@@ -81,6 +81,7 @@ pub fn reload(self: *Physics, pre_reload: bool, world: *system.World) !void {
         for (world.entities.values()) |*entity| entity.body_id = null;
         for (world.entities.values()) |*entity| {
             if (entity.kind.collider() == null) continue;
+            if (entity.flags.is_dead) continue;
             try self.createBody(entity);
         }
     }

@@ -225,6 +225,12 @@ pub fn enemyCount(self: *const World) usize {
 }
 
 pub fn getPtr(self: *World, id: shared.entity.Id) ?*Entity {
+    const entity = self.entities.getPtr(id) orelse return null;
+    if (entity.flags.is_dead) return null;
+    return entity;
+}
+
+pub fn getPtrRaw(self: *World, id: shared.entity.Id) ?*Entity {
     return self.entities.getPtr(id);
 }
 
@@ -265,7 +271,8 @@ pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8
 pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
-    if (entity.flags.invincible) return .ignored;
+    if (entity.flags.is_dead or entity.max_health <= 0) return .ignored;
+    if (entity.flags.invincible and amount > 0) return .ignored;
     const random = self.prng.random();
     var new_amount = (random.float(f32) - 0.5) * 0.5 * amount + amount;
     new_amount = @min(new_amount, amount);
@@ -300,10 +307,8 @@ pub fn addHealth(self: *World, entity: *Entity, amount: f32, source: ?*const Ent
         } });
         return .changed;
     }
-    if (current <= 0) {
-        self.queueDespawn(entity.id);
-        self.dropBossReward(entity);
-    }
+    if (current <= 0) self.queueDespawn(entity.id);
+
     self.client_updates.appendAssumeCapacity(.{ .health = .{
         .id = entity.id,
         .source = if (source) |source_entity| source_entity.id else .none,
@@ -482,15 +487,12 @@ fn aimPoint(world: *World, player_position: nz.Vec3(f32), camera_position: nz.Ve
     return ray_start + nz.vec.scale(camera_forward, @min(entity_distance, terrain_distance));
 }
 
-/// Runs at the kill decision, before flush — the drop lands in `new_spawns` in time for
-/// this tick's flush to give it a body and a spawn packet.
-fn dropBossReward(self: *World, entity: *Entity) void {
-    if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, entity.id) == null) return;
+fn dropTeleporterReward(self: *World, reward: shared.Item.Kind) void {
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
     const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
     _ = self.spawn(.{
         .kind = .item_pickup,
-        .item = .lightning,
+        .item = reward,
         .transform = .{
             .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
             .rotation = teleporter.transform.rotation,
@@ -646,7 +648,7 @@ pub fn flush(self: *World) !void {
 
     var currency_reward: u32 = 0;
     for (self.pending_despawns.items) |despawn| {
-        const entity = self.getPtr(despawn.id) orelse continue;
+        const entity = self.getPtrRaw(despawn.id) orelse continue;
 
         if (entity.body_id) |body_id| {
             self.physics.destroyBody(body_id);
@@ -662,13 +664,14 @@ pub fn flush(self: *World) !void {
             if (entity.kind == .enemy) currency_reward += entity.currency;
             if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
+                if (self.teleport_bosses.items.len == 0) self.dropTeleporterReward(.lightning);
             }
             _ = self.entities.swapRemove(despawn.id);
         }
         self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
     }
     if (currency_reward > 0) for (self.players.items) |player_id| {
-        const player = self.getPtr(player_id) orelse continue;
+        const player = self.getPtrRaw(player_id) orelse continue;
         player.currency += currency_reward;
         self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
     };

@@ -23,8 +23,6 @@ entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
 pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-pending_healths: std.ArrayList(shared.net.UpdateHealth) = .empty,
-pending_inventory: std.ArrayList(shared.net.UpdateInventory) = .empty,
 action_events: std.ArrayList(shared.net.Event.Action) = .empty,
 dying: std.ArrayList(Dying) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
@@ -91,8 +89,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .pending_spawn = try .initCapacity(gpa, shared.max_entities),
         .pending_despawn = try .initCapacity(gpa, shared.max_entities),
-        .pending_healths = try .initCapacity(gpa, shared.max_entities),
-        .pending_inventory = try .initCapacity(gpa, shared.max_entities),
         .action_events = try .initCapacity(gpa, shared.max_entities),
         .dying = try .initCapacity(gpa, shared.max_entities),
         .effects = try .initCapacity(gpa, shared.max_entities),
@@ -106,8 +102,6 @@ pub fn deinit(self: *World) void {
     self.teleporter_bosses.deinit(self.gpa);
     self.pending_spawn.deinit(self.gpa);
     self.pending_despawn.deinit(self.gpa);
-    self.pending_healths.deinit(self.gpa);
-    self.pending_inventory.deinit(self.gpa);
     self.action_events.deinit(self.gpa);
     self.dying.deinit(self.gpa);
     self.effects.deinit(self.gpa);
@@ -122,8 +116,6 @@ pub fn clear(self: *World) void {
     self.pending_spawn.clearRetainingCapacity();
 
     self.pending_despawn.clearRetainingCapacity();
-    self.pending_healths.clearRetainingCapacity();
-    self.pending_inventory.clearRetainingCapacity();
     self.action_events.clearRetainingCapacity();
     self.dying.clearRetainingCapacity();
     self.effects.clearRetainingCapacity();
@@ -185,16 +177,6 @@ pub fn flush(self: *World) !void {
             .unknown, .lootbox, .platform, .target_dummy => {},
         }
     }
-
-    for (self.pending_healths.items) |command| {
-        if (self.getPtr(command.id)) |entity| self.applyHealth(entity, command);
-    }
-    self.pending_healths.clearRetainingCapacity();
-
-    for (self.pending_inventory.items) |command| {
-        if (self.getPtr(command.id)) |entity| applyInventory(entity, command);
-    }
-    self.pending_inventory.clearRetainingCapacity();
 
     defer self.pending_despawn.clearRetainingCapacity();
     for (self.pending_despawn.items) |id| {

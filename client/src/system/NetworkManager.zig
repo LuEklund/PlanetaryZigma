@@ -10,7 +10,7 @@ const World = system.World;
 
 gpa: std.mem.Allocator,
 io: std.Io,
-steam_client: *Client,
+steam_client: Client,
 server_conn: shared.SteamNet.Connection = 0,
 server_tick_estimate: f32 = 0,
 server_tick_latest: u32 = 0,
@@ -25,6 +25,7 @@ elapsed_time: f32 = 0,
 steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
 dev_mode: bool = false,
+deferred: std.ArrayList(shared.net.ServerPacket) = .empty,
 
 pub const host_wait_timeout_seconds: f32 = 15;
 
@@ -103,18 +104,21 @@ pub fn init(
     self: *NetworkManager,
     gpa: std.mem.Allocator,
     io: std.Io,
-    net: *shared.SteamNet.Client,
+    log_connection_status: bool,
 ) !void {
     self.* = .{
         .gpa = gpa,
         .io = io,
-        .steam_client = net,
-        .steam_logged_on = net.isLoggedOn(),
+        .steam_client = undefined,
     };
+    try self.steam_client.init(gpa, io, log_connection_status);
+    self.steam_logged_on = self.steam_client.isLoggedOn();
 }
 
 pub fn deinit(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
+    self.deferred.deinit(self.gpa);
+    self.steam_client.deinit();
 }
 
 fn stopHostServer(self: *NetworkManager) void {
@@ -132,6 +136,7 @@ pub fn returnToMainMenu(self: *NetworkManager) !void {
     self.steam_client.disconnect();
 
     self.stopHostServer();
+    self.deferred.clearRetainingCapacity();
     self.server_conn = 0;
     self.server_tick_estimate = 0;
     self.server_tick_latest = 0;
@@ -346,6 +351,11 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         world.chat.pending = false;
         world.chat.input_len = 0;
     }
+    for (self.deferred.items) |deferred_command| {
+        try self.handleCommand(world, deferred_command, false);
+    }
+    self.deferred.clearRetainingCapacity();
+
     for (self.steam_client.packets.incoming.items) |*msg| {
         var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
@@ -353,7 +363,7 @@ pub fn update(self: *NetworkManager, world: *World) !void {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try self.handleCommand(world, parsed);
+        try self.handleCommand(world, parsed, true);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
 
@@ -366,6 +376,7 @@ fn handleCommand(
     self: *NetworkManager,
     world: *World,
     command: shared.net.ServerPacket,
+    can_defer: bool,
 ) !void {
     switch (command) {
         .acknowledge => |acknowledge| {
@@ -399,7 +410,7 @@ fn handleCommand(
         },
         .update_health => |update_health_command| {
             const entity = world.getPtr(update_health_command.id) orelse {
-                world.pending_healths.appendAssumeCapacity(update_health_command);
+                if (can_defer) try self.deferred.append(self.gpa, command);
                 return;
             };
             world.applyHealth(entity, update_health_command);
@@ -423,7 +434,11 @@ fn handleCommand(
                     }
                     world.action_events.appendAssumeCapacity(action);
                 },
-                .stun => |stun| if (world.getPtr(stun.id)) |entity| {
+                .stun => |stun| {
+                    const entity = world.getPtr(stun.id) orelse {
+                        if (can_defer) try self.deferred.append(self.gpa, command);
+                        return;
+                    };
                     entity.stun_time = stun.duration;
                 },
                 .effect => |effect| switch (effect) {
@@ -435,22 +450,28 @@ fn handleCommand(
                         if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
                     },
                 },
-                .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
+                .interact => |interact| {
+                    const entity = world.getPtr(interact.interactor) orelse {
+                        if (can_defer) try self.deferred.append(self.gpa, command);
+                        return;
+                    };
                     entity.interacting = interact.interacted;
                 },
             }
         },
         .update_inventory => |inventory| {
             const entity = world.getPtr(inventory.id) orelse {
-                world.pending_inventory.appendAssumeCapacity(inventory);
+                if (can_defer) try self.deferred.append(self.gpa, command);
                 return;
             };
             World.applyInventory(entity, inventory);
         },
         .set_currency => |set_currency| {
-            if (world.getPtr(set_currency.id)) |entity| {
-                entity.currency = set_currency.amount;
-            }
+            const entity = world.getPtr(set_currency.id) orelse {
+                if (can_defer) try self.deferred.append(self.gpa, command);
+                return;
+            };
+            entity.currency = set_currency.amount;
         },
         .chat_message => |chat_message| {
             const sender = world.getPtr(chat_message.id);

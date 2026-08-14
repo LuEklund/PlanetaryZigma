@@ -97,7 +97,6 @@ pub fn update(self: *Navmesh, world: *World) !void {
     self.player_seed_count = 0;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
-        if (player.flags.is_dead) continue;
         self.player_seeds[self.player_seed_count] = .{
             .id = player.id,
             .position = player.transform.position,

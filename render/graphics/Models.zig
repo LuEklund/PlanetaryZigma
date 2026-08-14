@@ -107,14 +107,7 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         defer gpa.free(bytes);
 
         var fresh: Model = .empty;
-        const animated = if (model_spec) |spec| animated: {
-            if (spec.loop_clips != null) break :animated true;
-            for (kind_spec.?.skills.values) |maybe_assigned| {
-                if (maybe_assigned) |assigned| if (assigned.clip != null) break :animated true;
-            }
-            break :animated false;
-        } else false;
-        var parsed = glb(gpa, bytes, &fresh, animated) catch |err| {
+        var parsed = glb(gpa, bytes, &fresh) catch |err| {
             std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
             fresh.deinit(gpa);
             continue;
@@ -204,12 +197,15 @@ const Parsed = union(enum) {
     }
 };
 
-fn glb(gpa: std.mem.Allocator, bytes: []const u8, model: *Model, skinned: bool) !Parsed {
+fn glb(gpa: std.mem.Allocator, bytes: []const u8, model: *Model) !Parsed {
     if (!model.isEmpty()) model.deinit(gpa);
     model.* = .empty;
 
-    return if (skinned)
-        .{ .skinned = try model.parseGlb(shared.SkinnedVertex, gpa, bytes) }
+    var parsed_glb: gltf.Glb = try .parse(gpa, bytes);
+    defer parsed_glb.deinit(gpa);
+
+    return if (parsed_glb.isSkinned())
+        .{ .skinned = try model.parseGlb(shared.SkinnedVertex, gpa, &parsed_glb) }
     else
-        .{ .static = try model.parseGlb(shared.StaticVertex, gpa, bytes) };
+        .{ .static = try model.parseGlb(shared.StaticVertex, gpa, &parsed_glb) };
 }

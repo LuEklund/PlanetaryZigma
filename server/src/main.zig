@@ -23,9 +23,6 @@ pub fn main(init: std.process.Init) !void {
 
     if (builtin.mode != .Debug) shared.redirectStderrToFile(io, "server.log");
 
-    shared.SteamNet.log_connection_status = init.environ_map.contains("NET");
-    std.log.info("\n====\nNET = {s}\n====\n", .{if (shared.SteamNet.log_connection_status) "TRUE" else "FALSE"});
-
     var args_iterator = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
     defer args_iterator.deinit();
     _ = args_iterator.next();
@@ -48,13 +45,6 @@ pub fn main(init: std.process.Init) !void {
         };
         break;
     }
-
-    var steam_server: shared.SteamNet.Server = undefined;
-    try steam_server.init(gpa, io, .{
-        .mode = server_mode,
-        .host_steam_id = host_steam_id,
-    });
-    defer steam_server.deinit();
 
     var system_lib: shared.HotLib(System.ffi.Table, *System) = try .init("system_server", gpa, io);
     defer system_lib.deinit(io);
@@ -81,7 +71,9 @@ pub fn main(init: std.process.Init) !void {
         .io = io,
         .world = &world,
         .gpa = gpa,
-        .steam_server = &steam_server,
+        .mode = server_mode,
+        .host_steam_id = host_steam_id,
+        .log_connection_status = init.environ_map.contains("NET"),
         .window = if (build_options.viewer) &window else {},
     })) return error.SystemInit;
 

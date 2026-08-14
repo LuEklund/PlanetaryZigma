@@ -85,6 +85,13 @@ pub const grass1: Spec = .{
     .currency = 25,
 };
 
+pub const grass_tank: Spec = .{
+    .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.45, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
+    .model = .{ .path = "objects/grasstank.glb", .offset = .{ .position = .{ 0, -1, 0 }, .rotation = entity.face_camera }, .loop_clips = .initDefault(entity.no_clip, .{}) },
+    .base_stats = .initDefault(0, .{ .health = 30, .speed = 3, .damage = 10, .primary_cooldown = 0.75 }),
+    .currency = 25,
+};
+
 pub const healer: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
     .model = .{ .path = "objects/Healer.glb", .offset = entity.enemy_model_offset, .loop_clips = null },

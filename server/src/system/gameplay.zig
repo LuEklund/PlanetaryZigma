@@ -102,7 +102,6 @@ pub fn updateEnemies(world: *World) !void {
         var closest_distance: f32 = std.math.floatMax(f32);
         for (world.players.items) |player_id| {
             const current_player = world.getPtr(player_id) orelse continue;
-            if (current_player.flags.is_dead) continue;
             const player_distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
             if (player_distance >= closest_distance) continue;
             closest_distance = player_distance;
@@ -121,6 +120,7 @@ pub fn updateEnemies(world: *World) !void {
         const enemy_skills = enemy.kind.spec().skills;
         const range = enemy_skills.get(.primary).?.range;
         switch (enemy.kind.enemy) {
+            .grass_tank => {},
             .tubloida => {
                 const heading = steer(&world.navmesh, &world.planet, enemy.transform.position, forward_dir, player.transform.position, world.delta_time, false);
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
@@ -225,8 +225,8 @@ pub fn updateProjectiles(world: *World) void {
         const projectile_kind = projectile.kind.projectileKind() orelse continue;
         switch (impact.what) {
             .terrain => {
-                _ = world.removeHealth(projectile, projectile.max_health, null);
-                const owner_entity = world.getPtr(projectile.owner_id) orelse continue;
+                if (!projectile.flags.invincible) world.queueDespawn(projectile.id);
+                const owner_entity = world.getPtrRaw(projectile.owner_id) orelse continue;
                 switch (projectile_kind) {
                     .cube => {},
                     .rocket => {
@@ -236,7 +236,7 @@ pub fn updateProjectiles(world: *World) void {
                 }
             },
             .entity => |hit_id| {
-                const owner_entity = world.getPtr(projectile.owner_id) orelse continue;
+                const owner_entity = world.getPtrRaw(projectile.owner_id) orelse continue;
                 const hit_entity = world.getPtr(hit_id) orelse continue;
                 if (owner_entity.kind.eql(hit_entity.kind)) continue;
 
@@ -251,7 +251,7 @@ pub fn updateProjectiles(world: *World) void {
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
                     },
                 }
-                _ = world.removeHealth(projectile, projectile.max_health, null);
+                if (!projectile.flags.invincible) world.queueDespawn(projectile.id);
             },
         }
     }
@@ -343,8 +343,7 @@ fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_
 pub fn updateWipe(world: *World) !void {
     if (world.players.items.len == 0) return;
     for (world.players.items) |player_id| {
-        const player = world.getPtr(player_id) orelse continue;
-        if (!player.flags.is_dead) return;
+        if (world.getPtr(player_id) != null) return;
     }
     std.log.info("wipe: go again -> ship", .{});
     world.stage = 0;
@@ -357,8 +356,7 @@ pub fn updateItems(world: *World) !void {
         if (entity.kind != .item_pickup or entity.flags.is_dead) continue;
         const item_kind = entity.item.?;
         for (world.players.items) |player_id| {
-            const player = world.getPtr(player_id) orelse return error.PlayerNotFound;
-            if (player.flags.is_dead) continue;
+            const player = world.getPtr(player_id) orelse continue;
             const length = player.transform.position - entity.transform.position;
             if (nz.vec.length(length) >= 2) continue;
 
@@ -381,7 +379,6 @@ pub fn updateTeleporter(world: *World) void {
     const old_teleporter_charge = teleporter.charged;
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
-        if (player.flags.is_dead) continue;
         if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
             teleporter.charged += world.delta_time * 10;
             teleporter.charged = @min(teleporter.charged, teleporter.max_charge);

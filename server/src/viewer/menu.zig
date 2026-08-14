@@ -68,5 +68,5 @@ pub fn update(ui: *Ui, world: *World, following: ?usize) bool {
         },
     });
 
-    return ui.isActive("server_menu_quit");
+    return ui.isClicked("server_menu_quit");
 }

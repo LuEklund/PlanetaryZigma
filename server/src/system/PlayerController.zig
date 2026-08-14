@@ -12,8 +12,7 @@ pub fn update(world: *World) !void {
     defer tracy_scope.end();
 
     for (world.players.items) |player_id| {
-        const player = world.getPtr(player_id).?;
-        if (player.flags.is_dead) continue;
+        const player = world.getPtr(player_id) orelse continue;
         const camera = &player.camera;
         const transform = &player.transform;
         const controller = &player.controller;
@@ -32,8 +31,8 @@ pub fn update(world: *World) !void {
 
         switch (input.dev_command) {
             .f1 => {
-                _ = world.giveItem(player, .energy_drink, 1);
-                // _ = try world.spawn(.{ .kind = .{ .enemy = .acorn }, .transform = player.transform });
+                // _ = world.giveItem(player, .energy_drink, 1);
+                _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
             },
             .f2 => {
                 _ = world.giveItem(player, .rocket, 1);
@@ -191,4 +190,3 @@ pub fn update(world: *World) !void {
         }
     }
 }
-

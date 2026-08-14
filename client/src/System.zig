@@ -6,6 +6,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const Audio = @import("system/Audio.zig");
+const Discord = @import("system/Discord.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
@@ -40,6 +41,7 @@ window: *Window,
 render: shared.HotLib(renderer_contract.Api, *anyopaque),
 draw_list: DrawList,
 audio: Audio,
+discord: ?Discord,
 assets: Assets,
 animator: Animator,
 emitters: Emitter.List,
@@ -57,7 +59,8 @@ pub const Data = struct {
     io: std.Io,
     window: *Window,
     world: *World,
-    steam_client: *shared.SteamNet.Client,
+    log_connection_status: bool,
+    discord_dir: ?[]const u8,
 };
 
 pub fn init(self: *System, data: Data) !void {
@@ -65,6 +68,14 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
+
+    self.discord = if (data.discord_dir) |discord_dir| .{
+        .socket = null,
+        .dir = discord_dir,
+        .last = null,
+        .next_send_time = 0,
+        .nonce = 0,
+    } else null;
 
     try self.audio.init();
 
@@ -97,7 +108,7 @@ pub fn init(self: *System, data: Data) !void {
 
     try self.hud.init(data.gpa, data.window.size);
     errdefer self.hud.deinit(data.gpa);
-    try self.network_manager.init(data.gpa, data.io, data.steam_client);
+    try self.network_manager.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network_manager.deinit();
     try self.enterScene(data.world, .menu);
     self.request_exit = false;
@@ -106,6 +117,7 @@ pub fn init(self: *System, data: Data) !void {
 pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.audio.deinit();
+    if (self.discord) |*discord| if (discord.socket) |socket| socket.close(self.io);
     self.hud.deinit(self.gpa);
     self.draw_list.deinit(self.gpa);
     self.animator.deinit();
@@ -158,6 +170,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
+    if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
     try world.flush();
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);

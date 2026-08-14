@@ -68,18 +68,14 @@ pub fn parseGlb(
     self: *Model,
     comptime VertexType: type,
     gpa: std.mem.Allocator,
-    bytes: []const u8,
+    glb: *const gltf.Glb,
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
-    var glb: gltf.Glb = try .parse(gpa, bytes);
-    defer glb.deinit(gpa);
     const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.node_names, &self.skins, &self.clips);
 
     computeMatrices(self.nodes.items);
 
-    // A model with no skin is drawn surface by surface, so the hierarchy has done its job
-    // once the world matrices are baked.
     if (!self.isSkinned()) {
         for (self.nodes.items) |node| {
             const mesh_id = node.mesh_id orelse continue;

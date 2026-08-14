@@ -19,6 +19,7 @@ send_stats: SteamNet.PacketStats(@import("../net.zig").ServerPacket) = .{},
 
 gpa: std.mem.Allocator,
 io: std.Io,
+log_connection_status: bool,
 pipe: steam.HSteamPipe,
 gs: steam.ISteamGameServer,
 socket: steam.ISteamNetworkingSockets,
@@ -38,6 +39,7 @@ pub const Mode = enum(u8) {
 pub const InitOptions = struct {
     mode: Mode = .steam_p2p,
     host_steam_id: u64 = 0,
+    log_connection_status: bool,
 };
 
 pub const HostState = enum(u8) {
@@ -50,6 +52,7 @@ pub const HostState = enum(u8) {
 /// Fills the caller's Server rather than returning one: the packet pump holds `self`, and
 /// a returned struct would be copied out from under it.
 pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !void {
+    std.log.info("\n====\nNET = {s}\n====\n", .{if (options.log_connection_status) "TRUE" else "FALSE"});
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -150,6 +153,7 @@ pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOpti
         .socket = sock,
         .listen_socket = listen,
         .io = io,
+        .log_connection_status = options.log_connection_status,
         .packets = .{},
         .handle_packets_future = undefined,
         .host_steam_id = options.host_steam_id,
@@ -218,7 +222,7 @@ pub fn handlePackets(self: *Server) !void {
         const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
         if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
         last_iteration = now;
-        if (@import("../SteamNet.zig").log_connection_status and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
+        if (self.log_connection_status and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
             last_status_log = now;
             for (self.connections) |conn| {
                 if (conn != 0) @import("../SteamNet.zig").logConnectionStatus(self.socket, conn);
@@ -273,7 +277,7 @@ pub fn receivePackets(self: *Server) !void {
 pub fn sendPackets(self: *Server) !void {
     if (self.packets.outgoing.items.len == 0) return;
     for (self.packets.outgoing.items) |*msg| {
-        if (SteamNet.log_connection_status) self.send_stats.record(msg.bytes[0..msg.len]);
+        if (self.log_connection_status) self.send_stats.record(msg.bytes[0..msg.len]);
         var msg_num: i64 = 0;
         const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
         if (result != self.last_send_result) {
