@@ -366,7 +366,7 @@ const RegistryData = struct {
             .global => |global| inline for (std.meta.fields(RegistryData)) |field| {
                 const GlobalType = std.meta.Child(std.meta.Child(field.type));
                 if (std.mem.orderZ(u8, global.interface, GlobalType.interface.name) == .eq) {
-                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, GlobalType.interface.version) catch return;
+                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, @min(global.version, GlobalType.interface.version)) catch return;
                     return;
                 }
             },
