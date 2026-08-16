@@ -50,9 +50,6 @@ scene: Scene,
 hud: Hud,
 request_exit: bool,
 teleport_sphere_model: u32,
-hover_sound: u32,
-click_sound: u32,
-primary_sound: u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -77,8 +74,6 @@ pub fn init(self: *System, data: Data) !void {
         .nonce = 0,
     } else null;
 
-    try self.audio.init();
-
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
@@ -95,11 +90,7 @@ pub fn init(self: *System, data: Data) !void {
     self.assets = try .init(data.gpa, data.io);
     self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalsphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
-
-    var sound_path_buffer: [128]u8 = undefined;
-    self.hover_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-hover.mp3", .{self.assets.root}));
-    self.click_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-click.mp3", .{self.assets.root}));
-    self.primary_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/laser-gun.mp3", .{self.assets.root}));
+    try self.audio.init(data.gpa, self.assets.root);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
@@ -160,8 +151,8 @@ pub fn update(self: *System, world: *World) !void {
     try self.network_manager.update(world, player_input);
 
     switch (self.hud.ui.play_sound) {
-        .hot => try self.audio.playSound(self.hover_sound),
-        .clicked => try self.audio.playSound(self.click_sound),
+        .hot => try self.audio.playSoundKind(.button_hover),
+        .clicked => try self.audio.playSoundKind(.button_click),
         .none => {},
     }
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
@@ -180,11 +171,24 @@ pub fn update(self: *System, world: *World) !void {
     chunks.update(&world.planet, &self.render.api, self.render.handle);
     try animate.update(world, &self.animator, &self.assets.models);
 
-    for (world.action_events.items) |action| {
-        switch (action.action) {
-            .primary => try self.audio.playSound(self.primary_sound),
-            else => {},
-        }
+    for (world.action_events.items) |action_event| {
+        const entity = world.getPtr(action_event.id) orelse continue;
+        const assigned_skill = entity.kind.spec().skills.get(action_event.action) orelse continue;
+        std.log.debug("kind {t}, action {t}", .{
+            entity.kind,
+            assigned_skill.skill,
+        });
+        const sound: Audio.Kind = switch (assigned_skill.skill) {
+            .melee => .melee,
+            .shoot_cube => .shoot_cube,
+            else => continue,
+        };
+        try self.audio.playSoundKind(sound);
+        // if (self.assets.models.rig(self.assets.models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
+        // switch (action.action) {
+        //     .primary => try self.audio.playSound(self.primary_sound),
+        //     else => {},
+        // }
     }
     world.action_events.clearRetainingCapacity();
 
