@@ -29,22 +29,26 @@ pub fn update(world: *World) !void {
             nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
         const speed = player.stat(.speed);
 
-        switch (input.dev_command) {
-            .f1 => {
-                // _ = world.giveItem(player, .energy_drink, 1);
-                _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
-            },
-            .f2 => {
-                _ = world.giveItem(player, .rocket, 1);
-                _ = world.giveItem(player, .lightning, 1);
-            },
-            .f3 => {
-                world.toggle_spawning_requested = true;
-                for (world.entities.values()) |*entity| {
-                    if (entity.kind == .enemy) _ = world.addHealth(entity, -entity.max_health, null);
-                }
-            },
-            .f4 => if (world.getPtr(world.teleporter_id)) |teleporter| {
+        if (input.keys.dev_f1) {
+            input.keys.dev_f1 = false;
+            // _ = world.giveItem(player, .energy_drink, 1);
+            _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
+        }
+        if (input.keys.dev_f2) {
+            input.keys.dev_f2 = false;
+            _ = world.giveItem(player, .rocket, 1);
+            _ = world.giveItem(player, .lightning, 1);
+        }
+        if (input.keys.dev_f3) {
+            input.keys.dev_f3 = false;
+            world.toggle_spawning_requested = true;
+            for (world.entities.values()) |*entity| {
+                if (entity.kind == .enemy) _ = world.addHealth(entity, -entity.max_health, null);
+            }
+        }
+        if (input.keys.dev_f4) {
+            input.keys.dev_f4 = false;
+            if (world.getPtr(world.teleporter_id)) |teleporter| {
                 const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                 const random = world.prng.random();
                 _ = world.spawn(.{
@@ -61,26 +65,31 @@ pub fn update(world: *World) !void {
                         system.World.item_throw_speed,
                     ),
                 }) catch {};
-            },
-            .f5 => {
-                world.next_stage_requested = true;
-            },
-            .f6 => {
-                _ = world.addHealth(player, -player.health, null);
-            },
-            .f7 => {
-                player.flags.invincible = !player.flags.invincible;
-            },
-            .f8 => if (world.getPtr(world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse .{ 0, 1, 0 };
-                world.act(.{ .id = player_id, .verb = .{ .teleport = teleporter.transform.position + nz.vec.scale(teleporter_up, 10) } });
-            },
-            .f9 => world.start_round_requested = true,
-            .f10 => {},
-
-            else => {},
+            }
         }
-        input.dev_command = .none;
+        if (input.keys.dev_f5) {
+            input.keys.dev_f5 = false;
+            world.next_stage_requested = true;
+        }
+        if (input.keys.dev_f6) {
+            input.keys.dev_f6 = false;
+            _ = world.addHealth(player, -player.health, null);
+        }
+        if (input.keys.dev_f7) {
+            input.keys.dev_f7 = false;
+            player.flags.invincible = !player.flags.invincible;
+        }
+        if (input.keys.dev_f8) {
+            input.keys.dev_f8 = false;
+            if (world.getPtr(world.teleporter_id)) |teleporter| {
+                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+                world.act(.{ .id = player_id, .verb = .{ .teleport = teleporter.transform.position + nz.vec.scale(teleporter_up, 10) } });
+            }
+        }
+        if (input.keys.dev_f9) {
+            input.keys.dev_f9 = false;
+            world.start_round_requested = true;
+        }
 
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
@@ -111,7 +120,7 @@ pub fn update(world: *World) !void {
 
                     const random = world.prng.random();
                     var item_kind = random.enumValue(shared.Item.Kind);
-                    if (item_kind == .lightning) item_kind = .oxygen_tank;
+                    if (item_kind == .lightning) item_kind = .oxygen;
                     const chest_up = shared.Planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = try world.spawn(.{
                         .kind = .item_pickup,

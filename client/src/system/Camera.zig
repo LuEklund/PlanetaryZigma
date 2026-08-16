@@ -39,47 +39,45 @@ pub fn viewProj(self: *const Camera, fov_rad: f32, aspect: f32) nz.Mat4x4(f32) {
     return proj.mul(view);
 }
 
-pub fn update(self: *Camera, world: *World, options: *const Options) void {
+pub fn update(self: *Camera, world: *World, options: *const Options, look_delta: @Vector(2, f64)) void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    const controller = &world.controller;
-    const keys = controller.input_map.keys;
     const mouse_sensitivity = sensitivity * options.mouse_sensitivity;
     const pitch_direction: f64 = if (options.invert_y) 1 else -1;
-    const delta_yaw: f32 = @floatCast(-controller.mouse_delta[0] * mouse_sensitivity);
-    const delta_pitch: f32 = @floatCast(controller.mouse_delta[1] * pitch_direction * mouse_sensitivity);
+    const delta_yaw: f32 = @floatCast(-look_delta[0] * mouse_sensitivity);
+    const delta_pitch: f32 = @floatCast(look_delta[1] * pitch_direction * mouse_sensitivity);
     const pitch_limit: f32 = std.math.degreesToRadians(80);
 
-    if (controller.free_camera) {
-        self.free_speed = std.math.clamp(self.free_speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(controller.mouse_wheel))), 1, 1000);
-        if (nz.vec.length(self.transform.position) > 0.001) {
-            const planet_up = nz.vec.normalize(self.transform.position);
-            const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
-            self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
-            self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
-            const camera_forward = self.yaw_rotation.rotateVec(.{ 0, 0, -1 });
-            const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
-            if (nz.vec.length(tangent_forward) > 0.0001) {
-                self.yaw_rotation = .lookAt(tangent_forward, planet_up);
-            }
-        }
-        const pitch_quat: Quat = .angleAxis(self.pitch, .{ 1, 0, 0 });
-        const rotation = self.yaw_rotation.mul(pitch_quat).normalize();
-        var direction: Vec3 = .{ 0, 0, 0 };
-        if (keys.move_forward) direction[2] -= 1;
-        if (keys.move_backward) direction[2] += 1;
-        if (keys.move_right) direction[0] += 1;
-        if (keys.move_left) direction[0] -= 1;
-        if (keys.jump) direction[1] += 1;
-        if (keys.move_down) direction[1] -= 1;
-        if (nz.vec.length(direction) > 0) {
-            const world_direction = rotation.rotateVec(nz.vec.normalize(direction));
-            self.transform.position += nz.vec.scale(world_direction, self.free_speed * world.delta_time);
-        }
-        self.transform.rotation = rotation;
-        return;
-    }
+    // if (controller.free_camera) {
+    //     self.free_speed = std.math.clamp(self.free_speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(controller.mouse_wheel))), 1, 1000);
+    //     if (nz.vec.length(self.transform.position) > 0.001) {
+    //         const planet_up = nz.vec.normalize(self.transform.position);
+    //         const yaw_quat: Quat = .angleAxis(delta_yaw, planet_up);
+    //         self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
+    //         self.pitch = std.math.clamp(self.pitch + delta_pitch, -pitch_limit, pitch_limit);
+    //         const camera_forward = self.yaw_rotation.rotateVec(.{ 0, 0, -1 });
+    //         const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
+    //         if (nz.vec.length(tangent_forward) > 0.0001) {
+    //             self.yaw_rotation = .lookAt(tangent_forward, planet_up);
+    //         }
+    //     }
+    //     const pitch_quat: Quat = .angleAxis(self.pitch, .{ 1, 0, 0 });
+    //     const rotation = self.yaw_rotation.mul(pitch_quat).normalize();
+    //     var direction: Vec3 = .{ 0, 0, 0 };
+    //     if (keys.move_forward) direction[2] -= 1;
+    //     if (keys.move_backward) direction[2] += 1;
+    //     if (keys.move_right) direction[0] += 1;
+    //     if (keys.move_left) direction[0] -= 1;
+    //     if (keys.jump) direction[1] += 1;
+    //     if (keys.move_down) direction[1] -= 1;
+    //     if (nz.vec.length(direction) > 0) {
+    //         const world_direction = rotation.rotateVec(nz.vec.normalize(direction));
+    //         self.transform.position += nz.vec.scale(world_direction, self.free_speed * world.delta_time);
+    //     }
+    //     self.transform.rotation = rotation;
+    //     return;
+    // }
 
     if (world.getPtr(world.player_id)) |player| {
         if (nz.vec.length(player.transform.position) > 0.001) {
@@ -108,8 +106,8 @@ pub fn update(self: *Camera, world: *World, options: *const Options) void {
         self.transform.position = pivot + nz.vec.scale(arm_direction, self.arm_length);
         self.transform.rotation = final_rotation;
     }
-    controller.input_map.camera_rotation = self.transform.rotation.toVec();
-    controller.input_map.camera_position = self.transform.position;
+    // controller.input_map.camera_rotation = self.transform.rotation.toVec();
+    // controller.input_map.camera_position = self.transform.position;
 }
 
 fn traceArm(pivot: Vec3, direction: Vec3, max_length: f32, planet: *const shared.Planet) f32 {

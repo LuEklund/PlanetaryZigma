@@ -2,20 +2,13 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    // No preferred_optimize_mode here: that swaps -Doptimize for -Drelease, and the
-    // consuming package passes .optimize down explicitly. The ReleaseSafe default
-    // stays where the executables are built.
     const optimize = b.standardOptimizeOption(.{});
 
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
     const ztracy = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("ztracy");
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
-    // Straight to numz, not through shared: reaching a math library by way of the game's
-    // contract is exactly the detour that stops render being usable on its own.
     const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
-    // The ABI. Its own module, not its own package: a package per contract would double
-    // the tree the first time a second system wants one. numz only — nothing here may
-    // reach an implementation, which is what keeps a backend edit off the game's rebuild.
+
     const contract = b.addModule("contract", .{
         .root_source_file = b.path("root.zig"),
         .target = target,
@@ -98,8 +91,6 @@ pub fn build(b: *std.Build) void {
     });
     stb_image.addIncludePath(stb_dep.path("."));
 
-    // Public, not createModule(): ZLS's build runner only runs the translate-c step for
-    // modules in b.modules, and panics resolving one reached as someone's import.
     const stb_truetype_module = stb_truetype.addModule("stb_truetype");
     const stb_image_module = stb_image.addModule("stb_image");
 
@@ -128,14 +119,8 @@ pub fn build(b: *std.Build) void {
             \\#define VMA_IMPLEMENTATION
             \\#include <vk_mem_alloc.h>
         ),
-        // Hidden like stb: with default visibility VMA's symbols are GC roots, so they
-        // survive at full size in libsystem_client.so — which never calls one — and drag
-        // libvulkan in with them. Both .so files also exported them, so which copy won
-        // depended on dlopen order.
         .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
     });
-
-
 
     _ = b.addModule("ui", .{
         .root_source_file = b.path("ui/root.zig"),
@@ -148,10 +133,6 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-
-    // What the game holds to build a frame: its assets, its animation, its particles.
-    // Depends on the contract; the contract knows nothing of it. Deliberately not named
-    // after the renderer — this is the producer side, and the backend never sees it.
     const graphics = b.addModule("graphics", .{
         .root_source_file = b.path("graphics/root.zig"),
         .target = target,
@@ -168,8 +149,6 @@ pub fn build(b: *std.Build) void {
         },
         .link_libc = true,
     });
-    // The file readers are internal files now, not a module: nothing outside this tree ever
-    // asked for them on their own.
     graphics.addIncludePath(stb_dep.path("."));
     graphics.addCSourceFile(.{
         .file = b.addWriteFiles().add("stbi_impl.c",
@@ -181,8 +160,6 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-fvisibility=hidden"},
     });
 
-    // The same sources plus `vulkan`, compiled as its own .so so a renderer edit does
-    // not rebuild the game systems.
     const backend = b.addLibrary(.{
         .name = "render",
         .root_module = b.createModule(.{
@@ -191,9 +168,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-            .{ .name = "numz", .module = numz },
+                .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
-                    .{ .name = "stb_truetype", .module = stb_truetype_module },
+                .{ .name = "stb_truetype", .module = stb_truetype_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
                 .{ .name = "contract", .module = contract },
@@ -208,9 +185,6 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(backend);
 }
 
-// The release-only trap: --as-needed drops libvulkan when nothing references it at
-// link time, and the dlopen inside Vulkan then fails. Travels with the package so any
-// binary touching Vulkan gets the same treatment.
 pub fn linkVulkan(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
     if (target.result.os.tag == .windows) {
         if (b.graph.environ_map.get("VULKAN_SDK")) |sdk| {

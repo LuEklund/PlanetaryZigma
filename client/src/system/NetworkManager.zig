@@ -237,7 +237,7 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *NetworkManager, world: *World) !void {
+pub fn update(self: *NetworkManager, world: *World, player_inputs: shared.net.Input) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     try self.steam_client.packet_mutex.lock(self.io);
@@ -336,10 +336,9 @@ pub fn update(self: *NetworkManager, world: *World) !void {
         self.sent_connect = true;
     }
     if (self.server_conn != 0) {
-        var input = world.controller.input_map;
+        var input = player_inputs;
         if (world.controller.free_camera) input.keys = .{};
         try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
-        world.controller.input_map.dev_command = .none;
     }
     if (world.go_again_pending) {
         try self.sendCommand(.go_again, .reliable);

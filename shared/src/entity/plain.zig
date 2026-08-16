@@ -9,7 +9,7 @@ pub const unknown: Spec = .{
 pub const player: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } }, .motion = .dynamic, .layer = .moving },
     .model = .{
-        .path = "objects/BenBozo.glb",
+        .path = "objects/benbozo.glb",
         .offset = .{ .position = .{ 0, -0.5, 0 }, .rotation = entity.face_camera },
         .loop_clips = .initDefault(entity.no_clip, .{
             .idle = "Idle",
@@ -57,7 +57,7 @@ pub const platform: Spec = .{
 
 pub const target_dummy: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
-    .model = .{ .path = "objects/Tubloid.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
+    .model = .{ .path = "objects/tubloid.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "idle",
         .walk = "walk",
         .death = "Death",

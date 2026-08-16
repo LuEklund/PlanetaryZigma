@@ -13,7 +13,7 @@ pub const Effect = enum {
 };
 
 pub const items = struct {
-    pub const oxygen_tank: Item = .{
+    pub const oxygen: Item = .{
         .flat = .initDefault(0, .{ .health = 10 }),
         .description = "+10 max health",
     };
@@ -48,7 +48,7 @@ pub const items = struct {
         .description = "10% chance to deal double damage",
     };
 
-    pub const rabbits_foot: Item = .{
+    pub const rabbitsfoot: Item = .{
         .flat = .initDefault(0, .{ .block_chance = 0.15 }),
         .description = "15% chance to block damage, diminishing",
     };
