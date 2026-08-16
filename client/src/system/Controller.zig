@@ -77,41 +77,14 @@ pub const default_bindings: Bindings = bindings: {
 
 bindings: Bindings = default_bindings,
 rebinding_action: ?ActionKind = null,
+rebinding_fresh: bool = false,
+previous_buttons: Window.Pointer.Buttons = .{},
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 cooldown: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
 
 pub fn update(self: *Controller, window: *const Window) shared.net.Input {
     var new_player_inputs: shared.net.Input = .{};
-
-    // const keyboard = window.keyboard;
-    // const buttons = window.pointer.buttons;
-
-    // if (self.rebinding_action) |action| {
-    //     std.debug.assert(bindable.get(action) != null);
-    //     for (std.enums.values(Window.Keyboard.Key)) |key| {
-    //         if (keyboard.get(key) != .press) continue;
-    //         if (key == .escape) {
-    //             self.bindings.set(action, .none);
-    //             self.suppress_escape_release = true;
-    //         } else {
-    //             self.bindings.set(action, .{ .key = key });
-    //         }
-    //         self.rebinding_action = null;
-    //         self.clearInput();
-    //         return .{};
-    //     }
-    //     for (std.enums.values(MouseButton)) |button| {
-    //         if (!mouseButtonDown(buttons, button) or mouseButtonDown(self.previous_buttons, button)) continue;
-    //         self.bindings.set(action, .{ .mouse = button });
-    //         self.rebinding_action = null;
-    //         self.clearInput();
-    //         return .{};
-    //     }
-    //     return .{};
-    // }
-
-    // self.show_stats = keyboard.isDown(.tab);
 
     for (std.enums.values(ActionKind)) |action| {
         switch (self.bindings.get(action)) {
@@ -150,31 +123,62 @@ fn applyAction(self: *Controller, inputs: *shared.net.Input, action: ActionKind,
     }
 }
 
-// pub fn bindingLabel(binding: Binding) []const u8 {
-//     return switch (binding) {
-//         .none => "Unbound",
-//         .key => |key| switch (key) {
-//             inline else => |inline_key| comptime titleCase(@tagName(inline_key)),
-//         },
-//         .mouse => |button| switch (button) {
-//             inline else => |inline_button| "Mouse " ++ comptime titleCase(@tagName(inline_button)),
-//         },
-//     };
-// }
+pub fn captureBinding(self: *Controller, window: *const Window) void {
+    const action = self.rebinding_action orelse return;
+    std.debug.assert(bindable.get(action) != null);
+    if (self.rebinding_fresh) {
+        self.previous_buttons = window.pointer.buttons;
+        self.rebinding_fresh = false;
+        return;
+    }
+    defer self.previous_buttons = window.pointer.buttons;
 
-// fn titleCase(comptime tag: []const u8) []const u8 {
-//     @setEvalBranchQuota(10_000);
-//     var text: [tag.len]u8 = undefined;
-//     var start_of_word = true;
-//     for (tag, &text) |char, *out| {
-//         if (char == '_') {
-//             out.* = ' ';
-//             start_of_word = true;
-//             continue;
-//         }
-//         out.* = if (start_of_word) std.ascii.toUpper(char) else char;
-//         start_of_word = false;
-//     }
-//     const final = text;
-//     return &final;
-// }
+    for (std.enums.values(Window.Keyboard.Key)) |key| {
+        if (window.keyboard.get(key) != .press) continue;
+        if (key == .escape) {
+            self.bindings.set(action, .none);
+        } else {
+            self.bindings.set(action, .{ .key = key });
+        }
+        self.rebinding_action = null;
+        return;
+    }
+
+    const clicked: u8 = @as(u8, @bitCast(window.pointer.buttons)) & ~@as(u8, @bitCast(self.previous_buttons));
+    if (clicked == 0) return;
+    self.bindings.set(action, .{ .mouse = @bitCast(clicked) });
+    self.rebinding_action = null;
+}
+
+pub fn bindingLabel(binding: Binding) []const u8 {
+    return switch (binding) {
+        .none => "Unbound",
+        .key => |key| switch (key) {
+            inline else => |inline_key| comptime titleCase(@tagName(inline_key)),
+        },
+        .mouse => |mask| label: {
+            const bits: u8 = @bitCast(mask);
+            inline for (@typeInfo(Window.Pointer.Buttons).@"struct".fields, 0..) |field, index| {
+                if (bits == @as(u8, 1) << @as(u3, @intCast(index))) break :label "Mouse " ++ comptime titleCase(field.name);
+            }
+            break :label "Mouse Combo";
+        },
+    };
+}
+
+fn titleCase(comptime tag: []const u8) []const u8 {
+    @setEvalBranchQuota(10_000);
+    var text: [tag.len]u8 = undefined;
+    var start_of_word = true;
+    for (tag, &text) |char, *out| {
+        if (char == '_') {
+            out.* = ' ';
+            start_of_word = true;
+            continue;
+        }
+        out.* = if (start_of_word) std.ascii.toUpper(char) else char;
+        start_of_word = false;
+    }
+    const final = text;
+    return &final;
+}

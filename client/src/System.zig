@@ -154,39 +154,7 @@ pub fn update(self: *System, world: *World) !void {
         .quit => self.request_exit = true,
     }
 
-    var player_input: shared.net.Input = .{};
-    switch (self.scene) {
-        .game => switch (self.hud.overlay) {
-            .none => {
-                if (world.chat.open) {
-                    world.chat.handleText(text_buffer[0..text_writer.end]);
-                    world.chat.handleKeyboard(self.window.keyboard);
-                } else {
-                    if (self.window.keyboard.get(Chat.open_key) == .press) world.chat.open = true;
-                    if (self.window.keyboard.get(.escape) == .press) self.hud.overlay = .pause;
-                    player_input = world.controller.update(self.window);
-                }
-            },
-            .pause => if (self.window.keyboard.get(.escape) == .press) {
-                self.hud.overlay = .none;
-            },
-            .options => if (self.window.keyboard.get(.escape) == .press) {
-                self.hud.overlay = if (self.hud.overlay.options.return_to_pause) .pause else .none;
-            },
-            .wipe => {
-                world.chat.open = false;
-                world.chat.input_len = 0;
-            },
-        },
-        .menu => if (self.window.keyboard.get(.escape) == .press) {
-            if (self.hud.overlay == .options) {
-                self.hud.overlay = .none;
-            } else {
-                self.request_exit = true;
-            }
-        },
-        .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
-    }
+    var player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
     player_input.camera_position = world.camera.transform.position;
     player_input.camera_rotation = world.camera.transform.rotation.toVec();
     try self.network_manager.update(world, player_input);
@@ -235,10 +203,46 @@ pub fn update(self: *System, world: *World) !void {
     if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, player_input, self.window.pointer.axis.vertical);
 }
 
-// if (world.controller.rebinding_action != null) {
-//     world.controller.update(self.window);
-//     return;
-// }
+fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {
+    var player_input: shared.net.Input = .{};
+    switch (self.scene) {
+        .game => switch (self.hud.overlay) {
+            .none => {
+                if (world.chat.open) {
+                    world.chat.handleText(typed);
+                    world.chat.handleKeyboard(self.window.keyboard);
+                } else {
+                    if (self.window.keyboard.get(Chat.open_key) == .press) world.chat.open = true;
+                    if (self.window.keyboard.get(.escape) == .press) self.hud.overlay = .pause;
+                    player_input = world.controller.update(self.window);
+                }
+            },
+            .pause => if (self.window.keyboard.get(.escape) == .press) {
+                self.hud.overlay = .none;
+            },
+            .options => if (world.controller.rebinding_action != null) {
+                world.controller.captureBinding(self.window);
+            } else if (self.window.keyboard.get(.escape) == .press) {
+                self.hud.overlay = if (self.hud.overlay.options.return_to_pause) .pause else .none;
+            },
+            .wipe => {
+                world.chat.open = false;
+                world.chat.input_len = 0;
+            },
+        },
+        .menu => if (self.hud.overlay == .options and world.controller.rebinding_action != null) {
+            world.controller.captureBinding(self.window);
+        } else if (self.window.keyboard.get(.escape) == .press) {
+            if (self.hud.overlay == .options) {
+                self.hud.overlay = .none;
+            } else {
+                self.request_exit = true;
+            }
+        },
+        .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
+    }
+    return player_input;
+}
 
 // if (self.window.keyboard.get(.f4) == .release and self.scene == .menu) {
 //     try self.enterScene(world, .particle_lab);
