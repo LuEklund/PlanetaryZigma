@@ -75,6 +75,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const shaders = compileShaders(b);
+    exportModels(b);
 
     render_build.linkVulkan(b, system, target);
     render_build.linkVulkan(b, exe, target);
@@ -133,4 +134,48 @@ fn compileShaders(b: *std.Build) *std.Build.Step {
     }
     b.getInstallStep().dependOn(&usf.step);
     return &usf.step;
+}
+
+fn exportModels(b: *std.Build) void {
+    const io = b.graph.io;
+
+    const home = b.graph.environ_map.get("HOME") orelse "";
+    const candidates = [_][]const u8{
+        "blender",
+        b.pathJoin(&.{ home, ".steam", "steam", "steamapps", "common", "Blender", "blender" }),
+    };
+    var dir = b.build_root.handle.openDir(io, "../assets/objects/", .{ .iterate = true }) catch @panic("../assets/objects not found");
+    defer dir.close(io);
+    var it = dir.iterate();
+    var candidate_index: usize = 0;
+    while (it.next(io) catch @panic("iterate objects")) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".blend")) continue;
+        const glb_name = b.fmt("{s}.glb", .{entry.name[0 .. entry.name.len - ".blend".len]});
+        const blend_stat = dir.statFile(io, entry.name, .{}) catch continue;
+        if (dir.statFile(io, glb_name, .{})) |glb_stat| {
+            if (glb_stat.mtime.nanoseconds >= blend_stat.mtime.nanoseconds) continue;
+        } else |_| {}
+
+        var exported = false;
+        while (candidate_index < candidates.len) {
+            const result = std.process.run(b.allocator, io, .{
+                .argv = &.{ candidates[candidate_index], "--background", "--factory-startup", "--python-exit-code", "1", entry.name, "--python", "export_glb.py", "--", glb_name },
+                .cwd = .{ .dir = dir },
+                .environ_map = &b.graph.environ_map,
+            }) catch {
+                candidate_index += 1;
+                continue;
+            };
+            if (result.term == .exited and result.term.exited == 0) {
+                exported = true;
+                break;
+            }
+            candidate_index += 1;
+        }
+        if (!exported) {
+            std.log.warn("models NOT auto-compiled — see {s} in build.zig", .{@src().fn_name});
+            return;
+        }
+    }
 }

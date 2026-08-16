@@ -3,7 +3,7 @@ const Spec = entity.Spec;
 
 pub const tubloid: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/Tubloid.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
+    .model = .{ .path = "objects/tubloid.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "idle",
         .walk = "walk",
         .death = "Death",
@@ -15,7 +15,7 @@ pub const tubloid: Spec = .{
 
 pub const tubloida: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/Tubloida.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
+    .model = .{ .path = "objects/tubloida.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "idle",
         .walk = "walk",
         .death = "Death",
@@ -27,7 +27,7 @@ pub const tubloida: Spec = .{
 
 pub const bloorp_lord: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 1.5, .radius = 4.5 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/BloorpLord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = entity.face_camera }, .loop_clips = .initDefault(entity.no_clip, .{
+    .model = .{ .path = "objects/bloorplord.glb", .offset = .{ .position = .{ 0, -10, 0 }, .rotation = entity.face_camera }, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "Idle",
         .walk = "Walking",
         .death = "Death",
@@ -39,7 +39,7 @@ pub const bloorp_lord: Spec = .{
 
 pub const hunkloid: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.6, .radius = 1 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/Hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = entity.face_camera }, .loop_clips = .initDefault(entity.no_clip, .{
+    .model = .{ .path = "objects/hunkloid.glb", .offset = .{ .position = .{ 0, -1.8, 0 }, .rotation = entity.face_camera }, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "Idle",
         .walk = "Walk",
         .death = "Death",
@@ -54,7 +54,7 @@ pub const hunkloid: Spec = .{
 
 pub const blooploid: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/Blooploid.glb", .offset = entity.enemy_model_offset, .loop_clips = null },
+    .model = .{ .path = "objects/blooploid.glb", .offset = entity.enemy_model_offset, .loop_clips = null },
     .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 }),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
     .currency = 7,
@@ -94,7 +94,7 @@ pub const grass_tank: Spec = .{
 
 pub const healer: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
-    .model = .{ .path = "objects/Healer.glb", .offset = entity.enemy_model_offset, .loop_clips = null },
+    .model = .{ .path = "objects/healer.glb", .offset = entity.enemy_model_offset, .loop_clips = null },
     .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
     .currency = 7,

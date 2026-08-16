@@ -74,6 +74,7 @@ pub fn update(
     hud: *Hud,
     world: *World,
     scene: system.Scene,
+    window: *Window,
     network_manager: *NetworkManager,
     options: *Options,
     game_assets: *const Assets,
@@ -83,11 +84,19 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    const position: [2]f32 = .{ @floatCast(controller.mouse_pos[0]), @floatCast(controller.mouse_pos[1]) };
+    ui.screen_width = @floatFromInt(window.size.width);
+    ui.screen_height = @floatFromInt(window.size.height);
+    const mouse_position: [2]f32 = switch (window.pointer.movement) {
+        .position => |position| .{ @floatCast(position.x), @floatCast(position.y) },
+        .relative => .{ -1, -1 },
+    };
     ui.start(.{
-        .position = .{ .left = position[0], .top = position[1] },
-        .left_click = controller.mouse_button_left,
-        .right_click = controller.mouse_button_right,
+        .position = .{
+            .left = mouse_position[0],
+            .top = mouse_position[1],
+        },
+        .left_click = window.pointer.buttons.left,
+        .right_click = window.pointer.buttons.right,
     }, game_assets.fonts.default(), world.delta_time);
     hud.damage_popups.update(world.delta_time);
     if (world.getPtr(world.player_id)) |player| {
@@ -111,7 +120,7 @@ pub fn update(
         request = try main_menu.update(network_manager, ui, hud, options);
         if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
     } else {
-        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, controller.show_stats, game_assets);
+        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, false, game_assets);
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;

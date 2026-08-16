@@ -50,9 +50,6 @@ scene: Scene,
 hud: Hud,
 request_exit: bool,
 teleport_sphere_model: u32,
-hover_sound: u32,
-click_sound: u32,
-primary_sound: u32,
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -77,8 +74,6 @@ pub fn init(self: *System, data: Data) !void {
         .nonce = 0,
     } else null;
 
-    try self.audio.init();
-
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
     self.emitters = @splat(Emitter.free);
@@ -93,13 +88,9 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.render.api.deinit(self.render.handle);
 
     self.assets = try .init(data.gpa, data.io);
-    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalSphere.glb", null);
+    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalsphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
-
-    var sound_path_buffer: [128]u8 = undefined;
-    self.hover_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-hover.mp3", .{self.assets.root}));
-    self.click_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/button-click.mp3", .{self.assets.root}));
-    self.primary_sound = try self.audio.addSound(try std.fmt.bufPrintZ(&sound_path_buffer, "{s}/sounds/laser-gun.mp3", .{self.assets.root}));
+    try self.audio.init(data.gpa, self.assets.root);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
@@ -146,28 +137,24 @@ pub fn update(self: *System, world: *World) !void {
     var text_buffer: [1024]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
-    try self.handleInput(world, text_buffer[0..text_writer.end]);
-    const paused_before_hud = self.hud.overlay != .none;
     if (self.scene == .menu) menu_world.update(world);
     if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
-    switch (try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets)) {
+    switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
     }
+
+    var player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
+    player_input.camera_position = world.camera.transform.position;
+    player_input.camera_rotation = world.camera.transform.rotation.toVec();
+    try self.network_manager.update(world, player_input);
+
     switch (self.hud.ui.play_sound) {
-        .hot => try self.audio.playSound(self.hover_sound),
-        .clicked => try self.audio.playSound(self.click_sound),
+        .hot => try self.audio.playSoundKind(.button_hover),
+        .clicked => try self.audio.playSoundKind(.button_click),
         .none => {},
     }
-    // std.log.debug("hot: {any}", .{self.hud.ui.last_hot_item});
-    // std.log.debug("active: {any}", .{self.hud.ui.last_active_item});
-    // std.log.debug("playsound: {t}", .{self.hud.ui.play_sound});
-    if (paused_before_hud or self.hud.overlay != .none or world.chat.open) {
-        world.controller.clearInput();
-    }
-    try self.applyOptions(world);
-    try self.network_manager.update(world);
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
@@ -184,11 +171,24 @@ pub fn update(self: *System, world: *World) !void {
     chunks.update(&world.planet, &self.render.api, self.render.handle);
     try animate.update(world, &self.animator, &self.assets.models);
 
-    for (world.action_events.items) |action| {
-        switch (action.action) {
-            .primary => try self.audio.playSound(self.primary_sound),
-            else => {},
-        }
+    for (world.action_events.items) |action_event| {
+        const entity = world.getPtr(action_event.id) orelse continue;
+        const assigned_skill = entity.kind.spec().skills.get(action_event.action) orelse continue;
+        std.log.debug("kind {t}, action {t}", .{
+            entity.kind,
+            assigned_skill.skill,
+        });
+        const sound: Audio.Kind = switch (assigned_skill.skill) {
+            .melee => .melee,
+            .shoot_cube => .shoot_cube,
+            else => continue,
+        };
+        try self.audio.playSoundKind(sound);
+        // if (self.assets.models.rig(self.assets.models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
+        // switch (action.action) {
+        //     .primary => try self.audio.playSound(self.primary_sound),
+        //     else => {},
+        // }
     }
     world.action_events.clearRetainingCapacity();
 
@@ -199,75 +199,67 @@ pub fn update(self: *System, world: *World) !void {
     const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
 
-    if (!paused_before_hud and self.hud.overlay == .none) world.camera.update(world, &world.options);
-    world.controller.resetMouseDelta();
-    world.controller.mouse_wheel = 0;
+    try self.applyOptions(world);
+    const look_delta: @Vector(2, f64) = switch (self.window.pointer.movement) {
+        .relative => |relative| if (world.chat.open) .{ 0, 0 } else .{ relative.dx, relative.dy },
+        .position => .{ 0, 0 },
+    };
+    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, player_input, self.window.pointer.axis.vertical);
 }
 
-fn handleInput(self: *System, world: *World, typed: []const u8) !void {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-    const window = self.window;
-    self.hud.ui.screen_width = @floatFromInt(window.size.width);
-    self.hud.ui.screen_height = @floatFromInt(window.size.height);
-    const keyboard = window.keyboard;
-    if (world.controller.rebinding_action != null) {
-        world.controller.update(window);
-        return;
+fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {
+    var player_input: shared.net.Input = .{};
+    switch (self.scene) {
+        .game => switch (self.hud.overlay) {
+            .none => {
+                if (world.chat.open) {
+                    world.chat.handleText(typed);
+                    world.chat.handleKeyboard(self.window.keyboard);
+                } else {
+                    if (self.window.keyboard.get(Chat.open_key) == .press) world.chat.open = true;
+                    if (self.window.keyboard.get(.escape) == .press) self.hud.overlay = .pause;
+                    player_input = world.controller.update(self.window);
+                }
+            },
+            .pause => if (self.window.keyboard.get(.escape) == .press) {
+                self.hud.overlay = .none;
+            },
+            .options => if (world.controller.rebinding_action != null) {
+                world.controller.captureBinding(self.window);
+            } else if (self.window.keyboard.get(.escape) == .press) {
+                self.hud.overlay = if (self.hud.overlay.options.return_to_pause) .pause else .none;
+            },
+            .wipe => {
+                world.chat.open = false;
+                world.chat.input_len = 0;
+            },
+        },
+        .menu => if (self.hud.overlay == .options and world.controller.rebinding_action != null) {
+            world.controller.captureBinding(self.window);
+        } else if (self.window.keyboard.get(.escape) == .press) {
+            if (self.hud.overlay == .options) {
+                self.hud.overlay = .none;
+            } else {
+                self.request_exit = true;
+            }
+        },
+        .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
     }
-    if (self.scene == .game and self.hud.overlay == .none) {
-        if (world.chat.open) {
-            world.chat.handleText(typed);
-            if (keyboard.get(.escape) == .press) world.controller.suppress_escape_release = true;
-            world.chat.handleKeyboard(keyboard);
-            return;
-        } else if (keyboard.get(Chat.open_key) == .release) {
-            world.chat.open = true;
-            world.controller.clearInput();
-            return;
-        }
-    }
-    const escape_released = keyboard.get(.escape) == .release;
-    if (escape_released and world.controller.suppress_escape_release) {
-        world.controller.suppress_escape_release = false;
-        return;
-    }
-    if (escape_released and self.hud.overlay == .options) {
-        self.hud.overlay = if (self.hud.overlay.options.return_to_pause and self.scene == .game) .pause else .none;
-        world.controller.clearInput();
-        world.controller.resetMouseDelta();
-        return;
-    }
-    if (escape_released and self.scene == .game) {
-        self.hud.overlay = if (self.hud.overlay == .pause) .none else .pause;
-        world.controller.clearInput();
-        world.controller.resetMouseDelta();
-        return;
-    }
-    if (escape_released and self.scene == .particle_lab) {
-        try self.enterScene(world, .menu);
-        return;
-    }
-    if (escape_released) {
-        self.request_exit = true;
-        return;
-    }
-    if (keyboard.get(.f4) == .release and self.scene == .menu) {
-        try self.enterScene(world, .particle_lab);
-        return;
-    }
-    world.controller.update(window);
+    return player_input;
 }
+
+// if (self.window.keyboard.get(.f4) == .release and self.scene == .menu) {
+//     try self.enterScene(world, .particle_lab);
+//     return;
+// }
 
 fn applyOptions(self: *System, world: *World) !void {
     try self.window.setFullscreen(world.options.fullscreen);
     const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
-    const was_locked = self.window.pointer.constraint == .locked;
     if (wants_cursor_lock) {
         try self.window.setPointerVisible(false);
         try self.window.setPointerConstraint(.locked);
         try self.window.setPointerRelative(true);
-        if (!was_locked) world.controller.resetMouseDelta();
     } else {
         try self.window.setPointerRelative(false);
         try self.window.setPointerConstraint(.none);
@@ -276,8 +268,6 @@ fn applyOptions(self: *System, world: *World) !void {
 }
 
 fn reload(self: *System, pre_reload: bool) !void {
-    // Each .so image has its own copy of shared's globals, so a fresh one starts with a
-    // null log_io and every line from it loses its timestamp.
     if (!pre_reload) shared.log_io = self.io;
 }
 

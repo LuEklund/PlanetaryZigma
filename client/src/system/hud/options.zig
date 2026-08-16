@@ -90,15 +90,15 @@ fn optionsKeyboardMouse(ui: *Ui, options: *Options, controller: *Controller, lef
     const column_gap: f32 = 14;
     const column_width = (width - column_gap) * 0.5;
     var listed: usize = 0;
-    for (std.enums.values(Controller.Kind)) |action| {
+    for (std.enums.values(Controller.ActionKind)) |action| {
         const bindable = Controller.bindable.get(action) orelse continue;
         const column: f32 = if (listed < 6) 0 else 1;
         const row: f32 = @floatFromInt(if (listed < 6) listed else listed - 6);
         const row_left = left + column * (column_width + column_gap);
         const row_top = bindings_top + row * (binding_height + binding_gap);
-        if (addBindingRow(ui, controller, action, bindable.label, row_left, row_top, column_width, binding_height)) {
+        if (addBindingRow(ui, controller, action, bindable, row_left, row_top, column_width, binding_height)) {
             controller.rebinding_action = action;
-            controller.clearInput();
+            controller.rebinding_fresh = true;
         }
         listed += 1;
     }
@@ -161,7 +161,7 @@ fn addOptionToggle(ui: *Ui, name: []const u8, label: []const u8, value: []const 
     return ui.isClicked(name);
 }
 
-fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.Kind, label: []const u8, left: f32, top: f32, width: f32, height: f32) bool {
+fn addBindingRow(ui: *Ui, controller: *Controller, action: Controller.ActionKind, label: []const u8, left: f32, top: f32, width: f32, height: f32) bool {
     const name = bindingRowName(action);
     const value = if (controller.rebinding_action == action) "Listening" else Controller.bindingLabel(controller.bindings.get(action));
     return addOptionToggle(ui, name, label, value, left, top, width, height);
@@ -222,7 +222,7 @@ fn addOptionSlider(ui: *Ui, name: []const u8, label: []const u8, value: f32, min
     return next;
 }
 
-fn bindingRowName(action: Controller.Kind) []const u8 {
+fn bindingRowName(action: Controller.ActionKind) []const u8 {
     return switch (action) {
         inline else => |inline_action| "bind_" ++ @tagName(inline_action),
     };

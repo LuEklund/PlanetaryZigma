@@ -123,9 +123,6 @@ pub fn clear(self: *World) void {
 
     self.camera = .{};
     self.chat = .{};
-    self.controller.clearInput();
-    self.controller.releaseMouseButtons();
-    self.controller.resetMouseDelta();
     self.teleporter_id = .none;
     self.player_id = .none;
     self.stage = 0;

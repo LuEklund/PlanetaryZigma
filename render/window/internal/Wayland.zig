@@ -217,7 +217,11 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
 
-    const writer = options.text orelse return;
+    const writer = options.text orelse {
+        self.repeat_key.keysym = .NoSymbol;
+        self.repeat_key.text_len = 0;
+        return;
+    };
 
     if (self.repeat_key.keysym == .NoSymbol or self.repeat_key.text_len == 0 or self.repeat_key.info.rate <= 0) return;
 
@@ -366,7 +370,7 @@ const RegistryData = struct {
             .global => |global| inline for (std.meta.fields(RegistryData)) |field| {
                 const GlobalType = std.meta.Child(std.meta.Child(field.type));
                 if (std.mem.orderZ(u8, global.interface, GlobalType.interface.name) == .eq) {
-                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, GlobalType.interface.version) catch return;
+                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, @min(global.version, GlobalType.interface.version)) catch return;
                     return;
                 }
             },

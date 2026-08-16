@@ -1,8 +1,0 @@
-Model Information:
-* title:	3 Material Cube
-* source:	https://sketchfab.com/3d-models/3-material-cube-22d6dc5748354d54ba0a76f80df43039
-* author:	Account95555 (https://sketchfab.com/Account95555)
-
-Model License:
-* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
-* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

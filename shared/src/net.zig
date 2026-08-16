@@ -40,22 +40,6 @@ pub const ServerPacket = union(enum) {
     chat_message: ChatMessage,
 };
 
-pub const DevCommand = enum(u8) {
-    none,
-    f1,
-    f2,
-    f3,
-    f4,
-    f5,
-    f6,
-    f7,
-    f8,
-    f9,
-    f10,
-    f11,
-    f12,
-};
-
 pub const Connect = struct {
     protocol_version: u32,
     player_name: PlayerName,
@@ -146,23 +130,37 @@ pub const DespawnEntity = struct {
 };
 
 pub const Input = struct {
-    keys: packed struct(u16) {
+    keys: packed struct(u32) {
         move_forward: bool = false,
         move_backward: bool = false,
         move_right: bool = false,
         move_left: bool = false,
         jump: bool = false,
         move_down: bool = false,
+        aim: bool = false,
+
         reload: bool = false,
+
         interact: bool = false,
         use_equipment: bool = false,
         attack: bool = false,
         utility: bool = false,
-        aim: bool = false,
         secondary: bool = false,
-        _padding: u3 = 0,
+
+        dev_f1: bool = false,
+        dev_f2: bool = false,
+        dev_f3: bool = false,
+        dev_f4: bool = false,
+        dev_f5: bool = false,
+        dev_f6: bool = false,
+        dev_f7: bool = false,
+        dev_f8: bool = false,
+        dev_f9: bool = false,
+        dev_f10: bool = false,
+        dev_f11: bool = false,
+        dev_f12: bool = false,
+        _padding: u7 = 0,
     } = .{},
-    dev_command: DevCommand = .none,
     camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     camera_position: @Vector(3, f32) = .{ 0, 0, 0 },
 };
