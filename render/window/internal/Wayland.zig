@@ -217,7 +217,11 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
 
-    const writer = options.text orelse return;
+    const writer = options.text orelse {
+        self.repeat_key.keysym = .NoSymbol;
+        self.repeat_key.text_len = 0;
+        return;
+    };
 
     if (self.repeat_key.keysym == .NoSymbol or self.repeat_key.text_len == 0 or self.repeat_key.info.rate <= 0) return;
 

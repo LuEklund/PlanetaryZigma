@@ -9,26 +9,15 @@ pub const Action = struct {
     id: @EnumLiteral(),
     default: Binding,
     bindable: ?[]const u8 = null,
+    behavior: Behavior = .held,
 };
+
+pub const Behavior = enum { held, pressed };
 
 pub const Binding = union(enum) {
     none,
     key: Window.Keyboard.Key,
     mouse: Window.Pointer.Buttons,
-
-    // pub fn eql(self: Binding, other: Binding) bool {
-    //     return switch (self) {
-    //         .none => false,
-    //         .key => |key| switch (other) {
-    //             .key => |other_key| other_key == key,
-    //             else => false,
-    //         },
-    //         .mouse => |button| switch (other) {
-    //             .mouse => |other_button| other_button == button,
-    //             else => false,
-    //         },
-    //     };
-    // }
 };
 
 pub const actions: []const Action = &.{
@@ -43,22 +32,22 @@ pub const actions: []const Action = &.{
     .{ .id = .attack, .default = .{ .mouse = .{ .left = true } }, .bindable = "Attack" },
     .{ .id = .aim, .default = .{ .mouse = .{ .right = true } }, .bindable = "Aim" },
     .{ .id = .use_equipment, .default = .{ .key = .q }, .bindable = "Use Equipment" },
-    .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = "Free Camera" },
-    .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = "Debug Colliders" },
+    .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = "Free Camera", .behavior = .pressed },
+    .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = "Debug Colliders", .behavior = .pressed },
     .{ .id = .utility, .default = .{ .key = .left_shift }, .bindable = "Utility" },
     .{ .id = .secondary, .default = .{ .mouse = .{ .right = true } }, .bindable = "Secondary" },
-    .{ .id = .dev_f1, .default = .{ .key = .f1 } },
-    .{ .id = .dev_f2, .default = .{ .key = .f2 } },
-    .{ .id = .dev_f3, .default = .{ .key = .f3 } },
-    .{ .id = .dev_f4, .default = .{ .key = .f4 } },
-    .{ .id = .dev_f5, .default = .{ .key = .f5 } },
-    .{ .id = .dev_f6, .default = .{ .key = .f6 } },
-    .{ .id = .dev_f7, .default = .{ .key = .f7 } },
-    .{ .id = .dev_f8, .default = .{ .key = .f8 } },
-    .{ .id = .dev_f9, .default = .{ .key = .f9 } },
-    .{ .id = .dev_f10, .default = .{ .key = .f10 } },
-    .{ .id = .dev_f11, .default = .{ .key = .f11 } },
-    .{ .id = .dev_f12, .default = .{ .key = .f12 } },
+    .{ .id = .dev_f1, .default = .{ .key = .f1 }, .behavior = .pressed },
+    .{ .id = .dev_f2, .default = .{ .key = .f2 }, .behavior = .pressed },
+    .{ .id = .dev_f3, .default = .{ .key = .f3 }, .behavior = .pressed },
+    .{ .id = .dev_f4, .default = .{ .key = .f4 }, .behavior = .pressed },
+    .{ .id = .dev_f5, .default = .{ .key = .f5 }, .behavior = .pressed },
+    .{ .id = .dev_f6, .default = .{ .key = .f6 }, .behavior = .pressed },
+    .{ .id = .dev_f7, .default = .{ .key = .f7 }, .behavior = .pressed },
+    .{ .id = .dev_f8, .default = .{ .key = .f8 }, .behavior = .pressed },
+    .{ .id = .dev_f9, .default = .{ .key = .f9 }, .behavior = .pressed },
+    .{ .id = .dev_f10, .default = .{ .key = .f10 }, .behavior = .pressed },
+    .{ .id = .dev_f11, .default = .{ .key = .f11 }, .behavior = .pressed },
+    .{ .id = .dev_f12, .default = .{ .key = .f12 }, .behavior = .pressed },
 };
 
 pub const ActionKind = kind: {
@@ -86,8 +75,6 @@ pub const default_bindings: Bindings = bindings: {
     break :bindings table;
 };
 
-// mouse_button_left: bool = false,
-// mouse_button_right: bool = false,
 bindings: Bindings = default_bindings,
 rebinding_action: ?ActionKind = null,
 debug_draw_colliders: bool = false,
@@ -95,20 +82,10 @@ free_camera: bool = false,
 cooldown: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
 
 pub fn update(self: *Controller, window: *const Window) shared.net.Input {
-    // if (!window.focused) {
-    //     self.clearInput();
-    //     self.releaseMouseButtons();
-    //     self.resetMouseDelta();
-    //     self.rebinding_action = null;
-    //     self.previous_buttons = .{};
-    //     return .{};
-    // }
-
     var new_player_inputs: shared.net.Input = .{};
 
     // const keyboard = window.keyboard;
     // const buttons = window.pointer.buttons;
-    // defer self.previous_buttons = buttons;
 
     // if (self.rebinding_action) |action| {
     //     std.debug.assert(bindable.get(action) != null);
@@ -139,8 +116,15 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
     for (std.enums.values(ActionKind)) |action| {
         switch (self.bindings.get(action)) {
             .none => {},
-            .key => |key| applyAction(&new_player_inputs, action, window.keyboard.get(key).isDown()),
-            .mouse => |mask| applyAction(
+            .key => |key| {
+                const state = window.keyboard.get(key);
+                const pressed = switch (actions[@intFromEnum(action)].behavior) {
+                    .held => state.isDown(),
+                    .pressed => state == .press,
+                };
+                self.applyAction(&new_player_inputs, action, pressed);
+            },
+            .mouse => |mask| self.applyAction(
                 &new_player_inputs,
                 action,
                 @as(u8, @bitCast(window.pointer.buttons)) & @as(u8, @bitCast(mask)) != 0,
@@ -148,26 +132,23 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
         }
     }
 
-    // self.mouse_button_left = buttons.left;
-    // self.mouse_button_right = buttons.right;
-
     return new_player_inputs;
 }
 
-fn applyAction(inputs: *shared.net.Input, action: ActionKind, pressed: bool) void {
+fn applyAction(self: *Controller, inputs: *shared.net.Input, action: ActionKind, pressed: bool) void {
     switch (action) {
+        .free_camera => if (pressed) {
+            self.free_camera = !self.free_camera;
+        },
+        .debug_colliders => if (pressed) {
+            self.debug_draw_colliders = !self.debug_draw_colliders;
+        },
         inline else => |inline_action| {
             const Keys = @FieldType(shared.net.Input, "keys");
             if (@hasField(Keys, @tagName(inline_action))) @field(inputs.keys, @tagName(inline_action)) = pressed;
         },
     }
 }
-
-// fn mouseButtonDown(buttons: Window.Pointer.Buttons, button: MouseButton) bool {
-//     return switch (button) {
-//         inline else => |b| @field(buttons, @tagName(b)),
-//     };
-// }
 
 // pub fn bindingLabel(binding: Binding) []const u8 {
 //     return switch (binding) {
