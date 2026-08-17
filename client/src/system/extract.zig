@@ -5,7 +5,6 @@ const World = @import("../World.zig");
 const System = @import("../System.zig");
 const DrawList = @import("renderer_contract").DrawList;
 const graphics = @import("graphics");
-const Emitter = @import("graphics").Emitter;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
@@ -13,7 +12,6 @@ const circle_segments = 16;
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
     const models = &system.assets.models;
-    const emitters = &system.emitters;
     const ui = &system.hud.ui;
     const list = &system.draw_list;
 
@@ -62,7 +60,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     for (world.entities.values()) |*entity| {
         if (entity.kind == .item_pickup) {
             const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-            Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
+            system.particles.keepAlive(.item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
         }
         const pose = animator.pose(entity.animation) orelse continue;
         const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
@@ -122,7 +120,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.ui.screen_width = ui.screen_width;
     list.ui.screen_height = ui.screen_height;
 
-    for (emitters) |emitter| {
+    for (system.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
         list.emitters.appendAssumeCapacity(.{
             .effect = emitter.effect,

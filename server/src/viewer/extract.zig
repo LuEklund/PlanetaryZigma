@@ -131,7 +131,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     list.ui.screen_width = ui.screen_width;
     list.ui.screen_height = ui.screen_height;
 
-    for (&viewer.emitters) |emitter| {
+    for (viewer.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
         list.emitters.appendAssumeCapacity(.{
             .effect = emitter.effect,

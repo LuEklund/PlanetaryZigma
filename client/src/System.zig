@@ -10,7 +10,7 @@ const Discord = @import("system/Discord.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
-const Emitter = @import("graphics").Emitter;
+const Particle = @import("graphics").Particle;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const animate = @import("system/animate.zig");
@@ -44,7 +44,7 @@ audio: Audio,
 discord: ?Discord,
 assets: Assets,
 animator: Animator,
-emitters: Emitter.List,
+particles: Particle,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
@@ -73,7 +73,7 @@ pub fn init(self: *System, data: Data) !void {
 
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
 
     self.render = try .init("render", data.gpa, data.io);
     errdefer self.render.deinit(data.io);
@@ -125,7 +125,7 @@ pub fn deinit(self: *System) void {
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clear();
     self.animator.clear();
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
     self.hud.resetScreen();
     switch (next) {
         .menu => try menu_world.populate(world),
@@ -143,7 +143,7 @@ pub fn update(self: *System, world: *World) !void {
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
-    if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
+    if (self.scene == .particle_lab) particle_lab.update(&self.particles, world.elapsed_time);
     switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -183,10 +183,10 @@ pub fn update(self: *System, world: *World) !void {
                 if (action.id == world.player_id) world.controller.cooldown.set(action.action, world.elapsed_time);
             },
             .effect => |effect| switch (effect) {
-                .rocket_impact => |position| Emitter.spawn(&self.emitters, .{ .effect = .explosion, .origin = position, .target = position }, world.elapsed_time),
+                .rocket_impact => |position| self.particles.spawn(.{ .effect = .explosion, .origin = position, .target = position }, world.elapsed_time),
                 .lightning => |bolt| for (bolt.targets) |id| {
                     const target = world.getPtr(id) orelse continue;
-                    Emitter.spawn(&self.emitters, .{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);
+                    self.particles.spawn(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);
                 },
             },
             .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {

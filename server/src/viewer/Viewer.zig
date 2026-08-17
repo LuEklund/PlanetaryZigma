@@ -5,7 +5,7 @@ const shared = @import("shared");
 const Window = @import("Window");
 const renderer_contract = @import("renderer_contract");
 const graphics = @import("graphics");
-const Emitter = @import("graphics").Emitter;
+const Particle = @import("graphics").Particle;
 const Ui = @import("ui");
 const DrawList = renderer_contract.DrawList;
 const World = @import("../World.zig");
@@ -19,7 +19,7 @@ window: *Window,
 assets: graphics.Assets,
 animator: graphics.Animator,
 animations: std.AutoHashMapUnmanaged(shared.entity.Id, graphics.Animator.Handle),
-emitters: Emitter.List,
+particles: Particle,
 camera: Camera,
 ui: Ui,
 menu_open: bool,
@@ -32,7 +32,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.animations = .empty;
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
 
     self.window = window;
     self.render = try .init("render", gpa, io);
