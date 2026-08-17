@@ -58,9 +58,6 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         }
     }
 
-    for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
-    world.effects.clearRetainingCapacity();
-
     const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
         if (entity.kind == .item_pickup) {

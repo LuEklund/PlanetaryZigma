@@ -195,11 +195,11 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                             .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
                             .reliable,
                         );
-                        try client.sendCommand(writer, .{ .update_event = .{ .new_stage = world.stage } }, .reliable);
+                        try client.sendCommand(writer, .{ .event = .{ .new_stage = world.stage } }, .reliable);
                         if (world.getPtr(world.teleporter_id)) |entity| {
                             if (entity.teleporter.state == .active) {
                                 try client.sendCommand(writer, .{
-                                    .update_event = .teleport_start,
+                                    .event = .teleport_start,
                                 }, .reliable);
                             }
                         }
@@ -298,50 +298,34 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                 try sendHealth(client, writer, entity);
                 try sendInventory(client, writer, entity);
                 if (tracksMotion(entity)) {
-                    try client.sendCommand(writer, .{ .update_motion = motionPacket(world, entity) }, .reliable);
+                    try client.sendCommand(writer, .{ .motion = motionPacket(world, entity) }, .reliable);
                 }
             }
             client.needs_full_sync = false;
         } else {
             for (self.pending_motions.items) |motion| {
-                try client.sendCommand(writer, .{ .update_motion = motion }, .unreliable_no_delay);
+                try client.sendCommand(writer, .{ .motion = motion }, .unreliable_no_delay);
             }
         }
 
-        for (world.client_updates.items) |client_update| switch (client_update) {
-            .spawned => |id| {
-                if (did_full_sync) continue;
-                const entity = world.getPtr(id) orelse continue;
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendHealth(client, writer, entity);
-                try sendInventory(client, writer, entity);
-            },
-            .spawn_planet => |planet_radius| {
-                if (did_full_sync) continue;
-                try client.sendCommand(writer, .{ .spawn_planet = planet_radius }, .reliable);
-            },
-            .despawned => |id| {
-                try client.sendCommand(writer, .{ .despawn_entity = .{ .id = id } }, .reliable);
-            },
-            .health => |update_health| {
-                try client.sendCommand(writer, .{ .update_health = update_health }, .reliable);
-            },
-            .inventory => |update_inventory| {
-                try client.sendCommand(writer, .{ .update_inventory = update_inventory }, .reliable);
-            },
-            .event => |event| {
-                try client.sendCommand(writer, .{ .update_event = event }, .reliable);
-            },
-            .currency => |currency| {
-                try client.sendCommand(writer, .{ .set_currency = .{ .amount = currency.amount, .id = currency.id } }, .reliable);
-            },
+        for (world.client_updates.items) |packet| {
+            if (did_full_sync and packet == .spawn_planet) continue;
+            try client.sendCommand(writer, packet, .reliable);
+        }
+
+        if (!did_full_sync) for (world.spawned.items) |id| {
+            const entity = world.getPtr(id) orelse continue;
+            try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
+            try sendHealth(client, writer, entity);
+            try sendInventory(client, writer, entity);
         };
     }
-    for (world.client_updates.items) |client_update| switch (client_update) {
-        .despawned => |id| _ = self.last_motions.remove(id),
+    for (world.client_updates.items) |packet| switch (packet) {
+        .despawn_entity => |despawn_entity| _ = self.last_motions.remove(despawn_entity.id),
         else => {},
     };
     world.client_updates.clearRetainingCapacity();
+    world.spawned.clearRetainingCapacity();
 
     if (self.steam_server.host_state == .left) return .host_left;
     if (self.steam_server.host_state == .waiting and world.elapsed_time > 60) return .host_timeout;
@@ -350,8 +334,8 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
 
 fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
     if (entity.max_health <= 0) return;
-    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
-    try client.sendCommand(writer, .{ .update_health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
+    try client.sendCommand(writer, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
+    try client.sendCommand(writer, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
 }
 
 fn tracksMotion(entity: *const system.Entity) bool {
@@ -374,7 +358,7 @@ fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.
     if (entity.kind != .player) return;
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const count = entity.inventory.get(item_kind);
-        if (count > 0) try client.sendCommand(writer, .{ .update_inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+        if (count > 0) try client.sendCommand(writer, .{ .inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
     }
 }
 

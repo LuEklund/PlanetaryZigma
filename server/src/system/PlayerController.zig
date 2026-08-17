@@ -131,7 +131,7 @@ pub fn update(world: *World) !void {
                         .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
                     });
                     player.currency -= entity.currency;
-                    world.client_updates.appendAssumeCapacity(.{ .currency = .{ .id = player_id, .amount = player.currency } });
+                    world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = player_id, .amount = player.currency } });
                 },
                 .teleporter => {
                     const teleporter = &entity.teleporter;

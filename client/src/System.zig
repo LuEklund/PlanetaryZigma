@@ -150,10 +150,19 @@ pub fn update(self: *System, world: *World) !void {
         .quit => self.request_exit = true,
     }
 
-    var player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
-    player_input.camera_position = world.camera.transform.position;
-    player_input.camera_rotation = world.camera.transform.rotation.toVec();
-    try self.network_manager.update(world, player_input);
+    const player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
+    const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
+    try self.network_manager.update(wire_input, world.elapsed_time, world.delta_time);
+    if (world.go_again_pending) {
+        try self.network_manager.sendCommand(.go_again, .reliable);
+        world.go_again_pending = false;
+    }
+    if (world.chat.pending) {
+        const chat_text = world.chat.text();
+        try self.network_manager.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
+        world.chat.pending = false;
+        world.chat.input_len = 0;
+    }
 
     switch (self.hud.ui.play_sound) {
         .hover => self.audio.play(self.button_hover_sound),
@@ -163,10 +172,42 @@ pub fn update(self: *System, world: *World) !void {
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
-    try world.update(self.network_manager.pending_spawn.items, self.network_manager.pending_despawn.items);
+    try world.update(self.network_manager.packets.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
+    for (self.network_manager.packets.items) |packet| switch (packet) {
+        .event => |event| switch (event) {
+            .action => |action| {
+                self.audio.play(self.skill_sounds.get(action.skill));
+                if (action.id == world.player_id) world.controller.cooldown.set(action.action, world.elapsed_time);
+            },
+            .effect => |effect| switch (effect) {
+                .rocket_impact => |position| Emitter.spawn(&self.emitters, .{ .effect = .explosion, .origin = position, .target = position }, world.elapsed_time),
+                .lightning => |bolt| for (bolt.targets) |id| {
+                    const target = world.getPtr(id) orelse continue;
+                    Emitter.spawn(&self.emitters, .{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);
+                },
+            },
+            .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {
+                entity.teleporter.state = .active;
+            },
+            .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
+                entity.teleporter.charged = charged;
+            },
+            .new_stage => |new_stage| {
+                world.teleporter_id = .none;
+                world.stage = new_stage;
+            },
+            .stun => |stun| if (world.getPtr(stun.id)) |entity| {
+                entity.stun_time = stun.duration;
+            },
+            .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
+                entity.interacting = interact.interacted;
+            },
+        },
+        else => {},
+    };
 
     try world.planet.update(
         world.gpa,
@@ -174,12 +215,7 @@ pub fn update(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
-    try animate.update(world, &self.animator, &self.assets.models, self.network_manager.action_events.items);
-
-    for (self.network_manager.action_events.items) |action_event| {
-        self.audio.play(self.skill_sounds.get(action_event.skill));
-        if (action_event.id == world.player_id) world.controller.cooldown.set(action_event.action, world.elapsed_time);
-    }
+    try animate.update(world, &self.animator, &self.assets.models, self.network_manager.packets.items);
     self.audio.update();
 
     try extract.frame(self, world, self.scene != .particle_lab);
@@ -194,7 +230,7 @@ pub fn update(self: *System, world: *World) !void {
         .relative => |relative| if (world.chat.open) .{ 0, 0 } else .{ relative.dx, relative.dy },
         .position => .{ 0, 0 },
     };
-    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, player_input, self.window.pointer.axis.vertical);
+    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, wire_input, self.window.pointer.axis.vertical);
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {
@@ -235,6 +271,8 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
         },
         .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
     }
+    player_input.camera_position = world.camera.transform.position;
+    player_input.camera_rotation = world.camera.transform.rotation.toVec();
     return player_input;
 }
 

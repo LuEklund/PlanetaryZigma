@@ -8,7 +8,7 @@ const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
 const look_yaw_deadzone: f32 = 0.05;
 
-pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Assets.Models, action_events: []const shared.net.Event.Action) !void {
+pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Assets.Models, packets: []const shared.net.ServerPacket) !void {
     var dying_index: usize = 0;
     while (dying_index < world.dying.items.len) {
         const corpse = &world.dying.items[dying_index];
@@ -24,7 +24,7 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
     for (world.entities.values()) |*entity| {
         if (entity.animation == .none) entity.animation = try animator.create(if (entity.kind == .item_pickup) models.getItem(entity.item.?) else models.get(entity.kind), models);
         const loop = shared.entity.animationLoop(
-            if (entity.motion.update) |update_motion| update_motion.velocity else @splat(0),
+            if (entity.motion.update) |motion| motion.velocity else @splat(0),
             entity.stun_time,
             if (entity.max_health > 0 and entity.health <= 0) .death else entity.override_animation_loop,
         );
@@ -36,7 +36,15 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
     for (world.dying.items) |corpse| {
         animator.setLoop(corpse.animation, models.rig(models.get(corpse.kind)).loop_clips.get(.death), .hold_last);
     }
-    for (action_events) |action_event| {
+    for (packets) |packet| {
+        const event = switch (packet) {
+            .event => |event_update| event_update,
+            else => continue,
+        };
+        const action_event = switch (event) {
+            .action => |action| action,
+            else => continue,
+        };
         const entity = world.getPtr(action_event.id) orelse continue;
         if (models.rig(models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
             animator.playOverlay(entity.animation, clip, models);

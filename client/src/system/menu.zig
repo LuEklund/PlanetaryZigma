@@ -16,7 +16,7 @@ pub fn populate(world: *World) !void {
     world.controller.free_camera = false;
     try world.planet.sync(world.gpa, planet_radius);
 
-    world.queueSpawn(.{
+    try world.applySpawn(.{
         .id = bozo_id,
         .kind = .player,
         .position = .{ 0, planet_radius + bozo_surface_offset, 0 },

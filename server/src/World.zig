@@ -19,7 +19,8 @@ physics: *Physics,
 options: Options,
 place: Place,
 director: Director,
-client_updates: std.ArrayList(ClientUpdate),
+client_updates: std.ArrayList(shared.net.ServerPacket),
+spawned: std.ArrayList(shared.entity.Id),
 physics_commands: std.ArrayList(Physics.Command),
 impacts: std.ArrayList(Physics.Impact),
 next_stage_requested: bool,
@@ -62,16 +63,6 @@ pub const Director = struct {
     salary_per_second: u32,
     last_salary: f32,
     spawning: bool,
-};
-
-pub const ClientUpdate = union(enum) {
-    spawned: shared.entity.Id,
-    despawned: shared.entity.Id,
-    health: shared.net.UpdateHealth,
-    inventory: shared.net.UpdateInventory,
-    event: shared.net.Event,
-    currency: shared.net.SetCurrency,
-    spawn_planet: u32,
 };
 
 pub const Camera = struct {
@@ -145,6 +136,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
+        .spawned = try .initCapacity(gpa, 8192),
         .physics_commands = try .initCapacity(gpa, shared.max_entities * 4),
         .impacts = try .initCapacity(gpa, shared.max_entities),
         .next_stage_requested = false,
@@ -181,6 +173,7 @@ pub fn deinit(self: *World) void {
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
+    self.spawned.deinit(self.gpa);
     self.physics_commands.deinit(self.gpa);
     self.impacts.deinit(self.gpa);
     self.planet.deinit(self.gpa);
@@ -642,7 +635,7 @@ pub fn flush(self: *World) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (entity.kind.collider() != null) try self.physics.createBody(entity);
-        self.client_updates.appendAssumeCapacity(.{ .spawned = id });
+        self.spawned.appendAssumeCapacity(id);
     }
     self.new_spawns.clearRetainingCapacity();
 
@@ -668,12 +661,12 @@ pub fn flush(self: *World) !void {
             }
             _ = self.entities.swapRemove(despawn.id);
         }
-        self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
+        self.client_updates.appendAssumeCapacity(.{ .despawn_entity = .{ .id = despawn.id } });
     }
     if (currency_reward > 0) for (self.players.items) |player_id| {
         const player = self.getPtrRaw(player_id) orelse continue;
         player.currency += currency_reward;
-        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
+        self.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .amount = player.currency, .id = player_id } });
     };
 
     self.pending_despawns.clearRetainingCapacity();

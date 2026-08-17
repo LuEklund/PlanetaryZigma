@@ -7,7 +7,6 @@ const Camera = @import("system/Camera.zig");
 const Chat = @import("system/Chat.zig");
 const Controller = @import("system/Controller.zig");
 const Options = @import("Options.zig");
-const Emitter = @import("graphics").Emitter;
 const Animator = @import("graphics").Animator;
 const DrawList = @import("renderer_contract").DrawList;
 
@@ -22,7 +21,6 @@ gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 dying: std.ArrayList(Dying) = .empty,
-effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
 options: Options = .{},
 camera: Camera = .{},
@@ -85,7 +83,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
         .gpa = gpa,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .dying = try .initCapacity(gpa, shared.max_entities),
-        .effects = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
         .prng = .init(0x5EED_BA11),
     };
@@ -95,7 +92,6 @@ pub fn deinit(self: *World) void {
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
     self.dying.deinit(self.gpa);
-    self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
     self.planet.deinit(self.gpa);
 }
@@ -105,7 +101,6 @@ pub fn clear(self: *World) void {
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
     self.dying.clearRetainingCapacity();
-    self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
 
     self.camera = .{};
@@ -115,25 +110,61 @@ pub fn clear(self: *World) void {
     self.stage = 0;
 }
 
-pub fn update(self: *World, spawns: []const shared.net.SpawnEntity, despawns: []const shared.entity.Id) !void {
-    for (spawns) |entity_info| {
-        try self.applySpawn(entity_info);
-    }
-
-    for (despawns) |id| {
-        const entity = self.getPtr(id) orelse continue;
-        if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
-            _ = self.teleporter_bosses.swapRemove(index_of_boss);
-        }
-        if (id == self.player_id) self.controller.free_camera = true;
-        self.dying.appendAssumeCapacity(.{
-            .kind = entity.kind,
-            .transform = entity.transform,
-            .animation = entity.animation,
-            .elapsed = 0,
-        });
-        _ = self.despawn(id);
-    }
+pub fn update(self: *World, packets: []const shared.net.ServerPacket) !void {
+    for (packets) |packet| switch (packet) {
+        .acknowledge => |acknowledge| {
+            self.player_id = acknowledge.id;
+        },
+        .spawn_entity => |spawn_entity| {
+            if (spawn_entity.kind == .unknown) {
+                std.log.err("spawn with unknown entity kind, ignoring", .{});
+                continue;
+            }
+            try self.applySpawn(spawn_entity);
+        },
+        .spawn_planet => |radius| {
+            try self.planet.sync(self.gpa, radius);
+        },
+        .despawn_entity => |despawn_entity| {
+            const entity = self.getPtr(despawn_entity.id) orelse continue;
+            if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, despawn_entity.id)) |index_of_boss| {
+                _ = self.teleporter_bosses.swapRemove(index_of_boss);
+            }
+            if (despawn_entity.id == self.player_id) self.controller.free_camera = true;
+            self.dying.appendAssumeCapacity(.{
+                .kind = entity.kind,
+                .transform = entity.transform,
+                .animation = entity.animation,
+                .elapsed = 0,
+            });
+            _ = self.despawn(despawn_entity.id);
+        },
+        .motion => |motion| {
+            const entity = self.getPtr(motion.id) orelse continue;
+            entity.motion.update = motion;
+        },
+        .health => |health| {
+            const entity = self.getPtr(health.id) orelse continue;
+            self.applyHealth(entity, health);
+        },
+        .inventory => |inventory| {
+            const entity = self.getPtr(inventory.id) orelse continue;
+            applyInventory(entity, inventory);
+        },
+        .set_currency => |set_currency| {
+            const entity = self.getPtr(set_currency.id) orelse continue;
+            entity.currency = set_currency.amount;
+        },
+        .chat_message => |chat_message| {
+            const sender = self.getPtr(chat_message.id);
+            const name = if (sender != null and sender.?.player_name.slice().len != 0)
+                sender.?.player_name.slice()
+            else
+                shared.default_player_name;
+            self.chat.push(name, chat_message.text, self.elapsed_time);
+        },
+        .server_tick, .event => {},
+    };
 }
 
 pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
@@ -179,10 +210,6 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
         },
         .unknown, .lootbox, .platform, .target_dummy => {},
     }
-}
-
-pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
-    self.applySpawn(spawn_entity) catch |err| std.log.err("world spawn: {t}", .{err});
 }
 
 pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {

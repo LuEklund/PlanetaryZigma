@@ -5,8 +5,6 @@ const builtin = @import("builtin");
 const shared = @import("shared");
 const tracy = @import("ztracy");
 const Client = shared.SteamNet.Client;
-const system = @import("../System.zig");
-const World = system.World;
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -25,12 +23,11 @@ elapsed_time: f32 = 0,
 steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
 dev_mode: bool = false,
-deferred: std.ArrayList(shared.net.ServerPacket) = .empty,
-pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
-pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-action_events: std.ArrayList(shared.net.Event.Action) = .empty,
+packets: std.ArrayList(shared.net.ServerPacket) = .empty,
+chat_text: std.ArrayList(u8) = .empty,
 
 pub const host_wait_timeout_seconds: f32 = 15;
+pub const max_chat_text_bytes: usize = shared.max_chat_len * 32;
 
 pub const HostState = enum(u8) {
     none,
@@ -113,9 +110,8 @@ pub fn init(
         .gpa = gpa,
         .io = io,
         .steam_client = undefined,
-        .pending_spawn = try .initCapacity(gpa, shared.max_entities),
-        .pending_despawn = try .initCapacity(gpa, shared.max_entities),
-        .action_events = try .initCapacity(gpa, shared.max_entities),
+        .packets = try .initCapacity(gpa, shared.max_entities * 2),
+        .chat_text = try .initCapacity(gpa, max_chat_text_bytes),
     };
     try self.steam_client.init(gpa, io, log_connection_status);
     self.steam_logged_on = self.steam_client.isLoggedOn();
@@ -123,10 +119,8 @@ pub fn init(
 
 pub fn deinit(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
-    self.deferred.deinit(self.gpa);
-    self.pending_spawn.deinit(self.gpa);
-    self.pending_despawn.deinit(self.gpa);
-    self.action_events.deinit(self.gpa);
+    self.packets.deinit(self.gpa);
+    self.chat_text.deinit(self.gpa);
     self.steam_client.deinit();
 }
 
@@ -145,7 +139,8 @@ pub fn returnToMainMenu(self: *NetworkManager) !void {
     self.steam_client.disconnect();
 
     self.stopHostServer();
-    self.deferred.clearRetainingCapacity();
+    self.packets.clearRetainingCapacity();
+    self.chat_text.clearRetainingCapacity();
     self.server_conn = 0;
     self.server_tick_estimate = 0;
     self.server_tick_latest = 0;
@@ -246,16 +241,15 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *NetworkManager, world: *World, player_inputs: shared.net.Input) !void {
+pub fn update(self: *NetworkManager, player_input: shared.net.Input, elapsed_time: f32, delta_time: f32) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    self.pending_spawn.clearRetainingCapacity();
-    self.pending_despawn.clearRetainingCapacity();
-    self.action_events.clearRetainingCapacity();
+    self.packets.clearRetainingCapacity();
+    self.chat_text.clearRetainingCapacity();
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
-    self.elapsed_time = world.elapsed_time;
+    self.elapsed_time = elapsed_time;
     self.steam_logged_on = self.steam_client.isLoggedOn();
     self.ping_milliseconds = self.steam_client.pingMilliseconds();
     if (!self.steam_logged_on) {
@@ -348,145 +342,50 @@ pub fn update(self: *NetworkManager, world: *World, player_inputs: shared.net.In
         self.sent_connect = true;
     }
     if (self.server_conn != 0) {
-        var input = player_inputs;
-        if (world.controller.free_camera) input.keys = .{};
-        try self.sendCommand(.{ .input = input }, .unreliable_no_delay);
+        try self.sendCommand(.{ .input = player_input }, .unreliable_no_delay);
     }
-    if (world.go_again_pending) {
-        try self.sendCommand(.go_again, .reliable);
-        world.go_again_pending = false;
-    }
-    if (world.chat.pending) {
-        const chat_text = world.chat.text();
-        try self.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
-        world.chat.pending = false;
-        world.chat.input_len = 0;
-    }
-    for (self.deferred.items) |deferred_command| {
-        try self.handleCommand(world, deferred_command, false);
-    }
-    self.deferred.clearRetainingCapacity();
 
     for (self.steam_client.packets.incoming.items) |*msg| {
+        if (self.packets.items.len == self.packets.capacity) {
+            std.log.warn("packet inbox full at {d}, dropping the rest of this frame", .{self.packets.capacity});
+            break;
+        }
         var msg_reader: std.Io.Reader = .fixed(msg.slice());
         const reader = &msg_reader;
-        const parsed = shared.net.parse(shared.net.ServerPacket, reader) catch |err| {
+        var parsed = shared.net.parse(shared.net.ServerPacket, reader) catch |err| {
             std.log.err("parse packet: {s}", .{@errorName(err)});
             continue;
         };
-        try self.handleCommand(world, parsed, true);
+        switch (parsed) {
+            .acknowledge => |acknowledge| {
+                self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
+                self.server_tick_latest = acknowledge.tick;
+            },
+            .server_tick => |tick| {
+                self.server_tick_latest = @max(self.server_tick_latest, tick);
+            },
+            .chat_message => |chat_message| {
+                var owned_chat_message: shared.net.ChatMessage = chat_message;
+                owned_chat_message.text = self.keepChatText(chat_message.text) orelse continue;
+                parsed = .{ .chat_message = owned_chat_message };
+            },
+            else => {},
+        }
+        self.packets.appendAssumeCapacity(parsed);
     }
     self.steam_client.packets.incoming.clearRetainingCapacity();
 
-    self.server_tick_estimate += world.delta_time / shared.tick_seconds;
+    self.server_tick_estimate += delta_time / shared.tick_seconds;
     const target = @as(f32, @floatFromInt(self.server_tick_latest)) - self.render_delay_ticks;
     self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
 }
 
-fn handleCommand(
-    self: *NetworkManager,
-    world: *World,
-    command: shared.net.ServerPacket,
-    can_defer: bool,
-) !void {
-    switch (command) {
-        .acknowledge => |acknowledge| {
-            const name = self.playerDisplayName();
-            world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            self.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
-            world.player_id = acknowledge.id;
-            self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
-            self.server_tick_latest = acknowledge.tick;
-        },
-        .spawn_entity => |spawn_entity| {
-            if (world.getPtr(spawn_entity.id) != null) return;
-            if (spawn_entity.kind == .unknown) {
-                std.log.err("spawn with unknown entity kind, ignoring", .{});
-                return;
-            }
-            self.pending_spawn.appendAssumeCapacity(spawn_entity);
-        },
-        .spawn_planet => |radius| {
-            try world.planet.sync(world.gpa, radius);
-        },
-        .despawn_entity => |despawn_entity| {
-            self.pending_despawn.appendAssumeCapacity(despawn_entity.id);
-        },
-        .update_motion => |update_motion_command| {
-            const entity = world.getPtr(update_motion_command.id) orelse return;
-            entity.motion.update = update_motion_command;
-        },
-        .server_tick => |tick| {
-            self.server_tick_latest = @max(self.server_tick_latest, tick);
-        },
-        .update_health => |update_health_command| {
-            const entity = world.getPtr(update_health_command.id) orelse {
-                if (can_defer) try self.deferred.append(self.gpa, command);
-                return;
-            };
-            world.applyHealth(entity, update_health_command);
-        },
-        .update_event => |event| {
-            switch (event) {
-                .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {
-                    entity.teleporter.state = .active;
-                },
-                .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
-                    entity.teleporter.charged = charged;
-                },
-                .new_stage => |new_stage| {
-                    world.teleporter_id = .none;
-                    world.stage = new_stage;
-                },
-                .action => |action| {
-                    self.action_events.appendAssumeCapacity(action);
-                },
-                .stun => |stun| {
-                    const entity = world.getPtr(stun.id) orelse {
-                        if (can_defer) try self.deferred.append(self.gpa, command);
-                        return;
-                    };
-                    entity.stun_time = stun.duration;
-                },
-                .effect => |effect| switch (effect) {
-                    .rocket_impact => |position| {
-                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .explosion, .origin = position, .target = position });
-                    },
-                    .lightning => |bolt| for (bolt.targets) |id| {
-                        const target = world.getPtr(id) orelse continue;
-                        if (world.effects.items.len < world.effects.capacity) world.effects.appendAssumeCapacity(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position });
-                    },
-                },
-                .interact => |interact| {
-                    const entity = world.getPtr(interact.interactor) orelse {
-                        if (can_defer) try self.deferred.append(self.gpa, command);
-                        return;
-                    };
-                    entity.interacting = interact.interacted;
-                },
-            }
-        },
-        .update_inventory => |inventory| {
-            const entity = world.getPtr(inventory.id) orelse {
-                if (can_defer) try self.deferred.append(self.gpa, command);
-                return;
-            };
-            World.applyInventory(entity, inventory);
-        },
-        .set_currency => |set_currency| {
-            const entity = world.getPtr(set_currency.id) orelse {
-                if (can_defer) try self.deferred.append(self.gpa, command);
-                return;
-            };
-            entity.currency = set_currency.amount;
-        },
-        .chat_message => |chat_message| {
-            const sender = world.getPtr(chat_message.id);
-            const name = if (sender != null and sender.?.player_name.slice().len != 0)
-                sender.?.player_name.slice()
-            else
-                shared.default_player_name;
-            world.chat.push(name, chat_message.text, world.elapsed_time);
-        },
+fn keepChatText(self: *NetworkManager, text: []const u8) ?[]const u8 {
+    if (self.chat_text.items.len + text.len > self.chat_text.capacity) {
+        std.log.warn("chat text scratch full, dropping message of {d} bytes", .{text.len});
+        return null;
     }
+    const start = self.chat_text.items.len;
+    self.chat_text.appendSliceAssumeCapacity(text);
+    return self.chat_text.items[start..][0..text.len];
 }

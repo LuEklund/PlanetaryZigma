@@ -11,8 +11,6 @@ effect: Shader.Kind,
 origin: nz.Vec3(f32),
 target: nz.Vec3(f32),
 spawn_time: f32,
-/// Whoever the effect follows. An opaque number: render has no notion of an entity, and
-/// only ever compares it.
 owner: u64,
 last_seen: f32,
 
