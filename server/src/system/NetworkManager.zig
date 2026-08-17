@@ -375,7 +375,7 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
             .item_pickup => .{ .item = entity.item.? },
-            .unknown, .projectile_cube, .projectile_rocket, .teleporter, .lootbox, .platform, .target_dummy => .none,
+            .unknown, .projectile_heal, .projectile_cube, .projectile_rocket, .teleporter, .lootbox, .platform, .target_dummy => .none,
         },
     };
 }

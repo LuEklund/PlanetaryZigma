@@ -197,6 +197,7 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
             }
         },
         .projectile_cube => entity.transform.scale = @splat(0.3),
+        .projectile_heal => entity.transform.scale = @splat(0.1),
         .projectile_rocket => entity.transform.scale = @splat(0.9),
         .teleporter => self.teleporter_id = entity.id,
         .enemy => {

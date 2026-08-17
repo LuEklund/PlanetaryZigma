@@ -447,6 +447,22 @@ pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: sha
                 .damage = caster.stat(.damage),
             });
         },
+        .heal => {
+            const target_entity = target orelse return;
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
+            _ = try world.spawn(.{
+                .kind = .projectile_heal,
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                    .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(aim_dir, 50),
+                .lifetime = 2,
+                .damage = caster.stat(.damage),
+            });
+        },
         .melee => {
             const target_entity = target orelse return;
             _ = world.removeHealth(target_entity, caster.stat(.damage), caster);

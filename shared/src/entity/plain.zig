@@ -78,6 +78,12 @@ pub const projectile_cube: Spec = .{
     .base_stats = .initDefault(0, .{ .health = 1 }),
 };
 
+pub const projectile_heal: Spec = .{
+    .collider = null,
+    .model = null,
+    .base_stats = .initDefault(0, .{ .health = 1 }),
+};
+
 pub const projectile_rocket: Spec = .{
     .collider = null,
     .model = .{ .path = "objects/rocket.glb", .loop_clips = null },

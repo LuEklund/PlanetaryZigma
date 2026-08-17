@@ -24,14 +24,16 @@ pub const Kind = union(enum) {
 
     projectile_cube,
     projectile_rocket,
+    projectile_heal,
 
     pub fn eql(kind: Kind, other_kind: Kind) bool {
         return std.meta.eql(kind, other_kind);
     }
 
+    //TODO: move out from entites.
     pub fn projectileKind(kind: Kind) ?ProjectileKind {
         return switch (kind) {
-            .projectile_cube => .cube,
+            .projectile_cube, .projectile_heal => .cube,
             .projectile_rocket => .rocket,
             else => null,
         };
@@ -96,6 +98,7 @@ pub const Skill = enum(u16) {
     melee,
     arc_jump,
     plant,
+    heal,
 };
 
 pub const AssignedSkill = struct {
