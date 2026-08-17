@@ -9,9 +9,8 @@ pub const ParticleEffects = @import("ParticleEffects.zig");
 pub const Placement = ParticleEffects.Placement;
 pub const Motion = ParticleEffects.Motion;
 pub const ParticleEffect = ParticleEffects.ParticleEffect;
-pub const EffectParams = ParticleEffects.EffectParams;
-pub const instancesPerEmitter = ParticleEffects.instancesPerEmitter;
-pub const effect_params = ParticleEffects.effect_params;
+pub const Effect = ParticleEffects.Effect;
+pub const effects = ParticleEffects.effects;
 
 pub const InitOptions = struct {
     gpa: std.mem.Allocator,

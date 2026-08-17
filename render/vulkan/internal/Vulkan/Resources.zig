@@ -170,7 +170,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     var effect_params_buffer: Buffer = try .init(
         device,
         vma,
-        contract.EffectParams,
+        contract.Effect.GPU,
         contract.ParticleEffect.count,
         c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
         .{
@@ -178,8 +178,11 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
             .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
         },
     );
-    var effect_params_rows: [contract.ParticleEffect.count]contract.EffectParams = contract.effect_params.values;
-    effect_params_buffer.copy(contract.EffectParams, &effect_params_rows);
+    var effect_params_rows: [contract.ParticleEffect.count]contract.Effect.GPU = undefined;
+    for (std.enums.values(contract.ParticleEffect)) |effect| {
+        effect_params_rows[@intFromEnum(effect)] = contract.effects.get(effect).toGPU();
+    }
+    effect_params_buffer.copy(contract.Effect.GPU, &effect_params_rows);
 
     const shadow_image: Image = try .init(
         vma,

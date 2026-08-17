@@ -15,9 +15,9 @@ pub fn populate(world: *World) !void {
 }
 
 pub fn update(particles: *Particle, elapsed_time: f32) void {
-    const params: contract.EffectParams = contract.effect_params.get(particle_effect);
-    if (params.lifetime == 0) {
-        particles.keepAlive(particle_effect, 0, surface_point, elapsed_time);
+    const effect_data: contract.Effect = contract.effects.get(particle_effect);
+    if (effect_data.lifetime == 0) {
+        particles.keepAlive(particle_effect, 0, surface_point, surface_point, elapsed_time);
         return;
     }
     for (particles.emitters) |emitter| {
@@ -26,6 +26,6 @@ pub fn update(particles: *Particle, elapsed_time: f32) void {
     particles.spawn(.{
         .effect = particle_effect,
         .origin = surface_point,
-        .target = if (params.placement == @intFromEnum(contract.Placement.line)) ribbon_target else surface_point,
+        .target = if (effect_data.placement == .line) ribbon_target else surface_point,
     }, elapsed_time);
 }

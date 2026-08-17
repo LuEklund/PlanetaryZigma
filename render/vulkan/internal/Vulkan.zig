@@ -767,19 +767,19 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     for (std.enums.values(contract.ParticleEffect)) |effect| {
         const batch = batches.get(effect);
         if (batch.emitter_count == 0) continue;
-        const params = contract.effect_params.get(effect);
-        if (params.count == 0) continue;
+        const effect_data = contract.effects.get(effect);
+        if (effect_data.count == 0) continue;
 
         const push: Shader.ParticlePushConstant = .{
             .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
                 batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
             .effect_params_address = self.resources.effect_params_buffer.getGPUAddress() +
-                @intFromEnum(effect) * @sizeOf(contract.EffectParams),
+                @intFromEnum(effect) * @sizeOf(contract.Effect.GPU),
             .elapsed_time = list.time,
             .emitter_count = batch.emitter_count,
         };
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
-        c.vkCmdDraw(cmd, 6, batch.emitter_count * contract.instancesPerEmitter(params), 0, 0);
+        c.vkCmdDraw(cmd, 6, batch.emitter_count * effect_data.instancesPerEmitter(), 0, 0);
     }
 }
 

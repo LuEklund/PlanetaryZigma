@@ -22,6 +22,7 @@ struct EffectParams {
     uint strands;
     float4 ramp_steps;
     float4 color_ramp[5];
+    float stretch;
 };
 
 // `params` already points at this effect's row: the CPU pushes base + effect * stride.
@@ -170,7 +171,17 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
         float3 forward = normalize(scene_data.camera_position - position);
         float3 right = normalize(cross(scene_data.camera_up.xyz, forward));
         float3 up = cross(forward, right);
-        float3 world_position = position + (right * corner.x + up * corner.y) * size;
+        float3 world_position;
+        if (params.stretch > 0.0) {
+            float3 heading = emitter.target - emitter.origin;
+            float3 projected = heading - forward * dot(heading, forward);
+            float projected_length = length(projected);
+            float3 long_axis = projected_length > 0.001 ? projected / projected_length : right;
+            float3 short_axis = cross(forward, long_axis);
+            world_position = position + (long_axis * corner.x * params.stretch + short_axis * corner.y) * size;
+        } else {
+            world_position = position + (right * corner.x + up * corner.y) * size;
+        }
 
         output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
         output.uv = float2(corner.x + 0.5, 0.5 - corner.y);

@@ -2,7 +2,7 @@ const std = @import("std");
 const nz = @import("numz");
 const DrawList = @import("renderer_contract").DrawList;
 const ParticleEffect = @import("renderer_contract").ParticleEffect;
-const effect_params = @import("renderer_contract").effect_params;
+const effects = @import("renderer_contract").effects;
 
 const Particle = @This();
 
@@ -31,7 +31,7 @@ pub const Emitter = struct {
     };
 
     pub fn alive(self: Emitter, elapsed_time: f32) bool {
-        const lifetime = effect_params.get(self.effect).lifetime;
+        const lifetime = effects.get(self.effect).lifetime;
         if (lifetime == 0) return elapsed_time - self.last_seen < refresh_timeout;
         return elapsed_time - self.spawn_time < lifetime;
     }
@@ -58,19 +58,19 @@ pub fn spawn(self: *Particle, request: Spawn, elapsed_time: f32) void {
     }, elapsed_time);
 }
 
-pub fn keepAlive(self: *Particle, effect: ParticleEffect, owner: u64, origin: nz.Vec3(f32), elapsed_time: f32) void {
-    std.debug.assert(effect_params.get(effect).lifetime == 0);
+pub fn keepAlive(self: *Particle, effect: ParticleEffect, owner: u64, origin: nz.Vec3(f32), target: nz.Vec3(f32), elapsed_time: f32) void {
+    std.debug.assert(effects.get(effect).lifetime == 0);
     for (&self.emitters) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;
         emitter.origin = origin;
-        emitter.target = origin;
+        emitter.target = target;
         emitter.last_seen = elapsed_time;
         return;
     }
     self.insert(.{
         .effect = effect,
         .origin = origin,
-        .target = origin,
+        .target = target,
         .spawn_time = elapsed_time,
         .owner = owner,
         .last_seen = elapsed_time,

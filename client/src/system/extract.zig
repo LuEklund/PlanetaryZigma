@@ -58,10 +58,19 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
 
     const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
-        if (entity.kind == .item_pickup) {
-            const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-            system.particles.keepAlive(.item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
+        switch (entity.kind) {
+            .item_pickup => {
+                const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+                system.particles.keepAlive(.item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, entity.transform.position - effect_offset, world.elapsed_time);
+            },
+            .projectile_cube => {
+                const velocity: nz.Vec3(f32) = if (entity.motion.update) |update| update.velocity else .{ 0, 0, 0 };
+                system.particles.keepAlive(.tracer, @intFromEnum(entity.id), entity.transform.position, entity.transform.position + velocity, world.elapsed_time);
+                continue;
+            },
+            else => {},
         }
+
         const pose = animator.pose(entity.animation) orelse continue;
         const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
