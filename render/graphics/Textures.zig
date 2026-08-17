@@ -24,6 +24,8 @@ const Entry = struct {
 dir: std.Io.Dir,
 entries: std.ArrayList(Entry),
 crosshair_entry: u32,
+shoot_entry: u32,
+spread_entry: u32,
 icon_entries: std.EnumArray(shared.Item.Kind, u32),
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Textures {
@@ -33,11 +35,15 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Textures {
         .dir = try root.openDir(io, "textures", .{}),
         .entries = .empty,
         .crosshair_entry = 0,
+        .shoot_entry = 0,
+        .spread_entry = 0,
         .icon_entries = .initFill(0),
     };
     errdefer self.deinit(gpa, io);
 
     self.crosshair_entry = try self.add(gpa, "crosshair.png");
+    self.shoot_entry = try self.add(gpa, "shoot.png");
+    self.spread_entry = try self.add(gpa, "spread.png");
     for (std.enums.values(shared.Item.Kind)) |item| {
         self.icon_entries.set(item, try self.add(gpa, shared.Item.icon_paths[@intFromEnum(item)]["textures/".len..]));
     }
@@ -61,6 +67,14 @@ pub fn get(self: *const Textures, item: shared.Item.Kind) contract.TextureHandle
 
 pub fn crosshair(self: *const Textures) contract.TextureHandle {
     return self.entries.items[self.crosshair_entry].handle;
+}
+
+pub fn shoot(self: *const Textures) contract.TextureHandle {
+    return self.entries.items[self.shoot_entry].handle;
+}
+
+pub fn spread(self: *const Textures) contract.TextureHandle {
+    return self.entries.items[self.spread_entry].handle;
 }
 
 pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {

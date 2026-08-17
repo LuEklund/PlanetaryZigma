@@ -102,13 +102,14 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .name = "action_bar",
             .size = .{ .fixed = .{ .width = action_bar.width, .height = action_bar.height } },
             .offset = .{ .left = ui.screen_width - action_bar.width, .top = ui.screen_height - action_bar.height },
-            .color = .new(1, 0, 0, 1),
+            .color = .new(0, 0, 0, 0.6),
             .gap = 10,
             .padding = 5,
         });
         ui.add("action_bar", .{
             .name = "primary",
             .size = .{ .fixed = action_item },
+            .texture = game_assets.textures.shoot(),
             .color = .new(1, 1, 1, 1),
             .children = &.{
                 .{
@@ -118,14 +119,15 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                             .height = std.math.clamp((world.controller.cooldown.get(.primary) + player.stat(.primary_cooldown) - world.elapsed_time) / player.stat(.primary_cooldown), 0, 1),
                         },
                     },
-                    .color = .new(1, 0, 0, 0.4),
+                    .color = .new(0, 0, 0, 0.6),
                 },
             },
         });
         ui.add("action_bar", .{
             .name = "secondary",
             .size = .{ .fixed = action_item },
-            .color = .new(1, 1, 0, 1),
+            .texture = game_assets.textures.spread(),
+            .color = .new(1, 1, 1, 1),
             .children = &.{
                 .{
                     .size = .{
@@ -134,7 +136,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                             .height = std.math.clamp((world.controller.cooldown.get(.secondary) + player.stat(.secondary_cooldown) - world.elapsed_time) / player.stat(.secondary_cooldown), 0, 1),
                         },
                     },
-                    .color = .new(1, 0, 0, 0.4),
+                    .color = .new(0, 0, 0, 0.6),
                 },
             },
         });
