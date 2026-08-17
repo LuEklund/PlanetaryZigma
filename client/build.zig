@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
 
     const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
-    const contract = render_dep.module("contract");
+    const renderer_contract = render_dep.module("renderer_contract");
     const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
     const ui = render_dep.module("ui");
@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "contract", .module = contract },
+                .{ .name = "renderer_contract", .module = renderer_contract },
 
                 .{ .name = "miniaudio", .module = miniaudio },
                 .{ .name = "graphics", .module = graphics },
@@ -53,6 +53,20 @@ pub fn build(b: *std.Build) void {
         .linkage = .dynamic,
     });
 
+    const system_contract = b.createModule(.{
+        .root_source_file = b.path("src/system_contract.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "renderer_contract", .module = renderer_contract },
+            .{ .name = "graphics", .module = graphics },
+            .{ .name = "Window", .module = window },
+            .{ .name = "ui", .module = ui },
+            .{ .name = "ztracy", .module = ztracy },
+        },
+    });
+
     const exe = b.addExecutable(.{
         .name = "client",
         .root_module = b.createModule(.{
@@ -61,7 +75,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "system", .module = system.root_module },
+                .{ .name = "system", .module = system_contract },
 
                 .{ .name = "Window", .module = window },
                 .{ .name = "ui", .module = ui },

@@ -335,7 +335,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                     else => {},
                 }
             },
-            else => {}, // std.log.info("{t}", .{event.type}),
+            else => {},
         }
     }
 

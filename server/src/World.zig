@@ -19,7 +19,8 @@ physics: *Physics,
 options: Options,
 place: Place,
 director: Director,
-client_updates: std.ArrayList(ClientUpdate),
+client_updates: std.ArrayList(shared.net.ServerPacket),
+spawned: std.ArrayList(shared.entity.Id),
 physics_commands: std.ArrayList(Physics.Command),
 impacts: std.ArrayList(Physics.Impact),
 next_stage_requested: bool,
@@ -62,16 +63,6 @@ pub const Director = struct {
     salary_per_second: u32,
     last_salary: f32,
     spawning: bool,
-};
-
-pub const ClientUpdate = union(enum) {
-    spawned: shared.entity.Id,
-    despawned: shared.entity.Id,
-    health: shared.net.UpdateHealth,
-    inventory: shared.net.UpdateInventory,
-    event: shared.net.Event,
-    currency: shared.net.SetCurrency,
-    spawn_planet: u32,
 };
 
 pub const Camera = struct {
@@ -145,6 +136,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .new_spawns = try .initCapacity(gpa, shared.max_entities),
         .pending_despawns = try .initCapacity(gpa, shared.max_entities),
         .client_updates = try .initCapacity(gpa, 8192),
+        .spawned = try .initCapacity(gpa, 8192),
         .physics_commands = try .initCapacity(gpa, shared.max_entities * 4),
         .impacts = try .initCapacity(gpa, shared.max_entities),
         .next_stage_requested = false,
@@ -181,6 +173,7 @@ pub fn deinit(self: *World) void {
     self.new_spawns.deinit(self.gpa);
     self.pending_despawns.deinit(self.gpa);
     self.client_updates.deinit(self.gpa);
+    self.spawned.deinit(self.gpa);
     self.physics_commands.deinit(self.gpa);
     self.impacts.deinit(self.gpa);
     self.planet.deinit(self.gpa);
@@ -326,14 +319,14 @@ pub const Outcome = enum { fired, on_cooldown, out_of_range };
 pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Entity, action: shared.entity.Action) Outcome {
     if (!ready(attacker, action, world.elapsed_time)) return .on_cooldown;
 
+    const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
     if (potential_target) |target| {
-        const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
         if (distance >= assigned.range) return .out_of_range;
     }
 
     attacker.last_used.set(action, world.elapsed_time);
-    world.client_updates.appendAssumeCapacity(.{ .event = .{ .action = .{ .id = attacker.id, .action = action } } });
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .action = .{ .id = attacker.id, .action = action, .skill = assigned.skill } } });
     return .fired;
 }
 
@@ -444,6 +437,22 @@ pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: sha
             const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
             _ = try world.spawn(.{
                 .kind = .projectile_cube,
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
+                    .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(aim_dir, 50),
+                .lifetime = 2,
+                .damage = caster.stat(.damage),
+            });
+        },
+        .heal => {
+            const target_entity = target orelse return;
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
+            _ = try world.spawn(.{
+                .kind = .projectile_heal,
                 .owner_id = caster.id,
                 .transform = .{
                     .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
@@ -642,7 +651,7 @@ pub fn flush(self: *World) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (entity.kind.collider() != null) try self.physics.createBody(entity);
-        self.client_updates.appendAssumeCapacity(.{ .spawned = id });
+        self.spawned.appendAssumeCapacity(id);
     }
     self.new_spawns.clearRetainingCapacity();
 
@@ -668,12 +677,12 @@ pub fn flush(self: *World) !void {
             }
             _ = self.entities.swapRemove(despawn.id);
         }
-        self.client_updates.appendAssumeCapacity(.{ .despawned = despawn.id });
+        self.client_updates.appendAssumeCapacity(.{ .despawn_entity = .{ .id = despawn.id } });
     }
     if (currency_reward > 0) for (self.players.items) |player_id| {
         const player = self.getPtrRaw(player_id) orelse continue;
         player.currency += currency_reward;
-        self.client_updates.appendAssumeCapacity(.{ .currency = .{ .amount = player.currency, .id = player_id } });
+        self.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .amount = player.currency, .id = player_id } });
     };
 
     self.pending_despawns.clearRetainingCapacity();

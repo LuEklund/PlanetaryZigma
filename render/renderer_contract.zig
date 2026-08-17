@@ -1,18 +1,16 @@
-//! The renderer ABI: the module every consumer imports, and all they may import.
-//!
-//! It depends on numz and nothing here may reach an implementation. The
-//! moment it does, every backend edit recompiles system_client.so and the hot-reload
-//! boundary is gone. Guard: `touch render/vulkan/internal/Vulkan.zig`, rebuild, and
-//! `zig-out/lib/libsystem_client.so` must be byte-identical.
-//!
-//! See implementation_ideas/systems-as-libraries.md § LIBRARY-SHAPE CONVENTION.
-
 const std = @import("std");
 
 pub const log = @import("log.zig");
 pub const DrawList = @import("DrawList.zig");
 
 pub const Shader = @import("Shader.zig");
+
+pub const ParticleEffects = @import("ParticleEffects.zig");
+pub const Placement = ParticleEffects.Placement;
+pub const Motion = ParticleEffects.Motion;
+pub const ParticleEffect = ParticleEffects.ParticleEffect;
+pub const Effect = ParticleEffects.Effect;
+pub const effects = ParticleEffects.effects;
 
 pub const InitOptions = struct {
     gpa: std.mem.Allocator,
@@ -28,16 +26,12 @@ pub const Api = struct {
     update: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
 
-    /// Runtime-created, so the backend names them. `old` is freed first; pass `.none`
-    /// on a first load. Both return 0 / `.none` on failure.
     uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
 
     uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) TextureHandle,
     uploadSkybox: *const fn (*anyopaque, upload: *const SkyboxUpload) callconv(.c) void,
     uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
-    /// Only ever a handle this caller was handed. The named ones are the backend's own
-    /// and were never yours to give back.
     freeImage: *const fn (*anyopaque, texture: TextureHandle) callconv(.c) void,
 };
 
@@ -47,9 +41,6 @@ pub const TextureHandle = enum(u32) {
     _,
 };
 
-/// What the backend hands back for an uploaded mesh. Its bits are the backend's business.
-/// `.none` is not "draw nothing" — the backend has a box for it, so an entity whose model
-/// never arrived is visible the same way a missing texture is a checkerboard.
 pub const MeshHandle = enum(usize) {
     none,
     _,

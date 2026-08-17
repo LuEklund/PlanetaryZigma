@@ -12,6 +12,7 @@ const zwp = @import("wayland").client.zwp;
 const xkbcommon = @import("xkbcommon");
 
 window: *Window,
+configured: bool,
 
 display: *wl.Display,
 compositor: *wl.Compositor,
@@ -129,9 +130,9 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     const toplevel = try xdg_surface.getToplevel();
     const toplevel_decoration = if (decoration_manager) |manager| try manager.getToplevelDecoration(toplevel) else null;
 
-    var configured: bool = false;
+    self.configured = false;
     surface.setListener(*Window, surfaceListener, window);
-    xdg_surface.setListener(*bool, xdgSurfaceListener, &configured);
+    xdg_surface.setListener(*bool, xdgSurfaceListener, &self.configured);
     toplevel.setListener(*Wayland, xdgToplevelListener, self);
     if (toplevel_decoration) |decoration| {
         decoration.setListener(*Wayland, zxdgToplevelDecorationListener, self);
@@ -142,10 +143,11 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     toplevel.setTitle(options.title.ptr);
 
     surface.commit();
-    while (!configured) if (display.dispatch() != .SUCCESS) return error.Dispatch;
+    while (!self.configured) if (display.dispatch() != .SUCCESS) return error.Dispatch;
 
     self.* = .{
         .window = window,
+        .configured = true,
         .display = display,
         .compositor = compositor,
         .wm_base = wm_base,

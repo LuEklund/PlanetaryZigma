@@ -34,7 +34,6 @@ pub fn updateDirector(world: *World) !void {
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
             0...10 => .grass1,
-            // 6..
             11...40 => .tubloid,
             41...60 => .tubloida,
             61...75 => .hunkloid,
@@ -198,21 +197,22 @@ pub fn updateEnemies(world: *World) !void {
                 world.act(.{ .id = enemy.id, .verb = .{ .face = heading } });
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
-                if (world.useAction(enemy, player, .primary) == .fired) {
-                    var best: ?*system.Entity = null;
-                    var best_distance_sqr: f32 = std.math.floatMax(f32);
-                    for (world.entities.values()) |*entity| {
-                        if (entity.kind != .enemy) continue;
-                        const offset = entity.transform.position - enemy.transform.position;
-                        const distance_sqr = nz.vec.dot(offset, offset);
-                        if (distance_sqr >= best_distance_sqr) continue;
-                        if (entity.health >= entity.max_health) continue;
-                        best_distance_sqr = distance_sqr;
-                        best = entity;
-                    }
-                    if (best) |heal_target| {
+                if (!World.ready(enemy, .primary, world.elapsed_time)) continue;
+
+                var best: ?*system.Entity = null;
+                var best_distance_sqr: f32 = std.math.floatMax(f32);
+                for (world.entities.values()) |*entity| {
+                    if (entity.kind != .enemy or enemy.id == entity.id) continue;
+                    const offset = entity.transform.position - enemy.transform.position;
+                    const distance_sqr = nz.vec.dot(offset, offset);
+                    if (distance_sqr >= best_distance_sqr) continue;
+                    if (entity.health >= entity.max_health) continue;
+                    best_distance_sqr = distance_sqr;
+                    best = entity;
+                }
+                if (best) |heal_target| {
+                    if (world.useAction(enemy, heal_target, .primary) == .fired)
                         try world.executeSkill(enemy, heal_target, enemy_skills.get(.primary).?.skill);
-                    }
                 }
             },
         }

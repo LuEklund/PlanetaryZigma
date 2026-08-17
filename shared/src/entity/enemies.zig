@@ -96,6 +96,6 @@ pub const healer: Spec = .{
     .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .dynamic, .layer = .moving },
     .model = .{ .path = "objects/healer.glb", .offset = entity.enemy_model_offset, .loop_clips = null },
     .base_stats = .initDefault(0, .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 }),
-    .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
+    .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .heal, .range = 15 } }),
     .currency = 7,
 };

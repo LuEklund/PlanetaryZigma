@@ -1,12 +1,10 @@
 const FrameData = @This();
 
-const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
-const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const DrawList = @import("contract").DrawList;
+const DrawList = @import("renderer_contract").DrawList;
 const check = @import("utils.zig").check;
 
 swapchain_semaphore: c.VkSemaphore,

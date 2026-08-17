@@ -1,7 +1,5 @@
 const Win32 = @This();
 
-// zig build -Dtarget=x86_64-windows && wine zig-out/bin/gravl.exe
-
 const std = @import("std");
 const win32 = @import("win32").everything;
 
@@ -303,13 +301,6 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
             self.fullscreen_data.rect.bottom - self.fullscreen_data.rect.top,
             .{ .DRAWFRAME = 1, .NOZORDER = 1, .SHOWWINDOW = 1 },
         );
-
-        // _ = win32.RedrawWindow(
-        //     @ptrCast(self.hwnd),
-        //     null,
-        //     null,
-        //     .{ .INVALIDATE = 1, .UPDATENOW = 1, .FRAME = 1 },
-        // );
 
         self.fullscreen_data.enabled = false;
     }

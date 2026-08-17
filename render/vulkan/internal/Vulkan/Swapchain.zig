@@ -3,7 +3,6 @@ const Swapchain = @This();
 const std = @import("std");
 const c = @import("vulkan");
 const Vma = @import("Vma.zig");
-const Func = @import("utils.zig").Func;
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
 const Surface = @import("Surface.zig");

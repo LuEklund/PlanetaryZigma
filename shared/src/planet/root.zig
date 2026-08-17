@@ -2,7 +2,6 @@ const Planet = @This();
 
 const std = @import("std");
 const nz = @import("numz");
-const tracy = @import("ztracy");
 const sdf_math = @import("sdf.zig");
 
 pub const Chunk = @import("Chunk.zig");
@@ -21,8 +20,6 @@ pub const Entry = struct {
     chunk: Chunk,
     mesh: Chunk.Mesh,
     nav: Chunk.NavGraph,
-    /// Opaque render handle for the uploaded chunk mesh, 0 until it is uploaded. A plain
-    /// integer: the sim has no idea what it means and never looks inside it.
     mesh_handle: usize,
 };
 

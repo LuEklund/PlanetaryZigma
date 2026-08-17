@@ -1,8 +1,6 @@
 const DescriptorLayout = @This();
 
-const std = @import("std");
 const c = @import("vulkan");
-const Func = @import("utils.zig").Func;
 const Device = @import("device.zig").Logical;
 const check = @import("utils.zig").check;
 

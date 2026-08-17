@@ -1,6 +1,6 @@
 const std = @import("std");
 const Vulkan = @import("internal/Vulkan.zig");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 const DrawList = contract.DrawList;
 
 // The Renderer struct lives in the contract, not here: consumers must reach it without
@@ -16,10 +16,8 @@ const Context = struct {
     vulkan: *Vulkan,
 };
 
-// Root-module test, NOT output_mode == .Lib: system_client.so is also a Lib, and that
-// guard made it compile and export the entire Vulkan backend it only wanted types from.
 comptime {
-    if (@import("root") == @This()) _ = ffi;
+    _ = ffi;
 }
 
 pub const ffi = struct {
@@ -47,12 +45,6 @@ pub const ffi = struct {
         gpa.destroy(context);
     }
 
-    // A freshly dlopened render.so has its OWN procs.instance/device globals, still
-    // undefined — rebinding them is what makes a render swap work at all.
-    //
-    // Nothing else to re-register: the context and every resource in it came from the
-    // exe's allocator and the caller still holds the same handle, so meshes, textures and
-    // shaders all survive the swap untouched.
     pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));
@@ -99,6 +91,7 @@ pub const ffi = struct {
             std.log.err("upload shader {d}: {t}", .{ kind, err });
         };
     }
+
 
     pub export fn update(handle: *anyopaque, list: *DrawList) void {
         const context: *Context = @ptrCast(@alignCast(handle));

@@ -137,8 +137,6 @@ pub const Key = enum(u8) {
         release = 2,
         repeat = 3,
 
-        /// Prefer using `Keyboard.isDown` when a `Keyboard` instance is available,
-        /// as it provides the current state directly.
         pub fn isDown(self: State) bool {
             return switch (self) {
                 .press, .repeat => true,
@@ -146,8 +144,6 @@ pub const Key = enum(u8) {
             };
         }
 
-        /// Prefer using `Keyboard.isUp` when a `Keyboard` instance is available,
-        /// as it provides the current state directly.
         pub fn isUp(self: State) bool {
             return !self.isDown();
         }

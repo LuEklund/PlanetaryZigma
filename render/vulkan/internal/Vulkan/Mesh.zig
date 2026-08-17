@@ -3,12 +3,10 @@ const Mesh = @This();
 const std = @import("std");
 const shared = @import("shared");
 const c = @import("vulkan");
-const nz = @import("numz");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
-const Image = @import("Image.zig");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
 surfaces: []Surface,
 opaque_count: u32,
@@ -77,11 +75,3 @@ pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, vma: Vma) void {
     gpa.free(self.name);
     gpa.free(self.surfaces);
 }
-
-// pub fn opaques(self: ) []const Surface {
-//     return self.data[0..self.opaque_count];
-// }
-//
-// pub fn transparents(self: Surfaces) []const Surface {
-//     return self.data[self.opaque_count..];
-// }

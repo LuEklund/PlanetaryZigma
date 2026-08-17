@@ -2,12 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Ui = @import("ui");
 const System = @import("../System.zig");
-const DrawList = @import("contract").DrawList;
+const DrawList = @import("renderer_contract").DrawList;
 const graphics = @import("graphics");
-const render = @import("contract");
-const Emitter = @import("graphics").Emitter;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
@@ -15,7 +12,6 @@ const circle_segments = 16;
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
     const models = &system.assets.models;
-    const emitters = &system.emitters;
     const ui = &system.hud.ui;
     const list = &system.draw_list;
 
@@ -60,15 +56,21 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         }
     }
 
-    for (world.effects.items) |request| Emitter.spawn(emitters, request, world.elapsed_time);
-    world.effects.clearRetainingCapacity();
-
     const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
-        if (entity.kind == .item_pickup) {
-            const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-            Emitter.keepAlive(emitters, .item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, world.elapsed_time);
+        switch (entity.kind) {
+            .item_pickup => {
+                const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
+                system.particles.keepAlive(.item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, entity.transform.position - effect_offset, world.elapsed_time);
+            },
+            .projectile_cube => {
+                const velocity: nz.Vec3(f32) = if (entity.motion.update) |update| update.velocity else .{ 0, 0, 0 };
+                system.particles.keepAlive(.tracer, @intFromEnum(entity.id), entity.transform.position, entity.transform.position + velocity, world.elapsed_time);
+                continue;
+            },
+            else => {},
         }
+
         const pose = animator.pose(entity.animation) orelse continue;
         const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
@@ -127,7 +129,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.ui.screen_width = ui.screen_width;
     list.ui.screen_height = ui.screen_height;
 
-    for (emitters) |emitter| {
+    for (system.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
         list.emitters.appendAssumeCapacity(.{
             .effect = emitter.effect,
@@ -173,8 +175,6 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
 
     const model = models.modelPtr(pose.model);
     if (model.isSkinned()) return;
-    // Still one row, naming nothing: the backend draws its box for a handle it does
-    // not know, so a model that never arrived is visible rather than absent.
     if (model.isEmpty()) {
         list.draw_meshes.appendAssumeCapacity(.{
             .mesh = .none,
@@ -269,8 +269,6 @@ fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.e
     }
 }
 
-/// Where the chunk sits, for the shadow-cascade test. Its geometry is already in world
-/// space, so the draw itself needs no transform.
 fn chunkCentre(coord: shared.Planet.Chunk.Coord) nz.Vec3(f32) {
     const dim: f32 = @floatFromInt(shared.Planet.Chunk.dim);
     const corner: nz.Vec3(f32) = @floatFromInt(coord.position);

@@ -111,7 +111,7 @@ fn addServerArtifacts(
     });
 
     if (render_dep) |dep| {
-        system.root_module.addImport("contract", dep.module("contract"));
+        system.root_module.addImport("renderer_contract", dep.module("renderer_contract"));
         system.root_module.addImport("graphics", dep.module("graphics"));
         system.root_module.addImport("Window", dep.module("Window"));
         system.root_module.addImport("ui", dep.module("ui"));

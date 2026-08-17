@@ -3,11 +3,8 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const graphics = @import("graphics");
-const render = @import("contract");
-const Emitter = @import("graphics").Emitter;
-const Camera = @import("camera.zig");
-const Ui = @import("ui");
-const DrawList = @import("contract").DrawList;
+const renderer_contract = @import("renderer_contract");
+const DrawList = renderer_contract.DrawList;
 const Viewer = @import("Viewer.zig");
 
 pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
@@ -47,7 +44,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     }
     for (world.planet.uploads.items) |chunk_upload| {
         const entry = world.planet.chunks.getPtr(chunk_upload.coord) orelse continue;
-        const surfaces = [_]render.SurfaceUpload{.{
+        const surfaces = [_]renderer_contract.SurfaceUpload{.{
             .index_start = 0,
             .index_count = @intCast(chunk_upload.indices.len),
             .texture = .blank,
@@ -134,7 +131,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     list.ui.screen_width = ui.screen_width;
     list.ui.screen_height = ui.screen_height;
 
-    for (&viewer.emitters) |emitter| {
+    for (viewer.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
         list.emitters.appendAssumeCapacity(.{
             .effect = emitter.effect,

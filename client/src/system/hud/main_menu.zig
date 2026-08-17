@@ -1,17 +1,13 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const system = @import("../../System.zig");
-const World = system.World;
 const Ui = @import("ui");
 const NetworkManager = @import("../NetworkManager.zig");
-const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
-const OptionsTab = Hud.OptionsTab;
 
-const hot_seconds: f32 = 0.08;
+const hover_seconds: f32 = 0.08;
 
 pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Options) !Request {
     const button_width = std.math.clamp(ui.screen_width * 0.155, @as(f32, 216), @as(f32, 320));
@@ -79,11 +75,11 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
 }
 
 fn addDevPlanetButton(ui: *Ui, dev_mode: bool, left: f32, top: f32, width: f32, height: f32, text_size: f32) void {
-    const hot = ui.isHot("menu_dev_planet");
+    const hovered = ui.isHovered("menu_dev_planet");
     const bg = if (dev_mode)
-        nz.color.Rgba(f32).new(0.16, if (hot) 0.72 else 0.58, 0.2, 1)
+        nz.color.Rgba(f32).new(0.16, if (hovered) 0.72 else 0.58, 0.2, 1)
     else
-        nz.color.Rgba(f32).new(if (hot) 0.78 else 0.62, 0.16, 0.16, 1);
+        nz.color.Rgba(f32).new(if (hovered) 0.78 else 0.62, 0.16, 0.16, 1);
 
     ui.add(null, .{
         .name = "menu_dev_planet",
@@ -100,24 +96,24 @@ fn addDevPlanetButton(ui: *Ui, dev_mode: bool, left: f32, top: f32, width: f32, 
 }
 
 fn addMainMenuButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32, text_size: f32, selected: bool, enabled: bool) void {
-    const hot = enabled and (selected or ui.isHot(name));
-    const hot_time = ui.animate(name, if (hot) 1 else 0, hot_seconds);
+    const hovered = enabled and (selected or ui.isHovered(name));
+    const hover_time = ui.animate(name, if (hovered) 1 else 0, hover_seconds);
     const bg = if (!enabled)
         nz.color.Rgba(f32).new(0.045, 0.048, 0.045, 1)
     else
         nz.color.Rgba(f32).new(
-            std.math.lerp(0.02, 0.88, hot_time),
-            std.math.lerp(0.025, 0.55, hot_time),
-            std.math.lerp(0.025, 0.08, hot_time),
+            std.math.lerp(0.02, 0.88, hover_time),
+            std.math.lerp(0.025, 0.55, hover_time),
+            std.math.lerp(0.025, 0.08, hover_time),
             1,
         );
     const fg = if (!enabled)
         nz.color.Rgba(f32).new(0.44, 0.46, 0.42, 1)
     else
         nz.color.Rgba(f32).new(
-            std.math.lerp(0.94, 0.02, hot_time),
-            std.math.lerp(0.96, 0.02, hot_time),
-            std.math.lerp(0.9, 0.015, hot_time),
+            std.math.lerp(0.94, 0.02, hover_time),
+            std.math.lerp(0.96, 0.02, hover_time),
+            std.math.lerp(0.9, 0.015, hover_time),
             1,
         );
 
@@ -145,7 +141,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
         .name = "menu_refresh",
         .size = .{ .fixed = .{ .height = button_height, .width = button_width } },
         .offset = .{ .left = left, .top = top },
-        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHot("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
+        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (ui.isHovered("menu_refresh")) .new(0.14, 0.14, 0.12, 0.92) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{ .data = "Refresh Servers", .size = 26, .color = if (steam_logged_on) .new(0.94, 0.96, 0.9, 1) else .new(0.44, 0.46, 0.42, 1) },
     });
@@ -156,12 +152,12 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
         .name = "menu_host",
         .size = .{ .fixed = .{ .height = button_height, .width = button_width } },
         .offset = .{ .left = left + button_width + row_gap, .top = top },
-        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHot("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+        .color = if (!steam_logged_on) .new(0.045, 0.048, 0.045, 0.82) else if (hosting or ui.isHovered("menu_host")) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = if (!steam_logged_on) "Steam Offline" else if (hosting) "Hosting..." else if (host_failed) "Host Failed" else "Host",
             .size = 26,
-            .color = if (!steam_logged_on) .new(0.44, 0.46, 0.42, 1) else if (hosting or ui.isHot("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (!steam_logged_on) .new(0.44, 0.46, 0.42, 1) else if (hosting or ui.isHovered("menu_host")) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
     if (ui.isClicked("menu_host") and (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline)) {
@@ -207,7 +203,7 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
         else
             ui.print("Players: {s}", .{clippedText(ui, players, 54)});
         const row_top = top + button_height + row_gap + (row_height + row_gap) * @as(f32, @floatFromInt(i));
-        const hot = ui.isHot(id);
+        const hovered = ui.isHovered(id);
 
         ui.add(null, .{
             .name = id,
@@ -216,22 +212,22 @@ pub fn multiplayerPanel(network_manager: *NetworkManager, ui: *Ui, options: *Opt
             .child_anchor = .{ .x = .start, .y = .center },
             .size = .{ .fixed = .{ .height = row_height, .width = panel_width } },
             .offset = .{ .left = left, .top = row_top },
-            .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
+            .color = if (bad_version) .new(0.5, 0.09, 0.07, 0.92) else if (hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.02, 0.025, 0.025, 0.82),
             .children = &.{
                 .{
                     .size = .{ .fixed = .{ .height = 24, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
-                    .text = .{ .data = title, .size = 20, .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1) },
+                    .text = .{ .data = title, .size = 20, .color = if (hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1) },
                 },
                 .{
                     .size = .{ .fixed = .{ .height = 16, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
-                    .text = .{ .data = host_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                    .text = .{ .data = host_text, .size = 14, .color = if (hovered) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
                 },
                 .{
                     .size = .{ .fixed = .{ .height = 16, .width = panel_width } },
                     .offset = .{ .left = 12, .top = 0 },
-                    .text = .{ .data = player_text, .size = 14, .color = if (hot) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
+                    .text = .{ .data = player_text, .size = 14, .color = if (hovered) .new(0.06, 0.055, 0.035, 1) else .new(0.68, 0.72, 0.66, 1) },
                 },
             },
         });

@@ -10,13 +10,13 @@ const Discord = @import("system/Discord.zig");
 const NetworkManager = @import("system/NetworkManager.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
-const Emitter = @import("graphics").Emitter;
+const Particle = @import("graphics").Particle;
 const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const animate = @import("system/animate.zig");
 const chunks = @import("system/chunks.zig");
-const renderer_contract = @import("contract");
-const DrawList = @import("contract").DrawList;
+const renderer_contract = @import("renderer_contract");
+const DrawList = renderer_contract.DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -44,21 +44,18 @@ audio: Audio,
 discord: ?Discord,
 assets: Assets,
 animator: Animator,
-emitters: Emitter.List,
+particles: Particle,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
 request_exit: bool,
-teleport_sphere_model: u32,
 
-pub const Data = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    window: *Window,
-    world: *World,
-    log_connection_status: bool,
-    discord_dir: ?[]const u8,
-};
+teleport_sphere_model: u32,
+button_hover_sound: Audio.Sound,
+button_click_sound: Audio.Sound,
+skill_sounds: std.EnumArray(shared.entity.Skill, Audio.Sound),
+
+pub const Data = @import("system_contract.zig").Data;
 
 pub fn init(self: *System, data: Data) !void {
     shared.log_io = data.io;
@@ -76,7 +73,7 @@ pub fn init(self: *System, data: Data) !void {
 
     self.animator = try .init(data.gpa);
     errdefer self.animator.deinit();
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
 
     self.render = try .init("render", data.gpa, data.io);
     errdefer self.render.deinit(data.io);
@@ -90,7 +87,15 @@ pub fn init(self: *System, data: Data) !void {
     self.assets = try .init(data.gpa, data.io);
     self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalsphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
-    try self.audio.init(data.gpa, self.assets.root);
+
+    try self.audio.init(self.assets.root);
+    self.button_hover_sound = try self.audio.load("button-hover.mp3", .{});
+    self.button_click_sound = try self.audio.load("button-click.mp3", .{});
+    const laser_sound: Audio.Sound = try self.audio.load("laser-gun.mp3", .{});
+    self.skill_sounds = .initFill(.none);
+    self.skill_sounds.set(.melee, try self.audio.load("punch.mp3", .{}));
+    self.skill_sounds.set(.shoot, laser_sound);
+    self.skill_sounds.set(.shoot_cube, laser_sound);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
@@ -120,7 +125,7 @@ pub fn deinit(self: *System) void {
 fn enterScene(self: *System, world: *World, next: Scene) !void {
     world.clear();
     self.animator.clear();
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
     self.hud.resetScreen();
     switch (next) {
         .menu => try menu_world.populate(world),
@@ -138,30 +143,74 @@ pub fn update(self: *System, world: *World) !void {
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
-    if (self.scene == .particle_lab) particle_lab.update(&self.emitters, world.elapsed_time);
+    if (self.scene == .particle_lab) particle_lab.update(&self.particles, world.elapsed_time);
     switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .quit => self.request_exit = true,
     }
 
-    var player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
-    player_input.camera_position = world.camera.transform.position;
-    player_input.camera_rotation = world.camera.transform.rotation.toVec();
-    try self.network_manager.update(world, player_input);
+    const player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
+    const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
+    try self.network_manager.update(wire_input, world.elapsed_time, world.delta_time);
+    if (world.go_again_pending) {
+        try self.network_manager.sendCommand(.go_again, .reliable);
+        world.go_again_pending = false;
+    }
+    if (world.chat.pending) {
+        const chat_text = world.chat.text();
+        try self.network_manager.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
+        world.chat.pending = false;
+        world.chat.input_len = 0;
+    }
 
     switch (self.hud.ui.play_sound) {
-        .hot => try self.audio.playSoundKind(.button_hover),
-        .clicked => try self.audio.playSoundKind(.button_click),
+        .hover => self.audio.play(self.button_hover_sound),
+        .clicked => self.audio.play(self.button_click_sound),
         .none => {},
     }
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
-    try world.flush();
+    try world.update(self.network_manager.packets.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
+    for (self.network_manager.packets.items) |packet| switch (packet) {
+        .event => |event| switch (event) {
+            .action => |action| {
+                self.audio.play(self.skill_sounds.get(action.skill));
+                if (action.id == world.player_id) world.controller.cooldown.set(action.action, world.elapsed_time);
+            },
+            .effect => |effect| switch (effect) {
+                .rocket_impact => |position| {
+                    self.particles.spawn(.{ .effect = .explosion_puffs, .origin = position, .target = position }, world.elapsed_time);
+                    self.particles.spawn(.{ .effect = .explosion_sparks, .origin = position, .target = position }, world.elapsed_time);
+                },
+                .lightning => |bolt| for (bolt.targets) |id| {
+                    const target = world.getPtr(id) orelse continue;
+                    self.particles.spawn(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);
+                },
+            },
+            .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {
+                entity.teleporter.state = .active;
+            },
+            .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
+                entity.teleporter.charged = charged;
+            },
+            .new_stage => |new_stage| {
+                world.teleporter_id = .none;
+                world.stage = new_stage;
+            },
+            .stun => |stun| if (world.getPtr(stun.id)) |entity| {
+                entity.stun_time = stun.duration;
+            },
+            .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
+                entity.interacting = interact.interacted;
+            },
+        },
+        else => {},
+    };
 
     try world.planet.update(
         world.gpa,
@@ -169,28 +218,8 @@ pub fn update(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
-    try animate.update(world, &self.animator, &self.assets.models);
-
-    for (world.action_events.items) |action_event| {
-        const entity = world.getPtr(action_event.id) orelse continue;
-        const assigned_skill = entity.kind.spec().skills.get(action_event.action) orelse continue;
-        std.log.debug("kind {t}, action {t}", .{
-            entity.kind,
-            assigned_skill.skill,
-        });
-        const sound: Audio.Kind = switch (assigned_skill.skill) {
-            .melee => .melee,
-            .shoot_cube => .shoot_cube,
-            else => continue,
-        };
-        try self.audio.playSoundKind(sound);
-        // if (self.assets.models.rig(self.assets.models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
-        // switch (action.action) {
-        //     .primary => try self.audio.playSound(self.primary_sound),
-        //     else => {},
-        // }
-    }
-    world.action_events.clearRetainingCapacity();
+    try animate.update(world, &self.animator, &self.assets.models, self.network_manager.packets.items);
+    self.audio.update();
 
     try extract.frame(self, world, self.scene != .particle_lab);
     self.render.trySwap(self.io);
@@ -204,7 +233,7 @@ pub fn update(self: *System, world: *World) !void {
         .relative => |relative| if (world.chat.open) .{ 0, 0 } else .{ relative.dx, relative.dy },
         .position => .{ 0, 0 },
     };
-    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, player_input, self.window.pointer.axis.vertical);
+    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, wire_input, self.window.pointer.axis.vertical);
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {
@@ -245,6 +274,8 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
         },
         .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
     }
+    player_input.camera_position = world.camera.transform.position;
+    player_input.camera_rotation = world.camera.transform.rotation.toVec();
     return player_input;
 }
 
@@ -272,15 +303,10 @@ fn reload(self: *System, pre_reload: bool) !void {
 }
 
 comptime {
-    if (@import("builtin").output_mode == .Lib) _ = ffi;
+    _ = ffi;
 }
 
-pub const Api = struct {
-    systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
-    systemDeinit: *const fn (*anyopaque) callconv(.c) void,
-    systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
-    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
-};
+pub const Api = @import("system_contract.zig").Api;
 
 pub const ffi = struct {
     pub export fn systemInit(data: *const Data) ?*anyopaque {

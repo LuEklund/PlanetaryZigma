@@ -3,25 +3,23 @@ const Viewer = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Window = @import("Window");
-const contract = @import("contract");
+const renderer_contract = @import("renderer_contract");
 const graphics = @import("graphics");
-const Emitter = @import("graphics").Emitter;
+const Particle = @import("graphics").Particle;
 const Ui = @import("ui");
-const DrawList = @import("contract").DrawList;
+const DrawList = renderer_contract.DrawList;
 const World = @import("../World.zig");
-const Quat = shared.numz.quat.Hamiltonian(f32);
-const nz = shared.numz;
 const extract = @import("extract.zig");
 pub const Camera = @import("camera.zig");
 const menu = @import("menu.zig");
 
-render: shared.HotLib(contract.Api, *anyopaque),
+render: shared.HotLib(renderer_contract.Api, *anyopaque),
 draw_list: DrawList,
 window: *Window,
 assets: graphics.Assets,
 animator: graphics.Animator,
 animations: std.AutoHashMapUnmanaged(shared.entity.Id, graphics.Animator.Handle),
-emitters: Emitter.List,
+particles: Particle,
 camera: Camera,
 ui: Ui,
 menu_open: bool,
@@ -34,12 +32,12 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.animations = .empty;
-    self.emitters = @splat(Emitter.free);
+    self.particles.clear();
 
     self.window = window;
     self.render = try .init("render", gpa, io);
     errdefer self.render.deinit(io);
-    self.render.handle = self.render.api.init(&contract.InitOptions{
+    self.render.handle = self.render.api.init(&renderer_contract.InitOptions{
         .gpa = gpa,
         .io = io,
         .window = @ptrCast(window),

@@ -1,9 +1,7 @@
 const std = @import("std");
 const shared = @import("shared");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
-/// The GPU side of chunk streaming: `Planet.update` decides which chunks appear and vanish,
-/// this hands the meshes to the renderer and stores the handles back on the chunk entries.
 pub fn update(planet: *shared.Planet, api: *const contract.Api, handle: *anyopaque) void {
     for (planet.removes.items) |removed| {
         if (removed.mesh_handle == 0) continue;

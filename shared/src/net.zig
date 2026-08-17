@@ -31,11 +31,11 @@ pub const ServerPacket = union(enum) {
     spawn_entity: SpawnEntity,
     spawn_planet: u32,
     despawn_entity: DespawnEntity,
-    update_motion: UpdateMotion,
+    motion: UpdateMotion,
     server_tick: u32,
-    update_health: UpdateHealth,
-    update_event: Event,
-    update_inventory: UpdateInventory,
+    health: UpdateHealth,
+    event: Event,
+    inventory: UpdateInventory,
     set_currency: SetCurrency,
     chat_message: ChatMessage,
 };
@@ -210,6 +210,7 @@ pub const Event = union(enum) {
     pub const Action = struct {
         id: entity.Id,
         action: entity.Action,
+        skill: entity.Skill,
     };
 
     pub const Stun = struct {
