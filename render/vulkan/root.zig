@@ -1,6 +1,6 @@
 const std = @import("std");
 const Vulkan = @import("internal/Vulkan.zig");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 const DrawList = contract.DrawList;
 
 // The Renderer struct lives in the contract, not here: consumers must reach it without

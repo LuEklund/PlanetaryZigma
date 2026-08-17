@@ -1,6 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
 pub fn update(planet: *shared.Planet, api: *const contract.Api, handle: *anyopaque) void {
     for (planet.removes.items) |removed| {

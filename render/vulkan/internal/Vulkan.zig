@@ -15,15 +15,15 @@ const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
-const Shader = @import("contract").Shader;
+const Shader = @import("renderer_contract").Shader;
 const Shaders = @import("Vulkan/Shaders.zig");
 const procs = @import("Vulkan/procs.zig");
 const ext = procs.device.ProcTable;
 const tracy = @import("ztracy");
 
 const matrix = @import("Vulkan/matrix.zig");
-const DrawList = @import("contract").DrawList;
-const contract = @import("contract");
+const contract = @import("renderer_contract");
+const DrawList = contract.DrawList;
 
 const check = @import("Vulkan/utils.zig").check;
 

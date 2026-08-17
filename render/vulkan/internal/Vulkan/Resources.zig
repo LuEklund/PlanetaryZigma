@@ -11,12 +11,12 @@ const DescriptorLayout = @import("DescriptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
-const Shader = @import("contract").Shader;
+const Shader = @import("renderer_contract").Shader;
 const FrameData = @import("FrameData.zig");
 const TextureTable = @import("TextureTable.zig");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 const Shaders = @import("Shaders.zig");
-const DrawList = @import("contract").DrawList;
+const DrawList = contract.DrawList;
 const Mesh = @import("../Vulkan/Mesh.zig");
 const box = @import("../box.zig");
 

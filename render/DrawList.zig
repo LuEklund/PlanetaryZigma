@@ -3,7 +3,7 @@ const DrawList = @This();
 const std = @import("std");
 const nz = @import("numz");
 const Shader = @import("Shader.zig");
-const contract = @import("root.zig");
+const contract = @import("renderer_contract.zig");
 
 pub const max_joint_matrices: u32 = 16384;
 pub const max_lines: u32 = 262144;

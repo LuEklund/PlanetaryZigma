@@ -3,7 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
 const System = @import("../System.zig");
-const DrawList = @import("contract").DrawList;
+const DrawList = @import("renderer_contract").DrawList;
 const graphics = @import("graphics");
 const Emitter = @import("graphics").Emitter;
 

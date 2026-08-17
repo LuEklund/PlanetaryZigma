@@ -7,7 +7,7 @@ const Textures = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 const assets = @import("assets/root.zig");
 const Bitmap = @import("assets/types/Bitmap.zig");
 

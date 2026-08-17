@@ -3,7 +3,7 @@ const Shaders = @This();
 const std = @import("std");
 const c = @import("vulkan");
 const Device = @import("../Vulkan/device.zig").Logical;
-const Shader = @import("contract").Shader;
+const Shader = @import("renderer_contract").Shader;
 const check = @import("../Vulkan/utils.zig").check;
 const ext = @import("../Vulkan/procs.zig").device.ProcTable;
 

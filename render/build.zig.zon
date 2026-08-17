@@ -59,7 +59,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "root.zig",
+        "renderer_contract.zig",
         "Shader.zig",
         "DrawList.zig",
         "log.zig",

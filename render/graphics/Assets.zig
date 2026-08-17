@@ -5,7 +5,7 @@ const Assets = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
 pub const Shaders = @import("Shaders.zig");
 pub const Textures = @import("Textures.zig");

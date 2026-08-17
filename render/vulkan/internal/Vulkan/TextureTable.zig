@@ -7,7 +7,7 @@ const Vma = @import("../Vulkan/Vma.zig");
 const Device = @import("../Vulkan/device.zig").Logical;
 const Buffer = @import("../Vulkan/Buffer.zig");
 const check = @import("../Vulkan/utils.zig").check;
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
 pub const max_textures = 256;
 

@@ -9,8 +9,8 @@ pub fn build(b: *std.Build) void {
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
     const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
 
-    const contract = b.addModule("contract", .{
-        .root_source_file = b.path("root.zig"),
+    const renderer_contract = b.addModule("renderer_contract", .{
+        .root_source_file = b.path("renderer_contract.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -129,7 +129,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
-            .{ .name = "contract", .module = contract },
+            .{ .name = "renderer_contract", .module = renderer_contract },
         },
     });
 
@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
-            .{ .name = "contract", .module = contract },
+            .{ .name = "renderer_contract", .module = renderer_contract },
             .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
             .{ .name = "stb_image", .module = stb_image_module },
             .{ .name = "stb_truetype", .module = stb_truetype_module },
@@ -173,7 +173,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "stb_truetype", .module = stb_truetype_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vulkan },
-                .{ .name = "contract", .module = contract },
+                .{ .name = "renderer_contract", .module = renderer_contract },
             },
             .link_libc = true,
         }),

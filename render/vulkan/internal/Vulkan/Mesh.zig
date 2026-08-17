@@ -6,7 +6,7 @@ const c = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const Vma = @import("Vma.zig");
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 
 surfaces: []Surface,
 opaque_count: u32,

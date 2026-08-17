@@ -4,7 +4,7 @@ const std = @import("std");
 const nz = @import("numz");
 const Font = @import("shared").Font;
 
-const contract = @import("contract");
+const contract = @import("renderer_contract");
 const DrawList = contract.DrawList;
 
 pub const max_ui_quads = DrawList.max_ui_quads;

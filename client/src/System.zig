@@ -15,8 +15,8 @@ const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const animate = @import("system/animate.zig");
 const chunks = @import("system/chunks.zig");
-const renderer_contract = @import("contract");
-const DrawList = @import("contract").DrawList;
+const renderer_contract = @import("renderer_contract");
+const DrawList = renderer_contract.DrawList;
 
 const menu_world = @import("system/menu.zig");
 const particle_lab = @import("system/particle_lab.zig");
@@ -55,14 +55,7 @@ button_hover_sound: Audio.Sound,
 button_click_sound: Audio.Sound,
 skill_sounds: std.EnumArray(shared.entity.Skill, Audio.Sound),
 
-pub const Data = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    window: *Window,
-    world: *World,
-    log_connection_status: bool,
-    discord_dir: ?[]const u8,
-};
+pub const Data = @import("system_contract.zig").Data;
 
 pub fn init(self: *System, data: Data) !void {
     shared.log_io = data.io;
@@ -269,15 +262,10 @@ fn reload(self: *System, pre_reload: bool) !void {
 }
 
 comptime {
-    if (@import("builtin").output_mode == .Lib) _ = ffi;
+    _ = ffi;
 }
 
-pub const Api = struct {
-    systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
-    systemDeinit: *const fn (*anyopaque) callconv(.c) void,
-    systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
-    reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
-};
+pub const Api = @import("system_contract.zig").Api;
 
 pub const ffi = struct {
     pub export fn systemInit(data: *const Data) ?*anyopaque {

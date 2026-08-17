@@ -9,7 +9,7 @@ const Controller = @import("system/Controller.zig");
 const Options = @import("Options.zig");
 const Emitter = @import("graphics").Emitter;
 const Animator = @import("graphics").Animator;
-const DrawList = @import("contract").DrawList;
+const DrawList = @import("renderer_contract").DrawList;
 
 pub const DamageEvent = struct {
     target: shared.entity.Id,
