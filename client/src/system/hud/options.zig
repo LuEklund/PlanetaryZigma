@@ -122,17 +122,17 @@ fn optionsGraphics(ui: *Ui, controller: *Controller, left: f32, top: f32, width:
 
 fn addOptionsTab(ui: *Ui, tab: OptionsTab, selected: bool, left: f32, top: f32, width: f32, height: f32) void {
     const name = optionsTabName(tab);
-    const hot = ui.isHot(name);
+    const hovered = ui.isHovered(name);
     ui.add(null, .{
         .name = name,
         .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
-        .color = if (selected or hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .color = if (selected or hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = optionsTabLabel(tab),
             .size = std.math.clamp(width * 0.115, @as(f32, 12), @as(f32, 15)),
-            .color = if (selected or hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (selected or hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
 }
@@ -245,17 +245,17 @@ fn boolText(value: bool) []const u8 {
 }
 
 fn addOptionsButton(ui: *Ui, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32) void {
-    const hot = ui.isHot(name);
+    const hovered = ui.isHovered(name);
     ui.add(null, .{
         .name = name,
         .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
-        .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .color = if (hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = text,
             .size = std.math.clamp(height * 0.52, @as(f32, 21), @as(f32, 27)),
-            .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
 }

@@ -24,12 +24,12 @@ screen_width: f32,
 screen_height: f32,
 default_font: *const Font,
 
-hot_item: ?u64 = null,
+hover_item: ?u64 = null,
 active_item: ?u64 = null,
-last_hot_item: ?u64 = null,
+last_hover_item: ?u64 = null,
 last_active_item: ?u64 = null,
 
-play_sound: enum { none, hot, clicked } = .none,
+play_sound: enum { none, hover, clicked } = .none,
 
 left_click_prev: bool = false,
 pressed: bool = false,
@@ -137,13 +137,13 @@ pub fn start(self: *Ui, mouse_state: MouseState, font: *const Font, delta_time: 
     self.default_font = font;
     const left_click_prev = self.mouse_state.left_click;
     self.last_active_item = self.active_item;
-    self.last_hot_item = self.hot_item;
+    self.last_hover_item = self.hover_item;
     self.play_sound = .none;
     self.mouse_state = mouse_state;
     self.delta_time = delta_time;
     self.frame_index += 1;
-    self.hotUpdate();
-    if (mouse_state.left_click and !left_click_prev) self.active_item = self.hot_item;
+    self.hoverUpdate();
+    if (mouse_state.left_click and !left_click_prev) self.active_item = self.hover_item;
     if (!mouse_state.left_click) self.active_item = null;
     self.text_len = 0;
     self.writer_len = 0;
@@ -378,24 +378,24 @@ pub fn addText(self: *Ui, parent: ?[]const u8, text: []const u8, size: f32, left
 }
 
 pub fn addButton(self: *Ui, parent: ?[]const u8, name: []const u8, text: []const u8, left: f32, top: f32, width: f32, height: f32) void {
-    const hot = self.isHot(name);
+    const hovered = self.isHovered(name);
     self.add(parent, .{
         .name = name,
         .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
-        .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .color = if (hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = text,
             .size = std.math.clamp(height * 0.52, @as(f32, 21), @as(f32, 27)),
-            .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
 }
 
 pub fn addToggle(self: *Ui, parent: ?[]const u8, name: []const u8, label: []const u8, value: bool, left: f32, top: f32, width: f32, height: f32) bool {
     const box_side = height - 10;
-    const hot = self.isHot(name);
+    const hovered = self.isHovered(name);
     self.add(parent, .{
         .size = .{ .fixed = .{ .width = width, .height = height } },
         .offset = .{ .left = left, .top = top },
@@ -411,12 +411,12 @@ pub fn addToggle(self: *Ui, parent: ?[]const u8, name: []const u8, label: []cons
             .{
                 .name = name,
                 .size = .{ .fixed = .{ .width = box_side, .height = box_side } },
-                .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+                .color = if (hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
                 .child_anchor = .{ .x = .center, .y = .center },
                 .text = if (value) .{
                     .data = "x",
                     .size = box_side * 0.7,
-                    .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+                    .color = if (hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
                 } else null,
             },
         },
@@ -478,11 +478,11 @@ pub fn addSlider(self: *Ui, parent: ?[]const u8, name: []const u8, label: []cons
     return min + ((mouse_x - track_left) / track_width) * (max - min);
 }
 
-pub fn isHot(self: *Ui, name: []const u8) bool {
-    if (self.hot_item == key(name)) {
-        if (self.last_hot_item != self.hot_item) {
-            std.log.debug("hot: {any}", .{self.hot_item});
-            self.play_sound = .hot;
+pub fn isHovered(self: *Ui, name: []const u8) bool {
+    if (self.hover_item == key(name)) {
+        if (self.last_hover_item != self.hover_item) {
+            std.log.debug("hover: {any}", .{self.hover_item});
+            self.play_sound = .hover;
         }
 
         return true;
@@ -491,7 +491,7 @@ pub fn isHot(self: *Ui, name: []const u8) bool {
 }
 
 pub fn isClicked(self: *Ui, name: []const u8) bool {
-    if (self.hot_item == key(name) and self.pressed) {
+    if (self.hover_item == key(name) and self.pressed) {
         if (self.active_item != self.last_active_item) {
             std.log.debug("clciked: {any}", .{self.active_item});
 
@@ -506,8 +506,8 @@ pub fn isDragging(self: *Ui, name: []const u8) bool {
     return (self.active_item == key(name) and self.mouse_state.left_click);
 }
 
-fn hotUpdate(self: *Ui) void {
-    self.hot_item = null;
+fn hoverUpdate(self: *Ui) void {
+    self.hover_item = null;
     var i = self.nodes.items.len;
     while (i > 0) {
         i -= 1;
@@ -518,7 +518,7 @@ fn hotUpdate(self: *Ui) void {
             self.mouse_state.position.left >= node.rect.left + node.rect.width or
             self.mouse_state.position.top >= node.rect.top + node.rect.height))
         {
-            self.hot_item = name;
+            self.hover_item = name;
             break;
         }
     }

@@ -55,16 +55,16 @@ pub fn update(ui: *Ui, world: *World, following: ?usize) bool {
     if (ui.addToggle("server_menu_panel", "server_menu_draw_chunk_borders", "Draw Chunk Borders", options.draw_chunk_borders, 0, 0, row_width, row_height))
         options.draw_chunk_borders = !options.draw_chunk_borders;
     ui.add("server_menu_panel", .{ .size = .{ .fixed = .{ .width = row_width, .height = quit_spacer } } });
-    const quit_hot = ui.isHot("server_menu_quit");
+    const quit_hovered = ui.isHovered("server_menu_quit");
     ui.add("server_menu_panel", .{
         .name = "server_menu_quit",
         .size = .{ .fixed = .{ .width = row_width, .height = button_height } },
-        .color = if (quit_hot) .new(0.85, 0.12, 0.08, 0.96) else .new(0.3, 0.04, 0.03, 0.96),
+        .color = if (quit_hovered) .new(0.85, 0.12, 0.08, 0.96) else .new(0.3, 0.04, 0.03, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = "Close Server",
             .size = std.math.clamp(button_height * 0.52, @as(f32, 21), @as(f32, 27)),
-            .color = if (quit_hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.9, 0.88, 1),
+            .color = if (quit_hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.9, 0.88, 1),
         },
     });
 

@@ -87,7 +87,7 @@ pub const Action = enum(u16) {
     }
 };
 
-pub const Skill = enum {
+pub const Skill = enum(u16) {
     shoot,
     spread_shot,
     dash,

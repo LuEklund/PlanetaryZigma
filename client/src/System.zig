@@ -53,8 +53,7 @@ request_exit: bool,
 teleport_sphere_model: u32,
 button_hover_sound: Audio.Sound,
 button_click_sound: Audio.Sound,
-melee_sound: Audio.Sound,
-shoot_cube_sound: Audio.Sound,
+skill_sounds: std.EnumArray(shared.entity.Skill, Audio.Sound),
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
@@ -99,8 +98,11 @@ pub fn init(self: *System, data: Data) !void {
     try self.audio.init(self.assets.root);
     self.button_hover_sound = try self.audio.load("button-hover.mp3", .{});
     self.button_click_sound = try self.audio.load("button-click.mp3", .{});
-    self.melee_sound = try self.audio.load("punch.mp3", .{});
-    self.shoot_cube_sound = try self.audio.load("laser-gun.mp3", .{});
+    const laser_sound: Audio.Sound = try self.audio.load("laser-gun.mp3", .{});
+    self.skill_sounds = .initFill(.none);
+    self.skill_sounds.set(.melee, try self.audio.load("punch.mp3", .{}));
+    self.skill_sounds.set(.shoot, laser_sound);
+    self.skill_sounds.set(.shoot_cube, laser_sound);
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
@@ -161,7 +163,7 @@ pub fn update(self: *System, world: *World) !void {
     try self.network_manager.update(world, player_input);
 
     switch (self.hud.ui.play_sound) {
-        .hot => self.audio.play(self.button_hover_sound),
+        .hover => self.audio.play(self.button_hover_sound),
         .clicked => self.audio.play(self.button_click_sound),
         .none => {},
     }
@@ -182,23 +184,8 @@ pub fn update(self: *System, world: *World) !void {
     try animate.update(world, &self.animator, &self.assets.models, self.network_manager.action_events.items);
 
     for (self.network_manager.action_events.items) |action_event| {
-        const entity = world.getPtr(action_event.id) orelse continue;
-        const assigned_skill = entity.kind.spec().skills.get(action_event.action) orelse continue;
-        std.log.debug("kind {t}, action {t}", .{
-            entity.kind,
-            assigned_skill.skill,
-        });
-        const sound: Audio.Sound = switch (assigned_skill.skill) {
-            .melee => self.melee_sound,
-            .shoot_cube, .shoot => self.shoot_cube_sound,
-            else => continue,
-        };
-        self.audio.play(sound);
-        // if (self.assets.models.rig(self.assets.models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
-        // switch (action.action) {
-        //     .primary => try self.audio.playSound(self.primary_sound),
-        //     else => {},
-        // }
+        self.audio.play(self.skill_sounds.get(action_event.skill));
+        if (action_event.id == world.player_id) world.controller.cooldown.set(action_event.action, world.elapsed_time);
     }
     self.audio.update();
 

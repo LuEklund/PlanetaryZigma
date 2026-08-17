@@ -50,16 +50,16 @@ pub fn update(ui: *Ui, hud: *Hud) !Request {
 }
 
 fn addPauseButton(ui: *Ui, name: []const u8, text: []const u8, width: f32, height: f32) void {
-    const hot = ui.isHot(name);
+    const hovered = ui.isHovered(name);
     ui.add("pause_panel", .{
         .name = name,
         .size = .{ .fixed = .{ .width = width, .height = height } },
-        .color = if (hot) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
+        .color = if (hovered) .new(0.88, 0.55, 0.08, 0.96) else .new(0.06, 0.065, 0.055, 0.96),
         .child_anchor = .{ .x = .center, .y = .center },
         .text = .{
             .data = text,
             .size = std.math.clamp(height * 0.52, @as(f32, 21), @as(f32, 27)),
-            .color = if (hot) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
+            .color = if (hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.96, 0.9, 1),
         },
     });
 }

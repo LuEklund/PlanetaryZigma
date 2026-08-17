@@ -210,6 +210,7 @@ pub const Event = union(enum) {
     pub const Action = struct {
         id: entity.Id,
         action: entity.Action,
+        skill: entity.Skill,
     };
 
     pub const Stun = struct {

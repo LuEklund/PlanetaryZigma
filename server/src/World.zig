@@ -326,14 +326,14 @@ pub const Outcome = enum { fired, on_cooldown, out_of_range };
 pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Entity, action: shared.entity.Action) Outcome {
     if (!ready(attacker, action, world.elapsed_time)) return .on_cooldown;
 
+    const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
     if (potential_target) |target| {
-        const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
         if (distance >= assigned.range) return .out_of_range;
     }
 
     attacker.last_used.set(action, world.elapsed_time);
-    world.client_updates.appendAssumeCapacity(.{ .event = .{ .action = .{ .id = attacker.id, .action = action } } });
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .action = .{ .id = attacker.id, .action = action, .skill = assigned.skill } } });
     return .fired;
 }
 

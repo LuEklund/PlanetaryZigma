@@ -439,10 +439,6 @@ fn handleCommand(
                     world.stage = new_stage;
                 },
                 .action => |action| {
-                    //TODO: move out of NetworkManager.
-                    if (action.id == world.player_id) {
-                        world.controller.cooldown.set(action.action, world.elapsed_time);
-                    }
                     self.action_events.appendAssumeCapacity(action);
                 },
                 .stun => |stun| {
