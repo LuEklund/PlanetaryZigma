@@ -1,18 +1,17 @@
-//! The renderer ABI: the module every consumer imports, and all they may import.
-//!
-//! It depends on numz and nothing here may reach an implementation. The
-//! moment it does, every backend edit recompiles system_client.so and the hot-reload
-//! boundary is gone. Guard: `touch render/vulkan/internal/Vulkan.zig`, rebuild, and
-//! `zig-out/lib/libsystem_client.so` must be byte-identical.
-//!
-//! See implementation_ideas/systems-as-libraries.md § LIBRARY-SHAPE CONVENTION.
-
 const std = @import("std");
 
 pub const log = @import("log.zig");
 pub const DrawList = @import("DrawList.zig");
 
 pub const Shader = @import("Shader.zig");
+
+pub const ParticleEffects = @import("ParticleEffects.zig");
+pub const Placement = ParticleEffects.Placement;
+pub const Motion = ParticleEffects.Motion;
+pub const ParticleEffect = ParticleEffects.ParticleEffect;
+pub const EffectParams = ParticleEffects.EffectParams;
+pub const instancesPerEmitter = ParticleEffects.instancesPerEmitter;
+pub const effect_params = ParticleEffects.effect_params;
 
 pub const InitOptions = struct {
     gpa: std.mem.Allocator,

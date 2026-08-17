@@ -16,10 +16,8 @@ const Context = struct {
     vulkan: *Vulkan,
 };
 
-// Root-module test, NOT output_mode == .Lib: system_client.so is also a Lib, and that
-// guard made it compile and export the entire Vulkan backend it only wanted types from.
 comptime {
-    if (@import("root") == @This()) _ = ffi;
+    _ = ffi;
 }
 
 pub const ffi = struct {
@@ -93,6 +91,7 @@ pub const ffi = struct {
             std.log.err("upload shader {d}: {t}", .{ kind, err });
         };
     }
+
 
     pub export fn update(handle: *anyopaque, list: *DrawList) void {
         const context: *Context = @ptrCast(@alignCast(handle));

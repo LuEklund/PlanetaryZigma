@@ -1,7 +1,8 @@
 const std = @import("std");
 const nz = @import("numz");
 const DrawList = @import("renderer_contract").DrawList;
-const Shader = @import("renderer_contract").Shader;
+const ParticleEffect = @import("renderer_contract").ParticleEffect;
+const effect_params = @import("renderer_contract").effect_params;
 
 const Particle = @This();
 
@@ -10,7 +11,7 @@ pub const max_emitters: u32 = DrawList.max_emitters;
 emitters: [max_emitters]Emitter,
 
 pub const Emitter = struct {
-    effect: Shader.Kind,
+    effect: ParticleEffect,
     origin: nz.Vec3(f32),
     target: nz.Vec3(f32),
     spawn_time: f32,
@@ -21,7 +22,7 @@ pub const Emitter = struct {
     const refresh_timeout: f32 = 0.25;
 
     pub const free: Emitter = .{
-        .effect = .explosion,
+        .effect = .explosion_puffs,
         .origin = .{ 0, 0, 0 },
         .target = .{ 0, 0, 0 },
         .spawn_time = free_spawn_time,
@@ -30,14 +31,14 @@ pub const Emitter = struct {
     };
 
     pub fn alive(self: Emitter, elapsed_time: f32) bool {
-        const duration = Shader.particleInfo(self.effect).duration orelse
-            return elapsed_time - self.last_seen < refresh_timeout;
-        return elapsed_time - self.spawn_time < duration;
+        const lifetime = effect_params.get(self.effect).lifetime;
+        if (lifetime == 0) return elapsed_time - self.last_seen < refresh_timeout;
+        return elapsed_time - self.spawn_time < lifetime;
     }
 };
 
 pub const Spawn = struct {
-    effect: Shader.Kind,
+    effect: ParticleEffect,
     origin: nz.Vec3(f32),
     target: nz.Vec3(f32),
 };
@@ -57,8 +58,8 @@ pub fn spawn(self: *Particle, request: Spawn, elapsed_time: f32) void {
     }, elapsed_time);
 }
 
-pub fn keepAlive(self: *Particle, effect: Shader.Kind, owner: u64, origin: nz.Vec3(f32), elapsed_time: f32) void {
-    std.debug.assert(Shader.particleInfo(effect).duration == null);
+pub fn keepAlive(self: *Particle, effect: ParticleEffect, owner: u64, origin: nz.Vec3(f32), elapsed_time: f32) void {
+    std.debug.assert(effect_params.get(effect).lifetime == 0);
     for (&self.emitters) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;
         emitter.origin = origin;

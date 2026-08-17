@@ -183,7 +183,10 @@ pub fn update(self: *System, world: *World) !void {
                 if (action.id == world.player_id) world.controller.cooldown.set(action.action, world.elapsed_time);
             },
             .effect => |effect| switch (effect) {
-                .rocket_impact => |position| self.particles.spawn(.{ .effect = .explosion, .origin = position, .target = position }, world.elapsed_time),
+                .rocket_impact => |position| {
+                    self.particles.spawn(.{ .effect = .explosion_puffs, .origin = position, .target = position }, world.elapsed_time);
+                    self.particles.spawn(.{ .effect = .explosion_sparks, .origin = position, .target = position }, world.elapsed_time);
+                },
                 .lightning => |bolt| for (bolt.targets) |id| {
                     const target = world.getPtr(id) orelse continue;
                     self.particles.spawn(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);

@@ -704,12 +704,11 @@ fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *co
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
-fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.EnumArray(Shader.Kind, ParticleBatch) {
+fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.EnumArray(contract.ParticleEffect, ParticleBatch) {
     const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
-    var batches: std.EnumArray(Shader.Kind, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
+    var batches: std.EnumArray(contract.ParticleEffect, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
     var first_emitter: u32 = 0;
-    for (std.enums.values(Shader.Kind)) |effect| {
-        if (Shader.get(effect).particle == null) continue;
+    for (std.enums.values(contract.ParticleEffect)) |effect| {
         var emitter_count: u32 = 0;
         for (list.emitters.items) |emitter| {
             if (emitter.effect != effect) continue;
@@ -750,7 +749,7 @@ fn renderOutlinePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *cons
     c.vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(Shader.Kind, ParticleBatch)) void {
+fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(contract.ParticleEffect, ParticleBatch)) void {
     const color_blend_enables: c.VkBool32 = c.VK_TRUE;
     ext.vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &color_blend_enables);
     ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &alpha_blend_eq);
@@ -762,24 +761,25 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
     const particle_pipeline_layout_handle = self.resources.pipeline_layouts.get(.particle).handle;
     self.bindWorldDescriptors(cmd, current_frame, particle_pipeline_layout_handle);
 
-    for (std.enums.values(Shader.Kind)) |effect| {
-        if (Shader.get(effect).particle == null) continue;
+    bindVertexShader(cmd, self.resources.shaders.vert(.particles));
+    bindFragmentShader(cmd, self.resources.shaders.frag(.particles));
+
+    for (std.enums.values(contract.ParticleEffect)) |effect| {
         const batch = batches.get(effect);
         if (batch.emitter_count == 0) continue;
-
-        bindVertexShader(cmd, self.resources.shaders.vert(effect));
-        bindFragmentShader(cmd, self.resources.shaders.frag(effect));
+        const params = contract.effect_params.get(effect);
+        if (params.count == 0) continue;
 
         const push: Shader.ParticlePushConstant = .{
             .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
                 batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
+            .effect_params_address = self.resources.effect_params_buffer.getGPUAddress() +
+                @intFromEnum(effect) * @sizeOf(contract.EffectParams),
             .elapsed_time = list.time,
-            .particle_count = Shader.particleInfo(effect).particle_count,
             .emitter_count = batch.emitter_count,
-            .duration = Shader.particleInfo(effect).duration orelse 0,
         };
         c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
-        c.vkCmdDraw(cmd, 6, batch.emitter_count * Shader.instancesPerEmitter(effect), 0, 0);
+        c.vkCmdDraw(cmd, 6, batch.emitter_count * contract.instancesPerEmitter(params), 0, 0);
     }
 }
 

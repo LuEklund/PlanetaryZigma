@@ -1,19 +1,10 @@
 const std = @import("std");
 
-pub const Topology = enum { quad, ribbon };
-
 pub const Descriptor = enum {
     scene,
     material,
     textures,
     shadow,
-};
-
-pub const ParticleInfo = struct {
-    particle_count: u32,
-    strands: u32,
-    duration: ?f32,
-    topology: Topology,
 };
 
 pub const Kind = enum {
@@ -29,9 +20,7 @@ pub const Kind = enum {
     highlight_skinned,
     highlight_outline,
 
-    explosion,
-    lightning,
-    item_effect,
+    particles,
     pub const count: usize = @typeInfo(Kind).@"enum".fields.len;
 };
 
@@ -41,77 +30,26 @@ pub const Spec = struct {
     frag: ?[:0]const u8,
     descriptors: []const Descriptor,
     push_constant_size: u32,
-    particle: ?ParticleInfo,
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .static = .{ .path = "mesh.spv", .vert = "static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .skinned = .{ .path = "mesh.spv", .vert = "skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .mesh = .{ .path = "mesh.spv", .vert = null, .frag = "mesh_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .shadow_static = .{ .path = "shadow.spv", .vert = "shadow_static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .shadow_skinned = .{ .path = "shadow.spv", .vert = "shadow_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .sky = .{ .path = "sky.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .material }, .push_constant_size = 0, .particle = null },
-    .ui = .{ .path = "ui.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant), .particle = null },
-    .debug = .{ .path = "debug.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .highlight_static = .{ .path = "highlight.spv", .vert = "highlight_static_vert", .frag = "highlight_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .highlight_skinned = .{ .path = "highlight.spv", .vert = "highlight_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
-    .highlight_outline = .{ .path = "highlight.spv", .vert = "highlight_outline_vert", .frag = "highlight_outline_frag", .descriptors = &.{ .scene, .textures }, .push_constant_size = @sizeOf(WorldPushConstant), .particle = null },
+    .static = .{ .path = "mesh.spv", .vert = "static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .skinned = .{ .path = "mesh.spv", .vert = "skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .mesh = .{ .path = "mesh.spv", .vert = null, .frag = "mesh_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .shadow_static = .{ .path = "shadow.spv", .vert = "shadow_static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .shadow_skinned = .{ .path = "shadow.spv", .vert = "shadow_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .sky = .{ .path = "sky.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .material }, .push_constant_size = 0 },
+    .ui = .{ .path = "ui.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{.textures}, .push_constant_size = @sizeOf(UiPushConstant) },
+    .debug = .{ .path = "debug.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .highlight_static = .{ .path = "highlight.spv", .vert = "highlight_static_vert", .frag = "highlight_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .highlight_skinned = .{ .path = "highlight.spv", .vert = "highlight_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .highlight_outline = .{ .path = "highlight.spv", .vert = "highlight_outline_vert", .frag = "highlight_outline_frag", .descriptors = &.{ .scene, .textures }, .push_constant_size = @sizeOf(WorldPushConstant) },
 
-    .explosion = .{
-        .path = "particle/explosion.spv",
-        .vert = "vertex",
-        .frag = "fragment",
-        .descriptors = &.{ .scene, .textures, .shadow },
-        .push_constant_size = @sizeOf(ParticlePushConstant),
-        .particle = .{
-            .particle_count = 40,
-            .strands = 1,
-            .duration = 0.8,
-            .topology = .quad,
-        },
-    },
-    .lightning = .{
-        .path = "particle/lightning.spv",
-        .vert = "vertex",
-        .frag = "fragment",
-        .descriptors = &.{ .scene, .textures, .shadow },
-        .push_constant_size = @sizeOf(ParticlePushConstant),
-        .particle = .{
-            .particle_count = 64,
-            .strands = 1,
-            .duration = 0.3,
-            .topology = .ribbon,
-        },
-    },
-    .item_effect = .{
-        .path = "particle/item_effect.spv",
-        .vert = "vertex",
-        .frag = "fragment",
-        .descriptors = &.{ .scene, .textures, .shadow },
-        .push_constant_size = @sizeOf(ParticlePushConstant),
-        .particle = .{
-            .particle_count = 154,
-            .strands = 7,
-            .duration = null,
-            .topology = .ribbon,
-        },
-    },
+    .particles = .{ .path = "particles.spv", .vert = "particles_vert", .frag = "particles_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(ParticlePushConstant) },
 });
 
 pub fn get(kind: Kind) Spec {
     return specs.get(kind);
-}
-
-pub fn particleInfo(kind: Kind) ParticleInfo {
-    return get(kind).particle orelse std.debug.panic("shader {t} is not a particle effect", .{kind});
-}
-
-pub fn instancesPerEmitter(kind: Kind) u32 {
-    const particle_info = particleInfo(kind);
-    return switch (particle_info.topology) {
-        .quad => particle_info.particle_count,
-        .ribbon => particle_info.particle_count - particle_info.strands,
-    };
 }
 
 pub const VkDeviceAddress = u64;
@@ -128,8 +66,7 @@ pub const UiPushConstant = extern struct {
 };
 pub const ParticlePushConstant = extern struct {
     emitter_buffer_address: VkDeviceAddress,
+    effect_params_address: VkDeviceAddress,
     elapsed_time: f32,
-    particle_count: u32,
     emitter_count: u32,
-    duration: f32,
 };

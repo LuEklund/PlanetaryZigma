@@ -65,6 +65,8 @@ pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
 identity_joint_buffer: Buffer,
 ui_index_buffer: Buffer,
 
+effect_params_buffer: Buffer,
+
 shadow_image: Image,
 shadow_sampler: c.VkSampler,
 shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
@@ -165,6 +167,20 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         index_data[quad_index * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
     }
 
+    var effect_params_buffer: Buffer = try .init(
+        device,
+        vma,
+        contract.EffectParams,
+        contract.ParticleEffect.count,
+        c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+        .{
+            .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
+            .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        },
+    );
+    var effect_params_rows: [contract.ParticleEffect.count]contract.EffectParams = contract.effect_params.values;
+    effect_params_buffer.copy(contract.EffectParams, &effect_params_rows);
+
     const shadow_image: Image = try .init(
         vma,
         device,
@@ -243,6 +259,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
         .ui_index_buffer = ui_index_buffer,
+        .effect_params_buffer = effect_params_buffer,
         .shadow_image = shadow_image,
         .shadow_sampler = shadow_sampler,
         .shadow_descriptor_buffers = shadow_descriptor_buffers,
@@ -346,6 +363,7 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     }
     self.identity_joint_buffer.deinit(vma);
     self.ui_index_buffer.deinit(vma);
+    self.effect_params_buffer.deinit(vma);
     self.shadow_image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.shadow_sampler, null);
     for (&self.shadow_descriptor_buffers) |*shadow_descriptor_buffer| shadow_descriptor_buffer.deinit(vma);
