@@ -72,13 +72,6 @@ pub const Size = packed struct(u64) {
         return @as(f32, @floatFromInt(self.width)) / @as(f32, @floatFromInt(self.height));
     }
 
-    /// Returns the size components as a tuple.
-    /// Can be coerced into @Vector(2, i32) or [2]i32.
-    ///
-    /// Example:
-    /// ```zig
-    /// const x, const y = size.xy();
-    /// ```
     pub fn xy(self: Size) struct { u32, u32 } {
         return .{ self.width, self.height };
     }
@@ -92,13 +85,6 @@ pub const Position = packed struct(i64) {
         return a.x == b.x and a.y == b.y;
     }
 
-    /// Returns the position components as a tuple.
-    /// Can be coerced into @Vector(2, i32) or [2]i32.
-    ///
-    /// Example:
-    /// ```zig
-    /// const x, const y = position.xy();
-    /// ```
     pub fn xy(self: Position) struct { i32, i32 } {
         return .{ self.x, self.y };
     }
@@ -136,7 +122,6 @@ pub const Pointer = struct {
         extra3: bool = false,
     };
 
-    /// Horizontal and vertical scroll
     pub const Axis = struct {
         horizontal: f64 = 0,
         vertical: f64 = 0,
@@ -183,15 +168,12 @@ pub fn close(self: *Window) void {
     self.* = undefined;
 }
 
-/// Allows optional outputs, such as receiving text input events.
 pub const PollOptions = struct {
-    /// Optional writer to receive text input events.
-    /// Characters are encoded as UTF-8.
+    /// UTF-8 text input events are written here.
     text: ?*std.Io.Writer = null,
 };
 
-/// Processes pending window events and updates the window state for the current frame.
-/// Should be called once per frame.
+/// Call once per frame.
 pub fn poll(self: *Window, options: PollOptions) !void {
     if (!self.focused) {
         self.pointer.buttons = .{};

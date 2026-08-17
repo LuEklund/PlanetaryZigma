@@ -39,7 +39,6 @@ pub const Event = union(enum) {
     disconnected: Connection,
 };
 
-
 pub const send_warn_bytes_per_second: u64 = 131072;
 
 pub fn PacketStats(comptime Packet: type) type {

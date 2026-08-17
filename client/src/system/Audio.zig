@@ -79,7 +79,6 @@ pub fn play(self: *Audio, sound: Sound) void {
     var same_sound_count: u32 = 0;
     const clip = self.sounds[@intFromEnum(sound)];
 
-    //replace oldest sound if max_count is reached
     for (&self.voices) |*voice| {
         if (!voice.alive) {
             if (free_slot == null) free_slot = voice;

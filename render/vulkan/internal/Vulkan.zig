@@ -4,13 +4,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 const nz = @import("numz");
 const Window = @import("Window");
-const TextureTable = @import("Vulkan/TextureTable.zig");
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
 const Mesh = @import("Vulkan/Mesh.zig");
-const Buffer = @import("Vulkan/Buffer.zig");
 const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
@@ -311,8 +309,6 @@ fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
         ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
     } else {
         ext.vkCmdSetPolygonModeEXT(cmd, c.VK_POLYGON_MODE_FILL);
-
-        // c.vkCmdSetLineWidth(cmd, 1);
         ext.vkCmdSetCullModeEXT(cmd, c.VK_CULL_MODE_BACK_BIT);
     }
     ext.vkCmdSetFrontFaceEXT(cmd, c.VK_FRONT_FACE_COUNTER_CLOCKWISE);

@@ -34,7 +34,6 @@ pub fn updateDirector(world: *World) !void {
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
             0...10 => .grass1,
-            // 6..
             11...40 => .tubloid,
             41...60 => .tubloida,
             61...75 => .hunkloid,

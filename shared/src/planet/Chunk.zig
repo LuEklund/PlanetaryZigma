@@ -55,7 +55,6 @@ pub const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32),
 };
 
 pub const DensityGrid = struct {
-    // Grid-space coordinate stored at values[0, 0, 0].
     origin_offset: nz.Vec3(i32),
     resolution: usize,
     values: []f32,

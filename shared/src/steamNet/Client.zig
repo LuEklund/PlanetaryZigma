@@ -4,7 +4,6 @@ const std = @import("std");
 const steam = @import("steamworks");
 const SteamNet = @import("../SteamNet.zig");
 const Packets = SteamNet.Packets;
-const ServerListResponse = steam.ISteamMatchmakingServerListResponse;
 
 pub const ServerInfo = extern struct {
     steam_id: u64,
@@ -147,11 +146,6 @@ pub fn deinit(self: *Client) void {
     var drained: u32 = 0;
     while (drained < 400) : (drained += 1) {
         self.steamPump() catch {};
-        // if (conn != 0) {
-        //     var info: steam.SteamNetConnectionInfo_t = undefined;
-        //     const alive = sockets.GetConnectionInfo(conn, &info);
-        //     if (!alive or info.m_eState == .k_ESteamNetworkingConnectionState_None) break;
-        // }
         self.io.sleep(.fromMilliseconds(2), .real) catch {};
     }
 

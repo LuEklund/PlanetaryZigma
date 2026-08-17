@@ -1,15 +1,7 @@
 const std = @import("std");
-const shared = @import("shared");
-const nz = shared.numz;
-const system = @import("../../System.zig");
-const World = system.World;
 const Ui = @import("ui");
-const NetworkManager = @import("../NetworkManager.zig");
-const Controller = @import("../Controller.zig");
-const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
-const OptionsTab = Hud.OptionsTab;
 
 pub fn update(ui: *Ui, hud: *Hud) !Request {
     const panel_width = std.math.clamp(ui.screen_width * 0.28, @as(f32, 260), @as(f32, 360));

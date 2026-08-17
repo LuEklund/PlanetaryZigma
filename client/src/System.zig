@@ -168,7 +168,7 @@ pub fn update(self: *System, world: *World) !void {
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
-    try world.flush();
+    try world.update(self.network_manager.pending_spawn.items, self.network_manager.pending_despawn.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
@@ -179,9 +179,9 @@ pub fn update(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
-    try animate.update(world, &self.animator, &self.assets.models);
+    try animate.update(world, &self.animator, &self.assets.models, self.network_manager.action_events.items);
 
-    for (world.action_events.items) |action_event| {
+    for (self.network_manager.action_events.items) |action_event| {
         const entity = world.getPtr(action_event.id) orelse continue;
         const assigned_skill = entity.kind.spec().skills.get(action_event.action) orelse continue;
         std.log.debug("kind {t}, action {t}", .{
@@ -200,7 +200,6 @@ pub fn update(self: *System, world: *World) !void {
         //     else => {},
         // }
     }
-    world.action_events.clearRetainingCapacity();
     self.audio.update();
 
     try extract.frame(self, world, self.scene != .particle_lab);

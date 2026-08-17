@@ -8,7 +8,6 @@ const Ui = @import("ui");
 const Assets = @import("graphics").Assets;
 const Window = @import("Window");
 const NetworkManager = @import("NetworkManager.zig");
-const Controller = @import("Controller.zig");
 const Options = @import("../Options.zig");
 
 const DamagePopup = @import("hud/DamagePopup.zig");

@@ -147,5 +147,5 @@ pub fn simplex3(xin: f32, yin: f32, zin: f32) f32 {
         n3 = t3 * t3 * dot3(grad3[gi3], x3, y3, z3);
     }
 
-    return 32.0 * (n0 + n1 + n2 + n3); // returns -1 to 1
+    return 32.0 * (n0 + n1 + n2 + n3);
 }

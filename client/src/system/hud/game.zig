@@ -6,12 +6,10 @@ const World = system.World;
 const Ui = @import("ui");
 const Assets = @import("graphics").Assets;
 const NetworkManager = @import("../NetworkManager.zig");
-const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const DamagePopup = @import("DamagePopup.zig");
 const Request = Hud.Request;
-const OptionsTab = Hud.OptionsTab;
 
 pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options: *Options, damage_popups: *const DamagePopup.List, show_stats: bool, game_assets: *const Assets) !void {
     const ping = network_manager.ping_milliseconds;

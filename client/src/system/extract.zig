@@ -2,11 +2,9 @@ const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
-const Ui = @import("ui");
 const System = @import("../System.zig");
 const DrawList = @import("contract").DrawList;
 const graphics = @import("graphics");
-const render = @import("contract");
 const Emitter = @import("graphics").Emitter;
 
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
@@ -173,8 +171,6 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
 
     const model = models.modelPtr(pose.model);
     if (model.isSkinned()) return;
-    // Still one row, naming nothing: the backend draws its box for a handle it does
-    // not know, so a model that never arrived is visible rather than absent.
     if (model.isEmpty()) {
         list.draw_meshes.appendAssumeCapacity(.{
             .mesh = .none,
@@ -269,8 +265,6 @@ fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.e
     }
 }
 
-/// Where the chunk sits, for the shadow-cascade test. Its geometry is already in world
-/// space, so the draw itself needs no transform.
 fn chunkCentre(coord: shared.Planet.Chunk.Coord) nz.Vec3(f32) {
     const dim: f32 = @floatFromInt(shared.Planet.Chunk.dim);
     const corner: nz.Vec3(f32) = @floatFromInt(coord.position);

@@ -4,9 +4,6 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const graphics = @import("graphics");
 const render = @import("contract");
-const Emitter = @import("graphics").Emitter;
-const Camera = @import("camera.zig");
-const Ui = @import("ui");
 const DrawList = @import("contract").DrawList;
 const Viewer = @import("Viewer.zig");
 

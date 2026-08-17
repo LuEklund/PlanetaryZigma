@@ -21,9 +21,6 @@ pub const DamageEvent = struct {
 gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
-pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
-pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
-action_events: std.ArrayList(shared.net.Event.Action) = .empty,
 dying: std.ArrayList(Dying) = .empty,
 effects: std.ArrayList(Emitter.Spawn) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
@@ -87,9 +84,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
     return .{
         .gpa = gpa,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
-        .pending_spawn = try .initCapacity(gpa, shared.max_entities),
-        .pending_despawn = try .initCapacity(gpa, shared.max_entities),
-        .action_events = try .initCapacity(gpa, shared.max_entities),
         .dying = try .initCapacity(gpa, shared.max_entities),
         .effects = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
@@ -100,9 +94,6 @@ pub fn init(gpa: std.mem.Allocator) !World {
 pub fn deinit(self: *World) void {
     self.entities.deinit(self.gpa);
     self.teleporter_bosses.deinit(self.gpa);
-    self.pending_spawn.deinit(self.gpa);
-    self.pending_despawn.deinit(self.gpa);
-    self.action_events.deinit(self.gpa);
     self.dying.deinit(self.gpa);
     self.effects.deinit(self.gpa);
     self.damage_events.deinit(self.gpa);
@@ -113,10 +104,6 @@ pub fn clear(self: *World) void {
     self.go_again_pending = false;
     self.entities.clearRetainingCapacity();
     self.teleporter_bosses.clearRetainingCapacity();
-    self.pending_spawn.clearRetainingCapacity();
-
-    self.pending_despawn.clearRetainingCapacity();
-    self.action_events.clearRetainingCapacity();
     self.dying.clearRetainingCapacity();
     self.effects.clearRetainingCapacity();
     self.damage_events.clearRetainingCapacity();
@@ -128,55 +115,12 @@ pub fn clear(self: *World) void {
     self.stage = 0;
 }
 
-pub fn flush(self: *World) !void {
-    defer self.pending_spawn.clearRetainingCapacity();
-    for (self.pending_spawn.items) |entity_info| {
-        if (self.getPtr(entity_info.id) != null) continue;
-        const entity = try self.spawn(entity_info.id);
-        entity.* = .{
-            .id = entity_info.id,
-            .kind = entity_info.kind,
-            .currency = entity_info.currency,
-            .transform = .{
-                .position = entity_info.position,
-                .rotation = .fromVec(entity_info.rotation),
-            },
-            .motion = .{ .update = .{
-                .id = entity_info.id,
-                .position = entity_info.position,
-                .velocity = entity_info.velocity,
-                .rotation = entity_info.rotation,
-                .tick = entity_info.tick,
-            } },
-        };
-        switch (entity_info.kind) {
-            .player => {
-                if (entity_info.data == .player_name) {
-                    setPlayerName(entity, entity_info.data.player_name.slice());
-                }
-                if (entity_info.id == self.player_id) {
-                    self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-                    self.controller.free_camera = false;
-                }
-            },
-            .projectile_cube => entity.transform.scale = @splat(0.3),
-            .projectile_rocket => entity.transform.scale = @splat(0.9),
-            .teleporter => self.teleporter_id = entity.id,
-            .enemy => {
-                if (entity_info.data == .is_teleporter_boss) {
-                    entity.flags.is_teleporter_boss = true;
-                    self.teleporter_bosses.appendAssumeCapacity(entity.id);
-                }
-            },
-            .item_pickup => {
-                if (entity_info.data == .item) entity.item = entity_info.data.item;
-            },
-            .unknown, .lootbox, .platform, .target_dummy => {},
-        }
+pub fn update(self: *World, spawns: []const shared.net.SpawnEntity, despawns: []const shared.entity.Id) !void {
+    for (spawns) |entity_info| {
+        try self.applySpawn(entity_info);
     }
 
-    defer self.pending_despawn.clearRetainingCapacity();
-    for (self.pending_despawn.items) |id| {
+    for (despawns) |id| {
         const entity = self.getPtr(id) orelse continue;
         if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, id)) |index_of_boss| {
             _ = self.teleporter_bosses.swapRemove(index_of_boss);
@@ -192,8 +136,53 @@ pub fn flush(self: *World) !void {
     }
 }
 
+pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
+    if (self.getPtr(entity_info.id) != null) return;
+    const entity = try self.spawn(entity_info.id);
+    entity.* = .{
+        .id = entity_info.id,
+        .kind = entity_info.kind,
+        .currency = entity_info.currency,
+        .transform = .{
+            .position = entity_info.position,
+            .rotation = .fromVec(entity_info.rotation),
+        },
+        .motion = .{ .update = .{
+            .id = entity_info.id,
+            .position = entity_info.position,
+            .velocity = entity_info.velocity,
+            .rotation = entity_info.rotation,
+            .tick = entity_info.tick,
+        } },
+    };
+    switch (entity_info.kind) {
+        .player => {
+            if (entity_info.data == .player_name) {
+                setPlayerName(entity, entity_info.data.player_name.slice());
+            }
+            if (entity_info.id == self.player_id) {
+                self.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
+                self.controller.free_camera = false;
+            }
+        },
+        .projectile_cube => entity.transform.scale = @splat(0.3),
+        .projectile_rocket => entity.transform.scale = @splat(0.9),
+        .teleporter => self.teleporter_id = entity.id,
+        .enemy => {
+            if (entity_info.data == .is_teleporter_boss) {
+                entity.flags.is_teleporter_boss = true;
+                self.teleporter_bosses.appendAssumeCapacity(entity.id);
+            }
+        },
+        .item_pickup => {
+            if (entity_info.data == .item) entity.item = entity_info.data.item;
+        },
+        .unknown, .lootbox, .platform, .target_dummy => {},
+    }
+}
+
 pub fn queueSpawn(self: *World, spawn_entity: shared.net.SpawnEntity) void {
-    self.pending_spawn.appendAssumeCapacity(spawn_entity);
+    self.applySpawn(spawn_entity) catch |err| std.log.err("world spawn: {t}", .{err});
 }
 
 pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void {

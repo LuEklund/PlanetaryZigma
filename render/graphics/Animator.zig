@@ -10,8 +10,6 @@ const AnimationClip = @import("assets/root.zig").AnimationClip;
 const Instance = @import("Animator/Instance.zig");
 const Rig = @import("Rig.zig");
 const Models = @import("Models.zig");
-const DrawList = @import("contract").DrawList;
-const Shader = @import("contract").Shader;
 
 pub const max_skins = 8;
 

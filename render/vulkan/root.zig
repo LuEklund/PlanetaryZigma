@@ -47,12 +47,6 @@ pub const ffi = struct {
         gpa.destroy(context);
     }
 
-    // A freshly dlopened render.so has its OWN procs.instance/device globals, still
-    // undefined — rebinding them is what makes a render swap work at all.
-    //
-    // Nothing else to re-register: the context and every resource in it came from the
-    // exe's allocator and the caller still holds the same handle, so meshes, textures and
-    // shaders all survive the swap untouched.
     pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));

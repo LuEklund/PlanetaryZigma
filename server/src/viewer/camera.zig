@@ -7,8 +7,6 @@ const nz = shared.numz;
 const Quat = nz.quat.Hamiltonian(f32);
 
 position: nz.Vec3(f32),
-/// Yaw lives as a rotation rather than an angle because it turns around the planet's
-/// up vector, not the world Y axis — same as the player camera.
 yaw_rotation: Quat,
 pitch: f32,
 speed: f32,

@@ -8,7 +8,7 @@ const look_pitch_sign: f32 = -1;
 const look_yaw_sign: f32 = 1;
 const look_yaw_deadzone: f32 = 0.05;
 
-pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Assets.Models) !void {
+pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Assets.Models, action_events: []const shared.net.Event.Action) !void {
     var dying_index: usize = 0;
     while (dying_index < world.dying.items.len) {
         const corpse = &world.dying.items[dying_index];
@@ -36,7 +36,7 @@ pub fn update(world: *World, animator: *graphics.Animator, models: *graphics.Ass
     for (world.dying.items) |corpse| {
         animator.setLoop(corpse.animation, models.rig(models.get(corpse.kind)).loop_clips.get(.death), .hold_last);
     }
-    for (world.action_events.items) |action_event| {
+    for (action_events) |action_event| {
         const entity = world.getPtr(action_event.id) orelse continue;
         if (models.rig(models.get(entity.kind)).action_clips.get(action_event.action)) |clip|
             animator.playOverlay(entity.animation, clip, models);

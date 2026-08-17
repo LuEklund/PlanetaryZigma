@@ -6,7 +6,6 @@ const tracy = @import("ztracy");
 const World = System.World;
 const build_options = @import("build_options");
 const Window = System.Window;
-const nz = shared.numz;
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 

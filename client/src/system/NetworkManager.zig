@@ -26,6 +26,9 @@ steam_logged_on: bool = false,
 server_process: ?std.process.Child = null,
 dev_mode: bool = false,
 deferred: std.ArrayList(shared.net.ServerPacket) = .empty,
+pending_spawn: std.ArrayList(shared.net.SpawnEntity) = .empty,
+pending_despawn: std.ArrayList(shared.entity.Id) = .empty,
+action_events: std.ArrayList(shared.net.Event.Action) = .empty,
 
 pub const host_wait_timeout_seconds: f32 = 15;
 
@@ -110,6 +113,9 @@ pub fn init(
         .gpa = gpa,
         .io = io,
         .steam_client = undefined,
+        .pending_spawn = try .initCapacity(gpa, shared.max_entities),
+        .pending_despawn = try .initCapacity(gpa, shared.max_entities),
+        .action_events = try .initCapacity(gpa, shared.max_entities),
     };
     try self.steam_client.init(gpa, io, log_connection_status);
     self.steam_logged_on = self.steam_client.isLoggedOn();
@@ -118,6 +124,9 @@ pub fn init(
 pub fn deinit(self: *NetworkManager) void {
     if (self.server_process) |*child| child.kill(self.io);
     self.deferred.deinit(self.gpa);
+    self.pending_spawn.deinit(self.gpa);
+    self.pending_despawn.deinit(self.gpa);
+    self.action_events.deinit(self.gpa);
     self.steam_client.deinit();
 }
 
@@ -240,6 +249,9 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
 pub fn update(self: *NetworkManager, world: *World, player_inputs: shared.net.Input) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
+    self.pending_spawn.clearRetainingCapacity();
+    self.pending_despawn.clearRetainingCapacity();
+    self.action_events.clearRetainingCapacity();
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
 
@@ -381,7 +393,7 @@ fn handleCommand(
         .acknowledge => |acknowledge| {
             const name = self.playerDisplayName();
             world.camera = .{ .transform = .{ .position = .{ 0, 0, 0 } } };
-            world.queueSpawn(.{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
+            self.pending_spawn.appendAssumeCapacity(.{ .kind = .player, .id = acknowledge.id, .data = .{ .player_name = .copy(name) } });
             world.player_id = acknowledge.id;
             self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
             self.server_tick_latest = acknowledge.tick;
@@ -392,13 +404,13 @@ fn handleCommand(
                 std.log.err("spawn with unknown entity kind, ignoring", .{});
                 return;
             }
-            world.queueSpawn(spawn_entity);
+            self.pending_spawn.appendAssumeCapacity(spawn_entity);
         },
         .spawn_planet => |radius| {
             try world.planet.sync(world.gpa, radius);
         },
         .despawn_entity => |despawn_entity| {
-            world.pending_despawn.appendAssumeCapacity(despawn_entity.id);
+            self.pending_despawn.appendAssumeCapacity(despawn_entity.id);
         },
         .update_motion => |update_motion_command| {
             const entity = world.getPtr(update_motion_command.id) orelse return;
@@ -431,7 +443,7 @@ fn handleCommand(
                     if (action.id == world.player_id) {
                         world.controller.cooldown.set(action.action, world.elapsed_time);
                     }
-                    world.action_events.appendAssumeCapacity(action);
+                    self.action_events.appendAssumeCapacity(action);
                 },
                 .stun => |stun| {
                     const entity = world.getPtr(stun.id) orelse {

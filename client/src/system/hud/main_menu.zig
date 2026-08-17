@@ -1,15 +1,11 @@
 const std = @import("std");
 const shared = @import("shared");
 const nz = shared.numz;
-const system = @import("../../System.zig");
-const World = system.World;
 const Ui = @import("ui");
 const NetworkManager = @import("../NetworkManager.zig");
-const Controller = @import("../Controller.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const Request = Hud.Request;
-const OptionsTab = Hud.OptionsTab;
 
 const hot_seconds: f32 = 0.08;
 
