@@ -11,13 +11,15 @@ pub const Sound = enum(u32) {
     _,
 };
 
+const Clip = struct { samples: []f32, max_count: u8 };
+
 const Voice = struct {
     sound: Sound,
     cursor: u32,
     alive: bool,
 };
 
-sounds: [128][]f32,
+sounds: [128]Clip,
 root: []const u8,
 
 device: ma.ma_device,
@@ -43,7 +45,7 @@ pub fn init(self: *Audio, root: []const u8) !void {
 pub fn deinit(self: *Audio) void {
     ma.ma_device_uninit(&self.device);
     ma.ma_pcm_rb_uninit(&self.ring);
-    for (self.sounds[0..self.next_sound]) |sound| ma.ma_free(sound.ptr, null);
+    for (self.sounds[0..self.next_sound]) |sound| ma.ma_free(sound.samples.ptr, null);
 }
 
 pub fn update(self: *Audio) void {
@@ -56,7 +58,7 @@ pub fn update(self: *Audio) void {
         @memset(dst, 0);
         for (&self.voices) |*voice| {
             if (!voice.alive) continue;
-            const sound: []f32 = self.sounds[@intFromEnum(voice.sound)];
+            const sound: []f32 = self.sounds[@intFromEnum(voice.sound)].samples;
             var i: u32 = 0;
             while (i < dst.len and voice.cursor < sound.len) : (i += 1) {
                 dst[i] += sound[voice.cursor];
@@ -71,15 +73,35 @@ pub fn update(self: *Audio) void {
 
 pub fn play(self: *Audio, sound: Sound) void {
     if (sound == .none) return;
+
+    var free_slot: ?*Voice = null;
+    var oldest_voice: ?*Voice = null;
+    var same_sound_count: u32 = 0;
+    const clip = self.sounds[@intFromEnum(sound)];
+
+    //replace oldest sound if max_count is reached
     for (&self.voices) |*voice| {
-        if (voice.alive) continue;
-        voice.* = .{ .sound = sound, .cursor = 0, .alive = true };
-        return;
+        if (!voice.alive) {
+            if (free_slot == null) free_slot = voice;
+            continue;
+        }
+        if (voice.sound != sound) continue;
+        same_sound_count += 1;
+        if (oldest_voice == null or voice.cursor > oldest_voice.?.cursor) oldest_voice = voice;
+    }
+    if (same_sound_count >= clip.max_count) {
+        oldest_voice.?.* = .{ .sound = sound, .cursor = 0, .alive = true };
+    } else if (free_slot) |slot| {
+        slot.* = .{ .sound = sound, .cursor = 0, .alive = true };
     }
 }
 
 ///Assumes Assets dir of Project
-pub fn load(self: *Audio, file: [:0]const u8) !Sound {
+pub fn load(
+    self: *Audio,
+    file: [:0]const u8,
+    options: struct { max_count: u8 = 5 },
+) !Sound {
     var path_buffer: [256]u8 = undefined;
     const path: [:0]u8 = try std.fmt.bufPrintZ(&path_buffer, "{s}/sounds/{s}", .{ self.root, file });
 
@@ -88,7 +110,11 @@ pub fn load(self: *Audio, file: [:0]const u8) !Sound {
     var pcm: ?*anyopaque = undefined;
     if (ma.ma_decode_file(path.ptr, &decoder_config, &frame_count, &pcm) != ma.MA_SUCCESS) return error.MiniaudioDecode;
 
-    self.sounds[self.next_sound] = @as([*]f32, @ptrCast(@alignCast(pcm.?)))[0 .. frame_count * channel_count];
+    self.sounds[self.next_sound] = .{
+        .max_count = options.max_count,
+        .samples = @as([*]f32, @ptrCast(@alignCast(pcm.?)))[0 .. frame_count * channel_count],
+    };
+
     self.next_sound += 1;
     return @enumFromInt(self.next_sound - 1);
 }

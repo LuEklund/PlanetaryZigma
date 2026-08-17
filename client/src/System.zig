@@ -97,10 +97,10 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.assets.deinit(data.gpa, data.io);
 
     try self.audio.init(self.assets.root);
-    self.button_hover_sound = try self.audio.load("button-hover.mp3");
-    self.button_click_sound = try self.audio.load("button-click.mp3");
-    self.melee_sound = try self.audio.load("punch.mp3");
-    self.shoot_cube_sound = try self.audio.load("laser-gun.mp3");
+    self.button_hover_sound = try self.audio.load("button-hover.mp3", .{});
+    self.button_click_sound = try self.audio.load("button-click.mp3", .{});
+    self.melee_sound = try self.audio.load("punch.mp3", .{});
+    self.shoot_cube_sound = try self.audio.load("laser-gun.mp3", .{});
 
     self.draw_list = try .init(data.gpa);
     errdefer self.draw_list.deinit(data.gpa);
