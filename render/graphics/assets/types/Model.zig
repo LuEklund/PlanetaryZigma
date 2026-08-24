@@ -9,8 +9,6 @@ const gltf = @import("gltf.zig");
 surfaces: std.ArrayList(Surface),
 mesh_handles: []usize,
 nodes: std.ArrayList(Node),
-/// One per node, same order. The glTF names survive the parse so a lookup by name works
-/// at any time, not only while the file is open.
 node_names: [][]const u8,
 clips: []AnimationClip,
 skins: []Skin,

@@ -95,8 +95,6 @@ pub fn build(b: *std.Build) void {
     render_build.linkVulkan(b, exe, target);
     exe.root_module.link_libcpp = true;
 
-    // One install step, reused: two of them write the same path, so a single rebuild
-    // landed twice and the running client hot-reloaded twice per build.
     const install_system = b.addInstallArtifact(system, .{});
     b.getInstallStep().dependOn(&install_system.step);
     b.installArtifact(exe);

@@ -113,7 +113,6 @@ const cube_edges = [_][2]u3{
     .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
 };
 
-// Extracts all density-zero surfaces: exterior terrain, caves, and tunnels.
 fn buildSurfaceCells(gpa: std.mem.Allocator, surface_cells: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -210,9 +209,6 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
                 const chunk_nearest_point_to_planet = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
                 if (nz.vec.dot(chunk_nearest_point_to_planet, chunk_nearest_point_to_planet) > surface_reach_squared) continue;
                 // TODO: (CAVES): DELETE THIS SKIP when caves carve the sdf!
-                // It assumes fully-buried chunks are solid rock with no surface.
-                // The day sdf() subtracts caves, buried chunks can contain geometry
-                // and this check will silently produce holes in the world.
                 const chunk_farthest_point_to_planet = @max(@abs(box_min), @abs(box_max));
                 if (nz.vec.dot(chunk_farthest_point_to_planet, chunk_farthest_point_to_planet) < solid_depth_squared) continue;
                 try chunks.append(gpa, chunk_coord);

@@ -381,8 +381,6 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
     );
 }
 
-/// A handle that names nothing draws the box rather than nothing at all — `.none`, a mesh
-/// that never uploaded, or one already freed. Null only before the box itself exists.
 pub fn meshAt(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
     return self.meshFor(handle) orelse self.meshFor(self.default_mesh);
 }

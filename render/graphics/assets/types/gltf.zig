@@ -12,8 +12,6 @@ pub const Glb = struct {
     gltf: zgltf.Gltf,
     bin: []const u8,
 
-    /// `content` is borrowed: whoever read the file still owns those bytes, and `bin`
-    /// points into them, so they must outlive this.
     pub fn parse(gpa: std.mem.Allocator, content: []const u8) !Glb {
         var loaded = try zgltf.parseGlbSlice(gpa, content);
         errdefer loaded.deinit();
@@ -85,8 +83,6 @@ pub fn parseScene(
     gltf: zgltf.Gltf,
     bin: []const u8,
     out_nodes: *std.ArrayList(Node),
-    /// Node names in the SAME order as `out_nodes`, so a lookup by name is valid for the
-    /// whole life of the model, not just during the parse.
     out_node_names: *[][]const u8,
     out_skins: ?*[]Skin,
     out_clips: ?*[]AnimationClip,

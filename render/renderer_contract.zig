@@ -18,8 +18,6 @@ pub const InitOptions = struct {
     window: *anyopaque,
 };
 
-/// Field names ARE the exported symbol names — HotLib resolves by field. render.so is
-/// dlopened RTLD_LOCAL, so short names here do not enter the global namespace.
 pub const Api = struct {
     init: *const fn (options: *const InitOptions) callconv(.c) ?*anyopaque,
     deinit: *const fn (*anyopaque) callconv(.c) void,

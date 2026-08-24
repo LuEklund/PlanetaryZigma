@@ -3,11 +3,8 @@ const Vulkan = @import("internal/Vulkan.zig");
 const contract = @import("renderer_contract");
 const DrawList = contract.DrawList;
 
-// The Renderer struct lives in the contract, not here: consumers must reach it without
-// reaching this file, or importing it drags the whole backend into their compilation.
 const InitOptions = contract.InitOptions;
 
-// Each image carries its own copy of these globals, so this one needs its own wiring.
 pub const std_options: std.Options = .{ .logFn = contract.log.logFn };
 
 const Context = struct {

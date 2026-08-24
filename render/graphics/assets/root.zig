@@ -32,7 +32,6 @@ pub fn changed(io: std.Io, dir: std.Io.Dir, path: []const u8, mtime: *std.Io.Tim
     return true;
 }
 
-/// 4-byte aligned because SPIR-V needs it and nothing else cares.
 pub fn read(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const u8) ![]align(4) u8 {
     const handle = try dir.openFile(io, path, .{});
     defer handle.close(io);

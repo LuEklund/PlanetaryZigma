@@ -1,9 +1,3 @@
-//! What the game wants from a parsed model: which clip plays in which state, which nodes
-//! follow the camera, which nodes the overlay reaches, how long spawning and dying take.
-//!
-//! None of it is in the .glb — it is the entity spec read against the file's own names. So
-//! it is built here, once at load, rather than inside the parser.
-
 const Rig = @This();
 
 const std = @import("std");
@@ -64,7 +58,6 @@ pub fn init(
             loop_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
                 return reportMissingClip(model, clip_name, spec) else null;
         }
-        // The death animation's own length beats whatever the spec guessed.
         if (self.loop_clips.get(.death)) |index| {
             const death_clip = model.clips[index];
             self.death_duration = death_clip.end - death_clip.start;

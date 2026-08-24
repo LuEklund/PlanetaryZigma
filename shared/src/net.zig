@@ -16,8 +16,6 @@ pub fn PacketQueue(comptime Packet: type) type {
     };
 }
 
-// Split by direction so each side's switch is exhaustive without an `else` that
-// would swallow a forgotten variant.
 pub const ClientPacket = union(enum) {
     connect: Connect,
     disconnect: void,
@@ -45,8 +43,6 @@ pub const Connect = struct {
     player_name: PlayerName,
 };
 
-// `root.version` is the manual lever for behaviour changes that keep the wire
-// layout identical — terrain math, gameplay rules.
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
     break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);

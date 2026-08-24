@@ -10,8 +10,6 @@ position: nz.Vec3(f32),
 yaw_rotation: Quat,
 pitch: f32,
 speed: f32,
-/// Entity id of the followed player, `.none` to fly. An id stays valid across
-/// roster changes, where an index would dangle on the first disconnect.
 follow: shared.entity.Id,
 
 const pitch_limit: f32 = std.math.degreesToRadians(80);

@@ -23,7 +23,6 @@ pub const Entry = struct {
     mesh_handle: usize,
 };
 
-/// The handle rides along, because the entry is gone by the time anyone drains this.
 pub const Removed = struct {
     coord: Chunk.Coord,
     mesh_handle: usize,

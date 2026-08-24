@@ -15,7 +15,6 @@ const Entry = struct {
 dir: std.Io.Dir,
 entries: std.ArrayList(Entry),
 
-/// Added in enum order, so an entry IS the `Shader.Kind` — nothing comes back to name.
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Shaders {
     const root = try assets.openDir(io);
     defer root.close(io);

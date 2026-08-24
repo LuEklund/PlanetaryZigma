@@ -221,7 +221,7 @@ fn measureText(glyphs: *const [96]Font.Glyph, text: []const u8, scale: f32) Text
         const index: usize = @intCast(std.math.clamp(@as(i32, char) - 32, 0, 95));
         const glyph = glyphs[index];
         metrics.width += glyph.xadvance * scale;
-        metrics.top = @min(metrics.top, glyph.yoff * scale); // yoff is negative (above baseline)
+        metrics.top = @min(metrics.top, glyph.yoff * scale);
         metrics.bottom = @max(metrics.bottom, (glyph.yoff + glyph.height) * scale);
     }
     return metrics;
@@ -256,7 +256,6 @@ fn startOffset(anchor: Layout.Anchor, available: f32, request: f32, padding: f32
 }
 
 fn resolveLayout(self: *Ui) void {
-    // pass 1: sizes (parent before child, so percent resolves against a known parent)
     for (self.nodes.items) |*node| {
         const origin: Rect = if (node.parent_id) |parent_id| self.nodes.items[parent_id].rect else self.screenRect();
         const layout: *Layout = &node.layout;
@@ -275,7 +274,6 @@ fn resolveLayout(self: *Ui) void {
     //TODO: grow parent to children
     //TODO: fit children to parent
 
-    // pass 2: each child adds its main-axis size (+gap) into its parent's children_size (bottom-up)
     var index = self.nodes.items.len;
     while (index > 0) {
         index -= 1;
@@ -289,7 +287,6 @@ fn resolveLayout(self: *Ui) void {
         };
     }
 
-    // pass 3: positions (parent before child, so parent.offset is set before its children read it)
     for (self.nodes.items) |*node| {
         const parent_node = if (node.parent_id) |parent_id| &self.nodes.items[parent_id] else null;
         const origin: Rect = if (parent_node) |parent| parent.rect else self.screenRect();
@@ -312,7 +309,6 @@ fn resolveLayout(self: *Ui) void {
             };
         };
 
-        // initialize this node's offset (where its first child starts) from its main-axis anchor
         const extent = if (node.children_size > 0) node.children_size - node.layout.gap else 0;
         node.offset = switch (node.layout.axis_align) {
             .horizontal => startOffset(node.layout.child_anchor.x, node.rect.width, extent, node.layout.padding),

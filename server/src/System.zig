@@ -11,7 +11,6 @@ pub const Navmesh = @import("system/Navmesh.zig");
 const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
-/// `void` in a dedicated build: no render package, no windowing, no Vulkan compiled in.
 pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
 pub const Window = if (build_options.viewer) @import("Window") else void;
 
@@ -119,8 +118,6 @@ pub fn update(self: *System, world: *World) !void {
 }
 
 fn reload(self: *System, pre_reload: bool) !void {
-    // The fresh .so has its own copy of shared's globals, so without this every log
-    // line after a swap comes out of a null io and loses its timestamp.
     if (!pre_reload) shared.log_io = self.io;
     if (pre_reload) {
         if (self.world.navmesh.worker) |thread| {

@@ -1,6 +1,3 @@
-//! The one cubemap: six faces off a 4x3 cross. The backend puts it on the sky rather than in
-//! the texture table, so no handle comes back and nobody can name it.
-
 const Skybox = @This();
 
 const std = @import("std");
@@ -44,8 +41,6 @@ pub fn update(self: *Skybox, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
     renderer.api.uploadSkybox(renderer.handle, &.{ .size = faces.size, .faces = faces.faces });
 }
 
-/// Six square faces in Vulkan order, all windows into one block — which is why freeing goes
-/// through `deinit`: releasing a face would release part of a block, not the block.
 const Cubemap = struct {
     block: []u8,
     faces: [6][]const u8,

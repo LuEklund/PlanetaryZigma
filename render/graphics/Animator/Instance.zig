@@ -39,13 +39,10 @@ pub const JointTransform = struct {
 };
 
 pub const Skeleton = struct {
-    /// The single allocation the slices below point into. Freed as one.
     block: []align(block_align) u8,
     nodes: []Node,
     fade_joints: []JointTransform,
     fade_time: f32,
-    /// One block for every skin's palette, contiguous so the draw walk is a single memcpy.
-    /// `skin_starts[i]` is where skin i begins; `skin_starts[skins.len]` is the total.
     joints: []nz.Mat4x4(f32),
     skin_starts: []u32,
     player: Player,
@@ -56,9 +53,6 @@ pub const Skeleton = struct {
         var joint_count: u32 = 0;
         for (model.skins) |skin| joint_count += @intCast(skin.inverse_bind_matrices.?.len);
 
-        // ONE allocation for the whole pose: an instance is 1 alloc / 1 free, so entities
-        // spawning and dying cannot fragment the heap with four differently-sized blocks.
-        // Regions are ordered by descending alignment and carved by offset.
         const joints_bytes = @sizeOf(nz.Mat4x4(f32)) * joint_count;
         const nodes_at = std.mem.alignForward(usize, joints_bytes, @alignOf(Node));
         const fade_at = std.mem.alignForward(usize, nodes_at + @sizeOf(Node) * node_count, @alignOf(JointTransform));

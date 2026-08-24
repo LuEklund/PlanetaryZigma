@@ -1,8 +1,3 @@
-//! render.so's own logging wiring. Each image carries its own copy of these globals, so
-//! this cannot be borrowed from the game — and borrowing it from `shared` is exactly the
-//! dependency this package is shedding. Twin of `shared`'s; keep the format identical so
-//! the two images' lines interleave readably in one log file.
-
 const std = @import("std");
 
 pub var io: ?std.Io = null;

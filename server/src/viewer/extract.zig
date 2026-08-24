@@ -12,8 +12,6 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     const models = &viewer.assets.models;
     const camera = viewer.camera;
     const ui = &viewer.ui;
-    // The wire carries the client's real camera; `Entity.camera` holds only the yaw
-    // the sim needs for movement.
     const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
     var camera_position: nz.Vec3(f32) = camera.position;
     var camera_rotation: nz.quat.Hamiltonian(f32) = camera.rotation();
@@ -253,8 +251,6 @@ pub fn collectChunkBorders(world: *World, gpa: std.mem.Allocator, lines: *std.Ar
     }
 }
 
-/// Where the chunk sits, for the shadow-cascade test. Its geometry is already in world
-/// space, so the draw itself needs no transform.
 fn chunkCentre(coord: shared.Planet.Chunk.Coord) nz.Vec3(f32) {
     const dim: f32 = @floatFromInt(shared.Planet.Chunk.dim);
     const corner: nz.Vec3(f32) = @floatFromInt(coord.position);

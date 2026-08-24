@@ -2,7 +2,6 @@ const std = @import("std");
 const Ui = @import("ui");
 const World = @import("../World.zig");
 
-/// Returns true when the menu asks the server to stop.
 pub fn update(ui: *Ui, world: *World, following: ?usize) bool {
     const options = &world.options;
     const player_count = world.players.items.len;
