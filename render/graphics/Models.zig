@@ -114,8 +114,6 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         };
         defer parsed.deinit(gpa);
 
-        // The new data is good, so the old can go. The mesh handles are the only record of
-        // what this entry put on the GPU, which is why they are read before being replaced.
         for (entry.model.mesh_handles) |mesh| {
             if (mesh != 0) renderer.api.freeMesh(renderer.handle, @enumFromInt(mesh));
         }

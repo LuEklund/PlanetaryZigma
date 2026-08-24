@@ -6,7 +6,6 @@ struct Emitter {
     float3 target;
 };
 
-// Mirrors renderer_contract.EffectParams byte for byte.
 struct EffectParams {
     uint placement;
     uint motion;
@@ -25,7 +24,6 @@ struct EffectParams {
     float stretch;
 };
 
-// `params` already points at this effect's row: the CPU pushes base + effect * stride.
 struct PushConstant {
     Emitter *emitter_buffer;
     EffectParams *params;
@@ -78,7 +76,6 @@ float speedVariance(float seed, uint index) {
     return 1.0 + (hash(seed + float(index) * 0.7195) * 2.0 - 1.0) * 0.3;
 }
 
-// One sided so a varied particle never outlives the emitter that carries it.
 float lifetimeOf(EffectParams params, float seed, uint index) {
     return params.lifetime * (1.0 - 0.3 * hash(seed + float(index) * 3.7183));
 }
@@ -88,7 +85,6 @@ float ageFraction(EffectParams params, float seed, uint index, float age) {
     return clamp(age / max(lifetimeOf(params, seed, index), 0.0001), 0.0, 1.0);
 }
 
-// arch_height is a fraction of the line's own length, so a long bolt arcs proportionally.
 float3 lineNode(EffectParams params, Emitter emitter, float3 direction, float span, float3 planet_up, float seed, float node) {
     float nodes = float(max(params.strands, 1u));
     float fraction = node / nodes;

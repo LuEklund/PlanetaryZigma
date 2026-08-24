@@ -2,8 +2,6 @@ const std = @import("std");
 const nz = @import("numz");
 const Resources = @import("Resources.zig");
 
-// Half-diagonal of the largest caster. Chunks are 32 units, so a centre-point cascade test
-// needs at least that much slack or they pop out of the shadow pass at cascade edges.
 const shadow_caster_radius: f32 = 32;
 
 pub fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
@@ -17,7 +15,7 @@ pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f3
     const f = 1.0 / std.math.tan(fovy_rad / 2.0);
     return .new(.{
         f / aspect, 0, 0, 0,
-        0, -f, 0,                           0, // flip Y for Vulkan
+        0, -f, 0,                           0,
         0, 0,  far / (near - far),          -1,
         0, 0,  (far * near) / (near - far), 0,
     });
@@ -58,7 +56,7 @@ pub fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, s
     const snapped_x = @floor(center_light[0] / texel_size) * texel_size;
     const snapped_y = @floor(center_light[1] / texel_size) * texel_size;
 
-    const caster_pad: f32 = 80; // room behind the slice for off-screen casters
+    const caster_pad: f32 = 80;
     const proj = shadowOrtho(
         snapped_x - radius,
         snapped_x + radius,

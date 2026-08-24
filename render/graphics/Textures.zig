@@ -1,8 +1,3 @@
-//! The texture files and the handles they came back as.
-//!
-//! A handle is only good until that file reloads — `update` uploads the new one, then frees
-//! the old, then swaps. So callers ask by name every time they draw rather than keeping one.
-
 const Textures = @This();
 
 const std = @import("std");
@@ -101,7 +96,6 @@ pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *co
             std.log.err("upload texture {s}: keeping the one already bound", .{entry.path});
             continue;
         }
-        // The old one goes only now that the new one exists.
         if (entry.handle != .missing) renderer.api.freeImage(renderer.handle, entry.handle);
         entry.handle = uploaded;
     }

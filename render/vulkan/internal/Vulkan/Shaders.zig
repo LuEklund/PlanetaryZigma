@@ -81,8 +81,6 @@ pub fn frag(self: *Shaders, kind: Shader.Kind) *Object {
     return &self.shaders[@intFromEnum(kind)].frag;
 }
 
-/// Replace one kind's GPU objects from bytes the producer read. Called while draining
-/// DrawList.shader_uploads, before any command buffer for this frame is recorded.
 pub fn apply(self: *Shaders, kind: Shader.Kind, spirv: []align(4) const u8) !void {
     const spec = Shader.get(kind);
     const pair = &self.shaders[@intFromEnum(kind)];

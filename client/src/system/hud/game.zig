@@ -80,8 +80,6 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
 
         const icon_size: f32 = @max(40, ui.screen_width / 26);
         const icon_gap: f32 = icon_size / 6;
-        // At least one, or a window narrower than a single icon divides by zero on the row
-        // count below. One icon overflowing the panel beats not drawing the frame.
         const icons_per_row: usize = @intFromFloat(@max(1, inventory_width / (icon_size + icon_gap)));
         var shown_icons: usize = 0;
         for (std.enums.values(shared.Item.Kind)) |item_kind| {

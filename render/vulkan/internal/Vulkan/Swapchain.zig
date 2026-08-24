@@ -206,9 +206,6 @@ pub fn recreate(
         c.VK_IMAGE_ASPECT_DEPTH_BIT,
         false,
     );
-    // Every attachment sized from `extent` has to be rebuilt here, or the highlight mask
-    // pass hands vkCmdBeginRendering a stale view and renderArea overruns it.
-    // Vulkan.resize rewrites the mask's descriptor slot right after this returns.
     self.mask_image.deinit(vma, device);
     self.mask_image = try .init(
         vma,

@@ -98,8 +98,6 @@ pub fn deinit(self: *TextureTable, gpa: std.mem.Allocator) void {
     self.descriptor_buffer.deinit(self.vma);
 }
 
-// The empty texture fills unused slots and reclaimed slots. The store that owns it
-// registers it once at startup, before any other slot is written.
 pub fn registerEmpty(self: *TextureTable, view: c.VkImageView, sampler: c.VkSampler) void {
     self.empty_view = view;
     self.empty_sampler = sampler;

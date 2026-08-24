@@ -1,6 +1,3 @@
-//! The renderer arrives as a parameter and is never stored: nothing here may hold a pointer
-//! into a library that can be swapped underneath it.
-
 const Assets = @This();
 
 const std = @import("std");
