@@ -52,6 +52,22 @@ const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
 
+const muzzle_height: f32 = 0.8;
+
+const Cast = struct {
+    world: *World,
+    physics: *Physics,
+    caster: *Entity,
+    target: ?*Entity,
+    assigned: shared.entity.AssignedSkill,
+    up: nz.Vec3(f32),
+    muzzle: nz.Vec3(f32),
+
+    fn damage(cast: Cast) f32 {
+        return cast.caster.stat(.damage) * cast.assigned.damage_multiplier;
+    }
+};
+
 pub fn executeSkill(
     world: *World,
     physics: *Physics,
@@ -59,326 +75,267 @@ pub fn executeSkill(
     target: ?*Entity,
     assigned: shared.entity.AssignedSkill,
 ) !void {
-    const planet_up = shared.Planet.surfaceUp(caster.transform.position);
+    const up = shared.Planet.surfaceUp(caster.transform.position);
+    const cast: Cast = .{
+        .world = world,
+        .physics = physics,
+        .caster = caster,
+        .target = target,
+        .assigned = assigned,
+        .up = up,
+        .muzzle = caster.transform.position + nz.vec.scale(up, muzzle_height),
+    };
     switch (assigned.skill) {
-        .shoot => {
-            //TODO: muzzle socket per model; every skill assumes position + up * 0.8.
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            const start_direction = if (target) |target_entity|
-                nz.vec.normalize(target_entity.transform.position - muzzle_position)
-            else if (caster.kind == .player) direction: {
-                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(
-                    caster.controller.input.camera_rotation,
-                );
-                const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-                const aim_point = aimPoint(
-                    world,
-                    physics,
-                    caster.transform.position,
-                    caster.controller.input.camera_position,
-                    camera_forward,
-                );
-                break :direction nz.vec.normalize(aim_point - muzzle_position);
-            } else nz.vec.normalize(caster.transform.forward());
-            const rocket_chance = caster.stat(.rocket_chance);
-            const fires_rocket = rocket_chance > 0 and world.prng.random().float(
-                f32,
-            ) < rocket_chance;
-            const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
-            _ = try world.spawn(.{
-                .kind = switch (projectile_kind) {
-                    .cube => .projectile_cube,
-                    .rocket => .projectile_rocket,
-                },
-                .owner_id = caster.id,
-                .transform = .{
-                    .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
-                    .rotation = shared.entity.projectileRotation(
-                        projectile_kind,
-                        start_direction,
-                        planet_up,
-                    ),
-                },
-                .replicated_velocity = nz.vec.scale(
-                    start_direction,
-                    if (fires_rocket) rocket_speed else bullet_speed,
-                ),
-                .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
-                .damage = caster.stat(.damage) * assigned.damage_multiplier,
-            });
+        .shoot => try shoot(cast),
+        .spread_shot => try spreadShot(cast),
+        .dash => dash(cast),
+        .use_equipment => useEquipment(cast),
+        .shoot_cube => if (target) |aim| try spawnProjectile(
+            cast,
+            .projectile_cube,
+            directionTo(cast, aim),
+            50,
+            2,
+            .{},
+        ),
+        .heal => if (target) |aim| try spawnProjectile(
+            cast,
+            .projectile_heal,
+            directionTo(cast, aim),
+            50,
+            2,
+            .{},
+        ),
+        .melee => if (target) |victim| {
+            _ = combat.removeHealth(world, victim, cast.damage(), caster);
         },
-        .spread_shot => {
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            var start_direction: nz.Vec3(f32) = undefined;
-            var spread_right: nz.Vec3(f32) = undefined;
-            var spread_up: nz.Vec3(f32) = undefined;
-            if (target == null and caster.kind == .player) {
-                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(
-                    caster.controller.input.camera_rotation,
-                );
-                const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-                const aim_point = aimPoint(
-                    world,
-                    physics,
-                    caster.transform.position,
-                    caster.controller.input.camera_position,
-                    camera_forward,
-                );
-                start_direction = nz.vec.normalize(aim_point - muzzle_position);
-                spread_right = nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
-                spread_up = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 1, 0 }));
-            } else {
-                start_direction = if (target) |target_entity|
-                    nz.vec.normalize(target_entity.transform.position - muzzle_position)
-                else
-                    nz.vec.normalize(caster.transform.forward());
-                spread_right = nz.vec.normalize(nz.vec.cross(start_direction, planet_up));
-                spread_up = nz.vec.cross(spread_right, start_direction);
-            }
-            const rocket_chance = caster.stat(.rocket_chance);
-            const fires_rocket = rocket_chance > 0 and world.prng.random().float(
-                f32,
-            ) < rocket_chance;
-            const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
-            for (0..assigned.hits) |_| {
-                const theta = world.prng.random().float(f32) * std.math.tau;
-                const spread = world.prng.random().float(f32) * 0.1;
-                const off_set = nz.vec.scale(
-                    spread_right,
-                    @cos(theta) * spread,
-                ) + nz.vec.scale(spread_up, @sin(theta) * spread);
-                _ = try world.spawn(.{
-                    .kind = switch (projectile_kind) {
-                        .cube => .projectile_cube,
-                        .rocket => .projectile_rocket,
-                    },
-                    .owner_id = caster.id,
-                    .transform = .{
-                        .position = muzzle_position + nz.vec.scale(start_direction, 1.0),
-                        .rotation = shared.entity.projectileRotation(
-                            projectile_kind,
-                            start_direction,
-                            planet_up,
-                        ),
-                    },
-                    .replicated_velocity = nz.vec.scale(
-                        start_direction + off_set,
-                        if (fires_rocket) rocket_speed else bullet_speed,
-                    ),
-                    .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
-                    .damage = caster.stat(.damage) * assigned.damage_multiplier,
-                    .flags = .{ .invincible = true },
-                });
-            }
-        },
-        .dash => {
-            const forward = if (target) |target_entity|
-                nz.vec.normalize(target_entity.transform.position - caster.transform.position)
-            else if (caster.kind == .player) camera: {
-                const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(
-                    caster.controller.input.camera_rotation,
-                );
-                break :camera nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-            } else nz.vec.normalize(caster.transform.forward());
-            const fwd_proj = forward - nz.vec.scale(planet_up, nz.vec.dot(forward, planet_up));
-            world.physics_commands.appendAssumeCapacity(.{
-                .verb = .{
-                    .teleport = caster.transform.position + nz.vec.scale(
-                        fwd_proj,
-                        2 * caster.stat(.speed),
-                    ),
-                },
-                .id = caster.id,
-            });
-        },
-        .use_equipment => {
-            const effect = shared.Item.equippedEffect(caster.inventory) orelse return;
-            switch (effect) {
-                .freeze_world => if (world.world_unstun_at <= world.elapsed_time) {
-                    world.world_unstun_at = world.elapsed_time + freeze_seconds;
-                },
-                .heal_burst => for (world.players.items) |player_id| {
-                    const player = world.getPtr(player_id) orelse continue;
-                    if (nz.vec.distance(
-                        player.transform.position,
-                        caster.transform.position,
-                    ) > equipment_radius) continue;
-                    _ = combat.addHealth(world, player, player.max_health * 0.5, null);
-                },
-                .blast_wave => {
-                    const damage = caster.stat(.damage) * 5;
-                    for (world.entities.values()) |*candidate| {
-                        if (candidate.kind != .enemy or candidate.flags.is_dead) continue;
-                        if (nz.vec.distance(
-                            candidate.transform.position,
-                            caster.transform.position,
-                        ) > equipment_radius) continue;
-                        _ = combat.removeHealth(world, candidate, damage, caster);
-                    }
-                    world.client_updates.appendAssumeCapacity(
-                        .{
-                            .event = .{ .effect = .{ .rocket_impact = caster.transform.position } },
-                        },
-                    );
-                },
-            }
-        },
-        .shoot_cube => {
-            const target_entity = target orelse return;
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
-            _ = try world.spawn(.{
-                .kind = .projectile_cube,
-                .owner_id = caster.id,
-                .transform = .{
-                    .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
-                    .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
-                },
-                .replicated_velocity = nz.vec.scale(aim_dir, 50),
-                .lifetime = 2,
-                .damage = caster.stat(.damage),
-            });
-        },
-        .heal => {
-            const target_entity = target orelse return;
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_dir = nz.vec.normalize(target_entity.transform.position - muzzle_position);
-            _ = try world.spawn(.{
-                .kind = .projectile_heal,
-                .owner_id = caster.id,
-                .transform = .{
-                    .position = muzzle_position + nz.vec.scale(aim_dir, 1.0),
-                    .rotation = shared.entity.projectileRotation(.cube, aim_dir, planet_up),
-                },
-                .replicated_velocity = nz.vec.scale(aim_dir, 50),
-                .lifetime = 2,
-                .damage = caster.stat(.damage),
-            });
-        },
-        .melee => {
-            const target_entity = target orelse return;
-            _ = combat.removeHealth(
-                world,
-                target_entity,
-                caster.stat(.damage) * assigned.damage_multiplier,
-                caster,
-            );
-        },
-        .arc_jump => {
-            const target_entity = target orelse return;
+        .arc_jump => if (target) |destination| {
             world.act(
-                .{ .id = caster.id, .verb = .{ .arc_jump = target_entity.transform.position } },
+                .{ .id = caster.id, .verb = .{ .arc_jump = destination.transform.position } },
             );
         },
         .plant, .charge, .explode => {},
-        .melee_cone => {
-            const forward = aimDirection(caster, target, planet_up);
-            const damage = caster.stat(.damage) * assigned.damage_multiplier;
-            for (world.entities.values()) |*candidate| {
-                if (candidate.max_health <= 0 or candidate.flags.is_dead or candidate.kind.eql(
-                    caster.kind,
-                )) continue;
-                const offset = candidate.transform.position - caster.transform.position;
-                const distance = nz.vec.length(offset);
-                if (distance > assigned.range or distance < 0.0001) continue;
-                if (nz.vec.dot(
-                    nz.vec.scale(offset, 1 / distance),
-                    forward,
-                ) < melee_cone_cosine) continue;
-                _ = combat.removeHealth(world, candidate, damage, caster);
-            }
-        },
-        .ground_slam => {
-            blastAt(
-                world,
-                caster,
-                caster.transform.position,
-                assigned.radius,
-                caster.stat(.damage) * assigned.damage_multiplier,
-            );
-        },
+        .melee_cone => meleeCone(cast),
+        .ground_slam => blastAt(
+            world,
+            caster,
+            caster.transform.position,
+            assigned.radius,
+            cast.damage(),
+        ),
         .grenade => {
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(
-                world,
-                physics,
-                caster,
-            ) else caster.transform.position + nz.vec.scale(
-                caster.transform.forward(),
-                20,
+            const direction = nz.vec.normalize(aimTarget(cast, 20) - cast.muzzle);
+            try spawnProjectile(
+                cast,
+                .projectile_rocket,
+                direction,
+                grenade_speed,
+                rocket_lifetime,
+                .{},
             );
-            const direction = nz.vec.normalize(aim_point - muzzle_position);
-            _ = try world.spawn(.{
-                .kind = .projectile_rocket,
-                .owner_id = caster.id,
-                .transform = .{
-                    .position = muzzle_position + direction,
-                    .rotation = shared.entity.projectileRotation(.rocket, direction, planet_up),
-                },
-                .replicated_velocity = nz.vec.scale(direction, grenade_speed),
-                .lifetime = rocket_lifetime,
-                .damage = caster.stat(.damage) * assigned.damage_multiplier,
-            });
         },
         .railgun => {
-            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
-            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(
-                world,
-                physics,
-                caster,
-            ) else caster.transform.position + nz.vec.scale(
-                caster.transform.forward(),
-                20,
-            );
-            const direction = nz.vec.normalize(aim_point - muzzle_position);
-            _ = try world.spawn(.{
-                .kind = .projectile_cube,
-                .owner_id = caster.id,
-                .transform = .{
-                    .position = muzzle_position + direction,
-                    .rotation = shared.entity.projectileRotation(.cube, direction, planet_up),
-                },
-                .replicated_velocity = nz.vec.scale(direction, railgun_speed),
-                .lifetime = bullet_lifetime,
-                .damage = caster.stat(.damage) * assigned.damage_multiplier,
-                .flags = .{ .invincible = true },
+            const direction = nz.vec.normalize(aimTarget(cast, 20) - cast.muzzle);
+            try spawnProjectile(cast, .projectile_cube, direction, railgun_speed, bullet_lifetime, .{
+                .invincible = true,
             });
         },
         .blink => {
-            const forward = aimDirection(caster, target, planet_up);
+            const forward = aimDirection(caster, target, up);
+            const destination = caster.transform.position + nz.vec.scale(forward, assigned.range);
             world.physics_commands.appendAssumeCapacity(.{
-                .verb = .{
-                    .teleport = caster.transform.position + nz.vec.scale(
-                        forward,
-                        assigned.range,
-                    ) + nz.vec.scale(planet_up, 0.5),
-                },
+                .verb = .{ .teleport = destination + nz.vec.scale(up, 0.5) },
                 .id = caster.id,
             });
         },
-        .heal_pulse => for (world.entities.values()) |*ally| {
-            if (!ally.kind.eql(caster.kind) or ally.flags.is_dead) continue;
-            if (nz.vec.distance(
-                ally.transform.position,
-                caster.transform.position,
-            ) > assigned.radius) continue;
-            _ = combat.addHealth(world, ally, ally.max_health * assigned.damage_multiplier, null);
+        .heal_pulse => healPulse(cast),
+        .artillery => blastAt(world, caster, aimTarget(cast, 0), assigned.radius, cast.damage()),
+    }
+}
+
+fn directionTo(cast: Cast, aim: *const Entity) nz.Vec3(f32) {
+    return nz.vec.normalize(aim.transform.position - cast.muzzle);
+}
+
+/// Target position, else where the player's camera points, else `fallback_distance` ahead.
+fn aimTarget(cast: Cast, fallback_distance: f32) nz.Vec3(f32) {
+    const caster = cast.caster;
+    if (cast.target) |aim| return aim.transform.position;
+    if (caster.kind == .player) return playerAimPoint(cast.world, cast.physics, caster);
+    return caster.transform.position + nz.vec.scale(caster.transform.forward(), fallback_distance);
+}
+
+fn cameraRotation(caster: *const Entity) nz.quat.Hamiltonian(f32) {
+    return .fromVec(caster.controller.input.camera_rotation);
+}
+
+fn spawnProjectile(
+    cast: Cast,
+    kind: shared.entity.Kind,
+    direction: nz.Vec3(f32),
+    speed: f32,
+    lifetime: f32,
+    flags: Entity.Flags,
+) !void {
+    const projectile_kind: shared.entity.ProjectileKind = if (kind == .projectile_rocket) .rocket else .cube;
+    _ = try cast.world.spawn(.{
+        .kind = kind,
+        .owner_id = cast.caster.id,
+        .transform = .{
+            .position = cast.muzzle + direction,
+            .rotation = shared.entity.projectileRotation(projectile_kind, direction, cast.up),
         },
-        .artillery => {
-            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(
-                world,
-                physics,
-                caster,
-            ) else caster.transform.position;
-            blastAt(
-                world,
-                caster,
-                aim_point,
-                assigned.radius,
-                caster.stat(.damage) * assigned.damage_multiplier,
+        .replicated_velocity = nz.vec.scale(direction, speed),
+        .lifetime = lifetime,
+        .damage = cast.damage(),
+        .flags = flags,
+    });
+}
+
+fn rollsRocket(cast: Cast) bool {
+    const chance = cast.caster.stat(.rocket_chance);
+    return chance > 0 and cast.world.prng.random().float(f32) < chance;
+}
+
+fn shoot(cast: Cast) !void {
+    const direction = nz.vec.normalize(aimTarget(cast, 20) - cast.muzzle);
+    if (rollsRocket(cast)) return spawnProjectile(
+        cast,
+        .projectile_rocket,
+        direction,
+        rocket_speed,
+        rocket_lifetime,
+        .{},
+    );
+    try spawnProjectile(cast, .projectile_cube, direction, bullet_speed, bullet_lifetime, .{});
+}
+
+fn spreadShot(cast: Cast) !void {
+    const direction = nz.vec.normalize(aimTarget(cast, 20) - cast.muzzle);
+    const aimed_by_camera = cast.target == null and cast.caster.kind == .player;
+    const right = if (aimed_by_camera)
+        nz.vec.normalize(cameraRotation(cast.caster).rotateVec(.{ 1, 0, 0 }))
+    else
+        nz.vec.normalize(nz.vec.cross(direction, cast.up));
+    const up = nz.vec.cross(right, direction);
+    const rocket = rollsRocket(cast);
+    const random = cast.world.prng.random();
+    for (0..cast.assigned.hits) |_| {
+        const theta = random.float(f32) * std.math.tau;
+        const spread = random.float(f32) * 0.1;
+        const offset = nz.vec.scale(
+            right,
+            @cos(theta) * spread,
+        ) + nz.vec.scale(up, @sin(theta) * spread);
+        const pellet = nz.vec.normalize(direction + offset);
+        const speed_scale = nz.vec.length(direction + offset);
+        if (rocket) {
+            try spawnProjectile(
+                cast,
+                .projectile_rocket,
+                pellet,
+                rocket_speed * speed_scale,
+                rocket_lifetime,
+                .{ .invincible = true },
             );
+        } else {
+            try spawnProjectile(
+                cast,
+                .projectile_cube,
+                pellet,
+                bullet_speed * speed_scale,
+                bullet_lifetime,
+                .{ .invincible = true },
+            );
+        }
+    }
+}
+
+fn dash(cast: Cast) void {
+    const caster = cast.caster;
+    const forward = if (cast.target) |aim|
+        nz.vec.normalize(aim.transform.position - caster.transform.position)
+    else if (caster.kind == .player)
+        nz.vec.normalize(cameraRotation(caster).rotateVec(.{ 0, 0, -1 }))
+    else
+        nz.vec.normalize(caster.transform.forward());
+    const along_ground = shared.math.projectOnPlane(forward, cast.up);
+    cast.world.physics_commands.appendAssumeCapacity(.{
+        .verb = .{
+            .teleport = caster.transform.position + nz.vec.scale(along_ground, 2 * caster.stat(.speed)),
+        },
+        .id = caster.id,
+    });
+}
+
+fn useEquipment(cast: Cast) void {
+    const world = cast.world;
+    const caster = cast.caster;
+    const effect = shared.Item.equippedEffect(caster.inventory) orelse return;
+    switch (effect) {
+        .freeze_world => {
+            if (world.world_unstun_at > world.elapsed_time) return;
+            world.world_unstun_at = world.elapsed_time + freeze_seconds;
+        },
+        .heal_burst => for (world.players.items) |player_id| {
+            const player = world.getPtr(player_id) orelse continue;
+            if (nz.vec.distance(
+                player.transform.position,
+                caster.transform.position,
+            ) > equipment_radius) continue;
+            _ = combat.addHealth(world, player, player.max_health * 0.5, null);
+        },
+        .blast_wave => {
+            const damage = caster.stat(.damage) * 5;
+            for (world.entities.values()) |*candidate| {
+                if (candidate.kind != .enemy or candidate.flags.is_dead) continue;
+                if (nz.vec.distance(
+                    candidate.transform.position,
+                    caster.transform.position,
+                ) > equipment_radius) continue;
+                _ = combat.removeHealth(world, candidate, damage, caster);
+            }
+            world.client_updates.appendAssumeCapacity(.{
+                .event = .{ .effect = .{ .rocket_impact = caster.transform.position } },
+            });
         },
     }
+}
+
+fn meleeCone(cast: Cast) void {
+    const caster = cast.caster;
+    const forward = aimDirection(caster, cast.target, cast.up);
+    for (cast.world.entities.values()) |*candidate| {
+        if (!isFoe(caster, candidate)) continue;
+        const offset = candidate.transform.position - caster.transform.position;
+        const distance = nz.vec.length(offset);
+        if (distance > cast.assigned.range or distance < 0.0001) continue;
+        if (nz.vec.dot(nz.vec.scale(offset, 1 / distance), forward) < melee_cone_cosine) continue;
+        _ = combat.removeHealth(cast.world, candidate, cast.damage(), caster);
+    }
+}
+
+fn healPulse(cast: Cast) void {
+    const caster = cast.caster;
+    for (cast.world.entities.values()) |*ally| {
+        if (!ally.kind.eql(caster.kind) or ally.flags.is_dead) continue;
+        if (nz.vec.distance(
+            ally.transform.position,
+            caster.transform.position,
+        ) > cast.assigned.radius) continue;
+        _ = combat.addHealth(
+            cast.world,
+            ally,
+            ally.max_health * cast.assigned.damage_multiplier,
+            null,
+        );
+    }
+}
+
+fn isFoe(caster: *const Entity, candidate: *const Entity) bool {
+    return candidate.max_health > 0 and !candidate.flags.is_dead and !candidate.kind.eql(
+        caster.kind,
+    );
 }
 
 fn aimPoint(
@@ -446,9 +403,7 @@ fn playerAimPoint(world: *World, physics: *Physics, caster: *const Entity) nz.Ve
 
 fn blastAt(world: *World, caster: *Entity, center: nz.Vec3(f32), radius: f32, damage: f32) void {
     for (world.entities.values()) |*candidate| {
-        if (candidate.max_health <= 0 or candidate.flags.is_dead or candidate.kind.eql(
-            caster.kind,
-        )) continue;
+        if (!isFoe(caster, candidate)) continue;
         const distance = nz.vec.distance(candidate.transform.position, center);
         if (distance > radius) continue;
         _ = combat.removeHealth(world, candidate, damage * (1 - 0.5 * distance / radius), caster);
