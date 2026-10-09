@@ -286,6 +286,15 @@ const alpha_blend_eq: c.VkColorBlendEquationEXT = .{
     .alphaBlendOp = c.VK_BLEND_OP_ADD,
 };
 
+const additive_blend_eq: c.VkColorBlendEquationEXT = .{
+    .srcColorBlendFactor = c.VK_BLEND_FACTOR_SRC_ALPHA,
+    .dstColorBlendFactor = c.VK_BLEND_FACTOR_ONE,
+    .colorBlendOp = c.VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ZERO,
+    .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE,
+    .alphaBlendOp = c.VK_BLEND_OP_ADD,
+};
+
 fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
     {
         const stages = [_]c.VkShaderStageFlagBits{
@@ -778,6 +787,11 @@ fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *con
         const effect_data = contract.effects.get(effect);
         if (effect_data.count == 0) continue;
 
+        const blend_eq = switch (effect_data.blend) {
+            .alpha => &alpha_blend_eq,
+            .additive => &additive_blend_eq,
+        };
+        ext.vkCmdSetColorBlendEquationEXT(cmd, 0, 1, blend_eq);
         const push: Shader.ParticlePushConstant = .{
             .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
                 batch.first_emitter * @sizeOf(FrameData.GPUEmitter),

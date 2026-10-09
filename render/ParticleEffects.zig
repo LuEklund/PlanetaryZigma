@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const Placement = enum(u32) { burst, line, orbit };
 pub const Motion = enum(u32) { ballistic, along_path };
+pub const Blend = enum { alpha, additive };
 pub const ParticleEffect = enum(u32) {
     explosion_puffs,
     explosion_sparks,
@@ -40,6 +41,7 @@ pub const Effect = struct {
 
     count: u32,
     lifetime: f32,
+    blend: Blend,
     size_start: f32,
     size_end: f32,
     ramp_steps: [4]f32,
@@ -100,6 +102,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
     .explosion_puffs = .{
         .count = 8,
         .lifetime = 0.8,
+        .blend = .alpha,
         .size_start = 2.2,
         .size_end = 0.0,
         .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
@@ -115,6 +118,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
     .explosion_sparks = .{
         .count = 32,
         .lifetime = 0.5,
+        .blend = .additive,
         .size_start = 0.28,
         .size_end = 0.0,
         .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
@@ -130,6 +134,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
     .lightning = .{
         .count = 64,
         .lifetime = 0.3,
+        .blend = .additive,
         .size_start = 0.55,
         .size_end = 0.0,
         .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
@@ -145,6 +150,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
     .item_effect = .{
         .count = 154,
         .lifetime = 0.0,
+        .blend = .alpha,
         .size_start = 0.13,
         .size_end = 0.13,
         .ramp_steps = .{ 0.26, 0.42, 0.58, 0.74 },
@@ -160,6 +166,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
     .tracer = .{
         .count = 1,
         .lifetime = 0.0,
+        .blend = .additive,
         .size_start = 0.15,
         .size_end = 0.15,
         .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },

@@ -37,6 +37,8 @@ struct VertexOutput {
     float4 position : SV_Position;
     float2 uv : TEXCOORD0;
     nointerpolation float age_fraction : TEXCOORD1;
+    float2 capsule : TEXCOORD2;
+    nointerpolation float capsule_length : TEXCOORD3;
 };
 
 static const uint placement_burst = 0;
@@ -181,6 +183,8 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
 
         output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
         output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
+        output.capsule = float2(0.0, 0.0);
+        output.capsule_length = -1.0;
         return output;
     }
 
@@ -192,31 +196,41 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
 
     float t0 = float(segment_index) / float(segments);
     float t1 = float(segment_index + 1) / float(segments);
-    float t = corner.x < 0.0 ? t0 : t1;
-    float3 center = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t);
-    float3 ahead = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t + 0.01);
-    float3 behind = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t - 0.01);
+    float3 start = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t0);
+    float3 end = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t1);
 
     output.age_fraction = ageFraction(params, seed, chain_index, age);
     float size = lerp(params.size_start, params.size_end, output.age_fraction);
-    float width = size * (0.35 + 1.3 * sin(t * 3.1415926));
+    float radius = max(size * (0.35 + 1.3 * sin((t0 + t1) * 0.5 * 3.1415926)) * 0.5, 0.0001);
 
+    float3 along = end - start;
+    float segment_length = length(along);
+    float3 tangent = segment_length > 0.0001 ? along / segment_length : planet_up;
+    float3 center = corner.x < 0.0 ? start - tangent * radius : end + tangent * radius;
     float3 view_direction = normalize(scene_data.camera_position - center);
-    float3 across = cross(ahead - behind, view_direction);
-    float3 world_position = center + across / max(length(across), 0.0001) * corner.y * width;
+    float3 across = cross(tangent, view_direction);
+    float3 world_position = center + across / max(length(across), 0.0001) * corner.y * 2.0 * radius;
 
     output.position = mul(scene_data.proj_view, float4(world_position, 1.0));
     output.uv = float2(0.5, corner.y + 0.5);
+    float length_in_radii = segment_length / radius;
+    output.capsule = float2(corner.x < 0.0 ? -1.0 : length_in_radii + 1.0, corner.y * 2.0);
+    output.capsule_length = length_in_radii;
     return output;
 }
 
 [shader("fragment")]
 float4 particles_frag(VertexOutput input) : SV_Target {
     EffectParams params = push_constant.params[0];
-    float core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
-    float aged = 1.0 - input.age_fraction;
-    float intensity = clamp(sqrt(core) * 0.75 + aged * 0.25, 0.0, 1.0);
+    float core;
+    if (input.capsule_length >= 0.0) {
+        float along = input.capsule.x - clamp(input.capsule.x, 0.0, input.capsule_length);
+        core = clamp(1.0 - length(float2(along, input.capsule.y)), 0.0, 1.0);
+    } else {
+        core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
+    }
+    float life = 1.0 - input.age_fraction;
+    float intensity = clamp(sqrt(core) * 0.75 + life * 0.25, 0.0, 1.0);
     float4 color = colorRamp(params, intensity);
-    float fade = smoothstep(0.0, 0.25, aged);
-    return float4(color.rgb, core * core * color.a * fade);
+    return float4(color.rgb, core * core * color.a * life);
 }
