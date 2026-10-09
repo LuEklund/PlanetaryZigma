@@ -182,10 +182,13 @@ pub fn update(
         },
         .chat_message => |chat_message| {
             const sender = self.getPtr(chat_message.id);
-            const name = if (sender != null and sender.?.player_name.slice().len != 0)
+            const name = if (chat_message.id == .none)
+                "server"
+            else if (sender != null and sender.?.player_name.slice().len != 0)
                 sender.?.player_name.slice()
             else
                 shared.default_player_name;
+            std.log.info("chat {s}: {s}", .{ name, chat_message.text });
             self.chat.push(name, chat_message.text, self.elapsed_time);
         },
         .server_tick, .event => {},

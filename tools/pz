@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# pz build | run [menu|dev|singleplayer|run] | shot [out.png] [scale] | log [pattern] | kill
+# pz build | run [menu|dev|singleplayer|run] | shot [out.png] [scale] | log [pattern] | cmd "/command" | kill
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 logfile="${PZ_LOG:-/tmp/pz-client.log}"
+console="${PZ_CONSOLE:-/tmp/pz-console}"
 
 window_geometry() {
     hyprctl clients -j | python3 -c '
@@ -21,8 +22,9 @@ case "${1:-}" in
         pkill -x client || true; pkill -x server || true; sleep 1
         mode="${2:-dev}"
         cd "$root/client"
-        if [ "$mode" = menu ]; then ./zig-out/bin/client >"$logfile" 2>&1 &
-        else PZ_AUTOSTART="$mode" ./zig-out/bin/client >"$logfile" 2>&1 & fi
+        : >"$console"
+        if [ "$mode" = menu ]; then PZ_CONSOLE="$console" ./zig-out/bin/client >"$logfile" 2>&1 &
+        else PZ_CONSOLE="$console" PZ_AUTOSTART="$mode" ./zig-out/bin/client >"$logfile" 2>&1 & fi
         for _ in $(seq 1 60); do sleep 0.5; [ -n "$(window_geometry)" ] && break; done
         sleep "${PZ_SETTLE:-8}"; echo "running, log: $logfile" ;;
     shot)
@@ -31,6 +33,9 @@ case "${1:-}" in
         grim -g "$geometry" -s "${3:-0.6}" "${2:-/tmp/pz-shot.png}"; echo "${2:-/tmp/pz-shot.png}" ;;
     log)
         grep -a -v "^VK:" "$logfile" | grep -a -E "${2:-error|warning|panic|VUID|DeviceLost}" | cut -c1-300 | sort | uniq -c | sort -rn | head -30 || true ;;
+    cmd)
+        shift; printf '%s\n' "$@" >>"$console"; sleep 1
+        grep -a "chat server:" "$logfile" | tail -n "$#" ;;
     kill)
         pkill -x client || true; pkill -x server || true ;;
     *) sed -n 2p "$0"; exit 1 ;;

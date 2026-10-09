@@ -8,6 +8,7 @@ pub const Init = struct {
     log_connection_status: bool,
     discord_dir: ?[]const u8,
     autostart: ?[]const u8,
+    console: ?[]const u8,
 };
 
 pub const Api = struct {

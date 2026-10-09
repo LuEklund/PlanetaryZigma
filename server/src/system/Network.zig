@@ -5,6 +5,7 @@ const shared = @import("shared");
 const system = @import("../System.zig");
 const stage = @import("../gameplay/stage.zig");
 const lobby = @import("../gameplay/lobby.zig");
+const commands = @import("../gameplay/commands.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const nz = shared.numz;
@@ -241,6 +242,7 @@ fn applyCommand(
             var text_buffer: [shared.max_chat_len]u8 = undefined;
             const text = sanitizeText(&text_buffer, chat.text);
             if (text.len == 0) return false;
+            if (text[0] == commands.prefix) return runCommand(world, outbox, client, text);
             std.log.debug("chat {s}: {s}", .{ client.name, text });
             try self.broadcastChat(outbox, client.entity_id, text);
         },
@@ -506,6 +508,19 @@ fn markAllClientsForFullSync(self: *Network) void {
     while (it.next()) |client| {
         client.needs_full_sync = true;
     }
+}
+
+fn runCommand(world: *World, outbox: Outbox, client: *Client, line: []const u8) !bool {
+    const player = world.getPtrRaw(client.entity_id) orelse return false;
+    var reply_buffer: [shared.max_chat_len]u8 = undefined;
+    const reply = commands.run(world, player, line, &reply_buffer);
+    std.log.info("command {s}: {s} -> {s}", .{ client.name, line, reply });
+    try outbox.send(client, .{ .chat_message = .{
+        .id = .none,
+        .text_len = @intCast(reply.len),
+        .text = reply,
+    } }, .reliable);
+    return false;
 }
 
 fn broadcastChat(

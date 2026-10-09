@@ -55,6 +55,8 @@ dvui_window: dvui.Window,
 dvui_input: DvuiInput,
 request_exit: bool,
 auto_ready: bool,
+console_path: ?[]const u8,
+console_next_poll: f32,
 world: World,
 clock: shared.Clock,
 fps_window_start: std.Io.Timestamp,
@@ -136,6 +138,8 @@ pub fn init(self: *System, data: Init) !void {
     errdefer self.network.deinit();
     try self.enterScene(&self.world, .menu);
     self.auto_ready = false;
+    self.console_path = data.console;
+    self.console_next_poll = 0;
     if (data.autostart) |autostart| {
         if (std.mem.eql(u8, autostart, "run")) {
             self.network.requestHost(.singleplayer, true);
@@ -230,6 +234,7 @@ fn step(self: *System, world: *World) !void {
         if (!player.ready) try self.network.sendCommand(.{ .lobby = .{ .ready = true } }, .reliable);
         self.auto_ready = false;
     };
+    try self.pollConsole(world);
     switch (hud_request) {
         .none => {},
         .main_menu => try self.network.returnToMainMenu(),
@@ -320,6 +325,23 @@ fn step(self: *System, world: *World) !void {
         wire_input,
         self.window.pointer.axis.vertical,
     );
+}
+
+/// Sends every line of the dev console file as a chat line, then empties the file.
+fn pollConsole(self: *System, world: *World) !void {
+    const path = self.console_path orelse return;
+    if (world.elapsed_time < self.console_next_poll) return;
+    self.console_next_poll = world.elapsed_time + 0.25;
+    const cwd = std.Io.Dir.cwd();
+    const content = cwd.readFileAlloc(self.io, path, self.gpa, .limited(16 * 1024)) catch return;
+    defer self.gpa.free(content);
+    if (content.len == 0) return;
+    cwd.writeFile(self.io, .{ .sub_path = path, .data = "" }) catch {};
+    var lines = std.mem.tokenizeAny(u8, content, "\r\n");
+    while (lines.next()) |line| {
+        const text = line[0..@min(line.len, shared.max_chat_len)];
+        try self.network.sendCommand(.{ .chat = .{ .text_len = @intCast(text.len), .text = text } }, .reliable);
+    }
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {
