@@ -50,7 +50,7 @@ pub const DrawEmitter = struct {
     spawn_time: f32,
 };
 
-pub const max_ui_quads: usize = 2048;
+pub const max_ui_quads: usize = 8192;
 
 pub const UiVertex = extern struct {
     position: [2]f32,

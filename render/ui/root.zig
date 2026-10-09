@@ -191,6 +191,7 @@ pub fn add(self: *Ui, parent: ?[]const u8, layout: Layout) void {
 }
 
 fn addNode(self: *Ui, parent_id: ?u32, layout: Layout) void {
+    if (self.nodes.items.len == self.nodes.capacity) return;
     const handle: u32 = @intCast(self.nodes.items.len);
     self.nodes.appendAssumeCapacity(.{
         .id = handle,
@@ -322,9 +323,15 @@ fn screenRect(self: *const Ui) Rect {
 }
 
 fn pushQuads(self: *Ui) void {
+    var dropped: usize = 0;
+    defer if (dropped > 0) std.log.debug("ui: {d} quads over the {d} cap dropped", .{ dropped, self.quads.capacity });
     for (self.nodes.items) |node| {
         const rect = node.rect;
-        if (node.layout.color.a != 0) {
+        if (node.layout.color.a != 0) quad: {
+            if (self.quads.items.len == self.quads.capacity) {
+                dropped += 1;
+                break :quad;
+            }
             const colors: [4]f32 = node.layout.color.toVec();
             self.quads.appendAssumeCapacity(.{ .vertices = .{
                 .{ .position = .{ rect.left, rect.top }, .color = colors, .uv = .{ 0, 0 }, .is_sdf = 0, .texture_index = @intFromEnum(node.layout.texture) },
@@ -353,6 +360,10 @@ fn pushQuads(self: *Ui) void {
                 const y0 = pen.y + glyph.yoff * scale;
                 const x1 = x0 + glyph.width * scale;
                 const y1 = y0 + glyph.height * scale;
+                if (self.quads.items.len == self.quads.capacity) {
+                    dropped += 1;
+                    continue;
+                }
                 self.quads.appendAssumeCapacity(.{ .vertices = .{
                     .{ .position = .{ x0, y0 }, .color = color, .uv = .{ glyph.u0, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
                     .{ .position = .{ x1, y0 }, .color = color, .uv = .{ glyph.u1, glyph.v0 }, .is_sdf = 1, .texture_index = font.atlas_texture_index },
