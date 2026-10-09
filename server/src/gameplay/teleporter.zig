@@ -1,0 +1,24 @@
+const shared = @import("shared");
+const nz = shared.numz;
+const World = @import("../World.zig");
+
+pub fn updateTeleporter(world: *World) void {
+    const entity = world.getPtr(world.teleporter_id) orelse return;
+    const teleporter = &entity.teleporter;
+    if (teleporter.charged == teleporter.max_charge) {
+        world.director.spawning = false;
+        teleporter.state = .completed;
+        return;
+    }
+    const old_teleporter_charge = teleporter.charged;
+    for (world.players.items) |player_id| {
+        const player = world.getPtr(player_id) orelse continue;
+        if (teleporter.state == .active and nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) {
+            teleporter.charged += world.delta_time * 10;
+            teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
+        }
+    }
+    if (old_teleporter_charge != teleporter.charged) {
+        world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+    }
+}

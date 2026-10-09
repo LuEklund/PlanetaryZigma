@@ -26,10 +26,10 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 | Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
 | Server host | `server/src/main.zig` | gpa, args, viewer window, `HotLib(system_server)`; loop is `trySwap → systemUpdate` | `server/src/system_contract.zig` `Api` (5 fns) |
 | Server System | `server/src/System.zig` | server `World`, fixed-step `Clock` + tick counter, NetworkManager, Physics, Viewer | World |
-| Server World | `server/src/World.zig` | entities, players, spawn/despawn queues, physics command + impact queues, client_updates outbox, director, planet, navmesh, stage | `flush()` is the one drain |
+| Server World | `server/src/World.zig` | entities, players, spawn/despawn queues, physics command + impact queues, client_updates outbox, director, planet, navmesh, stage | `flush(physics)` is the one drain |
 | Physics | `server/src/system/Physics.zig` | box3d world | `physics_commands` in, `impacts` out |
-| gameplay | `server/src/system/gameplay.zig` | — | enemies, director, projectiles, items, teleporter, regen, wipe |
-| PlayerController | `server/src/system/PlayerController.zig` | — | input → physics commands, interact, skills, dev keys |
+| gameplay | `server/src/gameplay/`: `combat`, `skills`, `stage`, `director`, `enemies`, `projectiles`, `items`, `teleporter`, `players` | — | free functions over `*World` (+ `*Physics` where they spawn bodies or raycast) |
+| PlayerController | `server/src/gameplay/PlayerController.zig` | — | input → physics commands, interact, skills, dev keys |
 | Navmesh | `server/src/system/Navmesh.zig` | flow field + worker thread | `direction()` queries |
 | Server NetworkManager | `server/src/system/NetworkManager.zig` | Steam server, client table, motion dedup | `client_updates` + `spawned` → wire |
 

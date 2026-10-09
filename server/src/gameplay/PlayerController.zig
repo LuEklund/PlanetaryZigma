@@ -2,6 +2,9 @@ const shared = @import("shared");
 const system = @import("../System.zig");
 const World = system.World;
 const tracy = @import("ztracy");
+const combat = @import("combat.zig");
+const items = @import("items.zig");
+const skills = @import("skills.zig");
 const nz = shared.numz;
 
 const interact_cooldown: f32 = 0.3;
@@ -34,14 +37,14 @@ pub fn update(world: *World, physics: *system.Physics) !void {
         }
         if (input.keys.dev_f2) {
             input.keys.dev_f2 = false;
-            _ = world.giveItem(player, .rocket, 1);
-            _ = world.giveItem(player, .lightning, 1);
+            _ = items.giveItem(world, player, .rocket, 1);
+            _ = items.giveItem(world, player, .lightning, 1);
         }
         if (input.keys.dev_f3) {
             input.keys.dev_f3 = false;
             world.toggle_spawning_requested = true;
             for (world.entities.values()) |*entity| {
-                if (entity.kind == .enemy) _ = world.addHealth(entity, -entity.max_health, null);
+                if (entity.kind == .enemy) _ = combat.addHealth(world, entity, -entity.max_health, null);
             }
         }
         if (input.keys.dev_f4) {
@@ -59,8 +62,8 @@ pub fn update(world: *World, physics: *system.Physics) !void {
                     .spawn_impulse = shared.Planet.surfaceLaunch(
                         teleporter.transform.position,
                         nz.vec.randomUnitVector(nz.Vec3(f32), world.prng.random()),
-                        system.World.item_launch_angle,
-                        system.World.item_throw_speed,
+                        World.item_launch_angle,
+                        World.item_throw_speed,
                     ),
                 }) catch {};
             }
@@ -71,7 +74,7 @@ pub fn update(world: *World, physics: *system.Physics) !void {
         }
         if (input.keys.dev_f6) {
             input.keys.dev_f6 = false;
-            _ = world.addHealth(player, -player.health, null);
+            _ = combat.addHealth(world, player, -player.health, null);
         }
         if (input.keys.dev_f7) {
             input.keys.dev_f7 = false;
@@ -127,7 +130,7 @@ pub fn update(world: *World, physics: *system.Physics) !void {
                             .position = entity.transform.position + nz.vec.scale(chest_up, 1),
                             .rotation = entity.transform.rotation,
                         },
-                        .spawn_impulse = nz.vec.scale(chest_up, system.World.item_throw_speed),
+                        .spawn_impulse = nz.vec.scale(chest_up, World.item_throw_speed),
                     });
                     player.currency -= entity.currency;
                     world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = player_id, .amount = player.currency } });
@@ -152,7 +155,7 @@ pub fn update(world: *World, physics: *system.Physics) !void {
                     }
                 },
                 .item_pickup => {
-                    _ = world.giveItem(player, entity.item.?, 1) orelse continue;
+                    _ = items.giveItem(world, player, entity.item.?, 1) orelse continue;
                     world.queueDespawn(entity.id);
                 },
                 else => {},
@@ -183,17 +186,17 @@ pub fn update(world: *World, physics: *system.Physics) !void {
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
         const player_skills = shared.entity.Kind.spec(.player).skills;
-        if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and world.useAction(player, null, .equipment) == .fired) {
-            try world.executeSkill(physics, player, null, player_skills.get(.equipment).?.skill);
+        if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and skills.useAction(world, player, null, .equipment) == .fired) {
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.equipment).?.skill);
         }
-        if (input.keys.attack and world.useAction(player, null, .primary) == .fired) {
-            try world.executeSkill(physics, player, null, player_skills.get(.primary).?.skill);
+        if (input.keys.attack and skills.useAction(world, player, null, .primary) == .fired) {
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.primary).?.skill);
         }
-        if (input.keys.secondary and world.useAction(player, null, .secondary) == .fired) {
-            try world.executeSkill(physics, player, null, player_skills.get(.secondary).?.skill);
+        if (input.keys.secondary and skills.useAction(world, player, null, .secondary) == .fired) {
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.secondary).?.skill);
         }
-        if (input.keys.utility and world.useAction(player, null, .utility) == .fired) {
-            try world.executeSkill(physics, player, null, player_skills.get(.utility).?.skill);
+        if (input.keys.utility and skills.useAction(world, player, null, .utility) == .fired) {
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.utility).?.skill);
         }
     }
 }

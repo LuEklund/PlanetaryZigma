@@ -3,6 +3,7 @@ const NetworkManager = @This();
 const std = @import("std");
 const shared = @import("shared");
 const system = @import("../System.zig");
+const stage = @import("../gameplay/stage.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const nz = shared.numz;
@@ -178,7 +179,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                     if (client.entity_id == .none) {
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
-                            .transform = .{ .position = world.playerSpawnPosition() },
+                            .transform = .{ .position = stage.playerSpawnPosition(world) },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
 

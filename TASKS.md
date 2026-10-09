@@ -10,7 +10,8 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
   - Result: `docs/ARCHITECTURE.md` + `docs/refactor-plan.md` written. Done in A0: plan steps 1-3 (Physics passed as a parameter, no more `World.physics`; network `Client` holds no pointers/allocator; dead `Physics.{gpa,io}` and commented-out code removed). Steps 4-10 continue under A1/A2/A3. Server + client build; behavior unchanged, not playtested.
 - [x] A1 — Layout guard (also closes R13): each System exports a comptime FNV hash of the host-allocated layout; HotLib rejects a mismatched build with a "restart needed" log. Decision note `docs/decisions/0001-layout-guard.md`.
   - Result: `shared/src/layout.zig` hashes size/align/field names/offsets (pointers followed 4 deep); `layoutHash` exported by system_client, system_server and render; `HotLib.trySwap` rejects a mismatch with "restart needed". Could NOT test a live reload here — Lucas: rebuild the lib after adding a World field and check the log line.
-- [ ] A2 — Move game-loop policy (fixed-step accumulator, fps counting) out of `client/src/main.zig` and `server/src/main.zig` into the .so. Host becomes `poll → trySwap → update`.
+- [x] A2 — Move game-loop policy (fixed-step accumulator, fps counting) out of `client/src/main.zig` and `server/src/main.zig` into the .so. Host becomes `poll → trySwap → update`.
+  - Result: hosts are `trySwap → systemUpdate`; `Clock` (fixed step, sleep, stall log, fps) and World allocation moved into each .so (`System.world` by value). Server exe imports a small `system_contract.zig`. Decision 0002. Window poll stays in the client .so (chat text writer is policy). Builds (server incl. -Dviewer=false and windows); needs a local run + reload test.
 - [ ] A3… — Execute `docs/refactor-plan.md` steps, one per commit (skip the ones you listed as questions). Mechanical moves (renames, file splits) land as their own commit before behavior changes.
 
 ### Phase 2 — Risk of Rain 2 loop

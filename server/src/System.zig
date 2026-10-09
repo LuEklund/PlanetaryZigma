@@ -3,12 +3,18 @@ const System = @This();
 const std = @import("std");
 const shared = @import("shared");
 const NetworkManager = @import("system/NetworkManager.zig");
-const gameplay = @import("system/gameplay.zig");
+const director = @import("gameplay/director.zig");
+const enemies = @import("gameplay/enemies.zig");
+const items = @import("gameplay/items.zig");
+const players = @import("gameplay/players.zig");
+const projectiles = @import("gameplay/projectiles.zig");
+const stage = @import("gameplay/stage.zig");
+const teleporter = @import("gameplay/teleporter.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 pub const Physics = @import("system/Physics.zig");
 pub const Navmesh = @import("system/Navmesh.zig");
-const PlayerController = @import("system/PlayerController.zig");
+const PlayerController = @import("gameplay/PlayerController.zig");
 const build_options = @import("build_options");
 
 pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
@@ -49,7 +55,7 @@ pub fn init(self: *System, data: *const Data) !void {
     if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, self.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try self.world.loadPlace(&self.physics, .ship);
+    try stage.loadPlace(&self.world, &self.physics, .ship);
 }
 
 pub fn deinit(self: *System) !void {
@@ -86,25 +92,25 @@ fn step(self: *System, world: *World) !void {
     }
     if (world.next_stage_requested) {
         world.next_stage_requested = false;
-        try world.loadPlace(&self.physics, .planet);
+        try stage.loadPlace(world, &self.physics, .planet);
     }
     if (world.start_round_requested) {
         world.start_round_requested = false;
-        try world.loadPlace(&self.physics, .planet);
+        try stage.loadPlace(world, &self.physics, .planet);
     }
     if (world.go_again_requested) {
         world.go_again_requested = false;
-        try gameplay.updateWipe(world, &self.physics);
+        try players.updateWipe(world, &self.physics);
     }
 
     try PlayerController.update(world, &self.physics);
-    if (world.place == .planet) try gameplay.updateEnemies(world, &self.physics);
-    if (world.place == .planet) try gameplay.updateDirector(world);
+    if (world.place == .planet) try enemies.updateEnemies(world, &self.physics);
+    if (world.place == .planet) try director.updateDirector(world);
     try self.physics.update(world);
-    gameplay.updateProjectiles(world);
-    try gameplay.updateItems(world);
-    if (world.place == .planet) gameplay.updateTeleporter(world);
-    gameplay.playerRegen(world);
+    projectiles.updateProjectiles(world);
+    try items.updateItems(world);
+    if (world.place == .planet) teleporter.updateTeleporter(world);
+    players.playerRegen(world);
     try world.flush(&self.physics);
 
     var anchor_buffer: [shared.max_players]nz.Vec3(f32) = undefined;
