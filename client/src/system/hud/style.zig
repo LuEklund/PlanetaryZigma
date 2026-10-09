@@ -95,3 +95,15 @@ pub fn bar(rect: dvui.Rect, fraction: f32, fill: dvui.Color) void {
     fillRect(rect, .{ .r = 0, .g = 0, .b = 0, .a = 140 });
     fillRect(.{ .x = rect.x, .y = rect.y, .w = rect.w * std.math.clamp(fraction, 0, 1), .h = rect.h }, fill);
 }
+
+pub fn wrapped(src: std.builtin.SourceLocation, content: []const u8, size: f32, color: dvui.Color) void {
+    var layout = dvui.textLayout(src, .{}, .{
+        .expand = .horizontal,
+        .background = false,
+        .font = font(size),
+        .color_text = .fromColor(color),
+        .padding = .{ .y = 2, .h = 6 },
+    });
+    layout.addText(content, .{});
+    layout.deinit();
+}

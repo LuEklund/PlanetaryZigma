@@ -26,7 +26,7 @@ pub const rows = struct {
         }),
         .abilities = .initDefault(null, .{
             .primary = .{ .skill = .shoot, .range = 10, .clip = "Run" },
-            .secondary = .{ .skill = .spread_shot },
+            .secondary = .{ .skill = .spread_shot, .hits = 6, .damage_multiplier = 0.7 },
             .utility = .{ .skill = .dash },
             .special = .{ .skill = .grenade, .damage_multiplier = 4, .clip = "Throw" },
             .equipment = .{ .skill = .use_equipment },

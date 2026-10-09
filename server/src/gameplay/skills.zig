@@ -67,7 +67,7 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
                 },
                 .replicated_velocity = nz.vec.scale(start_direction, if (fires_rocket) rocket_speed else bullet_speed),
                 .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
-                .damage = caster.stat(.damage),
+                .damage = caster.stat(.damage) * assigned.damage_multiplier,
             });
         },
         .spread_shot => {
@@ -93,7 +93,7 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
             const rocket_chance = caster.stat(.rocket_chance);
             const fires_rocket = rocket_chance > 0 and world.prng.random().float(f32) < rocket_chance;
             const projectile_kind: shared.entity.ProjectileKind = if (fires_rocket) .rocket else .cube;
-            for (0..10) |_| {
+            for (0..assigned.hits) |_| {
                 const theta = world.prng.random().float(f32) * std.math.tau;
                 const spread = world.prng.random().float(f32) * 0.1;
                 const off_set = nz.vec.scale(spread_right, @cos(theta) * spread) + nz.vec.scale(spread_up, @sin(theta) * spread);
@@ -109,7 +109,7 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
                     },
                     .replicated_velocity = nz.vec.scale(start_direction + off_set, if (fires_rocket) rocket_speed else bullet_speed),
                     .lifetime = if (fires_rocket) rocket_lifetime else bullet_lifetime,
-                    .damage = caster.stat(.damage),
+                    .damage = caster.stat(.damage) * assigned.damage_multiplier,
                     .flags = .{ .invincible = true },
                 });
             }
@@ -183,7 +183,7 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
         },
         .melee => {
             const target_entity = target orelse return;
-            _ = combat.removeHealth(world, target_entity, caster.stat(.damage), caster);
+            _ = combat.removeHealth(world, target_entity, caster.stat(.damage) * assigned.damage_multiplier, caster);
         },
         .arc_jump => {
             const target_entity = target orelse return;

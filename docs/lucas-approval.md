@@ -8,6 +8,7 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] **Brawler** — "Tough melee fighter. Wide swings, a ground slam, a leap and a war cry that heals allies."
 - [ ] **Marksman** — "Fragile sniper. Piercing rail shots, a grenade, a long blink and an artillery strike."
 - [ ] Survivor stats and ability loadouts (health/damage/speed/cooldowns per survivor)
+- [ ] Scatter balance: was 10 pellets x 100%, now 6 x 70% base damage (your example). Shoot and Punch now also use their damage multiplier (both 100%, so unchanged)
 
 ## Abilities (`shared/src/skill_info.zig`)
 - [ ] Double Tap (shoot) — "Fire a fast bullet."
@@ -65,5 +66,5 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Monsoon — "For veterans. Difficulty rises fast."
 
 ## UI text
-- [ ] Lobby: "SELECT SURVIVOR", "PLAYERS", "DIFFICULTY (host picks)", "READY (click to cancel)", "Leave"
+- [ ] Lobby: "SELECT SURVIVOR", "ABILITIES", "PLAYERS", "DIFFICULTY (host picks)", "READY (click to cancel)", "Leave", "Base Damage", ability line format "Primary - 0.3s - 100% base damage"
 - [ ] HUD objective lines ("Find the teleporter", "Charge the teleporter N%", "Defeat the boss", "Enter the teleporter")

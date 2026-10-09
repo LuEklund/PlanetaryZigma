@@ -139,6 +139,7 @@ pub const AssignedSkill = struct {
     range: f32 = 0,
     radius: f32 = 0,
     damage_multiplier: f32 = 1,
+    hits: u8 = 1,
     clip: ?[]const u8 = null,
 };
 
