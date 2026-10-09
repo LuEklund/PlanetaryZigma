@@ -58,6 +58,7 @@ pub const Entity = struct {
     stun_time: f32 = 0,
     item: ?shared.Item.Kind = null,
     elite: shared.Elite.Kind = .none,
+    survivor: shared.Survivor.Kind = .commando,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
     spawned_at: f32 = 0,
@@ -75,7 +76,7 @@ pub const Entity = struct {
     };
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
+        return shared.Item.Stat.value(stat_kind, shared.entity.baseStats(self.kind, self.survivor), self.inventory);
     }
 };
 
@@ -179,6 +180,7 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
         .kind = entity_info.kind,
         .currency = entity_info.currency,
         .elite = entity_info.elite,
+        .survivor = entity_info.survivor,
         .transform = .{
             .position = entity_info.position,
             .rotation = .fromVec(entity_info.rotation),

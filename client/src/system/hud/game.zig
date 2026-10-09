@@ -107,7 +107,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
             .gap = icon_gap,
         });
         const action_item: Ui.Size2D = .{ .height = 90, .width = 90 };
-        const action_bar: Ui.Size2D = .{ .height = 100, .width = 400 };
+        const action_bar: Ui.Size2D = .{ .height = 100, .width = 500 };
         ui.add(null, .{
             .name = "action_bar",
             .size = .{ .fixed = .{ .width = action_bar.width, .height = action_bar.height } },
@@ -160,6 +160,23 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                         .percent = .{
                             .width = 1,
                             .height = std.math.clamp((world.controller.cooldown.get(.utility) + player.stat(.utility_cooldown) - world.elapsed_time) / player.stat(.utility_cooldown), 0, 1),
+                        },
+                    },
+                    .color = .new(1, 0, 0, 0.4),
+                },
+            },
+        });
+
+        ui.add("action_bar", .{
+            .name = "special",
+            .size = .{ .fixed = action_item },
+            .color = .new(0.6, 0.3, 1, 1),
+            .children = &.{
+                .{
+                    .size = .{
+                        .percent = .{
+                            .width = 1,
+                            .height = std.math.clamp((world.controller.cooldown.get(.special) + player.stat(.special_cooldown) - world.elapsed_time) / player.stat(.special_cooldown), 0, 1),
                         },
                     },
                     .color = .new(1, 0, 0, 0.4),

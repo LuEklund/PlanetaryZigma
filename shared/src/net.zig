@@ -41,6 +41,7 @@ pub const ServerPacket = union(enum) {
 pub const Connect = struct {
     protocol_version: u32,
     player_name: PlayerName,
+    survivor: root.Survivor.Kind,
 };
 
 pub const protocol_version: u32 = version: {
@@ -112,6 +113,7 @@ pub const SpawnEntity = struct {
     tick: u32 = 0,
     currency: u32 = 0,
     elite: root.Elite.Kind = .none,
+    survivor: root.Survivor.Kind = .commando,
     data: SpawnEntityData,
 };
 
@@ -143,6 +145,7 @@ pub const Input = struct {
         attack: bool = false,
         utility: bool = false,
         secondary: bool = false,
+        special: bool = false,
 
         dev_f1: bool = false,
         dev_f2: bool = false,
@@ -156,7 +159,7 @@ pub const Input = struct {
         dev_f10: bool = false,
         dev_f11: bool = false,
         dev_f12: bool = false,
-        _padding: u7 = 0,
+        _padding: u6 = 0,
     } = .{},
     camera_rotation: @Vector(4, f32) = .{ 0, 0, 0, 1 },
     camera_position: @Vector(3, f32) = .{ 0, 0, 0 },

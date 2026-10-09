@@ -188,18 +188,21 @@ pub fn update(world: *World, physics: *system.Physics) !void {
             world.act(.{ .id = player_id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
             world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
         }
-        const player_skills = shared.entity.Kind.spec(.player).skills;
+        const player_skills = shared.entity.abilities(player.kind, player.survivor);
         if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and skills.useAction(world, player, null, .equipment) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.equipment).?.skill);
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.equipment).?);
         }
         if (input.keys.attack and skills.useAction(world, player, null, .primary) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.primary).?.skill);
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.primary).?);
         }
         if (input.keys.secondary and skills.useAction(world, player, null, .secondary) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.secondary).?.skill);
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.secondary).?);
         }
         if (input.keys.utility and skills.useAction(world, player, null, .utility) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.utility).?.skill);
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.utility).?);
+        }
+        if (input.keys.special and player_skills.get(.special) != null and skills.useAction(world, player, null, .special) == .fired) {
+            try skills.executeSkill(world, physics, player, null, player_skills.get(.special).?);
         }
     }
 }

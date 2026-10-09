@@ -184,6 +184,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         }
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
+                            .survivor = connect.survivor,
                             .transform = .{ .position = stage.playerSpawnPosition(world) },
                             .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
                         }) catch continue;
@@ -373,6 +374,7 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
         .tick = world.tick,
         .currency = entity.currency,
         .elite = entity.elite,
+        .survivor = entity.survivor,
         .data = switch (entity.kind) {
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },

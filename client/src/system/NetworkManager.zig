@@ -219,9 +219,9 @@ fn spawnHostServer(self: *NetworkManager) void {
     self.setHostState(.waiting);
 }
 
-fn sendConnect(self: *NetworkManager) !void {
+fn sendConnect(self: *NetworkManager, survivor: shared.Survivor.Kind) !void {
     const name = self.playerDisplayName();
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .player_name = .copy(name) } };
+    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .player_name = .copy(name), .survivor = survivor } };
     try self.sendCommand(cmd, .reliable);
 }
 
@@ -241,7 +241,7 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *NetworkManager, player_input: shared.net.Input, elapsed_time: f32, delta_time: f32) !void {
+pub fn update(self: *NetworkManager, player_input: shared.net.Input, survivor: shared.Survivor.Kind, elapsed_time: f32, delta_time: f32) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     self.packets.clearRetainingCapacity();
@@ -338,7 +338,7 @@ pub fn update(self: *NetworkManager, player_input: shared.net.Input, elapsed_tim
     self.steam_client.packets.events.clearRetainingCapacity();
 
     if (self.server_conn != 0 and !self.sent_connect) {
-        try self.sendConnect();
+        try self.sendConnect(survivor);
         self.sent_connect = true;
     }
     if (self.server_conn != 0) {

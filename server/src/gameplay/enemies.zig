@@ -118,7 +118,7 @@ fn move(context: Context, locomotion: Locomotion, direction: nz.Vec3(f32), speed
 
 fn firePrimary(context: Context, target: *system.Entity) !void {
     if (skills.useAction(context.world, context.enemy, target, .primary) == .fired) {
-        try skills.executeSkill(context.world, context.physics, context.enemy, target, context.primary.skill);
+        try skills.executeSkill(context.world, context.physics, context.enemy, target, context.primary);
     }
 }
 
@@ -138,7 +138,7 @@ fn leap(context: Context) !void {
     if (enemy.mode == .walking) move(context, .walk, chase_direction, context.speed);
     if (enemy.kind.spec().skills.get(.utility)) |utility| {
         if (context.distance > utility.range * 0.75 and skills.useAction(context.world, enemy, context.player, .utility) == .fired) {
-            try skills.executeSkill(context.world, context.physics, enemy, context.player, utility.skill);
+            try skills.executeSkill(context.world, context.physics, enemy, context.player, utility);
         }
     }
     try firePrimary(context, context.player);

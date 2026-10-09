@@ -15,7 +15,7 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
     const button_gap = std.math.clamp(ui.screen_height * 0.012, @as(f32, 7), @as(f32, 11));
     const button_text_size = std.math.clamp(button_height * 0.55, @as(f32, 20), @as(f32, 25));
     const left = std.math.clamp(ui.screen_width * 0.07, @as(f32, 48), @as(f32, 132));
-    const total_height = button_height * 5 + button_gap * 4;
+    const total_height = button_height * 6 + button_gap * 5;
     const max_top = @max(@as(f32, 28), ui.screen_height - total_height - 28);
     const top = std.math.clamp((ui.screen_height - total_height) * 0.5, @as(f32, 28), max_top);
     const panel_gap = std.math.clamp(ui.screen_width * 0.025, @as(f32, 24), @as(f32, 48));
@@ -33,6 +33,21 @@ pub fn update(network_manager: *NetworkManager, ui: *Ui, hud: *Hud, options: *Op
     addMainMenuButton(ui, "menu_settings", "Options", left, top + (button_height + button_gap) * 2, button_width, button_height, button_text_size, hud.overlay == .options, true);
     addMainMenuButton(ui, "menu_quit", "Quit to Desktop", left, top + (button_height + button_gap) * 3, button_width, button_height, button_text_size, false, true);
     addDevPlanetButton(ui, options.dev_planet, left, top + (button_height + button_gap) * 4, button_width, button_height, button_text_size);
+
+    const survivor = shared.Survivor.get(options.survivor);
+    addMainMenuButton(ui, "menu_survivor", ui.print("Survivor: {s}", .{survivor.name}), left, top + (button_height + button_gap) * 5, button_width, button_height, button_text_size, false, true);
+    if (ui.isHovered("menu_survivor")) {
+        const description_size = ui.textSize(survivor.description, 18);
+        ui.add(null, .{
+            .size = .{ .fixed = description_size },
+            .offset = .{ .left = left + button_width + 16, .top = top + (button_height + button_gap) * 5 + (button_height - description_size.height) / 2 },
+            .text = .{ .data = survivor.description, .size = 18, .color = nz.color.Rgba(f32).new(0.94, 0.96, 0.9, 1) },
+        });
+    }
+    if (ui.isClicked("menu_survivor")) {
+        const survivors = std.enums.values(shared.Survivor.Kind);
+        options.survivor = survivors[(@intFromEnum(options.survivor) + 1) % survivors.len];
+    }
 
     if (ui.isClicked("menu_dev_planet")) {
         options.dev_planet = !options.dev_planet;

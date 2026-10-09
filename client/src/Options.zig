@@ -7,6 +7,7 @@ fullscreen: bool = false,
 dev_planet: bool = false,
 fov_rad: f32 = 0.65,
 chunk_view_distance: f32 = 2,
+survivor: @import("shared").Survivor.Kind = .commando,
 
 pub fn cycleMouseSensitivity(options: *Options) void {
     const values = [_]f32{ 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };

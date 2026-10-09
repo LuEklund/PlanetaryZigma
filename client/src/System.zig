@@ -180,7 +180,7 @@ fn step(self: *System, world: *World) !void {
 
     const player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
     const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
-    try self.network_manager.update(wire_input, world.elapsed_time, world.delta_time);
+    try self.network_manager.update(wire_input, world.options.survivor, world.elapsed_time, world.delta_time);
     if (world.go_again_pending) {
         try self.network_manager.sendCommand(.go_again, .reliable);
         world.go_again_pending = false;

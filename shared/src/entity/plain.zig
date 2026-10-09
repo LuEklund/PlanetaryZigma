@@ -19,16 +19,6 @@ pub const player: Spec = .{
         .look_node_names = .{ .spine = "mixamorig:Spine2", .neck = "mixamorig:Neck", .head = null },
         .overlay_root_name = "mixamorig:Spine1",
     },
-    .base_stats = .initDefault(0, .{
-        .health = 100,
-        .speed = 10,
-        .damage = 1,
-        .regen = 1,
-        .primary_cooldown = 0.3,
-        .utility_cooldown = 5,
-        .secondary_cooldown = 5,
-        .equipment_cooldown = 5,
-    }),
     .skills = .initDefault(entity.no_skill, .{
         .primary = .{ .skill = .shoot, .range = 10, .clip = "Run" },
         .secondary = .{ .skill = .spread_shot },

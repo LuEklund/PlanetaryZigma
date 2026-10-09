@@ -16,7 +16,7 @@ pub const Outcome = enum { fired, on_cooldown, out_of_range };
 pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Entity, action: shared.entity.Action) Outcome {
     if (!ready(attacker, action, world.elapsed_time)) return .on_cooldown;
 
-    const assigned = attacker.kind.spec().skills.get(action) orelse return .out_of_range;
+    const assigned = shared.entity.abilities(attacker.kind, attacker.survivor).get(action) orelse return .out_of_range;
     if (potential_target) |target| {
         const distance = nz.vec.distance(attacker.transform.position, target.transform.position);
         if (distance >= assigned.range) return .out_of_range;
@@ -29,15 +29,18 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
 
 pub const aim_range: f32 = 300;
 const freeze_seconds: f32 = 10;
+const melee_cone_cosine: f32 = 0.3;
+const grenade_speed: f32 = 40;
+const railgun_speed: f32 = 200;
 const equipment_radius: f32 = 15;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
 
-pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?*Entity, skill: shared.entity.Skill) !void {
+pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?*Entity, assigned: shared.entity.AssignedSkill) !void {
     const planet_up = shared.Planet.up(caster.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-    switch (skill) {
+    switch (assigned.skill) {
         .shoot => {
             //TODO: muzzle socket per model; every skill assumes position + up * 0.8.
             const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
@@ -187,6 +190,70 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
             world.act(.{ .id = caster.id, .verb = .{ .arc_jump = target_entity.transform.position } });
         },
         .plant, .charge, .explode => {},
+        .melee_cone => {
+            const forward = aimDirection(caster, target, planet_up);
+            const damage = caster.stat(.damage) * assigned.damage_multiplier;
+            for (world.entities.values()) |*candidate| {
+                if (candidate.max_health <= 0 or candidate.flags.is_dead or candidate.kind.eql(caster.kind)) continue;
+                const offset = candidate.transform.position - caster.transform.position;
+                const distance = nz.vec.length(offset);
+                if (distance > assigned.range or distance < 0.0001) continue;
+                if (nz.vec.dot(nz.vec.scale(offset, 1 / distance), forward) < melee_cone_cosine) continue;
+                _ = combat.removeHealth(world, candidate, damage, caster);
+            }
+        },
+        .ground_slam => {
+            blastAt(world, caster, caster.transform.position, assigned.radius, caster.stat(.damage) * assigned.damage_multiplier);
+        },
+        .grenade => {
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(world, physics, caster) else caster.transform.position + nz.vec.scale(caster.transform.forward(), 20);
+            const direction = nz.vec.normalize(aim_point - muzzle_position);
+            _ = try world.spawn(.{
+                .kind = .projectile_rocket,
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + direction,
+                    .rotation = shared.entity.projectileRotation(.rocket, direction, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(direction, grenade_speed),
+                .lifetime = rocket_lifetime,
+                .damage = caster.stat(.damage) * assigned.damage_multiplier,
+            });
+        },
+        .railgun => {
+            const muzzle_position = caster.transform.position + nz.vec.scale(planet_up, 0.8);
+            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(world, physics, caster) else caster.transform.position + nz.vec.scale(caster.transform.forward(), 20);
+            const direction = nz.vec.normalize(aim_point - muzzle_position);
+            _ = try world.spawn(.{
+                .kind = .projectile_cube,
+                .owner_id = caster.id,
+                .transform = .{
+                    .position = muzzle_position + direction,
+                    .rotation = shared.entity.projectileRotation(.cube, direction, planet_up),
+                },
+                .replicated_velocity = nz.vec.scale(direction, railgun_speed),
+                .lifetime = bullet_lifetime,
+                .damage = caster.stat(.damage) * assigned.damage_multiplier,
+                .flags = .{ .invincible = true },
+            });
+        },
+        .blink => {
+            const forward = aimDirection(caster, target, planet_up);
+            world.physics_commands.appendAssumeCapacity(.{
+                .verb = .{ .teleport = caster.transform.position + nz.vec.scale(forward, assigned.range) + nz.vec.scale(planet_up, 0.5) },
+                .id = caster.id,
+            });
+        },
+        .heal_pulse => for (world.entities.values()) |*ally| {
+            if (!ally.kind.eql(caster.kind) or ally.flags.is_dead) continue;
+            if (nz.vec.distance(ally.transform.position, caster.transform.position) > assigned.radius) continue;
+            _ = combat.addHealth(world, ally, ally.max_health * assigned.damage_multiplier, null);
+        },
+        .artillery => {
+            const aim_point = if (target) |target_entity| target_entity.transform.position else if (caster.kind == .player) playerAimPoint(world, physics, caster) else caster.transform.position;
+            blastAt(world, caster, aim_point, assigned.radius, caster.stat(.damage) * assigned.damage_multiplier);
+        },
     }
 }
 
@@ -209,4 +276,32 @@ fn aimPoint(world: *World, physics: *Physics, player_position: nz.Vec3(f32), cam
         if (traveled >= aim_range) break;
     }
     return ray_start + nz.vec.scale(camera_forward, @min(entity_distance, terrain_distance));
+}
+
+fn aimDirection(caster: *const Entity, target: ?*const Entity, planet_up: nz.Vec3(f32)) nz.Vec3(f32) {
+    const forward = if (target) |target_entity|
+        nz.vec.normalize(target_entity.transform.position - caster.transform.position)
+    else if (caster.kind == .player) camera: {
+        const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
+        break :camera nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+    } else nz.vec.normalize(caster.transform.forward());
+    const flat = forward - nz.vec.scale(planet_up, nz.vec.dot(forward, planet_up));
+    if (nz.vec.length(flat) < 0.0001) return nz.vec.normalize(caster.transform.forward());
+    return nz.vec.normalize(flat);
+}
+
+fn playerAimPoint(world: *World, physics: *Physics, caster: *const Entity) nz.Vec3(f32) {
+    const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
+    const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+    return aimPoint(world, physics, caster.transform.position, caster.controller.input.camera_position, camera_forward);
+}
+
+fn blastAt(world: *World, caster: *Entity, center: nz.Vec3(f32), radius: f32, damage: f32) void {
+    for (world.entities.values()) |*candidate| {
+        if (candidate.max_health <= 0 or candidate.flags.is_dead or candidate.kind.eql(caster.kind)) continue;
+        const distance = nz.vec.distance(candidate.transform.position, center);
+        if (distance > radius) continue;
+        _ = combat.removeHealth(world, candidate, damage * (1 - 0.5 * distance / radius), caster);
+    }
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = center } } });
 }

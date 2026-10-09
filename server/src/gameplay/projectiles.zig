@@ -22,7 +22,7 @@ pub fn updateProjectiles(world: *World) void {
                 switch (projectile_kind) {
                     .cube => {},
                     .rocket => {
-                        damageRocketImpact(world, owner_entity, impact.point);
+                        damageRocketImpact(world, owner_entity, projectile.damage, impact.point);
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
                     },
                 }
@@ -42,7 +42,7 @@ pub fn updateProjectiles(world: *World) void {
                         }
                     },
                     .rocket => {
-                        damageRocketImpact(world, owner_entity, impact.point);
+                        damageRocketImpact(world, owner_entity, projectile.damage, impact.point);
                         world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
                     },
                 }
@@ -117,8 +117,7 @@ fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: n
     }
 }
 
-fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_position: nz.Vec3(f32)) void {
-    const base_damage = owner_entity.stat(.damage);
+fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, base_damage: f32, impact_position: nz.Vec3(f32)) void {
     const blast_radius: f32 = @as(f32, owner_entity.inventory.get(.rocket)) * 0.5 + 2;
     for (world.entities.values()) |*candidate| {
         if (candidate.max_health <= 0) continue;

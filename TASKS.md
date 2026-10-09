@@ -27,7 +27,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: decision 0004. Behavior union on the spec row + one function per behavior; new charger (grass_tank), spitter (kite), wisp (orbit flyer), mite (pack of 5), bomber (fuse/explode); elites blazing/glacial/overloading as data rows granting items; biome pools updated. Built, needs playtest (tuning numbers are guesses).
 - [x] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
   - Result: decision 0005. 26 items (15 new) across common/uncommon/legendary/boss/lunar/equipment; procs on_hit/on_kill/on_hurt as data rows resolved in `gameplay/procs.zig` from one door (`combat.dealDamage`, no proc chains); 2 new equipment; equipment swaps on pickup. Built, needs playtest. Not done: timed buffs / DoTs (no status system yet).
-- [ ] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
+- [x] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
+  - Result: decision 0006. Commando / Brawler / Marksman rows with 4 abilities each + 7 new skill kinds resolved in `executeSkill`; `special` action on R (dev reset moved to Backspace); survivor picked on the main menu, sent in `Connect`, replicated in spawns. Built, needs playtest.
 - [ ] C5 — Lobby: nicer Steam lobby (class pick, ready-up, player list, host settings). The lobby arc already shipped once — read the existing code before redesigning.
 - [ ] C6 — Day/night cycle. Prior ruling: stylized color ramps, not physical scattering (no Preetham/Hosek/Bruneton). Procedural gradient sky: `up = normalize(cameraPos)`, `day = smoothstep(-0.10, 0.25, dot(sunDir, up))`, zenith/horizon colors for day and night, sun disc via `dot(V, sunDir)`; rotate `sunDir` over time for a cycle. Sun direction must also drive the directional light so they can't desync. Optional cheap planet rim: inverted sphere, `pow(1 - dot(N, V), k)`, additive.
 - [ ] C7 — Particles: the system is already GPU-analytic (`pos = f(emitter, index, age)` in the vertex shader, no compute). Keep that. Known gaps: alpha never fades with age (`color.a * life`, one line), one blend equation for every effect (add additive for sparks/lightning), lightning is beads not a capsule SDF. Research better effects online, propose, then build.
@@ -59,11 +60,14 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
 ## Needs asset from Lucas
+- C4: Brawler and Marksman models (rigged like benbozo: Idle/Run/Death + attack clips). Both use `benbozo.glb` today; `captainbozo.glb` has no skin/animations so it can't be used as a player yet.
+- C4: action-bar icons for the new abilities (special slot is a plain purple square; utility is a plain yellow square as before).
 - C3: model (`objects/<name>.glb`) + icon (`textures/<name>.png`) for leech_seed, coin_pouch, crowbar, boots, bandage, gasoline, thorn_vest, vampire_fang, ghor_tome, leech_fang, brilliant_hammer, berserker_core, glass_heart, blood_pact, heal_spray, blast_wave. Paths are derived from the item name; dropping the files in is enough.
 - C2: `spitter` (ranged kiter), `wisp` (small orbiting flyer), `mite` (tiny swarm bug), `bomber` (walking bomb) — currently scaled placeholder cubes (`model.path = ""` in `shared/src/entity/enemies.zig`). Each wants idle/walk/death + attack clip.
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
+- C4: R was the dev "reload" (teleport to planet centre + full resync). RoR2 puts Special on R, so Special took R and the dev reset moved to Backspace (rebindable). Swap back if you prefer.
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
 - R52: the freezer row said "20s" but code froze for 10 s, and only enemies within 10 u of a player. Kept 10 s / near-player and gave it a 25 s cooldown. Alternative: freeze every enemy for 20 s with a longer cooldown.

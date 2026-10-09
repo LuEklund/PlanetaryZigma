@@ -1,6 +1,7 @@
 const std = @import("std");
 const nz = @import("numz");
 const Item = @import("Item.zig");
+const Survivor = @import("Survivor.zig");
 const Stat = Item.Stat;
 const enemies = @import("entity/enemies.zig");
 const plain = @import("entity/plain.zig");
@@ -68,6 +69,14 @@ pub const EnemyKind = kind: {
     break :kind @Enum(TagInt, .exhaustive, &field_names, &field_values);
 };
 
+pub fn baseStats(kind: Kind, survivor: Survivor.Kind) *const std.EnumArray(Stat, f32) {
+    return if (kind == .player) &Survivor.get(survivor).base_stats else &kind.spec().base_stats;
+}
+
+pub fn abilities(kind: Kind, survivor: Survivor.Kind) *const std.EnumArray(Action, ?AssignedSkill) {
+    return if (kind == .player) &Survivor.get(survivor).abilities else &kind.spec().skills;
+}
+
 pub const ProjectileKind = enum(u16) {
     cube,
     rocket,
@@ -78,6 +87,7 @@ pub const Action = enum(u16) {
     secondary,
     utility,
     equipment,
+    special,
 
     pub fn cooldownStat(action: Action) Stat {
         return switch (action) {
@@ -85,6 +95,7 @@ pub const Action = enum(u16) {
             .secondary => .secondary_cooldown,
             .utility => .utility_cooldown,
             .equipment => .equipment_cooldown,
+            .special => .special_cooldown,
         };
     }
 };
@@ -101,6 +112,13 @@ pub const Skill = enum(u16) {
     heal,
     charge,
     explode,
+    melee_cone,
+    ground_slam,
+    grenade,
+    railgun,
+    blink,
+    heal_pulse,
+    artillery,
 };
 
 pub const Behavior = union(enum) {
@@ -119,6 +137,8 @@ pub const Behavior = union(enum) {
 pub const AssignedSkill = struct {
     skill: Skill,
     range: f32 = 0,
+    radius: f32 = 0,
+    damage_multiplier: f32 = 1,
     clip: ?[]const u8 = null,
 };
 

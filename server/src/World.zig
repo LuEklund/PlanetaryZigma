@@ -104,6 +104,7 @@ pub const Entity = struct {
     regen_carry: f32 = 0,
     level: f32 = 1,
     elite: shared.Elite.Kind = .none,
+    survivor: shared.Survivor.Kind = .commando,
     ai: Ai = .{},
 
     un_stun_at: f32 = 0,
@@ -113,7 +114,7 @@ pub const Entity = struct {
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        const value = shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
+        const value = shared.Item.Stat.value(stat_kind, shared.entity.baseStats(self.kind, self.survivor), self.inventory);
         return switch (stat_kind) {
             .health => value * shared.difficulty.healthMultiplier(self.level) * shared.Elite.get(self.elite).health_multiplier,
             .damage => value * shared.difficulty.damageMultiplier(self.level) * shared.Elite.get(self.elite).damage_multiplier,
