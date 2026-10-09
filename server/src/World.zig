@@ -277,7 +277,7 @@ pub fn rayCast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)
 
 fn dropTeleporterReward(self: *World, reward: shared.Item.Kind) void {
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
-    const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const teleporter_up = shared.Planet.surfaceUp(teleporter.transform.position);
     _ = self.spawn(.{
         .kind = .item_pickup,
         .item = reward,

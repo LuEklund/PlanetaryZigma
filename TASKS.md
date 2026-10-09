@@ -59,6 +59,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
 - [ ] S2 — Audio options in the Options screen (sliders), driven by S1.
 - [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
+- [ ] R1 — Zig style guide pass (langref "Style Guide"): lines ≤ ~100, lists > 2 one per line with trailing comma, flat functions with early return (max ~3 nesting levels), no Manager/Data/Context/State/utils in type names, TitleCase files only with fields. Order: renames (mechanical commit) → flatten deepest files (server NetworkManager, gltf) → wrap long lines file by file.
+  - Progress: PlayerController done (small functions, 0 long lines, max nesting 3); `Planet.surfaceUp`; `shared/src/math.zig` + `docs/numz-candidates.md`.
 
 ### Bugs (from the 2026-08-14 review — verify each still exists; fold into Phase 1 when it touches the same code)
 - [x] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.

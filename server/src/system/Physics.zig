@@ -184,7 +184,7 @@ pub fn update(self: *Physics, world: *World) !void {
     for (world.entities.values()) |*entity| {
         const projectile_kind = entity.kind.projectileKind() orelse continue;
         const previous_position = entity.transform.position;
-        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.up(entity.transform.position) orelse .{ 0, 1, 0 });
+        entity.transform.rotation = shared.entity.projectileRotation(projectile_kind, entity.replicated_velocity, shared.Planet.surfaceUp(entity.transform.position));
         entity.transform.position += nz.vec.scale(entity.replicated_velocity, world.delta_time);
         const travel = entity.transform.position - previous_position;
 

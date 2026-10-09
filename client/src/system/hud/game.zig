@@ -287,7 +287,7 @@ fn addWorldHealthBars(world: *World, view_proj: nz.Mat4x4(f32)) void {
 
 fn addDamagePopups(damage_popups: *const DamagePopup.List, view_proj: nz.Mat4x4(f32)) void {
     for (damage_popups.items(), 0..) |popup, index| {
-        const up = shared.Planet.up(popup.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+        const up = shared.Planet.surfaceUp(popup.position);
         const screen = style.worldToScreen(view_proj, popup.position + nz.vec.scale(up, 1.4 + popup.age * 1.6)) orelse continue;
         const alpha = 1 - popup.age / DamagePopup.lifetime;
         const rounded = @round(@abs(popup.amount) * 10) / 10;

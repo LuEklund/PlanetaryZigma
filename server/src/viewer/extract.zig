@@ -15,7 +15,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     var camera_position: nz.Vec3(f32) = camera.position;
     var camera_rotation: nz.quat.Hamiltonian(f32) = camera.rotation();
     if (followed) |player| {
-        const planet_up = shared.Planet.up(player.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+        const planet_up = shared.Planet.surfaceUp(player.transform.position);
         const player_back = nz.vec.scale(player.transform.forward(), -1);
         camera_position = player.transform.position + nz.vec.scale(planet_up, 6) + nz.vec.scale(player_back, 10);
         const look_target = player.transform.position + nz.vec.scale(planet_up, 2);

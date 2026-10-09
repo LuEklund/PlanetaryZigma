@@ -6,9 +6,16 @@ const combat = @import("combat.zig");
 const items = @import("items.zig");
 const skills = @import("skills.zig");
 const lobby = @import("lobby.zig");
+const math = shared.math;
 const nz = shared.numz;
 
 const interact_cooldown: f32 = 0.3;
+
+const Frame = struct {
+    planet_up: nz.Vec3(f32),
+    camera_forward: nz.Vec3(f32),
+    move_forward: nz.Vec3(f32),
+};
 
 pub fn update(world: *World, physics: *system.Physics) !void {
     const tracy_scope = tracy.zone(@src());
@@ -16,194 +23,248 @@ pub fn update(world: *World, physics: *system.Physics) !void {
 
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
-        const camera = &player.camera;
-        const transform = &player.transform;
-        const controller = &player.controller;
-        const input = &controller.input;
+        const frame = cameraFrame(player);
+        try runDevKeys(world, player);
+        updateInteractTarget(world, physics, player, frame);
+        try interact(world, player);
+        move(world, player, frame);
+        resetOnReload(world, player);
+        try useSkills(world, physics, player);
+    }
+}
 
-        const planet_up = nz.vec.normalize(transform.position);
-        const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
-
-        const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-        const fwd_proj = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
-        const move_fwd = if (nz.vec.length(fwd_proj) > 0.0001)
-            nz.vec.normalize(fwd_proj)
+fn cameraFrame(player: *const World.Entity) Frame {
+    const planet_up = nz.vec.normalize(player.transform.position);
+    const input = player.controller.input;
+    const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(input.camera_rotation);
+    const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
+    const along_ground = math.projectOnPlane(camera_forward, planet_up);
+    return .{
+        .planet_up = planet_up,
+        .camera_forward = camera_forward,
+        .move_forward = if (nz.vec.length(along_ground) > 0.0001)
+            nz.vec.normalize(along_ground)
         else
-            nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
-        const stun_slow: f32 = if (player.un_stun_at > world.elapsed_time) 0.3 else 1;
-        const speed = player.stat(.speed) * stun_slow;
+            nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 })),
+    };
+}
 
-        if (input.keys.dev_f1) {
-            input.keys.dev_f1 = false;
-            _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
-        }
-        if (input.keys.dev_f2) {
-            input.keys.dev_f2 = false;
-            _ = items.giveItem(world, player, .rocket, 1);
-            _ = items.giveItem(world, player, .lightning, 1);
-        }
-        if (input.keys.dev_f3) {
-            input.keys.dev_f3 = false;
-            world.toggle_spawning_requested = true;
-            for (world.entities.values()) |*entity| {
-                if (entity.kind == .enemy) _ = combat.addHealth(world, entity, -entity.max_health, null);
-            }
-        }
-        if (input.keys.dev_f4) {
-            input.keys.dev_f4 = false;
-            if (world.getPtr(world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                const random = world.prng.random();
-                _ = world.spawn(.{
-                    .kind = .item_pickup,
-                    .item = random.enumValue(shared.Item.Kind),
-                    .transform = .{
-                        .position = teleporter.transform.position + nz.vec.scale(teleporter_up, 10),
-                        .rotation = teleporter.transform.rotation,
-                    },
-                    .spawn_impulse = shared.Planet.surfaceLaunch(
-                        teleporter.transform.position,
-                        nz.vec.randomUnitVector(nz.Vec3(f32), world.prng.random()),
-                        World.item_launch_angle,
-                        World.item_throw_speed,
-                    ),
-                }) catch {};
-            }
-        }
-        if (input.keys.dev_f5) {
-            input.keys.dev_f5 = false;
-            world.next_stage_requested = true;
-        }
-        if (input.keys.dev_f6) {
-            input.keys.dev_f6 = false;
-            _ = combat.addHealth(world, player, -player.health, null);
-        }
-        if (input.keys.dev_f7) {
-            input.keys.dev_f7 = false;
-            player.flags.invincible = !player.flags.invincible;
-        }
-        if (input.keys.dev_f8) {
-            input.keys.dev_f8 = false;
-            if (world.getPtr(world.teleporter_id)) |teleporter| {
-                const teleporter_up = shared.Planet.up(teleporter.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                world.act(.{ .id = player_id, .verb = .{ .teleport = teleporter.transform.position + nz.vec.scale(teleporter_up, 10) } });
-            }
-        }
-        if (input.keys.dev_f9) {
-            input.keys.dev_f9 = false;
-            world.start_round_requested = true;
-        }
+fn runDevKeys(world: *World, player: *World.Entity) !void {
+    const keys = &player.controller.input.keys;
+    if (take(keys, "dev_f1")) try spawnDevEnemy(world, player);
+    if (take(keys, "dev_f2")) giveDevItems(world, player);
+    if (take(keys, "dev_f3")) killAllEnemies(world);
+    if (take(keys, "dev_f4")) dropRandomItem(world);
+    if (take(keys, "dev_f5")) world.next_stage_requested = true;
+    if (take(keys, "dev_f6")) _ = combat.addHealth(world, player, -player.health, null);
+    if (take(keys, "dev_f7")) player.flags.invincible = !player.flags.invincible;
+    if (take(keys, "dev_f8")) teleportToTeleporter(world, player);
+    if (take(keys, "dev_f9")) world.start_round_requested = true;
+}
 
-        const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
-        const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
-        const ray_position_end = nz.vec.scale(camera_forward, 5);
-        const hit_id: shared.entity.Id = if (World.rayCast(physics, ray_position_start, ray_position_end)) |hit| hit.id else .none;
-        if (player.interacting != hit_id) {
-            player.interacting = hit_id;
-            const interact_id: shared.entity.Id = if (world.getPtr(hit_id)) |hit_entity|
-                switch (hit_entity.kind) {
-                    .lootbox, .item_pickup => hit_id,
-                    .teleporter => switch (hit_entity.teleporter.state) {
-                        .active => .none,
-                        .completed => if (world.teleport_bosses.items.len > 0) .none else hit_id,
-                        else => hit_id,
-                    },
-                    else => .none,
-                }
-            else
-                .none;
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = interact_id } } });
-        }
+fn take(keys: anytype, comptime key: []const u8) bool {
+    defer @field(keys, key) = false;
+    return @field(keys, key);
+}
 
-        if (player.controller.input.keys.interact and world.elapsed_time - player.last_interact >= interact_cooldown) if (world.getPtr(player.interacting)) |entity| {
-            player.last_interact = world.elapsed_time;
-            switch (entity.kind) {
-                .lootbox => if (player.currency >= entity.currency) {
-                    world.queueDespawn(entity.id);
+fn spawnDevEnemy(world: *World, player: *World.Entity) !void {
+    _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
+}
 
-                    const random = world.prng.random();
-                    const item_kind = shared.Item.rollChest(&shared.Item.small_chest_odds, random);
-                    const chest_up = shared.Planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
-                    _ = try world.spawn(.{
-                        .kind = .item_pickup,
-                        .item = item_kind,
-                        .transform = .{
-                            .position = entity.transform.position + nz.vec.scale(chest_up, 1),
-                            .rotation = entity.transform.rotation,
-                        },
-                        .spawn_impulse = nz.vec.scale(chest_up, World.item_throw_speed),
-                    });
-                    player.currency -= entity.currency;
-                    world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = player_id, .amount = player.currency } });
-                },
-                .teleporter => {
-                    const teleporter = &entity.teleporter;
-                    if (teleporter.state == .idle) {
-                        teleporter.state = .active;
-                        world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
-                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .interact = .{ .interactor = player_id, .interacted = .none } } });
-                        const boss_surface = world.planet.surfacePointNear(entity.transform.position, 15, 25, world.prng.random());
-                        _ = try world.spawn(.{
-                            .kind = .{ .enemy = .bloorp_lord },
-                            .transform = .{ .position = boss_surface + nz.vec.scale(nz.vec.normalize(boss_surface), 3) },
-                            .flags = .{ .is_teleporter_boss = true },
-                            .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
-                        });
-                    } else if (world.place == .ship) {
-                        lobby.setReady(world, player, !player.ready);
-                    } else if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
-                        world.next_stage_requested = true;
-                    }
-                },
-                .item_pickup => {
-                    _ = items.giveItem(world, player, entity.item.?, 1) orelse continue;
-                    world.queueDespawn(entity.id);
-                },
-                else => {},
-            }
-        };
+fn giveDevItems(world: *World, player: *World.Entity) void {
+    _ = items.giveItem(world, player, .rocket, 1);
+    _ = items.giveItem(world, player, .lightning, 1);
+}
 
-        const move_right = nz.vec.normalize(nz.vec.cross(move_fwd, planet_up));
-        camera.yaw_rotation = .lookAt(move_fwd, planet_up);
+fn killAllEnemies(world: *World) void {
+    world.toggle_spawning_requested = true;
+    for (world.entities.values()) |*entity| {
+        if (entity.kind != .enemy) continue;
+        _ = combat.addHealth(world, entity, -entity.max_health, null);
+    }
+}
 
-        var dir: nz.Vec3(f32) = .{ 0, 0, 0 };
-        if (input.keys.move_forward) dir += move_fwd;
-        if (input.keys.move_backward) dir -= move_fwd;
-        if (input.keys.move_right) dir += move_right;
-        if (input.keys.move_left) dir -= move_right;
+fn aboveTeleporter(world: *World, height: f32) ?nz.Vec3(f32) {
+    const teleporter = world.getPtr(world.teleporter_id) orelse return null;
+    const position = teleporter.transform.position;
+    return position + nz.vec.scale(shared.Planet.surfaceUp(position), height);
+}
 
-        if (input.keys.jump and player.mode == .walking) world.act(.{ .id = player_id, .verb = .{ .jump = 20 } });
+fn dropRandomItem(world: *World) void {
+    const teleporter = world.getPtr(world.teleporter_id) orelse return;
+    const random = world.prng.random();
+    _ = world.spawn(.{
+        .kind = .item_pickup,
+        .item = random.enumValue(shared.Item.Kind),
+        .transform = .{
+            .position = aboveTeleporter(world, 10).?,
+            .rotation = teleporter.transform.rotation,
+        },
+        .spawn_impulse = shared.Planet.surfaceLaunch(
+            teleporter.transform.position,
+            nz.vec.randomUnitVector(nz.Vec3(f32), random),
+            World.item_launch_angle,
+            World.item_throw_speed,
+        ),
+    }) catch {};
+}
 
-        world.act(.{ .id = player_id, .verb = .{ .walk = .{ .direction = dir, .speed = speed } } });
+fn teleportToTeleporter(world: *World, player: *World.Entity) void {
+    const destination = aboveTeleporter(world, 10) orelse return;
+    world.act(.{ .id = player.id, .verb = .{ .teleport = destination } });
+}
 
-        world.act(.{ .id = player_id, .verb = .{ .set_rotation = camera.yaw_rotation } });
-        transform.rotation = camera.yaw_rotation;
+fn updateInteractTarget(
+    world: *World,
+    physics: *system.Physics,
+    player: *World.Entity,
+    frame: Frame,
+) void {
+    const input = &player.controller.input;
+    const forward = frame.camera_forward;
+    const player_depth = nz.vec.dot(player.transform.position - input.camera_position, forward);
+    const ray_start = input.camera_position + nz.vec.scale(forward, player_depth);
+    const hit = World.rayCast(physics, ray_start, nz.vec.scale(forward, 5));
+    const hit_id: shared.entity.Id = if (hit) |found| found.id else .none;
+    if (player.interacting == hit_id) return;
+    player.interacting = hit_id;
+    world.client_updates.appendAssumeCapacity(.{
+        .event = .{ .interact = .{
+            .interactor = player.id,
+            .interacted = interactable(world, hit_id),
+        } },
+    });
+}
 
-        const reload_pressed = input.keys.reload and !controller.reload_held;
-        controller.reload_held = input.keys.reload;
-        if (reload_pressed) {
-            controller.resync_requested = true;
-            camera.* = .{};
-            transform.* = .{};
-            world.act(.{ .id = player_id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
-            world.act(.{ .id = player_id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
-            world.act(.{ .id = player_id, .verb = .{ .set_rotation = transform.rotation } });
-        }
-        const player_skills = shared.entity.abilities(player.kind, player.survivor);
-        if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and skills.useAction(world, player, null, .equipment) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.equipment).?);
-        }
-        if (input.keys.attack and skills.useAction(world, player, null, .primary) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.primary).?);
-        }
-        if (input.keys.secondary and skills.useAction(world, player, null, .secondary) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.secondary).?);
-        }
-        if (input.keys.utility and skills.useAction(world, player, null, .utility) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.utility).?);
-        }
-        if (input.keys.special and player_skills.get(.special) != null and skills.useAction(world, player, null, .special) == .fired) {
-            try skills.executeSkill(world, physics, player, null, player_skills.get(.special).?);
-        }
+fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
+    const entity = world.getPtr(id) orelse return .none;
+    return switch (entity.kind) {
+        .lootbox, .item_pickup => id,
+        .teleporter => switch (entity.teleporter.state) {
+            .active => .none,
+            .completed => if (world.teleport_bosses.items.len > 0) .none else id,
+            else => id,
+        },
+        else => .none,
+    };
+}
+
+fn interact(world: *World, player: *World.Entity) !void {
+    if (!player.controller.input.keys.interact) return;
+    if (world.elapsed_time - player.last_interact < interact_cooldown) return;
+    const target = world.getPtr(player.interacting) orelse return;
+    player.last_interact = world.elapsed_time;
+    switch (target.kind) {
+        .lootbox => try openChest(world, player, target),
+        .teleporter => try useTeleporter(world, player, target),
+        .item_pickup => pickUp(world, player, target),
+        else => {},
+    }
+}
+
+fn openChest(world: *World, player: *World.Entity, chest: *World.Entity) !void {
+    if (player.currency < chest.currency) return;
+    world.queueDespawn(chest.id);
+    const item_kind = shared.Item.rollChest(&shared.Item.small_chest_odds, world.prng.random());
+    const chest_up = shared.Planet.surfaceUp(chest.transform.position);
+    _ = try world.spawn(.{
+        .kind = .item_pickup,
+        .item = item_kind,
+        .transform = .{
+            .position = chest.transform.position + chest_up,
+            .rotation = chest.transform.rotation,
+        },
+        .spawn_impulse = nz.vec.scale(chest_up, World.item_throw_speed),
+    });
+    player.currency -= chest.currency;
+    world.client_updates.appendAssumeCapacity(.{
+        .set_currency = .{ .id = player.id, .amount = player.currency },
+    });
+}
+
+fn useTeleporter(world: *World, player: *World.Entity, teleporter_entity: *World.Entity) !void {
+    const teleporter = &teleporter_entity.teleporter;
+    if (teleporter.state == .idle) return activateTeleporter(world, player, teleporter_entity);
+    if (world.place == .ship) return lobby.setReady(world, player, !player.ready);
+    const charged = teleporter.charged == teleporter.max_charge;
+    if (charged and world.teleport_bosses.items.len == 0) world.next_stage_requested = true;
+}
+
+fn activateTeleporter(world: *World, player: *World.Entity, teleporter: *World.Entity) !void {
+    teleporter.teleporter.state = .active;
+    world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
+    world.client_updates.appendAssumeCapacity(.{
+        .event = .{ .interact = .{ .interactor = player.id, .interacted = .none } },
+    });
+    const random = world.prng.random();
+    const near = teleporter.transform.position;
+    const boss_surface = world.planet.surfacePointNear(near, 15, 25, random);
+    const boss_position = boss_surface + nz.vec.scale(shared.Planet.surfaceUp(boss_surface), 3);
+    _ = try world.spawn(.{
+        .kind = .{ .enemy = .bloorp_lord },
+        .transform = .{ .position = boss_position },
+        .flags = .{ .is_teleporter_boss = true },
+        .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
+    });
+}
+
+fn pickUp(world: *World, player: *World.Entity, pickup: *World.Entity) void {
+    _ = items.giveItem(world, player, pickup.item.?, 1) orelse return;
+    world.queueDespawn(pickup.id);
+}
+
+fn move(world: *World, player: *World.Entity, frame: Frame) void {
+    const input = &player.controller.input;
+    const move_right = nz.vec.normalize(nz.vec.cross(frame.move_forward, frame.planet_up));
+    player.camera.yaw_rotation = .lookAt(frame.move_forward, frame.planet_up);
+
+    var direction: nz.Vec3(f32) = .{ 0, 0, 0 };
+    if (input.keys.move_forward) direction += frame.move_forward;
+    if (input.keys.move_backward) direction -= frame.move_forward;
+    if (input.keys.move_right) direction += move_right;
+    if (input.keys.move_left) direction -= move_right;
+
+    const stun_slow: f32 = if (player.un_stun_at > world.elapsed_time) 0.3 else 1;
+    if (input.keys.jump and player.mode == .walking) {
+        world.act(.{ .id = player.id, .verb = .{ .jump = 20 } });
+    }
+    world.act(.{
+        .id = player.id,
+        .verb = .{ .walk = .{ .direction = direction, .speed = player.stat(.speed) * stun_slow } },
+    });
+    world.act(.{ .id = player.id, .verb = .{ .set_rotation = player.camera.yaw_rotation } });
+    player.transform.rotation = player.camera.yaw_rotation;
+}
+
+fn resetOnReload(world: *World, player: *World.Entity) void {
+    const controller = &player.controller;
+    const pressed = controller.input.keys.reload and !controller.reload_held;
+    controller.reload_held = controller.input.keys.reload;
+    if (!pressed) return;
+    controller.resync_requested = true;
+    player.camera = .{};
+    player.transform = .{};
+    world.act(.{ .id = player.id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
+    world.act(.{ .id = player.id, .verb = .{ .teleport = .{ 0, 0, 0 } } });
+    world.act(.{ .id = player.id, .verb = .{ .set_rotation = player.transform.rotation } });
+}
+
+fn useSkills(world: *World, physics: *system.Physics, player: *World.Entity) !void {
+    const keys = player.controller.input.keys;
+    const assigned = shared.entity.abilities(player.kind, player.survivor);
+    const has_equipment = shared.Item.equippedEffect(player.inventory) != null;
+    const held: []const struct { shared.entity.Action, bool } = &.{
+        .{ .equipment, keys.use_equipment and has_equipment },
+        .{ .primary, keys.attack },
+        .{ .secondary, keys.secondary },
+        .{ .utility, keys.utility },
+        .{ .special, keys.special },
+    };
+    for (held) |entry| {
+        const action, const pressed = entry;
+        if (!pressed) continue;
+        const skill = assigned.get(action) orelse continue;
+        if (skills.useAction(world, player, null, action) != .fired) continue;
+        try skills.executeSkill(world, physics, player, null, skill);
     }
 }

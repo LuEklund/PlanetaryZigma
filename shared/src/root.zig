@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub const numz = @import("numz");
+pub const math = @import("math.zig");
 pub const net = @import("net.zig");
 pub const Planet = @import("planet/root.zig");
 pub const StaticVertex = @import("vertex.zig").StaticVertex;

@@ -39,7 +39,7 @@ const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
 
 pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?*Entity, assigned: shared.entity.AssignedSkill) !void {
-    const planet_up = shared.Planet.up(caster.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const planet_up = shared.Planet.surfaceUp(caster.transform.position);
     switch (assigned.skill) {
         .shoot => {
             //TODO: muzzle socket per model; every skill assumes position + up * 0.8.

@@ -258,8 +258,12 @@ pub fn up(position: nz.Vec3(f32)) ?nz.Vec3(f32) {
     return if (distance > 0.001) nz.vec.scale(position, 1.0 / distance) else null;
 }
 
+pub fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
+    return up(position) orelse .{ 0, 1, 0 };
+}
+
 pub fn surfaceLaunch(position: nz.Vec3(f32), direction: nz.Vec3(f32), angle: f32, speed: f32) nz.Vec3(f32) {
-    const surface_up = up(position) orelse nz.Vec3(f32){ 0, 1, 0 };
+    const surface_up = surfaceUp(position);
     const flat_direction = direction - nz.vec.scale(surface_up, nz.vec.dot(direction, surface_up));
     const heading = if (nz.vec.length(flat_direction) > 0.001)
         nz.vec.normalize(flat_direction)
