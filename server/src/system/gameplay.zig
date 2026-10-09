@@ -86,7 +86,7 @@ fn steer(
     return nz.vec.normalize(heading);
 }
 
-pub fn updateEnemies(world: *World) !void {
+pub fn updateEnemies(world: *World, physics: *system.Physics) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -126,7 +126,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .tubloid => {
@@ -135,7 +135,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .bloorp_lord => {
@@ -144,7 +144,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 14 } } });
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .hunkloid => {
@@ -154,10 +154,10 @@ pub fn updateEnemies(world: *World) !void {
                 if (enemy.mode == .walking) world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 const utility = enemy_skills.get(.utility).?;
                 if (distance_to_player > utility.range * 0.75 and world.useAction(enemy, player, .utility) == .fired) {
-                    try world.executeSkill(enemy, player, utility.skill);
+                    try world.executeSkill(physics, enemy, player, utility.skill);
                 }
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .blooploid => {
@@ -166,7 +166,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .hover = .{ .direction = chase_dir, .speed = speed, .height = 7 } } });
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .acorn => {
@@ -189,7 +189,7 @@ pub fn updateEnemies(world: *World) !void {
                 const chase_dir: nz.Vec3(f32) = if (distance_to_player >= range) heading else .{ 0, 0, 0 };
                 world.act(.{ .id = enemy.id, .verb = .{ .walk = .{ .direction = chase_dir, .speed = speed } } });
                 if (world.useAction(enemy, player, .primary) == .fired) {
-                    try world.executeSkill(enemy, player, enemy_skills.get(.primary).?.skill);
+                    try world.executeSkill(physics, enemy, player, enemy_skills.get(.primary).?.skill);
                 }
             },
             .healer => {
@@ -212,7 +212,7 @@ pub fn updateEnemies(world: *World) !void {
                 }
                 if (best) |heal_target| {
                     if (world.useAction(enemy, heal_target, .primary) == .fired)
-                        try world.executeSkill(enemy, heal_target, enemy_skills.get(.primary).?.skill);
+                        try world.executeSkill(physics, enemy, heal_target, enemy_skills.get(.primary).?.skill);
                 }
             },
         }
@@ -340,7 +340,7 @@ fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, impact_
     tryProcLightning(world, owner_entity, impact_position, null);
 }
 
-pub fn updateWipe(world: *World) !void {
+pub fn updateWipe(world: *World, physics: *system.Physics) !void {
     if (world.players.items.len == 0) return;
     for (world.players.items) |player_id| {
         if (world.getPtr(player_id) != null) return;
@@ -348,7 +348,7 @@ pub fn updateWipe(world: *World) !void {
     std.log.info("wipe: go again -> ship", .{});
     world.stage = 0;
     world.director.spawning = false;
-    try world.loadPlace(.ship);
+    try world.loadPlace(physics, .ship);
 }
 
 pub fn updateItems(world: *World) !void {

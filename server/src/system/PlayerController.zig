@@ -6,7 +6,7 @@ const nz = shared.numz;
 
 const interact_cooldown: f32 = 0.3;
 
-pub fn update(world: *World) !void {
+pub fn update(world: *World, physics: *system.Physics) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -93,7 +93,7 @@ pub fn update(world: *World) !void {
         const player_depth = nz.vec.dot(player.transform.position - input.camera_position, camera_forward);
         const ray_position_start = input.camera_position + nz.vec.scale(camera_forward, player_depth);
         const ray_position_end = nz.vec.scale(camera_forward, 5);
-        const hit_id: shared.entity.Id = if (world.rayCast(ray_position_start, ray_position_end)) |hit| hit.id else .none;
+        const hit_id: shared.entity.Id = if (World.rayCast(physics, ray_position_start, ray_position_end)) |hit| hit.id else .none;
         if (player.interacting != hit_id) {
             player.interacting = hit_id;
             const interact_id: shared.entity.Id = if (world.getPtr(hit_id)) |hit_entity|
@@ -185,16 +185,16 @@ pub fn update(world: *World) !void {
         }
         const player_skills = shared.entity.Kind.spec(.player).skills;
         if (input.keys.use_equipment and shared.Item.equippedEffect(player.inventory) != null and world.useAction(player, null, .equipment) == .fired) {
-            try world.executeSkill(player, null, player_skills.get(.equipment).?.skill);
+            try world.executeSkill(physics, player, null, player_skills.get(.equipment).?.skill);
         }
         if (input.keys.attack and world.useAction(player, null, .primary) == .fired) {
-            try world.executeSkill(player, null, player_skills.get(.primary).?.skill);
+            try world.executeSkill(physics, player, null, player_skills.get(.primary).?.skill);
         }
         if (input.keys.secondary and world.useAction(player, null, .secondary) == .fired) {
-            try world.executeSkill(player, null, player_skills.get(.secondary).?.skill);
+            try world.executeSkill(physics, player, null, player_skills.get(.secondary).?.skill);
         }
         if (input.keys.utility and world.useAction(player, null, .utility) == .fired) {
-            try world.executeSkill(player, null, player_skills.get(.utility).?.skill);
+            try world.executeSkill(physics, player, null, player_skills.get(.utility).?.skill);
         }
     }
 }

@@ -15,7 +15,6 @@ new_spawns: std.ArrayList(shared.entity.Id),
 pending_despawns: std.ArrayList(PendingDespawn),
 planet: shared.Planet,
 navmesh: Navmesh,
-physics: *Physics,
 options: Options,
 place: Place,
 director: Director,
@@ -153,7 +152,6 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
             .removes = .empty,
         },
         .navmesh = .empty,
-        .physics = undefined,
         .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
@@ -241,8 +239,8 @@ pub fn act(self: *World, command: Physics.Command) void {
     self.physics_commands.appendAssumeCapacity(command);
 }
 
-pub fn rayCast(self: *World, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Physics.Ray.Hit {
-    return Physics.Ray.cast(self.physics, start, translation);
+pub fn rayCast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)) ?Physics.Ray.Hit {
+    return Physics.Ray.cast(physics, start, translation);
 }
 
 pub fn giveItem(self: *World, player: *Entity, item: shared.Item.Kind, count: u8) ?u8 {
@@ -336,7 +334,7 @@ const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
 const bullet_lifetime: f32 = 1;
 
-pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: shared.entity.Skill) !void {
+pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?*Entity, skill: shared.entity.Skill) !void {
     const planet_up = shared.Planet.up(caster.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
     switch (skill) {
         .shoot => {
@@ -347,7 +345,7 @@ pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: sha
             else if (caster.kind == .player) direction: {
                 const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
                 const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-                const aim_point = aimPoint(world, caster.transform.position, caster.controller.input.camera_position, camera_forward);
+                const aim_point = aimPoint(world, physics, caster.transform.position, caster.controller.input.camera_position, camera_forward);
                 break :direction nz.vec.normalize(aim_point - muzzle_position);
             } else nz.vec.normalize(caster.transform.forward());
             const rocket_chance = caster.stat(.rocket_chance);
@@ -376,7 +374,7 @@ pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: sha
             if (target == null and caster.kind == .player) {
                 const camera_rotation: nz.quat.Hamiltonian(f32) = .fromVec(caster.controller.input.camera_rotation);
                 const camera_forward = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 0, -1 }));
-                const aim_point = aimPoint(world, caster.transform.position, caster.controller.input.camera_position, camera_forward);
+                const aim_point = aimPoint(world, physics, caster.transform.position, caster.controller.input.camera_position, camera_forward);
                 start_direction = nz.vec.normalize(aim_point - muzzle_position);
                 spread_right = nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
                 spread_up = nz.vec.normalize(camera_rotation.rotateVec(.{ 0, 1, 0 }));
@@ -475,11 +473,11 @@ pub fn executeSkill(world: *World, caster: *Entity, target: ?*Entity, skill: sha
     }
 }
 
-fn aimPoint(world: *World, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
+fn aimPoint(world: *World, physics: *Physics, player_position: nz.Vec3(f32), camera_position: nz.Vec3(f32), camera_forward: nz.Vec3(f32)) nz.Vec3(f32) {
     const player_depth = nz.vec.dot(player_position - camera_position, camera_forward);
     const ray_start = camera_position + nz.vec.scale(camera_forward, player_depth);
     const translation = nz.vec.scale(camera_forward, aim_range);
-    const entity_distance: f32 = if (world.rayCast(ray_start, translation)) |hit| nz.vec.length(hit.point - ray_start) else aim_range;
+    const entity_distance: f32 = if (rayCast(physics, ray_start, translation)) |hit| nz.vec.length(hit.point - ray_start) else aim_range;
 
     var terrain_distance: f32 = aim_range;
     var traveled: f32 = 0;
@@ -526,12 +524,12 @@ pub fn playerSpawnPosition(self: *const World) nz.Vec3(f32) {
     };
 }
 
-pub fn loadPlace(self: *World, place: Place) !void {
+pub fn loadPlace(self: *World, physics: *Physics, place: Place) !void {
     self.place = place;
     for (self.entities.values()) |entry| {
         if (entry.kind != .player) self.queueDespawn(entry.id);
     }
-    try self.flush();
+    try self.flush(physics);
     const random = self.prng.random();
     self.teleporter_id = .none;
     if (place == .planet) self.stage += 1;
@@ -546,7 +544,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
     self.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
     try self.planet.sync(self.gpa, spawn_planet_radius);
-    try self.flush();
+    try self.flush(physics);
 
     switch (place) {
         .ship => {
@@ -591,7 +589,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
             portal.teleporter.state = .completed;
             portal.teleporter.charged = portal.teleporter.max_charge;
             self.teleporter_id = portal.id;
-            try self.flush();
+            try self.flush(physics);
         },
         .planet => {
             self.director.spawning = true;
@@ -638,7 +636,7 @@ pub fn loadPlace(self: *World, place: Place) !void {
         if (player.flags.is_dead) {
             player.flags.is_dead = false;
             player.health = player.max_health;
-            try self.physics.createBody(player);
+            try physics.createBody(player);
             self.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.max_health) } } });
         } else {
             self.act(.{ .id = player.id, .verb = .{ .teleport = player_spawn_position } });
@@ -647,10 +645,10 @@ pub fn loadPlace(self: *World, place: Place) !void {
     }
 }
 
-pub fn flush(self: *World) !void {
+pub fn flush(self: *World, physics: *Physics) !void {
     for (self.new_spawns.items) |id| {
         const entity = self.getPtr(id) orelse continue;
-        if (entity.kind.collider() != null) try self.physics.createBody(entity);
+        if (entity.kind.collider() != null) try physics.createBody(entity);
         self.spawned.appendAssumeCapacity(id);
     }
     self.new_spawns.clearRetainingCapacity();
@@ -660,7 +658,7 @@ pub fn flush(self: *World) !void {
         const entity = self.getPtrRaw(despawn.id) orelse continue;
 
         if (entity.body_id) |body_id| {
-            self.physics.destroyBody(body_id);
+            physics.destroyBody(body_id);
             entity.body_id = null;
         }
         if (entity.kind == .player and !despawn.remove) {

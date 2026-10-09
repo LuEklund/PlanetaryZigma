@@ -50,12 +50,11 @@ pub fn init(self: *System, data: *const Data) !void {
     errdefer self.network_manager.deinit() catch {};
     self.physics = .init(data.gpa, data.io);
     errdefer self.physics.deinit();
-    data.world.physics = &self.physics;
     self.viewer = undefined;
     if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try data.world.loadPlace(.ship);
+    try data.world.loadPlace(&self.physics, .ship);
 }
 
 pub fn deinit(self: *System) !void {
@@ -82,26 +81,26 @@ pub fn update(self: *System, world: *World) !void {
     }
     if (world.next_stage_requested) {
         world.next_stage_requested = false;
-        try world.loadPlace(.planet);
+        try world.loadPlace(&self.physics, .planet);
     }
     if (world.start_round_requested) {
         world.start_round_requested = false;
-        try world.loadPlace(.planet);
+        try world.loadPlace(&self.physics, .planet);
     }
     if (world.go_again_requested) {
         world.go_again_requested = false;
-        try gameplay.updateWipe(world);
+        try gameplay.updateWipe(world, &self.physics);
     }
 
-    try PlayerController.update(world);
-    if (world.place == .planet) try gameplay.updateEnemies(world);
+    try PlayerController.update(world, &self.physics);
+    if (world.place == .planet) try gameplay.updateEnemies(world, &self.physics);
     if (world.place == .planet) try gameplay.updateDirector(world);
     try self.physics.update(world);
     gameplay.updateProjectiles(world);
     try gameplay.updateItems(world);
     if (world.place == .planet) gameplay.updateTeleporter(world);
     gameplay.playerRegen(world);
-    try world.flush();
+    try world.flush(&self.physics);
 
     var anchor_buffer: [shared.max_players]nz.Vec3(f32) = undefined;
     var anchor_count: usize = 0;
