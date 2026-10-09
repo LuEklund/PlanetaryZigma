@@ -47,6 +47,9 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] Z1 — Zoo scene: every enemy, elite, survivor, item and particle effect laid out to inspect quickly (replaces the deleted particle lab).
 - [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
 - [ ] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
+- [ ] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
+- [ ] S2 — Audio options in the Options screen (sliders), driven by S1.
+- [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
 
 ### Bugs (from the 2026-08-14 review — verify each still exists; fold into Phase 1 when it touches the same code)
 - [x] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.

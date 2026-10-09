@@ -124,15 +124,9 @@ float shadowFactor(float3 world_position, float3 normal) {
 float4 mesh_frag(VertexOutput input) : SV_Target {
     const float ambient = 0.4;
 
-    // Rim lighting
-    float3 incoming = scene_data.camera_position - input.world_position;
-    incoming = normalize(incoming);
+    float3 incoming = normalize(scene_data.camera_position - input.world_position);
     float facing = dot(incoming, input.normal);
-    float rim_intensity = .3;
-    float rim = 0;
-    if (facing > .3) {
-        rim = rim_intensity;
-    }
+    float rim = 0.3 * smoothstep(0.0, 1.0, facing);
 
     const float3 norm_to_sun = normalize(scene_data.to_sun);
     const float t = dot(-input.world_position, norm_to_sun);
