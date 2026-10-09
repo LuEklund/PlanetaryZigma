@@ -10,6 +10,7 @@ vertices: std.ArrayList(Vertex),
 indices: std.ArrayList(u32),
 
 pub const Vertex = @import("../vertex.zig").StaticVertex;
+const Biome = @import("../Biome.zig");
 
 pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32) !Mesh {
     const tracy_scope = tracy.zone(@src());
@@ -59,11 +60,16 @@ pub fn deinit(self: *Mesh, gpa: std.mem.Allocator) void {
 }
 
 fn appendVertex(self: *Mesh, gpa: std.mem.Allocator, position: nz.Vec3(f32), normal: nz.Vec3(f32), uv: [2]f32, planet_radius: f32) !void {
+    const biome = Biome.forRadius(@intFromFloat(planet_radius));
     const height = nz.vec.length(position);
     const height_fraction = std.math.clamp((height - planet_radius) / 30, 0, 1);
-    const low_color: nz.Vec3(f32) = .{ 1, 0.35, 0.2 };
-    const high_color: nz.Vec3(f32) = .{ 0.1, 0.75, 0.6 };
-    const color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
+    const up = nz.vec.normalize(position);
+    const steepness = std.math.clamp((1 - nz.vec.dot(normal, up) - 0.25) / 0.35, 0, 1);
+    const low_color: nz.Vec3(f32) = biome.low_color;
+    const high_color: nz.Vec3(f32) = biome.high_color;
+    const steep_color: nz.Vec3(f32) = biome.steep_color;
+    const height_color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
+    const color = nz.vec.scale(height_color, 1 - steepness) + nz.vec.scale(steep_color, steepness);
     try self.vertices.append(gpa, .{
         .position = position,
         .normal = normal,

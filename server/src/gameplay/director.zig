@@ -37,14 +37,7 @@ pub fn updateDirector(world: *World) !void {
             director.credits += director.salary_per_second * shared.difficulty.directorCreditScale(world.difficultyCoefficient(), world.players.items.len);
         }
         const random = world.prng.random();
-        const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
-            0...10 => .grass1,
-            11...40 => .tubloid,
-            41...60 => .tubloida,
-            61...75 => .hunkloid,
-            76...90 => .healer,
-            else => .bloorp_lord,
-        };
+        const enemy_kind = shared.Biome.forRadius(world.planet.planet_radius).pickEnemy(random) orelse return;
         const cost: f32 = @floatFromInt(shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency);
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);

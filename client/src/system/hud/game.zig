@@ -39,7 +39,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
     if (world.stage > 0) {
         const run_minutes: u32 = @intFromFloat(world.difficulty.run_seconds / 60);
         const run_seconds: u32 = @intFromFloat(@mod(world.difficulty.run_seconds, 60));
-        const difficulty_text = ui.print("Stage {d}  {d:0>2}:{d:0>2}  Lv {d:.0}", .{ world.stage, run_minutes, run_seconds, world.difficulty.level });
+        const difficulty_text = ui.print("{s}  Stage {d}  {d:0>2}:{d:0>2}  Lv {d:.0}", .{ shared.Biome.forRadius(world.planet.planet_radius).name, world.stage, run_minutes, run_seconds, world.difficulty.level });
         const difficulty_size = ui.textSize(difficulty_text, 24);
         ui.add(null, .{
             .size = .{ .fixed = difficulty_size },
