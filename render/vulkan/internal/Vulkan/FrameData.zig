@@ -38,6 +38,8 @@ pub const GPUScene = extern struct {
     planet_radius: f32 = 0,
     light_color: [4]f32,
     camera_up: [4]f32,
+    sky_zenith: [4]f32,
+    sky_horizon: [4]f32,
 };
 
 pub fn init(vma: Vma, device: Device) !FrameData {

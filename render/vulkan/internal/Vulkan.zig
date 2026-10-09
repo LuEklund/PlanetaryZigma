@@ -360,11 +360,13 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawLi
     var scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
-        .to_sun = lightDirection(list.time),
+        .to_sun = list.sun_direction,
         .time = list.time,
         .planet_radius = list.planet_radius,
         .camera_position = camera_transform.position,
         .light_color = list.light_color,
+        .sky_zenith = list.sky_zenith,
+        .sky_horizon = list.sky_horizon,
         .camera_up = up: {
             const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
             break :up .{ up[0], up[1], up[2], 0 };
@@ -377,7 +379,7 @@ fn uploadCascades(self: *Vulkan, list: *const DrawList) [Resources.shadow_cascad
     const camera_transform: nz.Transform3D(f32) = .{ .position = list.camera.position, .rotation = list.camera.rotation };
     const fov_rad: f32 = list.camera.fov_rad;
     const aspect: f32 = drawAspect(self);
-    const light_dir = lightDirection(list.time);
+    const light_dir = list.sun_direction;
 
     var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
     var cascades: Resources.GPUCascades = undefined;
@@ -395,11 +397,6 @@ fn drawAspect(self: *const Vulkan) f32 {
     const width: f32 = @floatFromInt(self.swapchain.draw_image.extent.width);
     const height: f32 = @floatFromInt(self.swapchain.draw_image.extent.height);
     return width / height;
-}
-
-fn lightDirection(elapsed_time: f32) nz.Vec3(f32) {
-    const light_time = elapsed_time * 0.01 + 0.9;
-    return nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(light_time), @sin(light_time), 0.3 }));
 }
 
 fn beginRendering(self: *Vulkan, cmd: c.VkCommandBuffer) void {

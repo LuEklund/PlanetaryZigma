@@ -24,7 +24,15 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         .fov_rad = world.options.fov_rad,
     };
     list.time = world.elapsed_time;
-    list.light_color = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
+    const server_seconds = system.network_manager.server_tick_estimate * shared.tick_seconds;
+    list.sun_direction = shared.daynight.sunDirection(if (server_seconds > 0) server_seconds else world.elapsed_time);
+    const day = shared.daynight.daylight(list.sun_direction, world.camera.transform.position);
+    const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
+    const daylight_color = shared.daynight.lightColor(day);
+    list.light_color = .{ daylight_color[0] * boss_tint[0], daylight_color[1] * boss_tint[1], daylight_color[2] * boss_tint[2], 1 };
+    const biome = shared.Biome.forRadius(world.planet.planet_radius);
+    list.sky_zenith = .{ biome.sky_zenith[0] * boss_tint[0], biome.sky_zenith[1] * boss_tint[1], biome.sky_zenith[2] * boss_tint[2], 1 };
+    list.sky_horizon = .{ biome.sky_horizon[0] * boss_tint[0], biome.sky_horizon[1] * boss_tint[1], biome.sky_horizon[2] * boss_tint[2], 1 };
     list.draw_sky = draw_sky;
     list.planet_radius = world.planet.radiusFloat();
     list.surface_width = system.window.size.width;

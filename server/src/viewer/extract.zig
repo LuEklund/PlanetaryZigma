@@ -31,6 +31,10 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     };
     list.time = world.elapsed_time;
     list.light_color = .{ 1, 1, 1, 1 };
+    list.sun_direction = shared.daynight.sunDirection(world.elapsed_time);
+    const biome = shared.Biome.forRadius(world.planet.planet_radius);
+    list.sky_zenith = .{ biome.sky_zenith[0], biome.sky_zenith[1], biome.sky_zenith[2], 1 };
+    list.sky_horizon = .{ biome.sky_horizon[0], biome.sky_horizon[1], biome.sky_horizon[2], 1 };
     list.draw_sky = true;
     list.planet_radius = world.planet.radiusFloat();
     list.surface_width = viewer.window.size.width;
