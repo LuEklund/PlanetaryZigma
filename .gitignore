@@ -13,8 +13,6 @@ STEAM_LINUX_HANDOFF.md
 implementation_ideas/
 Videos/
 illustration/
-CLAUDE.md
-.claude
 *.spv
 balancing/
 
@@ -25,3 +23,5 @@ Qrenderdoc/
 blueprints/
 
 
+.claude/settings.local.json
+.claude/worktrees/
