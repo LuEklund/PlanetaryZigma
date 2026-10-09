@@ -42,6 +42,7 @@ swapchain: Swapchain,
 resources: *Resources,
 highlight_mask: contract.TextureHandle,
 current_frame_inflight: u32 = 0,
+swapchain_stale: bool,
 frames: [FrameData.max_frames_inflight]FrameData,
 sorted_draws: std.ArrayList(u32),
 
@@ -51,6 +52,7 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
     const self = try gpa.create(Vulkan);
     self.gpa = gpa;
     self.current_frame_inflight = 0;
+    self.swapchain_stale = false;
 
     self.instance = try .init(gpa, Surface.instanceExtensions(window));
     procs.instance.load(self.instance.handle, null);
@@ -134,8 +136,9 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     defer tracy_scope.end();
 
     self.resources.drainRetired(self.current_frame_inflight);
-    if (list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
+    if (self.swapchain_stale or list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
         try self.resize(self.gpa, list.surface_width, list.surface_height);
+        self.swapchain_stale = false;
     }
 
     const current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
@@ -143,7 +146,6 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
 
     try check(c.vkWaitForFences(self.device.handle, 1, &current_frame.render_fence, 1, frame_timeout_ns));
     const image_index = acquireNextImage(self, current_frame) orelse return;
-    try check(c.vkResetFences(self.device.handle, 1, &current_frame.render_fence));
     const render_semaphore: c.VkSemaphore = self.swapchain.render_semaphores[image_index];
 
     try beginCommandBuffer(cmd_buffer);
@@ -155,6 +157,7 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
 
     const present_result = presentFrame(self, render_semaphore, image_index);
     if (present_result == c.VK_ERROR_OUT_OF_DATE_KHR or present_result == c.VK_SUBOPTIMAL_KHR) {
+        self.swapchain_stale = true;
         return;
     }
     self.current_frame_inflight += 1;
@@ -171,7 +174,11 @@ fn acquireNextImage(self: *Vulkan, current_frame: *const FrameData) ?u32 {
         &image_index,
     );
     return switch (acquire_result) {
-        c.VK_ERROR_OUT_OF_DATE_KHR, c.VK_TIMEOUT, c.VK_NOT_READY => null,
+        c.VK_ERROR_OUT_OF_DATE_KHR => {
+            self.swapchain_stale = true;
+            return null;
+        },
+        c.VK_TIMEOUT, c.VK_NOT_READY => null,
         else => image_index,
     };
 }
@@ -218,7 +225,11 @@ fn submitFrame(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const Fram
             .commandBuffer = cmd,
         },
     };
-    try check(c.vkQueueSubmit2(self.device.graphics_queue, 1, &submit_info, current_frame.render_fence));
+    try check(c.vkResetFences(self.device.handle, 1, &current_frame.render_fence));
+    check(c.vkQueueSubmit2(self.device.graphics_queue, 1, &submit_info, current_frame.render_fence)) catch |err| {
+        _ = c.vkQueueSubmit2(self.device.graphics_queue, 0, null, current_frame.render_fence);
+        return err;
+    };
 }
 
 fn presentFrame(self: *Vulkan, render_semaphore: c.VkSemaphore, image_index: u32) c.VkResult {
