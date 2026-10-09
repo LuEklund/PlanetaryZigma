@@ -68,7 +68,7 @@ pub fn init(self: *System, data: Data) !void {
     self.io = data.io;
     self.window = data.window;
     self.world = try .init(data.gpa);
-    errdefer self.world.deinit();
+    errdefer self.world.deinit(data.gpa);
     self.clock = .init(data.io);
     self.fps_window_start = self.clock.previous;
     self.fps_window_steps = 0;
@@ -130,7 +130,7 @@ pub fn deinit(self: *System) void {
     self.assets.deinit(self.gpa, self.io);
     self.render.api.deinit(self.render.handle);
     self.render.deinit(self.io);
-    self.world.deinit();
+    self.world.deinit(self.gpa);
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -139,9 +139,9 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     self.particles.clear();
     self.hud.resetScreen();
     switch (next) {
-        .menu => try menu_world.populate(world),
+        .menu => try menu_world.populate(world, self.gpa),
         .game => {},
-        .particle_lab => try particle_lab.populate(world),
+        .particle_lab => try particle_lab.populate(world, self.gpa),
     }
     self.scene = next;
 }
@@ -200,14 +200,14 @@ fn step(self: *System, world: *World) !void {
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
-    try world.update(self.network_manager.packets.items);
+    try world.update(self.gpa, self.network_manager.packets.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
     events.apply(world, self.network_manager.packets.items, &self.audio, &self.skill_sounds, &self.particles);
 
     try world.planet.update(
-        world.gpa,
+        self.gpa,
         &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );

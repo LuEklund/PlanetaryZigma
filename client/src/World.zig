@@ -17,8 +17,7 @@ pub const DamageEvent = struct {
     delta: f32,
 };
 
-gpa: std.mem.Allocator,
-entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty,
+entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity),
 teleporter_bosses: std.ArrayList(shared.entity.Id) = .empty,
 dying: std.ArrayList(Dying) = .empty,
 damage_events: std.ArrayList(DamageEvent) = .empty,
@@ -79,8 +78,10 @@ pub const Entity = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator) !World {
+    var entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity) = .empty;
+    try entities.ensureTotalCapacity(gpa, shared.max_entities);
     return .{
-        .gpa = gpa,
+        .entities = entities,
         .teleporter_bosses = try .initCapacity(gpa, shared.max_entities),
         .dying = try .initCapacity(gpa, shared.max_entities),
         .damage_events = try .initCapacity(gpa, 128),
@@ -88,12 +89,12 @@ pub fn init(gpa: std.mem.Allocator) !World {
     };
 }
 
-pub fn deinit(self: *World) void {
-    self.entities.deinit(self.gpa);
-    self.teleporter_bosses.deinit(self.gpa);
-    self.dying.deinit(self.gpa);
-    self.damage_events.deinit(self.gpa);
-    self.planet.deinit(self.gpa);
+pub fn deinit(self: *World, gpa: std.mem.Allocator) void {
+    self.entities.deinit(gpa);
+    self.teleporter_bosses.deinit(gpa);
+    self.dying.deinit(gpa);
+    self.damage_events.deinit(gpa);
+    self.planet.deinit(gpa);
 }
 
 pub fn clear(self: *World) void {
@@ -110,7 +111,7 @@ pub fn clear(self: *World) void {
     self.stage = 0;
 }
 
-pub fn update(self: *World, packets: []const shared.net.ServerPacket) !void {
+pub fn update(self: *World, gpa: std.mem.Allocator, packets: []const shared.net.ServerPacket) !void {
     for (packets) |packet| switch (packet) {
         .acknowledge => |acknowledge| {
             self.player_id = acknowledge.id;
@@ -123,7 +124,7 @@ pub fn update(self: *World, packets: []const shared.net.ServerPacket) !void {
             try self.applySpawn(spawn_entity);
         },
         .spawn_planet => |radius| {
-            try self.planet.sync(self.gpa, radius);
+            try self.planet.sync(gpa, radius);
         },
         .despawn_entity => |despawn_entity| {
             const entity = self.getPtr(despawn_entity.id) orelse continue;
@@ -246,7 +247,8 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
 }
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {
-    try self.entities.put(self.gpa, id, .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time });
+    std.debug.assert(self.entities.count() < shared.max_entities or self.entities.contains(id));
+    self.entities.putAssumeCapacity(id, .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time });
     return self.entities.getPtr(id).?;
 }
 

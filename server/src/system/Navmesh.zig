@@ -72,7 +72,7 @@ pub fn deinit(self: *Navmesh, gpa: std.mem.Allocator) void {
     self.internal.chunks.deinit(gpa);
 }
 
-pub fn update(self: *Navmesh, world: *World) !void {
+pub fn update(self: *Navmesh, world: *World, gpa: std.mem.Allocator) !void {
     if (self.worker) |thread| {
         if (self.internal.building.load(.acquire)) return;
         thread.join();
@@ -80,7 +80,6 @@ pub fn update(self: *Navmesh, world: *World) !void {
         self.internal.active ^= 1;
     }
     if (!self.needsRebuild(world)) return;
-    const gpa = world.gpa;
     const planet = &world.planet;
     var chunk_index: usize = self.internal.chunks.count();
     while (chunk_index > 0) {

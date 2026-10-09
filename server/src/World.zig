@@ -7,7 +7,6 @@ const Physics = @import("system/Physics.zig");
 const Navmesh = @import("system/Navmesh.zig");
 const nz = shared.numz;
 
-gpa: std.mem.Allocator,
 entities: std.AutoArrayHashMapUnmanaged(shared.entity.Id, Entity),
 players: std.ArrayList(shared.entity.Id),
 teleport_bosses: std.ArrayList(shared.entity.Id),
@@ -128,7 +127,6 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
     try entities.ensureTotalCapacity(gpa, shared.max_entities);
 
     return .{
-        .gpa = gpa,
         .entities = entities,
         .players = try .initCapacity(gpa, 16),
         .teleport_bosses = try .initCapacity(gpa, shared.max_entities),
@@ -164,18 +162,18 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
     };
 }
 
-pub fn deinit(self: *World) void {
-    self.entities.deinit(self.gpa);
-    self.players.deinit(self.gpa);
-    self.teleport_bosses.deinit(self.gpa);
-    self.new_spawns.deinit(self.gpa);
-    self.pending_despawns.deinit(self.gpa);
-    self.client_updates.deinit(self.gpa);
-    self.spawned.deinit(self.gpa);
-    self.physics_commands.deinit(self.gpa);
-    self.impacts.deinit(self.gpa);
-    self.planet.deinit(self.gpa);
-    self.navmesh.deinit(self.gpa);
+pub fn deinit(self: *World, gpa: std.mem.Allocator) void {
+    self.entities.deinit(gpa);
+    self.players.deinit(gpa);
+    self.teleport_bosses.deinit(gpa);
+    self.new_spawns.deinit(gpa);
+    self.pending_despawns.deinit(gpa);
+    self.client_updates.deinit(gpa);
+    self.spawned.deinit(gpa);
+    self.physics_commands.deinit(gpa);
+    self.impacts.deinit(gpa);
+    self.planet.deinit(gpa);
+    self.navmesh.deinit(gpa);
 }
 
 pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };

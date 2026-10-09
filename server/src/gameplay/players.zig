@@ -4,7 +4,7 @@ const World = @import("../World.zig");
 const combat = @import("combat.zig");
 const stage = @import("stage.zig");
 
-pub fn updateWipe(world: *World, physics: *system.Physics) !void {
+pub fn updateWipe(world: *World, gpa: std.mem.Allocator, physics: *system.Physics) !void {
     if (world.players.items.len == 0) return;
     for (world.players.items) |player_id| {
         if (world.getPtr(player_id) != null) return;
@@ -12,7 +12,7 @@ pub fn updateWipe(world: *World, physics: *system.Physics) !void {
     std.log.info("wipe: go again -> ship", .{});
     world.stage = 0;
     world.director.spawning = false;
-    try stage.loadPlace(world, physics, .ship);
+    try stage.loadPlace(world, gpa, physics, .ship);
 }
 
 pub fn playerRegen(world: *World) void {

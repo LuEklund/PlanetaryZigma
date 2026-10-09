@@ -76,7 +76,7 @@ pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.render.deinit(io);
 }
 
-pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
+pub fn draw(self: *Viewer, world: *World, gpa: std.mem.Allocator, io: std.Io) !bool {
     const window = self.window;
     try window.poll(.{ .text = null });
 
@@ -113,16 +113,16 @@ pub fn draw(self: *Viewer, world: *World, io: std.Io) !bool {
     self.ui.end();
 
     if (world.options.draw_flow_field and self.arrow_lines_field != world.navmesh.internal.active) {
-        try extract.collectNavmeshArrows(world, world.gpa, &self.arrow_lines);
+        try extract.collectNavmeshArrows(world, gpa, &self.arrow_lines);
         self.arrow_lines_field = world.navmesh.internal.active;
     }
     if (world.options.draw_chunk_borders and self.border_lines_field != world.navmesh.internal.active) {
-        try extract.collectChunkBorders(world, world.gpa, &self.border_lines);
+        try extract.collectChunkBorders(world, gpa, &self.border_lines);
         self.border_lines_field = world.navmesh.internal.active;
     }
 
-    try extract.frame(world, self, world.gpa);
+    try extract.frame(world, self, gpa);
     self.render.trySwap(io);
-    self.assets.update(world.gpa, io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
+    self.assets.update(gpa, io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
     return quit;
 }

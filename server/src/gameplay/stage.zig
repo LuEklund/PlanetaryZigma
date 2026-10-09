@@ -16,7 +16,7 @@ pub fn playerSpawnPosition(world: *const World) nz.Vec3(f32) {
     };
 }
 
-pub fn loadPlace(world: *World, physics: *Physics, place: World.Place) !void {
+pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place: World.Place) !void {
     world.place = place;
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);
@@ -35,7 +35,7 @@ pub fn loadPlace(world: *World, physics: *Physics, place: World.Place) !void {
     world.client_updates.appendAssumeCapacity(.{ .event = .{ .new_stage = world.stage } });
     world.client_updates.appendAssumeCapacity(.{ .spawn_planet = spawn_planet_radius });
     std.log.info("loadPlace {s} planet_radius={d}", .{ @tagName(place), spawn_planet_radius });
-    try world.planet.sync(world.gpa, spawn_planet_radius);
+    try world.planet.sync(gpa, spawn_planet_radius);
     try world.flush(physics);
 
     switch (place) {

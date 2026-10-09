@@ -44,7 +44,7 @@ pub fn init(self: *System, data: *const Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.world = try .init(data.gpa, data.dev_mode);
-    errdefer self.world.deinit();
+    errdefer self.world.deinit(data.gpa);
     self.clock = .init(data.io);
     self.request_exit = false;
     try self.network_manager.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
@@ -55,14 +55,14 @@ pub fn init(self: *System, data: *const Data) !void {
     if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, self.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try stage.loadPlace(&self.world, &self.physics, .ship);
+    try stage.loadPlace(&self.world, data.gpa, &self.physics, .ship);
 }
 
 pub fn deinit(self: *System) !void {
     if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
     try self.network_manager.deinit();
-    self.world.deinit();
+    self.world.deinit(self.gpa);
 }
 
 pub fn update(self: *System) !void {
@@ -92,15 +92,15 @@ fn step(self: *System, world: *World) !void {
     }
     if (world.next_stage_requested) {
         world.next_stage_requested = false;
-        try stage.loadPlace(world, &self.physics, .planet);
+        try stage.loadPlace(world, self.gpa, &self.physics, .planet);
     }
     if (world.start_round_requested) {
         world.start_round_requested = false;
-        try stage.loadPlace(world, &self.physics, .planet);
+        try stage.loadPlace(world, self.gpa, &self.physics, .planet);
     }
     if (world.go_again_requested) {
         world.go_again_requested = false;
-        try players.updateWipe(world, &self.physics);
+        try players.updateWipe(world, self.gpa, &self.physics);
     }
 
     try PlayerController.update(world, &self.physics);
@@ -120,10 +120,10 @@ fn step(self: *System, world: *World) !void {
         anchor_buffer[anchor_count] = player.transform.position;
         anchor_count += 1;
     }
-    try world.planet.update(world.gpa, anchor_buffer[0..anchor_count], Navmesh.nav_reach);
-    try world.navmesh.update(world);
+    try world.planet.update(self.gpa, anchor_buffer[0..anchor_count], Navmesh.nav_reach);
+    try world.navmesh.update(world, self.gpa);
     if (build_options.viewer) {
-        if (try self.viewer.draw(world, self.io)) self.request_exit = true;
+        if (try self.viewer.draw(world, self.gpa, self.io)) self.request_exit = true;
     }
 }
 
