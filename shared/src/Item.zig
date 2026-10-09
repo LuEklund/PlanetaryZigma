@@ -8,6 +8,7 @@ description: []const u8,
 tier: Tier = .common,
 is_equipment: bool = false,
 on_use: ?Effect = null,
+procs: []const Proc = &.{},
 
 pub const Tier = enum {
     common,
@@ -25,6 +26,7 @@ pub const small_chest_odds = [_]ChestOdds{
     .{ .tier = .uncommon, .weight = 0.19 },
     .{ .tier = .legendary, .weight = 0.01 },
     .{ .tier = .equipment, .weight = 0.05 },
+    .{ .tier = .lunar, .weight = 0.02 },
 };
 
 pub fn rollTier(odds: []const ChestOdds, random: std.Random) Tier {
@@ -61,6 +63,25 @@ pub fn rollChest(odds: []const ChestOdds, random: std.Random) Kind {
 
 pub const Effect = enum {
     freeze_world,
+    heal_burst,
+    blast_wave,
+};
+
+pub const Trigger = enum { on_hit, on_kill, on_hurt };
+
+pub const Proc = struct {
+    trigger: Trigger,
+    chance: f32,
+    effect: ProcEffect,
+};
+
+pub const ProcEffect = union(enum) {
+    heal: f32,
+    leech: f32,
+    gold: u32,
+    blast: struct { radius: f32, radius_per_stack: f32, damage_fraction: f32 },
+    healthy_bonus: struct { threshold: f32, damage_fraction: f32 },
+    thorns: f32,
 };
 
 pub const items = struct {
@@ -117,6 +138,100 @@ pub const items = struct {
     pub const heart: Item = .{
         .flat = .initDefault(0, .{ .regen = 1 }),
         .description = "+1 health regen",
+    };
+
+    pub const leech_seed: Item = .{
+        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .heal = 1 } }},
+        .description = "heal 1 per hit, +1 per stack",
+    };
+
+    pub const coin_pouch: Item = .{
+        .procs = &.{.{ .trigger = .on_kill, .chance = 1, .effect = .{ .gold = 1 } }},
+        .description = "+1 gold per kill, +1 per stack",
+    };
+
+    pub const crowbar: Item = .{
+        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .healthy_bonus = .{ .threshold = 0.9, .damage_fraction = 0.75 } } }},
+        .description = "+75% damage to enemies above 90% health, +75% per stack",
+    };
+
+    pub const boots: Item = .{
+        .percent = .initDefault(0, .{ .speed = 0.14 }),
+        .description = "+14% movement speed",
+    };
+
+    pub const bandage: Item = .{
+        .procs = &.{.{ .trigger = .on_hurt, .chance = 0.25, .effect = .{ .heal = 4 } }},
+        .description = "25% chance to heal 4 when hurt, +4 per stack",
+    };
+
+    pub const gasoline: Item = .{
+        .tier = .uncommon,
+        .procs = &.{.{ .trigger = .on_kill, .chance = 1, .effect = .{ .blast = .{ .radius = 4, .radius_per_stack = 1.5, .damage_fraction = 1.5 } } }},
+        .description = "kills explode for 150% damage, bigger blast per stack",
+    };
+
+    pub const thorn_vest: Item = .{
+        .tier = .uncommon,
+        .procs = &.{.{ .trigger = .on_hurt, .chance = 1, .effect = .{ .thorns = 0.5 } }},
+        .description = "return 50% of damage taken to the attacker, +50% per stack",
+    };
+
+    pub const vampire_fang: Item = .{
+        .tier = .uncommon,
+        .procs = &.{.{ .trigger = .on_kill, .chance = 1, .effect = .{ .heal = 8 } }},
+        .description = "heal 8 on kill, +8 per stack",
+    };
+
+    pub const ghor_tome: Item = .{
+        .tier = .uncommon,
+        .procs = &.{.{ .trigger = .on_kill, .chance = 0.2, .effect = .{ .gold = 15 } }},
+        .description = "20% chance on kill to drop 15 gold, +15 per stack",
+    };
+
+    pub const leech_fang: Item = .{
+        .tier = .uncommon,
+        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .leech = 0.05 } }},
+        .description = "heal 5% of damage dealt, +5% per stack",
+    };
+
+    pub const brilliant_hammer: Item = .{
+        .tier = .legendary,
+        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .blast = .{ .radius = 3, .radius_per_stack = 2.5, .damage_fraction = 0.6 } } }},
+        .description = "every hit explodes for 60% damage, bigger blast per stack",
+    };
+
+    pub const berserker_core: Item = .{
+        .tier = .legendary,
+        .percent = .initDefault(0, .{ .damage = 0.5, .primary_cooldown = 0.3 }),
+        .description = "+50% damage, +30% attack speed",
+    };
+
+    pub const glass_heart: Item = .{
+        .tier = .lunar,
+        .percent = .initDefault(0, .{ .damage = 0.6, .health = -0.25 }),
+        .description = "+60% damage, -25% max health",
+    };
+
+    pub const blood_pact: Item = .{
+        .tier = .lunar,
+        .flat = .initDefault(0, .{ .health = -20, .regen = 2 }),
+        .percent = .initDefault(0, .{ .damage = 0.3 }),
+        .description = "+30% damage, +2 regen, -20 max health",
+    };
+
+    pub const heal_spray: Item = .{
+        .description = "heal everyone near you for half their health",
+        .tier = .equipment,
+        .is_equipment = true,
+        .on_use = .heal_burst,
+    };
+
+    pub const blast_wave: Item = .{
+        .description = "blast every enemy within 15 for 500% damage",
+        .tier = .equipment,
+        .is_equipment = true,
+        .on_use = .blast_wave,
     };
 
     pub const freezer: Item = .{
@@ -215,7 +330,7 @@ pub const Stat = enum(u16) {
             flat += item.flat.get(stat) * count;
             percent += item.percent.get(stat) * count;
         }
-        const linear = (base.get(stat) + flat) * (1 + percent);
+        const linear = (base.get(stat) + flat) * @max(min_percent_scale, 1 + percent);
         return switch (stat) {
             .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance => linear,
             .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown => @max(0.1, base.get(stat) + flat) / @max(0.01, 1 + percent),
@@ -223,6 +338,8 @@ pub const Stat = enum(u16) {
         };
     }
 };
+
+pub const min_percent_scale: f32 = 0.1;
 
 pub fn equippedEffect(inv: Inventory) ?Effect {
     for (std.enums.values(Kind)) |kind| {

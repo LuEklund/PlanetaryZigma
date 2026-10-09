@@ -25,7 +25,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: decision 0003; `shared/src/Biome.zig` rows (coral = old look/pool, verdant, frost, dust): per-field amplitude ≤ 1 + frequency scale in `sdf`, low/high/steep vertex colors in `planet/Mesh.zig`, enemy weights used by the director. Picked by `Biome.forRadius` (radius is already on the wire), name shown on the HUD. Built, needs playtest (colors/shape untested visually). Sky tint per biome left for C6.
 - [x] C2 — Monster ideas: 5+ enemy designs with distinct behaviors (ranged, charger, flyer, swarm, elite modifiers), each as a spec row + behavior function.
   - Result: decision 0004. Behavior union on the spec row + one function per behavior; new charger (grass_tank), spitter (kite), wisp (orbit flyer), mite (pack of 5), bomber (fuse/explode); elites blazing/glacial/overloading as data rows granting items; biome pools updated. Built, needs playtest (tuning numbers are guesses).
-- [ ] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
+- [x] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
+  - Result: decision 0005. 26 items (15 new) across common/uncommon/legendary/boss/lunar/equipment; procs on_hit/on_kill/on_hurt as data rows resolved in `gameplay/procs.zig` from one door (`combat.dealDamage`, no proc chains); 2 new equipment; equipment swaps on pickup. Built, needs playtest. Not done: timed buffs / DoTs (no status system yet).
 - [ ] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
 - [ ] C5 — Lobby: nicer Steam lobby (class pick, ready-up, player list, host settings). The lobby arc already shipped once — read the existing code before redesigning.
 - [ ] C6 — Day/night cycle. Prior ruling: stylized color ramps, not physical scattering (no Preetham/Hosek/Bruneton). Procedural gradient sky: `up = normalize(cameraPos)`, `day = smoothstep(-0.10, 0.25, dot(sunDir, up))`, zenith/horizon colors for day and night, sun disc via `dot(V, sunDir)`; rotate `sunDir` over time for a cycle. Sun direction must also drive the directional light so they can't desync. Optional cheap planet rim: inverted sphere, `pow(1 - dot(N, V), k)`, additive.
@@ -58,6 +59,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
 ## Needs asset from Lucas
+- C3: model (`objects/<name>.glb`) + icon (`textures/<name>.png`) for leech_seed, coin_pouch, crowbar, boots, bandage, gasoline, thorn_vest, vampire_fang, ghor_tome, leech_fang, brilliant_hammer, berserker_core, glass_heart, blood_pact, heal_spray, blast_wave. Paths are derived from the item name; dropping the files in is enough.
 - C2: `spitter` (ranged kiter), `wisp` (small orbiting flyer), `mite` (tiny swarm bug), `bomber` (walking bomb) — currently scaled placeholder cubes (`model.path = ""` in `shared/src/entity/enemies.zig`). Each wants idle/walk/death + attack clip.
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 

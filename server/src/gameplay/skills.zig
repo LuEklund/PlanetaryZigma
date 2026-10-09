@@ -29,6 +29,7 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
 
 pub const aim_range: f32 = 300;
 const freeze_seconds: f32 = 10;
+const equipment_radius: f32 = 15;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
@@ -128,6 +129,20 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
             switch (effect) {
                 .freeze_world => if (world.world_unstun_at <= world.elapsed_time) {
                     world.world_unstun_at = world.elapsed_time + freeze_seconds;
+                },
+                .heal_burst => for (world.players.items) |player_id| {
+                    const player = world.getPtr(player_id) orelse continue;
+                    if (nz.vec.distance(player.transform.position, caster.transform.position) > equipment_radius) continue;
+                    _ = combat.addHealth(world, player, player.max_health * 0.5, null);
+                },
+                .blast_wave => {
+                    const damage = caster.stat(.damage) * 5;
+                    for (world.entities.values()) |*candidate| {
+                        if (candidate.kind != .enemy or candidate.flags.is_dead) continue;
+                        if (nz.vec.distance(candidate.transform.position, caster.transform.position) > equipment_radius) continue;
+                        _ = combat.removeHealth(world, candidate, damage, caster);
+                    }
+                    world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = caster.transform.position } } });
                 },
             }
         },

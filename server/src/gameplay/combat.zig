@@ -1,9 +1,14 @@
 const World = @import("../World.zig");
+const procs = @import("procs.zig");
 const Entity = World.Entity;
 
 pub const HealthChange = enum { ignored, changed, killed };
 
 pub fn removeHealth(world: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
+    return dealDamage(world, entity, amount, source, true);
+}
+
+pub fn dealDamage(world: *World, entity: *Entity, amount: f32, source: ?*const Entity, can_proc: bool) HealthChange {
     if (entity.flags.is_dead or entity.max_health <= 0) return .ignored;
     if (entity.flags.invincible and amount > 0) return .ignored;
     const random = world.prng.random();
@@ -20,7 +25,17 @@ pub fn removeHealth(world: *World, entity: *Entity, amount: f32, source: ?*const
             world.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
         }
     }
-    return addHealth(world, entity, -new_amount, source);
+    const health_fraction_before = entity.health / entity.max_health;
+    const change = addHealth(world, entity, -new_amount, source);
+    if (can_proc and change != .ignored) if (source) |source_entity| procs.afterHit(world, .{
+        .attacker_id = source_entity.id,
+        .victim_id = entity.id,
+        .damage = new_amount,
+        .victim_health_fraction_before = health_fraction_before,
+        .killed = change == .killed,
+        .victim_position = entity.transform.position,
+    });
+    return change;
 }
 
 pub fn addHealth(world: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
