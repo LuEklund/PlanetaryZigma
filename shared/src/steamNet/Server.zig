@@ -268,17 +268,7 @@ pub fn receivePackets(self: *Server) !void {
 }
 
 pub fn sendPackets(self: *Server) !void {
-    if (self.packets.outgoing.items.len == 0) return;
-    for (self.packets.outgoing.items) |*msg| {
-        if (self.log_connection_status) self.send_stats.record(msg.bytes[0..msg.len]);
-        var msg_num: i64 = 0;
-        const result = self.socket.SendMessageToConnection(msg.conn, msg.bytes[0..msg.len], @intFromEnum(msg.flags), &msg_num);
-        if (result != self.last_send_result) {
-            self.last_send_result = result;
-            std.log.warn("send result changed: {t} (conn={d})", .{ result, msg.conn });
-        }
-    }
-    self.packets.outgoing.clearRetainingCapacity();
+    SteamNet.sendOutgoing(&self.packets, self.socket, &self.last_send_result, &self.send_stats, self.log_connection_status);
 }
 
 fn steamCallback(

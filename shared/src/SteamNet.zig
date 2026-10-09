@@ -91,6 +91,37 @@ pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.H
     });
 }
 
+pub const max_blocked_connections: usize = 16;
+
+pub fn sendOutgoing(packets: *Packets, socket: anytype, last_send_result: *steam.EResult, send_stats: anytype, log_connection_status: bool) void {
+    var blocked: [max_blocked_connections]Connection = undefined;
+    var blocked_count: usize = 0;
+    var kept: usize = 0;
+    for (packets.outgoing.items) |*message| {
+        const reliable = message.flags == .reliable or message.flags == .reliable_no_nagle;
+        if (reliable and std.mem.indexOfScalar(Connection, blocked[0..blocked_count], message.conn) != null) {
+            packets.outgoing.items[kept] = message.*;
+            kept += 1;
+            continue;
+        }
+        if (log_connection_status) send_stats.record(message.bytes[0..message.len]);
+        var message_number: i64 = 0;
+        const result = socket.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        if (result != last_send_result.*) {
+            last_send_result.* = result;
+            std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
+        }
+        if (reliable and result == .k_EResultLimitExceeded) {
+            packets.outgoing.items[kept] = message.*;
+            kept += 1;
+            std.debug.assert(blocked_count < blocked.len);
+            blocked[blocked_count] = message.conn;
+            blocked_count += 1;
+        }
+    }
+    packets.outgoing.shrinkRetainingCapacity(kept);
+}
+
 pub const Packets = struct {
     incoming: std.ArrayListUnmanaged(Message) = .empty,
     outgoing: std.ArrayListUnmanaged(Message) = .empty,

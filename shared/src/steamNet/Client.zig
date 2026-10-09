@@ -308,18 +308,7 @@ pub fn receivePackets(self: *Client) !void {
 }
 
 pub fn sendPackets(self: *Client) !void {
-    if (self.packets.outgoing.items.len == 0) return;
-    const sockets = steam.SteamNetworkingSockets_SteamAPI();
-    for (self.packets.outgoing.items) |*message| {
-        if (self.log_connection_status) self.send_stats.record(message.bytes[0..message.len]);
-        var message_number: i64 = 0;
-        const result = sockets.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
-        if (result != self.last_send_result) {
-            self.last_send_result = result;
-            std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
-        }
-    }
-    self.packets.outgoing.clearRetainingCapacity();
+    SteamNet.sendOutgoing(&self.packets, steam.SteamNetworkingSockets_SteamAPI(), &self.last_send_result, &self.send_stats, self.log_connection_status);
 }
 
 pub fn connectToServer(self: *Client, steam_id: u64) !void {
