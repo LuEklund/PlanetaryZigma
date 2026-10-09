@@ -3,44 +3,41 @@ const Vulkan = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const nz = @import("numz");
+const vk = @import("vulkan");
 const Window = @import("Window");
 const Instance = @import("Vulkan/Instance.zig");
 const DebugMessenger = @import("Vulkan/DebugMessenger.zig");
 const PhysicalDevice = @import("Vulkan/device.zig").Physical;
 const Device = @import("Vulkan/device.zig").Logical;
+const GpuMemory = @import("Vulkan/GpuMemory.zig");
 const Mesh = @import("Vulkan/Mesh.zig");
-const Vma = @import("Vulkan/Vma.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
 const FrameData = @import("Vulkan/FrameData.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
+const PipelineLayout = @import("Vulkan/PipelineLayout.zig");
 const Shader = @import("renderer_contract").Shader;
 const Shaders = @import("Vulkan/Shaders.zig");
-const procs = @import("Vulkan/procs.zig");
 const tracy = @import("ztracy");
-
 const matrix = @import("Vulkan/matrix.zig");
 const contract = @import("renderer_contract");
 const DrawList = contract.DrawList;
 
-const check = @import("Vulkan/utils.zig").check;
-
-pub const c = @import("vulkan");
 const shadow_splits = [Resources.shadow_cascade_count]f32{ 16, 48, 120 };
+const frame_timeout_ns: u64 = 1_000_000_000;
 
 gpa: std.mem.Allocator,
-
 instance: Instance,
 debug_messenger: ?DebugMessenger,
 surface: Surface,
 physical_device: PhysicalDevice,
 device: Device,
-vma: Vma,
+heaps: GpuMemory.Heaps,
 swapchain: Swapchain,
 resources: *Resources,
 highlight_mask: contract.TextureHandle,
-current_frame_inflight: u32 = 0,
+current_frame_inflight: u32,
 swapchain_stale: bool,
 frames: [FrameData.max_frames_inflight]FrameData,
 sorted_draws: std.ArrayList(u32),
@@ -54,107 +51,84 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
     self.swapchain_stale = false;
 
     self.instance = try .init(gpa, Surface.instanceExtensions(window));
-    procs.instance.load(self.instance.handle, null);
-    self.debug_messenger = if (builtin.mode == .Debug) try .init(self.instance, .{
-        .severities = if (try std.process.Environ.contains(.empty, gpa, "RENDERDOC_CAPFILE")) .{} else .{
-            .warning = true,
-            .verbose = true,
-            .@"error" = true,
-            .info = true,
-        },
+    const renderdoc = try std.process.Environ.contains(.empty, gpa, "RENDERDOC_CAPFILE");
+    self.debug_messenger = if (builtin.mode == .Debug and !renderdoc) try .init(self.instance, .{
+        .severities = .{ .verbose_bit_ext = true, .info_bit_ext = true, .warning_bit_ext = true, .error_bit_ext = true },
     }) else null;
     self.surface = try .create(self.instance, window);
+    self.physical_device = try .pick(gpa, self.instance, self.surface.handle);
+    self.device = try .init(gpa, self.instance, self.physical_device);
+    self.heaps = try .init(self.device, self.physical_device.memory_properties);
+    self.swapchain = try .init(gpa, &self.heaps.device, self.instance, self.physical_device, self.device, self.surface, window.size.width, window.size.height);
+    for (&self.frames) |*frame| frame.* = try .init(&self.heaps.host, self.device);
 
-    self.physical_device = try .pick(self.instance, self.surface.handle);
-    self.device = try .init(self.physical_device);
-
-    self.vma = try .init(self.instance, self.physical_device, self.device);
-
-    self.swapchain = try .init(gpa, self.vma, self.physical_device, self.device, self.surface, window.size.width, window.size.height);
-
-    for (&self.frames) |*frame| {
-        frame.* = try .init(self.vma, self.device);
-    }
-
-    self.resources = try .init(gpa, self.vma, self.device);
+    self.resources = try .init(gpa, &self.heaps, self.device);
     for (self.frames, 0..) |frame, frame_index| self.resources.writeSceneSet(frame_index, frame.gpu_scene);
     self.highlight_mask = self.resources.texture_table.alloc();
-    self.writeHighlightMask();
+    self.resources.writeTexture(self.highlight_mask, self.swapchain.mask_image.vk_imageview);
 
     self.sorted_draws = try .initCapacity(gpa, DrawList.max_draw_meshes);
-
     return self;
 }
 
 pub fn deinit(self: *Vulkan, gpa: std.mem.Allocator) void {
-    check(c.vkDeviceWaitIdle(self.device.handle)) catch {};
-
+    self.device.proxy.deviceWaitIdle() catch {};
     self.sorted_draws.deinit(gpa);
-    self.resources.deinit(gpa, self.vma, self.device);
-
-    for (&self.frames) |*frame| frame.deinit(self.vma, self.device);
-    self.swapchain.deinit(self.vma, self.device);
-    self.vma.deinit();
-    self.device.deinit();
+    self.resources.deinit(&self.heaps);
+    for (&self.frames) |*frame| frame.deinit(&self.heaps.host, self.device);
+    self.swapchain.deinit(&self.heaps.device, self.device);
+    self.heaps.deinit(self.device);
+    self.device.deinit(gpa);
     self.surface.deinit(self.instance);
     if (self.debug_messenger) |debug_messenger| debug_messenger.deinit(self.instance);
-    self.instance.deinit();
+    self.instance.deinit(gpa);
     gpa.destroy(self);
 }
 
-pub fn resize(self: *Vulkan, gpa: std.mem.Allocator, width: u32, height: u32) !void {
-    try self.swapchain.recreate(
-        gpa,
-        self.vma,
-        self.physical_device,
-        self.device,
-        self.surface,
-        width,
-        height,
-    );
-    self.writeHighlightMask();
+pub fn resize(self: *Vulkan, width: u32, height: u32) !void {
+    try self.swapchain.recreate(self.gpa, &self.heaps.device, self.instance, self.physical_device, self.device, self.surface, width, height);
+    self.resources.writeTexture(self.highlight_mask, self.swapchain.mask_image.vk_imageview);
 }
-
-fn writeHighlightMask(self: *Vulkan) void {
-    self.resources.texture_table.write(
-        self.highlight_mask,
-        self.swapchain.mask_image.vk_imageview,
-        self.resources.texture_table.samplers.items[0],
-    );
-}
-
-pub fn rebindProcs(self: *Vulkan) void {
-    procs.instance.load(self.instance.handle, null);
-}
-
-const frame_timeout_ns: u64 = 1000000000;
 
 pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    self.resources.drainRetired(self.current_frame_inflight);
+    self.resources.drainRetired(&self.heaps, self.current_frame_inflight);
     if (self.swapchain_stale or list.surface_width != self.swapchain.extent.width or list.surface_height != self.swapchain.extent.height) {
-        try self.resize(self.gpa, list.surface_width, list.surface_height);
+        try self.resize(list.surface_width, list.surface_height);
         self.swapchain_stale = false;
     }
 
-    const current_frame = &self.frames[self.current_frame_inflight % self.frames.len];
-    const cmd_buffer = current_frame.command_buffer;
+    const current_frame = &self.frames[self.frameIndex()];
+    const cmd = current_frame.command_buffer;
 
-    try check(c.vkWaitForFences(self.device.handle, 1, &current_frame.render_fence, 1, frame_timeout_ns));
-    const image_index = acquireNextImage(self, current_frame) orelse return;
-    const render_semaphore: c.VkSemaphore = self.swapchain.render_semaphores[image_index];
+    _ = try self.device.proxy.waitForFences(&.{current_frame.render_fence}, .true, frame_timeout_ns);
+    const image_index = self.acquireNextImage(current_frame) orelse return;
+    const render_semaphore = self.swapchain.render_semaphores[image_index];
 
-    try beginCommandBuffer(cmd_buffer);
-    try render(self, cmd_buffer, current_frame, list);
-    blitOntoSwapchain(self, cmd_buffer, image_index);
-    try check(c.vkEndCommandBuffer(cmd_buffer));
+    try self.device.proxy.resetCommandBuffer(cmd, .{});
+    try self.device.proxy.beginCommandBuffer(cmd, &.{ .flags = .{ .one_time_submit_bit = true } });
+    self.render(cmd, current_frame, list);
+    self.blitOntoSwapchain(cmd, image_index);
+    try self.device.proxy.endCommandBuffer(cmd);
 
-    try submitFrame(self, cmd_buffer, current_frame, render_semaphore);
+    try self.submitFrame(cmd, current_frame, render_semaphore);
 
-    const present_result = presentFrame(self, render_semaphore, image_index);
-    if (present_result == c.VK_ERROR_OUT_OF_DATE_KHR or present_result == c.VK_SUBOPTIMAL_KHR) {
+    const present_result = self.device.proxy.queuePresentKHR(self.device.graphics_queue, &.{
+        .wait_semaphore_count = 1,
+        .p_wait_semaphores = @ptrCast(&render_semaphore),
+        .swapchain_count = 1,
+        .p_swapchains = @ptrCast(&self.swapchain.swapchain),
+        .p_image_indices = @ptrCast(&image_index),
+    }) catch |err| switch (err) {
+        error.OutOfDateKHR => {
+            self.swapchain_stale = true;
+            return;
+        },
+        else => return err,
+    };
+    if (present_result == .suboptimal_khr) {
         self.swapchain_stale = true;
         return;
     }
@@ -162,151 +136,108 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
 }
 
 fn acquireNextImage(self: *Vulkan, current_frame: *const FrameData) ?u32 {
-    var image_index: u32 = undefined;
-    const acquire_result = c.vkAcquireNextImageKHR(
-        self.device.handle,
-        self.swapchain.swapchain,
-        frame_timeout_ns,
-        current_frame.swapchain_semaphore,
-        null,
-        &image_index,
-    );
-    return switch (acquire_result) {
-        c.VK_ERROR_OUT_OF_DATE_KHR => {
-            self.swapchain_stale = true;
-            return null;
-        },
-        c.VK_TIMEOUT, c.VK_NOT_READY => null,
-        else => image_index,
+    const acquired = self.device.proxy.acquireNextImageKHR(self.swapchain.swapchain, frame_timeout_ns, current_frame.swapchain_semaphore, .null_handle) catch |err| {
+        if (err == error.OutOfDateKHR) self.swapchain_stale = true;
+        return null;
+    };
+    return switch (acquired.result) {
+        .timeout, .not_ready => null,
+        else => acquired.image_index,
     };
 }
 
-fn beginCommandBuffer(cmd: c.VkCommandBuffer) !void {
-    try check(c.vkResetCommandBuffer(cmd, 0));
-    const cmd_begin_info: c.VkCommandBufferBeginInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    try check(c.vkBeginCommandBuffer(cmd, &cmd_begin_info));
+fn blitOntoSwapchain(self: *Vulkan, cmd: vk.CommandBuffer, image_index: u32) void {
+    var swapchain_image_barrier: Image.Barrier = .init(self.device, cmd, self.swapchain.images[image_index], .{ .color_bit = true });
+    swapchain_image_barrier.transition(.transfer_dst_optimal, .{ .all_transfer_bit = true }, .{ .transfer_write_bit = true });
+    self.swapchain.draw_image.copyOntoImage(self.device, cmd, self.swapchain.images[image_index], self.swapchain.extent);
+    swapchain_image_barrier.transition(.present_src_khr, .{ .bottom_of_pipe_bit = true }, .{});
 }
 
-fn blitOntoSwapchain(self: *Vulkan, cmd: c.VkCommandBuffer, image_index: u32) void {
-    var swapchain_image_barrier: Image.Barrier = .init(cmd, self.swapchain.images[image_index], c.VK_IMAGE_ASPECT_COLOR_BIT);
-    swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT);
-    self.swapchain.draw_image.copyOntoImage(
-        cmd,
-        .{ .vk_image = self.swapchain.images[image_index], .extent = self.swapchain.extent },
-    );
-    swapchain_image_barrier.transition(c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, c.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
-}
-
-fn submitFrame(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, render_semaphore: c.VkSemaphore) !void {
-    const submit_info: c.VkSubmitInfo2 = .{
-        .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .waitSemaphoreInfoCount = 1,
-        .pWaitSemaphoreInfos = &.{
-            .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = current_frame.swapchain_semaphore,
-            .stageMask = c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-            .value = 0,
-        },
-        .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = &.{
-            .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = render_semaphore,
-            .stageMask = c.VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
-            .value = 0,
-        },
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &.{
-            .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .commandBuffer = cmd,
-        },
-    };
-    try check(c.vkResetFences(self.device.handle, 1, &current_frame.render_fence));
-    check(c.vkQueueSubmit2(self.device.graphics_queue, 1, &submit_info, current_frame.render_fence)) catch |err| {
-        _ = c.vkQueueSubmit2(self.device.graphics_queue, 0, null, current_frame.render_fence);
+fn submitFrame(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, render_semaphore: vk.Semaphore) !void {
+    const wait = [_]vk.SemaphoreSubmitInfo{.{ .semaphore = current_frame.swapchain_semaphore, .value = 0, .stage_mask = .{ .color_attachment_output_bit = true }, .device_index = 0 }};
+    const signal = [_]vk.SemaphoreSubmitInfo{.{ .semaphore = render_semaphore, .value = 0, .stage_mask = .{ .all_graphics_bit = true }, .device_index = 0 }};
+    const command_buffers = [_]vk.CommandBufferSubmitInfo{.{ .command_buffer = cmd, .device_mask = 0 }};
+    const submit = [_]vk.SubmitInfo2{.{
+        .wait_semaphore_info_count = wait.len,
+        .p_wait_semaphore_infos = &wait,
+        .command_buffer_info_count = command_buffers.len,
+        .p_command_buffer_infos = &command_buffers,
+        .signal_semaphore_info_count = signal.len,
+        .p_signal_semaphore_infos = &signal,
+    }};
+    try self.device.proxy.resetFences(&.{current_frame.render_fence});
+    self.device.proxy.queueSubmit2(self.device.graphics_queue, &submit, current_frame.render_fence) catch |err| {
+        self.device.proxy.queueSubmit2(self.device.graphics_queue, null, current_frame.render_fence) catch {};
         return err;
     };
 }
 
-fn presentFrame(self: *Vulkan, render_semaphore: c.VkSemaphore, image_index: u32) c.VkResult {
-    const present_info: c.VkPresentInfoKHR = .{
-        .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .pSwapchains = &self.swapchain.swapchain,
-        .swapchainCount = 1,
-        .pWaitSemaphores = &render_semaphore,
-        .waitSemaphoreCount = 1,
-        .pImageIndices = &image_index,
-    };
-    return c.vkQueuePresentKHR(self.device.graphics_queue, &present_info);
-}
+fn render(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+    var draw_image_barrier: Image.Barrier = .init(self.device, cmd, self.swapchain.draw_image.vk_image, .{ .color_bit = true });
+    draw_image_barrier.transition(.color_attachment_optimal, .{ .color_attachment_output_bit = true }, .{ .color_attachment_write_bit = true });
 
-pub fn render(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, list: *const DrawList) !void {
-    var draw_image_barrier: Image.Barrier = .init(cmd, self.swapchain.draw_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
-
-    draw_image_barrier.transition(
-        c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    );
-
-    setDefaultRenderState(self, cmd);
-
-    uploadSceneData(self, current_frame, list);
-    const cascade_vps = uploadCascades(self, list);
+    self.setDefaultRenderState(cmd);
+    self.uploadSceneData(current_frame, list);
+    const cascade_vps = self.uploadCascades(list);
     current_frame.joint_buffer.copy(nz.Mat4x4(f32), list.joint_matrices.items);
 
-    renderShadowPass(self, cmd, current_frame, list, cascade_vps);
-    renderHighlightPass(self, cmd, current_frame, list);
-
+    self.renderShadowPass(cmd, current_frame, list, cascade_vps);
+    self.renderHighlightPass(cmd, current_frame, list);
     const particle_batches = packEmitters(current_frame, list);
 
-    beginRendering(self, cmd);
-    renderWorldPass(self, cmd, current_frame, list);
-    if (list.draw_sky) renderSkyPass(self, cmd);
-    renderWorldTransparentPass(self, cmd, current_frame, list);
-    renderParticlePass(self, cmd, current_frame, list, particle_batches);
-    renderOutlinePass(self, cmd);
-    if (list.draw_lines.items.len != 0) renderDebugPass(self, cmd, current_frame, list);
-    renderUiPass(self, cmd, current_frame, list);
-    c.vkCmdEndRendering(cmd);
+    self.beginRendering(cmd);
+    self.renderWorldPass(cmd, current_frame, list);
+    if (list.draw_sky) self.renderSkyPass(cmd);
+    self.renderWorldTransparentPass(cmd, current_frame, list);
+    self.renderParticlePass(cmd, current_frame, list, particle_batches);
+    self.renderOutlinePass(cmd);
+    if (list.draw_lines.items.len != 0) self.renderDebugPass(cmd, current_frame, list);
+    self.renderUiPass(cmd, current_frame, list);
+    self.device.proxy.cmdEndRendering(cmd);
 
-    draw_image_barrier.transition(c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT);
+    draw_image_barrier.transition(.transfer_src_optimal, .{ .all_transfer_bit = true }, .{ .transfer_read_bit = true });
 }
 
-fn setDefaultRenderState(self: *Vulkan, cmd: c.VkCommandBuffer) void {
-    const viewport: c.VkViewport = .{
+fn fullViewport(self: *const Vulkan) vk.Viewport {
+    return .{
+        .x = 0,
+        .y = 0,
         .width = @floatFromInt(self.swapchain.draw_image.extent.width),
         .height = @floatFromInt(self.swapchain.draw_image.extent.height),
-        .maxDepth = 1,
+        .min_depth = 0,
+        .max_depth = 1,
     };
-    const scissor: c.VkRect2D = .{
-        .extent = .{
-            .width = self.swapchain.draw_image.extent.width,
-            .height = self.swapchain.draw_image.extent.height,
-        },
+}
+
+fn fullScissor(self: *const Vulkan) vk.Rect2D {
+    return .{
+        .offset = .{ .x = 0, .y = 0 },
+        .extent = .{ .width = self.swapchain.draw_image.extent.width, .height = self.swapchain.draw_image.extent.height },
     };
-    c.vkCmdSetViewportWithCount(cmd, 1, &viewport);
-    c.vkCmdSetScissorWithCount(cmd, 1, &scissor);
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_BACK_BIT);
-    c.vkCmdSetFrontFace(cmd, c.VK_FRONT_FACE_COUNTER_CLOCKWISE);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthCompareOp(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetDepthBiasEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetDepthBias(cmd, 0, 0, 0);
-    c.vkCmdSetLineWidth(cmd, 1);
+}
+
+fn setDefaultRenderState(self: *Vulkan, cmd: vk.CommandBuffer) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetViewportWithCount(cmd, &.{self.fullViewport()});
+    proxy.cmdSetScissorWithCount(cmd, &.{self.fullScissor()});
+    proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
+    proxy.cmdSetFrontFace(cmd, .counter_clockwise);
+    proxy.cmdSetDepthTestEnable(cmd, .true);
+    proxy.cmdSetDepthWriteEnable(cmd, .true);
+    proxy.cmdSetDepthCompareOp(cmd, .less_or_equal);
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthBiasEnable(cmd, .false);
+    proxy.cmdSetDepthBias(cmd, 0, 0, 0);
+    proxy.cmdSetLineWidth(cmd, 1);
 }
 
 fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawList) void {
     const camera_transform: nz.Transform3D(f32) = .{ .position = list.camera.position, .rotation = list.camera.rotation };
     const view_matrix = matrix.getViewMatrix(&camera_transform);
-    var proj = matrix.perspective(list.camera.fov_rad, drawAspect(self), 0.01, 1000);
+    var proj = matrix.perspective(list.camera.fov_rad, self.drawAspect(), 0.01, 1000);
     const proj_view = proj.mul(view_matrix);
-
-    var scene_data: FrameData.GPUScene = .{
+    const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
+    const scene_data: FrameData.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
         .to_sun = list.sun_direction,
@@ -316,26 +247,19 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawLi
         .light_color = list.light_color,
         .sky_zenith = list.sky_zenith,
         .sky_horizon = list.sky_horizon,
-        .camera_up = up: {
-            const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
-            break :up .{ up[0], up[1], up[2], 0 };
-        },
+        .camera_up = .{ up[0], up[1], up[2], 0 },
     };
     current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
 }
 
 fn uploadCascades(self: *Vulkan, list: *const DrawList) [Resources.shadow_cascade_count]nz.Mat4x4(f32) {
     const camera_transform: nz.Transform3D(f32) = .{ .position = list.camera.position, .rotation = list.camera.rotation };
-    const fov_rad: f32 = list.camera.fov_rad;
-    const aspect: f32 = drawAspect(self);
-    const light_dir = list.sun_direction;
-
     var cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32) = undefined;
     var cascades: Resources.GPUCascades = undefined;
     cascades.splits = .{ shadow_splits[0], shadow_splits[1], shadow_splits[2], 0 };
     for (0..Resources.shadow_cascade_count) |cascade_index| {
         const slice_near: f32 = if (cascade_index == 0) 0.05 else shadow_splits[cascade_index - 1];
-        cascade_vps[cascade_index] = matrix.cascadeViewProj(camera_transform, fov_rad, aspect, slice_near, shadow_splits[cascade_index], light_dir);
+        cascade_vps[cascade_index] = matrix.cascadeViewProj(camera_transform, list.camera.fov_rad, self.drawAspect(), slice_near, shadow_splits[cascade_index], list.sun_direction);
         cascades.light_view_proj[cascade_index] = cascade_vps[cascade_index].d;
     }
     self.resources.writeCascades(self.frameIndex(), &cascades);
@@ -348,141 +272,104 @@ fn drawAspect(self: *const Vulkan) f32 {
     return width / height;
 }
 
-fn beginRendering(self: *Vulkan, cmd: c.VkCommandBuffer) void {
-    const color_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .pNext = null,
-        .imageView = self.swapchain.draw_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .resolveMode = c.VK_RESOLVE_MODE_NONE,
-        .resolveImageView = null,
-        .resolveImageLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .color = .{
-                .float32 = .{ 0, 0, 0, 1 },
-            },
-        },
+fn beginRendering(self: *Vulkan, cmd: vk.CommandBuffer) void {
+    const color_attachment = [_]vk.RenderingAttachmentInfo{.{
+        .image_view = self.swapchain.draw_image.vk_imageview,
+        .image_layout = .color_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .clear,
+        .store_op = .store,
+        .clear_value = .{ .color = .{ .float_32 = .{ 0, 0, 0, 1 } } },
+    }};
+    const depth_attachment: vk.RenderingAttachmentInfo = .{
+        .image_view = self.swapchain.depth_image.vk_imageview,
+        .image_layout = .depth_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .clear,
+        .store_op = .store,
+        .clear_value = .{ .depth_stencil = .{ .depth = 1, .stencil = 0 } },
     };
-    const depth_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = self.swapchain.depth_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .depthStencil = .{
-                .depth = 1,
-                .stencil = 0,
-            },
-        },
-    };
-    const render_info: c.VkRenderingInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .pNext = null,
-        .flags = 0,
-        .renderArea = .{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = .{
-                .height = self.swapchain.draw_image.extent.height,
-                .width = self.swapchain.draw_image.extent.width,
-            },
-        },
-        .layerCount = 1,
-        .viewMask = 0,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-        .pDepthAttachment = &depth_attachment,
-        .pStencilAttachment = null,
-    };
-    c.vkCmdBeginRendering(cmd, &render_info);
+    self.device.proxy.cmdBeginRendering(cmd, &.{
+        .render_area = self.fullScissor(),
+        .layer_count = 1,
+        .view_mask = 0,
+        .color_attachment_count = color_attachment.len,
+        .p_color_attachments = &color_attachment,
+        .p_depth_attachment = &depth_attachment,
+    });
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
-    var shadow_barrier: Image.Barrier = .init(cmd, self.resources.shadow_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
-    shadow_barrier.src_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    shadow_barrier.src_access = c.VK_ACCESS_SHADER_READ_BIT;
+fn renderShadowPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
+    const proxy = self.device.proxy;
+    var shadow_barrier: Image.Barrier = .init(self.device, cmd, self.resources.shadow_image.vk_image, .{ .depth_bit = true });
+    shadow_barrier.src_stage = .{ .fragment_shader_bit = true };
+    shadow_barrier.src_access = .{ .shader_read_bit = true };
     shadow_barrier.transition(
-        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .depth_attachment_optimal,
+        .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
+        .{ .depth_stencil_attachment_read_bit = true, .depth_stencil_attachment_write_bit = true },
     );
-    var shadow_depth_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = self.resources.shadow_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
+    const depth_attachment: vk.RenderingAttachmentInfo = .{
+        .image_view = self.resources.shadow_image.vk_imageview,
+        .image_layout = .depth_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .clear,
+        .store_op = .store,
+        .clear_value = .{ .depth_stencil = .{ .depth = 1, .stencil = 0 } },
     };
-    var shadow_render_info: c.VkRenderingInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = .{
+    proxy.cmdBeginRendering(cmd, &.{
+        .render_area = .{
             .offset = .{ .x = 0, .y = 0 },
-            .extent = .{
-                .width = Resources.shadow_map_size * Resources.shadow_cascade_count,
-                .height = Resources.shadow_map_size,
-            },
+            .extent = .{ .width = Resources.shadow_map_size * Resources.shadow_cascade_count, .height = Resources.shadow_map_size },
         },
-        .layerCount = 1,
-        .colorAttachmentCount = 0,
-        .pDepthAttachment = &shadow_depth_attachment,
-    };
-    c.vkCmdBeginRendering(cmd, &shadow_render_info);
+        .layer_count = 1,
+        .view_mask = 0,
+        .color_attachment_count = 0,
+        .p_depth_attachment = &depth_attachment,
+    });
     self.bindWorldDescriptors(cmd, self.resources.pipeline_layouts.get(.world).handle);
-    c.vkCmdSetDepthBiasEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthBias(cmd, 0.0, 0.0, 3.0);
+    proxy.cmdSetDepthBiasEnable(cmd, .true);
+    proxy.cmdSetDepthBias(cmd, 0, 0, 3);
     for (cascade_vps, 0..) |cascade_vp, cascade_index| {
-        const shadow_viewport: c.VkViewport = .{
-            .x = @floatFromInt(cascade_index * Resources.shadow_map_size),
+        const x: u32 = @intCast(cascade_index * Resources.shadow_map_size);
+        proxy.cmdSetViewportWithCount(cmd, &.{.{
+            .x = @floatFromInt(x),
+            .y = 0,
             .width = @floatFromInt(Resources.shadow_map_size),
             .height = @floatFromInt(Resources.shadow_map_size),
-            .maxDepth = 1,
-        };
-        const shadow_scissor: c.VkRect2D = .{
-            .offset = .{ .x = @intCast(cascade_index * Resources.shadow_map_size), .y = 0 },
+            .min_depth = 0,
+            .max_depth = 1,
+        }});
+        proxy.cmdSetScissorWithCount(cmd, &.{.{
+            .offset = .{ .x = @intCast(x), .y = 0 },
             .extent = .{ .width = Resources.shadow_map_size, .height = Resources.shadow_map_size },
-        };
-        c.vkCmdSetViewportWithCount(cmd, 1, &shadow_viewport);
-        c.vkCmdSetScissorWithCount(cmd, 1, &shadow_scissor);
+        }});
 
         if (self.bindPipeline(cmd, .shadow_static)) for (list.draw_meshes.items) |row| {
-            if (row.skinned) continue;
-            if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
+            if (row.skinned or !matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, cascade_vp.mul(row.model_matrix));
+            self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, null, cascade_vp.mul(row.model_matrix));
         };
         if (self.bindPipeline(cmd, .shadow_skinned)) for (list.draw_meshes.items) |row| {
-            if (!row.skinned) continue;
-            if (!matrix.cascadeContains(&cascade_vp, row.position)) continue;
+            if (!row.skinned or !matrix.cascadeContains(&cascade_vp, row.position)) continue;
             const mesh = self.resources.meshAt(row.mesh) orelse continue;
-            drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, cascade_vp.mul(row.model_matrix));
+            self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, row.palette_offset, cascade_vp.mul(row.model_matrix));
         };
     }
-    c.vkCmdEndRendering(cmd);
-    shadow_barrier.transition(
-        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        c.VK_ACCESS_SHADER_READ_BIT,
-    );
-    c.vkCmdSetDepthBiasEnable(cmd, c.VK_FALSE);
-    const full_viewport: c.VkViewport = .{
-        .width = @floatFromInt(self.swapchain.draw_image.extent.width),
-        .height = @floatFromInt(self.swapchain.draw_image.extent.height),
-        .maxDepth = 1,
-    };
-    const full_scissor: c.VkRect2D = .{
-        .extent = .{
-            .width = self.swapchain.draw_image.extent.width,
-            .height = self.swapchain.draw_image.extent.height,
-        },
-    };
-    c.vkCmdSetViewportWithCount(cmd, 1, &full_viewport);
-    c.vkCmdSetScissorWithCount(cmd, 1, &full_scissor);
+    proxy.cmdEndRendering(cmd);
+    shadow_barrier.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true }, .{ .shader_read_bit = true });
+    proxy.cmdSetDepthBiasEnable(cmd, .false);
+    proxy.cmdSetViewportWithCount(cmd, &.{self.fullViewport()});
+    proxy.cmdSetScissorWithCount(cmd, &.{self.fullScissor()});
 }
 
-const Farhest = struct {
+const Farthest = struct {
     rows: []const DrawList.DrawMesh,
     camera: nz.Vec3(f32),
 
@@ -492,20 +379,18 @@ const Farhest = struct {
         return nz.vec.dot(to_a, to_a) > nz.vec.dot(to_b, to_b);
     }
 };
-fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_BACK_BIT);
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_TRUE);
 
+fn renderWorldPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthTestEnable(cmd, .true);
+    proxy.cmdSetDepthWriteEnable(cmd, .true);
     self.bindWorldDescriptors(cmd, self.resources.pipeline_layouts.get(.world).handle);
 
     self.sorted_draws.clearRetainingCapacity();
     for (0..list.draw_meshes.items.len) |index| self.sorted_draws.appendAssumeCapacity(@intCast(index));
-    std.sort.insertion(u32, self.sorted_draws.items, Farhest{
-        .rows = list.draw_meshes.items,
-        .camera = list.camera.position,
-    }, Farhest.first);
+    std.sort.insertion(u32, self.sorted_draws.items, Farthest{ .rows = list.draw_meshes.items, .camera = list.camera.position }, Farthest.first);
 
     var near_first = std.mem.reverseIterator(self.sorted_draws.items);
     if (self.bindPipeline(cmd, .opaque_static)) while (near_first.next()) |draw_index| {
@@ -513,25 +398,24 @@ fn renderWorldPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const 
         if (row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
         if (mesh.opaque_count == 0) continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, row.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], null, row.model_matrix);
     };
-
     near_first = std.mem.reverseIterator(self.sorted_draws.items);
     if (self.bindPipeline(cmd, .opaque_skinned)) while (near_first.next()) |draw_index| {
         const row = list.draw_meshes.items[draw_index];
         if (!row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
         if (mesh.opaque_count == 0) continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, row.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces[0..mesh.opaque_count], row.palette_offset, row.model_matrix);
     };
 }
 
-fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_BACK_BIT);
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
-
+fn renderWorldTransparentPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthTestEnable(cmd, .true);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
     self.bindWorldDescriptors(cmd, self.resources.pipeline_layouts.get(.world).handle);
 
     if (self.bindPipeline(cmd, .transparent_static)) for (self.sorted_draws.items) |draw_index| {
@@ -539,91 +423,90 @@ fn renderWorldTransparentPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_fra
         if (row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
         if (mesh.opaque_count == mesh.surfaces.len) continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], null, row.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], null, row.model_matrix);
     };
-
     if (self.bindPipeline(cmd, .transparent_skinned)) for (self.sorted_draws.items) |draw_index| {
         const row = list.draw_meshes.items[draw_index];
         if (!row.skinned) continue;
         const mesh = self.resources.meshAt(row.mesh) orelse continue;
         if (mesh.opaque_count == mesh.surfaces.len) continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], row.palette_offset, row.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces[mesh.opaque_count..], row.palette_offset, row.model_matrix);
     };
 }
 
-fn renderSkyPass(self: *Vulkan, cmd: c.VkCommandBuffer) void {
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_NONE);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetDepthCompareOp(cmd, c.VK_COMPARE_OP_LESS_OR_EQUAL);
+fn renderSkyPass(self: *Vulkan, cmd: vk.CommandBuffer) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetCullMode(cmd, .{});
+    proxy.cmdSetDepthTestEnable(cmd, .true);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
+    proxy.cmdSetDepthCompareOp(cmd, .less_or_equal);
     if (self.resources.skybox_image == null or !self.bindPipeline(cmd, .sky)) return;
-    const sky_sets = [_]c.VkDescriptorSet{ self.resources.scene_sets[self.frameIndex()], self.resources.texture_table.skybox_set };
-    c.vkCmdBindDescriptorSets(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.resources.pipeline_layouts.get(.sky).handle, 0, sky_sets.len, &sky_sets, 0, null);
-    c.vkCmdDraw(cmd, 3, 1, 0, 0);
+    const sky_sets = [_]vk.DescriptorSet{ self.resources.scene_sets[self.frameIndex()], self.resources.texture_table.skybox_set };
+    proxy.cmdBindDescriptorSets(cmd, .graphics, self.resources.pipeline_layouts.get(.sky).handle, 0, &sky_sets, null);
+    proxy.cmdDraw(cmd, 3, 1, 0, 0);
 }
 
-fn renderHighlightPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
-    var mask_barrier: Image.Barrier = .init(cmd, self.swapchain.mask_image.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
-    mask_barrier.transition(c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+fn renderHighlightPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+    const proxy = self.device.proxy;
+    var mask_barrier: Image.Barrier = .init(self.device, cmd, self.swapchain.mask_image.vk_image, .{ .color_bit = true });
+    mask_barrier.transition(.color_attachment_optimal, .{ .color_attachment_output_bit = true }, .{ .color_attachment_write_bit = true });
 
-    var mask_attachment: c.VkRenderingAttachmentInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = self.swapchain.mask_image.vk_imageview,
-        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } },
-    };
-    var mask_render_info: c.VkRenderingInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &mask_attachment,
-    };
-    c.vkCmdBeginRendering(cmd, &mask_render_info);
-
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_NONE);
-    const mask_viewport: c.VkViewport = .{ .width = @floatFromInt(self.swapchain.extent.width), .height = @floatFromInt(self.swapchain.extent.height), .maxDepth = 1 };
-    const mask_scissor: c.VkRect2D = .{ .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } };
-    c.vkCmdSetViewportWithCount(cmd, 1, &mask_viewport);
-    c.vkCmdSetScissorWithCount(cmd, 1, &mask_scissor);
-
+    const mask_attachment = [_]vk.RenderingAttachmentInfo{.{
+        .image_view = self.swapchain.mask_image.vk_imageview,
+        .image_layout = .color_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .clear,
+        .store_op = .store,
+        .clear_value = .{ .color = .{ .float_32 = .{ 0, 0, 0, 0 } } },
+    }};
+    proxy.cmdBeginRendering(cmd, &.{
+        .render_area = .{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } },
+        .layer_count = 1,
+        .view_mask = 0,
+        .color_attachment_count = mask_attachment.len,
+        .p_color_attachments = &mask_attachment,
+    });
+    proxy.cmdSetDepthTestEnable(cmd, .false);
+    proxy.cmdSetCullMode(cmd, .{});
+    proxy.cmdSetViewportWithCount(cmd, &.{.{
+        .x = 0,
+        .y = 0,
+        .width = @floatFromInt(self.swapchain.extent.width),
+        .height = @floatFromInt(self.swapchain.extent.height),
+        .min_depth = 0,
+        .max_depth = 1,
+    }});
+    proxy.cmdSetScissorWithCount(cmd, &.{.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = self.swapchain.extent.width, .height = self.swapchain.extent.height } }});
     self.bindWorldDescriptors(cmd, self.resources.pipeline_layouts.get(.world).handle);
 
     if (self.bindPipeline(cmd, .highlight_static)) for (list.draw_meshes.items) |draw_mesh| {
         if (!draw_mesh.highlight or draw_mesh.skinned) continue;
         const mesh = self.resources.meshAt(draw_mesh.mesh) orelse continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, null, draw_mesh.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, null, draw_mesh.model_matrix);
     };
-
     if (self.bindPipeline(cmd, .highlight_skinned)) for (list.draw_meshes.items) |draw_mesh| {
         if (!draw_mesh.highlight or !draw_mesh.skinned) continue;
         const mesh = self.resources.meshAt(draw_mesh.mesh) orelse continue;
-        drawMesh(self, cmd, current_frame, mesh, mesh.surfaces, draw_mesh.palette_offset, draw_mesh.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, draw_mesh.palette_offset, draw_mesh.model_matrix);
     };
-
-    c.vkCmdEndRendering(cmd);
-    mask_barrier.transition(c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, c.VK_ACCESS_SHADER_READ_BIT);
+    proxy.cmdEndRendering(cmd);
+    mask_barrier.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true }, .{ .shader_read_bit = true });
 }
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
 fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.EnumArray(contract.ParticleEffect, ParticleBatch) {
-    const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.info.pMappedData));
+    const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.mapped));
     var batches: std.EnumArray(contract.ParticleEffect, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
     var first_emitter: u32 = 0;
     for (std.enums.values(contract.ParticleEffect)) |effect| {
         var emitter_count: u32 = 0;
         for (list.emitters.items) |emitter| {
             if (emitter.effect != effect) continue;
-            gpu_emitters[first_emitter + emitter_count] = .{
-                .origin = emitter.origin,
-                .spawn_time = emitter.spawn_time,
-                .target = emitter.target,
-            };
+            gpu_emitters[first_emitter + emitter_count] = .{ .origin = emitter.origin, .spawn_time = emitter.spawn_time, .target = emitter.target };
             emitter_count += 1;
         }
         batches.set(effect, .{ .first_emitter = first_emitter, .emitter_count = emitter_count });
@@ -632,135 +515,129 @@ fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.Enum
     return batches;
 }
 
-fn renderOutlinePass(self: *Vulkan, cmd: c.VkCommandBuffer) void {
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_NONE);
-
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-    self.bindWorldDescriptors(cmd, world_pipeline_layout_handle);
-
+fn renderOutlinePass(self: *Vulkan, cmd: vk.CommandBuffer) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetDepthTestEnable(cmd, .false);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
+    proxy.cmdSetCullMode(cmd, .{});
+    const layout = self.resources.pipeline_layouts.get(.world).handle;
+    self.bindWorldDescriptors(cmd, layout);
     if (!self.bindPipeline(cmd, .outline)) return;
-
-    var push: Shader.WorldPushConstant = .{
+    const push: Shader.WorldPushConstant = .{
         .vertex_buffer_address = 0,
         .model_matrix = nz.Mat4x4(f32).identity.d,
         .joint_matrices_address = 0,
         .texture_index = @intFromEnum(self.highlight_mask),
     };
-    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
-
-    c.vkCmdDraw(cmd, 3, 1, 0, 0);
+    proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.WorldPushConstant), &push);
+    proxy.cmdDraw(cmd, 3, 1, 0, 0);
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(contract.ParticleEffect, ParticleBatch)) void {
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_NONE);
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_TRUE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
-
-    const particle_pipeline_layout_handle = self.resources.pipeline_layouts.get(.particle).handle;
-    self.bindWorldDescriptors(cmd, particle_pipeline_layout_handle);
-
+fn renderParticlePass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(contract.ParticleEffect, ParticleBatch)) void {
+    const proxy = self.device.proxy;
+    proxy.cmdSetCullMode(cmd, .{});
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthTestEnable(cmd, .true);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
+    const layout = self.resources.pipeline_layouts.get(.particle).handle;
+    self.bindWorldDescriptors(cmd, layout);
 
     for (std.enums.values(contract.ParticleEffect)) |effect| {
         const batch = batches.get(effect);
         if (batch.emitter_count == 0) continue;
         const effect_data = contract.effects.get(effect);
         if (effect_data.count == 0) continue;
-
         const pipeline: Shaders.Pipeline = switch (effect_data.blend) {
             .alpha => .particles_alpha,
             .additive => .particles_additive,
         };
         if (!self.bindPipeline(cmd, pipeline)) continue;
         const push: Shader.ParticlePushConstant = .{
-            .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() +
-                batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
-            .effect_params_address = self.resources.effect_params_buffer.getGPUAddress() +
-                @intFromEnum(effect) * @sizeOf(contract.Effect.GPU),
+            .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() + batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
+            .effect_params_address = self.resources.effect_params_buffer.getGPUAddress() + @intFromEnum(effect) * @sizeOf(contract.Effect.GPU),
             .elapsed_time = list.time,
             .emitter_count = batch.emitter_count,
         };
-        c.vkCmdPushConstants(cmd, particle_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.ParticlePushConstant), &push);
-        c.vkCmdDraw(cmd, 6, batch.emitter_count * effect_data.instancesPerEmitter(), 0, 0);
+        proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.ParticlePushConstant), &push);
+        proxy.cmdDraw(cmd, 6, batch.emitter_count * effect_data.instancesPerEmitter(), 0, 0);
     }
 }
 
-fn renderDebugPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+    const proxy = self.device.proxy;
     if (!self.bindPipeline(cmd, .debug)) return;
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-    c.vkCmdSetLineWidth(cmd, 1);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
+    proxy.cmdSetPrimitiveTopology(cmd, .line_list);
+    proxy.cmdSetDepthTestEnable(cmd, .false);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
+    const layout = self.resources.pipeline_layouts.get(.world).handle;
+    self.bindWorldDescriptors(cmd, layout);
 
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-    self.bindWorldDescriptors(cmd, world_pipeline_layout_handle);
-
-    const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.info.pMappedData));
+    const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.mapped));
     for (list.draw_lines.items, 0..) |line, line_index| {
         debug_vertices[line_index * 2] = .{ .position = .{ line.a[0], line.a[1], line.a[2], 1 }, .color = line.color };
         debug_vertices[line_index * 2 + 1] = .{ .position = .{ line.b[0], line.b[1], line.b[2], 1 }, .color = line.color };
     }
-    var push: Shader.WorldPushConstant = .{
+    const push: Shader.WorldPushConstant = .{
         .vertex_buffer_address = current_frame.debug_vertex_buffer.getGPUAddress(),
         .model_matrix = nz.Mat4x4(f32).identity.d,
         .joint_matrices_address = 0,
         .texture_index = 0,
     };
-    c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
-    c.vkCmdDraw(cmd, @as(u32, @intCast(list.draw_lines.items.len * 2)), 1, 0, 0);
+    proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.WorldPushConstant), &push);
+    proxy.cmdDraw(cmd, @intCast(list.draw_lines.items.len * 2), 1, 0, 0);
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
 }
 
-fn renderUiPass(self: *Vulkan, cmd: c.VkCommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+fn renderUiPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+    const proxy = self.device.proxy;
     current_frame.ui_vertex_buffer.copy(DrawList.UiQuad, list.ui.quads.items);
-    c.vkCmdSetCullMode(cmd, c.VK_CULL_MODE_NONE);
-    c.vkCmdSetPrimitiveTopology(cmd, c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    c.vkCmdSetDepthTestEnable(cmd, c.VK_FALSE);
-    c.vkCmdSetDepthWriteEnable(cmd, c.VK_FALSE);
+    proxy.cmdSetCullMode(cmd, .{});
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthTestEnable(cmd, .false);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
     if (!self.bindPipeline(cmd, .ui)) return;
-    const ui_pipeline_layout_handle = self.resources.pipeline_layouts.get(.ui).handle;
-    c.vkCmdBindDescriptorSets(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_layout_handle, 0, 1, &self.resources.texture_table.set, 0, null);
-
-    var push: Shader.UiPushConstant = .{
+    const layout = self.resources.pipeline_layouts.get(.ui).handle;
+    proxy.cmdBindDescriptorSets(cmd, .graphics, layout, 0, &.{self.resources.texture_table.set}, null);
+    const push: Shader.UiPushConstant = .{
         .vertex_buffer_address = current_frame.ui_vertex_buffer.getGPUAddress(),
         .screen_size = .{ list.ui.screen_width, list.ui.screen_height },
     };
-    c.vkCmdPushConstants(cmd, ui_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.UiPushConstant), &push);
-    c.vkCmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
-    c.vkCmdDrawIndexed(cmd, @as(u32, @intCast(list.ui.quads.items.len * 6)), 1, 0, 0, 0);
+    proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.UiPushConstant), &push);
+    proxy.cmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, .uint32);
+    proxy.cmdDrawIndexed(cmd, @intCast(list.ui.quads.items.len * 6), 1, 0, 0, 0);
 }
 
-fn bindWorldDescriptors(self: *Vulkan, cmd: c.VkCommandBuffer, pipeline_layout: c.VkPipelineLayout) void {
+fn bindWorldDescriptors(self: *Vulkan, cmd: vk.CommandBuffer, pipeline_layout: vk.PipelineLayout) void {
     const frame_index = self.frameIndex();
-    const world_sets = [_]c.VkDescriptorSet{
+    const world_sets = [_]vk.DescriptorSet{
         self.resources.scene_sets[frame_index],
         self.resources.texture_table.set,
         self.resources.shadow_sets[frame_index],
     };
-    c.vkCmdBindDescriptorSets(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, world_sets.len, &world_sets, 0, null);
+    self.device.proxy.cmdBindDescriptorSets(cmd, .graphics, pipeline_layout, 0, &world_sets, null);
 }
 
 fn frameIndex(self: *const Vulkan) usize {
     return self.current_frame_inflight % self.frames.len;
 }
 
-fn bindPipeline(self: *Vulkan, cmd: c.VkCommandBuffer, pipeline: Shaders.Pipeline) bool {
+fn bindPipeline(self: *Vulkan, cmd: vk.CommandBuffer, pipeline: Shaders.Pipeline) bool {
     const handle = self.resources.shaders.get(pipeline);
-    if (handle == null) return false;
-    c.vkCmdBindPipeline(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, handle);
+    if (handle == .null_handle) return false;
+    self.device.proxy.cmdBindPipeline(cmd, .graphics, handle);
     return true;
 }
 
 fn drawMesh(
     self: *Vulkan,
-    cmd: c.VkCommandBuffer,
+    cmd: vk.CommandBuffer,
     current_frame: *const FrameData,
     mesh: *const Mesh,
     surfaces: []const Mesh.Surface,
     palette_offset: ?u32,
     top_matrix: nz.Mat4x4(f32),
 ) void {
+    const proxy = self.device.proxy;
     var push: Shader.WorldPushConstant = .{
         .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
         .model_matrix = top_matrix.d,
@@ -770,11 +647,11 @@ fn drawMesh(
             self.resources.identity_joint_buffer.getGPUAddress(),
         .texture_index = 0,
     };
-    const world_pipeline_layout_handle = self.resources.pipeline_layouts.get(.world).handle;
-    c.vkCmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, c.VK_INDEX_TYPE_UINT32);
+    const layout = self.resources.pipeline_layouts.get(.world).handle;
+    proxy.cmdBindIndexBuffer(cmd, mesh.index_buffer.buffer, 0, .uint32);
     for (surfaces) |surface| {
         push.texture_index = @intFromEnum(surface.texture);
-        c.vkCmdPushConstants(cmd, world_pipeline_layout_handle, c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT, 0, @sizeOf(Shader.WorldPushConstant), &push);
-        c.vkCmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
+        proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.WorldPushConstant), &push);
+        proxy.cmdDrawIndexed(cmd, @intCast(surface.index_count), 1, surface.index_start, 0, 0);
     }
 }

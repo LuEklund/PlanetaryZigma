@@ -1,12 +1,11 @@
 const Shaders = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
+const vk = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const Shader = @import("renderer_contract").Shader;
 const PipelineLayout = @import("PipelineLayout.zig");
 const Swapchain = @import("Swapchain.zig");
-const check = @import("utils.zig").check;
 
 pub const Pipeline = enum {
     shadow_static,
@@ -54,187 +53,182 @@ const rows: std.EnumArray(Pipeline, Row) = .init(.{
     .ui = .{ .vert = .ui, .frag = .ui, .layout = .ui, .target = .main, .blend = .alpha, .lines = false },
 });
 
-const dynamic_states = [_]c.VkDynamicState{
-    c.VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT,
-    c.VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT,
-    c.VK_DYNAMIC_STATE_CULL_MODE,
-    c.VK_DYNAMIC_STATE_FRONT_FACE,
-    c.VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY,
-    c.VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
-    c.VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
-    c.VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
-    c.VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
-    c.VK_DYNAMIC_STATE_DEPTH_BIAS,
-    c.VK_DYNAMIC_STATE_LINE_WIDTH,
+const dynamic_states = [_]vk.DynamicState{
+    .viewport_with_count,
+    .scissor_with_count,
+    .cull_mode,
+    .front_face,
+    .primitive_topology,
+    .depth_test_enable,
+    .depth_write_enable,
+    .depth_compare_op,
+    .depth_bias_enable,
+    .depth_bias,
+    .line_width,
 };
 
-device: Device,
-pipeline_layouts: std.EnumArray(PipelineLayout.Kind, c.VkPipelineLayout),
-modules: std.EnumArray(Shader.Kind, c.VkShaderModule),
-pipelines: std.EnumArray(Pipeline, c.VkPipeline),
+const all_components: vk.ColorComponentFlags = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true };
 
-pub fn init(device: Device, pipeline_layouts: std.EnumArray(PipelineLayout.Kind, c.VkPipelineLayout)) Shaders {
+device: Device,
+pipeline_layouts: std.EnumArray(PipelineLayout.Kind, vk.PipelineLayout),
+modules: std.EnumArray(Shader.Kind, vk.ShaderModule),
+pipelines: std.EnumArray(Pipeline, vk.Pipeline),
+
+pub fn init(device: Device, pipeline_layouts: std.EnumArray(PipelineLayout.Kind, vk.PipelineLayout)) Shaders {
     return .{
         .device = device,
         .pipeline_layouts = pipeline_layouts,
-        .modules = .initFill(null),
-        .pipelines = .initFill(null),
+        .modules = .initFill(.null_handle),
+        .pipelines = .initFill(.null_handle),
     };
 }
 
 pub fn deinit(self: *Shaders) void {
-    for (self.pipelines.values) |pipeline| if (pipeline != null) c.vkDestroyPipeline(self.device.handle, pipeline, null);
-    for (self.modules.values) |module| if (module != null) c.vkDestroyShaderModule(self.device.handle, module, null);
+    for (self.pipelines.values) |pipeline| if (pipeline != .null_handle) self.device.proxy.destroyPipeline(pipeline, null);
+    for (self.modules.values) |module| if (module != .null_handle) self.device.proxy.destroyShaderModule(module, null);
 }
 
-pub fn get(self: *const Shaders, pipeline: Pipeline) c.VkPipeline {
+pub fn get(self: *const Shaders, pipeline: Pipeline) vk.Pipeline {
     return self.pipelines.get(pipeline);
 }
 
 pub fn apply(self: *Shaders, kind: Shader.Kind, spirv: []align(4) const u8) !void {
-    const module_info: c.VkShaderModuleCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = spirv.len,
-        .pCode = @ptrCast(spirv.ptr),
-    };
-    var module: c.VkShaderModule = null;
-    try check(c.vkCreateShaderModule(self.device.handle, &module_info, null, &module));
+    const module = try self.device.proxy.createShaderModule(&.{
+        .code_size = spirv.len,
+        .p_code = @ptrCast(spirv.ptr),
+    }, null);
 
     const old_module = self.modules.get(kind);
-    if (old_module != null) {
-        try check(c.vkDeviceWaitIdle(self.device.handle));
-        c.vkDestroyShaderModule(self.device.handle, old_module, null);
+    if (old_module != .null_handle) {
+        try self.device.proxy.deviceWaitIdle();
+        self.device.proxy.destroyShaderModule(old_module, null);
     }
     self.modules.set(kind, module);
 
     for (std.enums.values(Pipeline)) |pipeline| {
         const row = rows.get(pipeline);
         if (row.vert != kind and row.frag != kind) continue;
-        if (self.modules.get(row.vert) == null) continue;
-        if (row.frag) |frag| if (self.modules.get(frag) == null) continue;
+        if (self.modules.get(row.vert) == .null_handle) continue;
+        if (row.frag) |frag| if (self.modules.get(frag) == .null_handle) continue;
 
         const built = try self.build(row);
         const old_pipeline = self.pipelines.get(pipeline);
-        if (old_pipeline != null) {
-            try check(c.vkDeviceWaitIdle(self.device.handle));
-            c.vkDestroyPipeline(self.device.handle, old_pipeline, null);
+        if (old_pipeline != .null_handle) {
+            try self.device.proxy.deviceWaitIdle();
+            self.device.proxy.destroyPipeline(old_pipeline, null);
         }
         self.pipelines.set(pipeline, built);
     }
 }
 
-fn build(self: *Shaders, row: Row) !c.VkPipeline {
-    var stages: [2]c.VkPipelineShaderStageCreateInfo = undefined;
-    stages[0] = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-        .module = self.modules.get(row.vert),
-        .pName = Shader.get(row.vert).vert.?.ptr,
-    };
+fn build(self: *Shaders, row: Row) !vk.Pipeline {
+    var stages: [2]vk.PipelineShaderStageCreateInfo = undefined;
+    stages[0] = .{ .stage = .{ .vertex_bit = true }, .module = self.modules.get(row.vert), .p_name = Shader.get(row.vert).vert.?.ptr };
     var stage_count: u32 = 1;
     if (row.frag) |frag| {
-        stages[1] = .{
-            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = self.modules.get(frag),
-            .pName = Shader.get(frag).frag.?.ptr,
-        };
+        stages[1] = .{ .stage = .{ .fragment_bit = true }, .module = self.modules.get(frag), .p_name = Shader.get(frag).frag.?.ptr };
         stage_count = 2;
     }
 
-    const vertex_input: c.VkPipelineVertexInputStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    };
-    const input_assembly: c.VkPipelineInputAssemblyStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = if (row.lines) c.VK_PRIMITIVE_TOPOLOGY_LINE_LIST else c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    };
-    const viewport: c.VkPipelineViewportStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-    };
-    const rasterization: c.VkPipelineRasterizationStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .polygonMode = c.VK_POLYGON_MODE_FILL,
-        .cullMode = c.VK_CULL_MODE_BACK_BIT,
-        .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .lineWidth = 1,
-    };
-    const multisample: c.VkPipelineMultisampleStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
-    };
-    const depth_stencil: c.VkPipelineDepthStencilStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = c.VK_TRUE,
-        .depthWriteEnable = c.VK_TRUE,
-        .depthCompareOp = c.VK_COMPARE_OP_LESS_OR_EQUAL,
-    };
-    const color_attachment: c.VkPipelineColorBlendAttachmentState = switch (row.blend) {
+    const color_attachment = [_]vk.PipelineColorBlendAttachmentState{switch (row.blend) {
         .none => .{
-            .blendEnable = c.VK_FALSE,
-            .colorWriteMask = all_components,
+            .blend_enable = .false,
+            .src_color_blend_factor = .one,
+            .dst_color_blend_factor = .zero,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .zero,
+            .alpha_blend_op = .add,
+            .color_write_mask = all_components,
         },
         .alpha => .{
-            .blendEnable = c.VK_TRUE,
-            .srcColorBlendFactor = c.VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .colorBlendOp = c.VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .alphaBlendOp = c.VK_BLEND_OP_ADD,
-            .colorWriteMask = all_components,
+            .blend_enable = .true,
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .one_minus_src_alpha,
+            .alpha_blend_op = .add,
+            .color_write_mask = all_components,
         },
         .additive => .{
-            .blendEnable = c.VK_TRUE,
-            .srcColorBlendFactor = c.VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = c.VK_BLEND_FACTOR_ONE,
-            .colorBlendOp = c.VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ZERO,
-            .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ONE,
-            .alphaBlendOp = c.VK_BLEND_OP_ADD,
-            .colorWriteMask = all_components,
+            .blend_enable = .true,
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .zero,
+            .dst_alpha_blend_factor = .one,
+            .alpha_blend_op = .add,
+            .color_write_mask = all_components,
         },
-    };
-    const color_format: c.VkFormat = switch (row.target) {
+    }};
+    const color_format = [_]vk.Format{switch (row.target) {
         .main => Swapchain.draw_format,
         .mask => Swapchain.mask_format,
-        .shadow => c.VK_FORMAT_UNDEFINED,
-    };
+        .shadow => .undefined,
+    }};
     const color_count: u32 = if (row.target == .shadow) 0 else 1;
-    const color_blend: c.VkPipelineColorBlendStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = color_count,
-        .pAttachments = &color_attachment,
-    };
-    const dynamic: c.VkPipelineDynamicStateCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = dynamic_states.len,
-        .pDynamicStates = &dynamic_states,
-    };
-    const rendering: c.VkPipelineRenderingCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = color_count,
-        .pColorAttachmentFormats = &color_format,
-        .depthAttachmentFormat = if (row.target == .mask) c.VK_FORMAT_UNDEFINED else Swapchain.depth_format,
-    };
-    const pipeline_info: c.VkGraphicsPipelineCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = &rendering,
-        .stageCount = stage_count,
-        .pStages = &stages,
-        .pVertexInputState = &vertex_input,
-        .pInputAssemblyState = &input_assembly,
-        .pViewportState = &viewport,
-        .pRasterizationState = &rasterization,
-        .pMultisampleState = &multisample,
-        .pDepthStencilState = &depth_stencil,
-        .pColorBlendState = &color_blend,
-        .pDynamicState = &dynamic,
-        .layout = self.pipeline_layouts.get(row.layout),
-    };
-    var pipeline: c.VkPipeline = null;
-    try check(c.vkCreateGraphicsPipelines(self.device.handle, null, 1, &pipeline_info, null, &pipeline));
-    return pipeline;
-}
 
-const all_components: c.VkColorComponentFlags = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT;
+    const rendering: vk.PipelineRenderingCreateInfo = .{
+        .view_mask = 0,
+        .color_attachment_count = color_count,
+        .p_color_attachment_formats = &color_format,
+        .depth_attachment_format = if (row.target == .mask) .undefined else Swapchain.depth_format,
+        .stencil_attachment_format = .undefined,
+    };
+    const create_info = [_]vk.GraphicsPipelineCreateInfo{.{
+        .p_next = &rendering,
+        .stage_count = stage_count,
+        .p_stages = &stages,
+        .p_vertex_input_state = &.{},
+        .p_input_assembly_state = &.{
+            .topology = if (row.lines) .line_list else .triangle_list,
+            .primitive_restart_enable = .false,
+        },
+        .p_viewport_state = &.{},
+        .p_rasterization_state = &.{
+            .depth_clamp_enable = .false,
+            .rasterizer_discard_enable = .false,
+            .polygon_mode = .fill,
+            .cull_mode = .{ .back_bit = true },
+            .front_face = .counter_clockwise,
+            .depth_bias_enable = .false,
+            .depth_bias_constant_factor = 0,
+            .depth_bias_clamp = 0,
+            .depth_bias_slope_factor = 0,
+            .line_width = 1,
+        },
+        .p_multisample_state = &.{
+            .rasterization_samples = .{ .@"1_bit" = true },
+            .sample_shading_enable = .false,
+            .min_sample_shading = 0,
+            .alpha_to_coverage_enable = .false,
+            .alpha_to_one_enable = .false,
+        },
+        .p_depth_stencil_state = &.{
+            .depth_test_enable = .true,
+            .depth_write_enable = .true,
+            .depth_compare_op = .less_or_equal,
+            .depth_bounds_test_enable = .false,
+            .stencil_test_enable = .false,
+            .front = std.mem.zeroes(vk.StencilOpState),
+            .back = std.mem.zeroes(vk.StencilOpState),
+            .min_depth_bounds = 0,
+            .max_depth_bounds = 1,
+        },
+        .p_color_blend_state = &.{
+            .logic_op_enable = .false,
+            .logic_op = .copy,
+            .attachment_count = color_count,
+            .p_attachments = &color_attachment,
+            .blend_constants = .{ 0, 0, 0, 0 },
+        },
+        .p_dynamic_state = &.{ .dynamic_state_count = dynamic_states.len, .p_dynamic_states = &dynamic_states },
+        .layout = self.pipeline_layouts.get(row.layout),
+        .subpass = 0,
+        .base_pipeline_index = -1,
+    }};
+    var pipeline: [1]vk.Pipeline = undefined;
+    _ = try self.device.proxy.createGraphicsPipelines(.null_handle, &create_info, null, &pipeline);
+    return pipeline[0];
+}

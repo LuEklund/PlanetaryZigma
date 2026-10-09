@@ -1,256 +1,125 @@
 const Swapchain = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
-const Vma = @import("Vma.zig");
+const vk = @import("vulkan");
+const GpuMemory = @import("GpuMemory.zig");
+const Instance = @import("Instance.zig");
 const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
 const Surface = @import("Surface.zig");
 const Image = @import("Image.zig");
-const check = @import("utils.zig").check;
 
-swapchain: c.VkSwapchainKHR,
-present_mode: c.VkPresentModeKHR,
-images: [16]c.VkImage,
-render_semaphores: [16]c.VkSemaphore,
+pub const max_images = 16;
+
+swapchain: vk.SwapchainKHR,
+present_mode: vk.PresentModeKHR,
+images: [max_images]vk.Image,
+render_semaphores: [max_images]vk.Semaphore,
 image_count: u32,
-format: c.VkFormat,
-extent: c.VkExtent3D,
+format: vk.Format,
+extent: vk.Extent3D,
 draw_image: Image,
 depth_image: Image,
 mask_image: Image,
 
-pub const draw_format = c.VK_FORMAT_R16G16B16A16_SFLOAT;
-pub const depth_format = c.VK_FORMAT_D32_SFLOAT;
-pub const mask_format = c.VK_FORMAT_R8_UNORM;
+pub const draw_format: vk.Format = .r16g16b16a16_sfloat;
+pub const depth_format: vk.Format = .d32_sfloat;
+pub const mask_format: vk.Format = .r8_unorm;
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !Swapchain {
-    const present_mode = try getPresentMode(gpa, physical_device, surface);
-    const surface_format = try surface.getFormat(gpa, physical_device);
-    const swapchain = try create(physical_device, device, surface, surface_format, present_mode, width, height);
-
-    var image_count: u32 = undefined;
-    try check(c.vkGetSwapchainImagesKHR(device.handle, swapchain, &image_count, null));
-    if (image_count > 16) @panic("More than 16 VkImages\n");
-
-    var vk_images: [16]c.VkImage = undefined;
-    try check(c.vkGetSwapchainImagesKHR(device.handle, swapchain, &image_count, &vk_images[0]));
-
-    var semaphoreCreateInfo: c.VkSemaphoreCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+pub fn init(gpa: std.mem.Allocator, heap: *GpuMemory, instance: Instance, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !Swapchain {
+    var self: Swapchain = .{
+        .swapchain = .null_handle,
+        .present_mode = try getPresentMode(gpa, instance, physical_device, surface),
+        .images = undefined,
+        .render_semaphores = undefined,
+        .image_count = 0,
+        .format = undefined,
+        .extent = undefined,
+        .draw_image = undefined,
+        .depth_image = undefined,
+        .mask_image = undefined,
     };
-    var render_semaphores: [16]c.VkSemaphore = undefined;
-    for (0..image_count) |i| {
-        var new_render_semaphore: c.VkSemaphore = undefined;
-        try check(c.vkCreateSemaphore(device.handle, &semaphoreCreateInfo, null, &new_render_semaphore));
-        render_semaphores[i] = new_render_semaphore;
-    }
-
-    const actual_extent: c.VkExtent2D = try surface.getExtent(physical_device, width, height);
-    const extent_3d: c.VkExtent3D = .{ .width = actual_extent.width, .height = actual_extent.height, .depth = 1 };
-
-    const draw_image: Image = try .init(
-        vma,
-        device,
-        draw_format,
-        extent_3d,
-        .@"2d",
-        c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-            c.VK_IMAGE_USAGE_STORAGE_BIT |
-            c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    const depth_image: Image = try .init(
-        vma,
-        device,
-        depth_format,
-        extent_3d,
-        .@"2d",
-        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        c.VK_IMAGE_ASPECT_DEPTH_BIT,
-        false,
-    );
-
-    const cmd = try device.beginImmediateCommand();
-    var depth_image_barrier: Image.Barrier = .init(cmd, depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
-    depth_image_barrier.transition(
-        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-    );
-    try device.endImmediateCommand(cmd);
-
-    const mask_image: Image = try .init(
-        vma,
-        device,
-        mask_format,
-        extent_3d,
-        .@"2d",
-        c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    return .{
-        .swapchain = swapchain,
-        .present_mode = present_mode,
-        .images = vk_images,
-        .render_semaphores = render_semaphores,
-        .image_count = image_count,
-        .format = surface_format.format,
-        .extent = extent_3d,
-        .depth_image = depth_image,
-        .draw_image = draw_image,
-        .mask_image = mask_image,
-    };
+    try self.build(gpa, heap, instance, physical_device, device, surface, width, height);
+    return self;
 }
 
-pub fn deinit(self: *Swapchain, vma: Vma, device: Device) void {
-    self.draw_image.deinit(vma, device);
-    self.depth_image.deinit(vma, device);
-    self.mask_image.deinit(vma, device);
-
-    for (0..self.image_count) |i| {
-        c.vkDestroySemaphore(device.handle, self.render_semaphores[i], null);
-    }
-    c.vkDestroySwapchainKHR(device.handle, self.swapchain, null);
+pub fn deinit(self: *Swapchain, heap: *GpuMemory, device: Device) void {
+    self.destroy(heap, device);
 }
 
-fn create(
-    physical_device: PhysicalDevice,
-    device: Device,
-    surface: Surface,
-    chosen_format: c.VkSurfaceFormatKHR,
-    present_mode: c.VkPresentModeKHR,
-    width: u32,
-    height: u32,
-) !c.VkSwapchainKHR {
-    var swapchain: c.VkSwapchainKHR = undefined;
+pub fn recreate(self: *Swapchain, gpa: std.mem.Allocator, heap: *GpuMemory, instance: Instance, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !void {
+    try device.proxy.deviceWaitIdle();
+    self.destroy(heap, device);
+    try self.build(gpa, heap, instance, physical_device, device, surface, width, height);
+}
 
-    var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
-    try check(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface.handle, &capabilities));
+fn destroy(self: *Swapchain, heap: *GpuMemory, device: Device) void {
+    self.draw_image.deinit(heap, device);
+    self.depth_image.deinit(heap, device);
+    self.mask_image.deinit(heap, device);
+    for (self.render_semaphores[0..self.image_count]) |semaphore| device.proxy.destroySemaphore(semaphore, null);
+    device.proxy.destroySwapchainKHR(self.swapchain, null);
+}
 
-    const actual_extent: c.VkExtent2D = try surface.getExtent(physical_device, width, height);
+fn build(self: *Swapchain, gpa: std.mem.Allocator, heap: *GpuMemory, instance: Instance, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !void {
+    const surface_format = try surface.getFormat(gpa, instance, physical_device);
+    const capabilities = try instance.proxy.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, surface.handle);
+    const actual_extent = try surface.getExtent(instance, physical_device, width, height);
 
-    var swapchain_info: c.VkSwapchainCreateInfoKHR = .{
-        .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+    self.swapchain = try device.proxy.createSwapchainKHR(&.{
         .surface = surface.handle,
-        .minImageCount = capabilities.minImageCount,
-        .imageFormat = chosen_format.format,
-        .imageColorSpace = chosen_format.colorSpace,
-        .imageExtent = actual_extent,
-        .imageArrayLayers = 1,
-        .imageUsage = c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .imageSharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = capabilities.currentTransform,
-        .compositeAlpha = c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = present_mode,
-        .clipped = 1,
-    };
-
-    try check(c.vkCreateSwapchainKHR(device.handle, &swapchain_info, null, &swapchain));
-
-    return swapchain;
-}
-
-pub fn recreate(
-    self: *Swapchain,
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    physical_device: PhysicalDevice,
-    device: Device,
-    surface: Surface,
-    width: u32,
-    height: u32,
-) !void {
-    try check(c.vkDeviceWaitIdle(device.handle));
-    c.vkDestroySwapchainKHR(device.handle, self.swapchain, null);
-
-    const actual_extent = try surface.getExtent(physical_device, width, height);
-
-    const surface_format = try surface.getFormat(gpa, physical_device);
-    const swapchain = try create(physical_device, device, surface, surface_format, self.present_mode, actual_extent.width, actual_extent.height);
-
-    self.swapchain = swapchain;
-
+        .min_image_count = capabilities.min_image_count,
+        .image_format = surface_format.format,
+        .image_color_space = surface_format.color_space,
+        .image_extent = actual_extent,
+        .image_array_layers = 1,
+        .image_usage = .{ .transfer_dst_bit = true },
+        .image_sharing_mode = .exclusive,
+        .pre_transform = capabilities.current_transform,
+        .composite_alpha = .{ .opaque_bit_khr = true },
+        .present_mode = self.present_mode,
+        .clipped = .true,
+    }, null);
+    self.format = surface_format.format;
     self.extent = .{ .width = actual_extent.width, .height = actual_extent.height, .depth = 1 };
+
     var image_count: u32 = undefined;
-    try check(c.vkGetSwapchainImagesKHR(device.handle, swapchain, &image_count, null));
-    if (image_count > 16) @panic("More than 16 VkImages\n");
-
-    var vk_images: [16]c.VkImage = undefined;
-    try check(c.vkGetSwapchainImagesKHR(device.handle, swapchain, &image_count, &vk_images[0]));
-    self.images = vk_images;
-
+    _ = try device.proxy.getSwapchainImagesKHR(self.swapchain, &image_count, null);
+    std.debug.assert(image_count <= max_images);
+    _ = try device.proxy.getSwapchainImagesKHR(self.swapchain, &image_count, &self.images);
     self.image_count = image_count;
+    for (self.render_semaphores[0..image_count]) |*semaphore| semaphore.* = try device.proxy.createSemaphore(&.{}, null);
 
-    self.draw_image.deinit(vma, device);
-    self.draw_image = try .init(
-        vma,
-        device,
-        draw_format,
-        self.extent,
-        .@"2d",
-        c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-            c.VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-            c.VK_IMAGE_USAGE_STORAGE_BIT |
-            c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
-    self.depth_image.deinit(vma, device);
-    self.depth_image = try .init(
-        vma,
-        device,
-        depth_format,
-        self.extent,
-        .@"2d",
-        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        c.VK_IMAGE_ASPECT_DEPTH_BIT,
-        false,
-    );
-    self.mask_image.deinit(vma, device);
-    self.mask_image = try .init(
-        vma,
-        device,
-        mask_format,
-        self.extent,
-        .@"2d",
-        c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        false,
-    );
+    self.draw_image = try .init(heap, device, draw_format, self.extent, .@"2d", .{
+        .transfer_src_bit = true,
+        .transfer_dst_bit = true,
+        .storage_bit = true,
+        .color_attachment_bit = true,
+    }, .{ .color_bit = true }, false);
+    self.depth_image = try .init(heap, device, depth_format, self.extent, .@"2d", .{ .depth_stencil_attachment_bit = true }, .{ .depth_bit = true }, false);
+    self.mask_image = try .init(heap, device, mask_format, self.extent, .@"2d", .{ .color_attachment_bit = true, .sampled_bit = true }, .{ .color_bit = true }, false);
+
     const cmd = try device.beginImmediateCommand();
-    var depth_image_barrier: Image.Barrier = .init(cmd, self.depth_image.vk_image, c.VK_IMAGE_ASPECT_DEPTH_BIT);
+    var depth_image_barrier: Image.Barrier = .init(device, cmd, self.depth_image.vk_image, .{ .depth_bit = true });
     depth_image_barrier.transition(
-        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .depth_attachment_optimal,
+        .{ .early_fragment_tests_bit = true, .late_fragment_tests_bit = true },
+        .{ .depth_stencil_attachment_read_bit = true, .depth_stencil_attachment_write_bit = true },
     );
     try device.endImmediateCommand(cmd);
 }
 
-fn getPresentMode(gpa: std.mem.Allocator, physical_device: PhysicalDevice, surface: Surface) !c.VkPresentModeKHR {
-    var present_modes_count: u32 = undefined;
-    try check(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, surface.handle, &present_modes_count, null));
-    const present_modes: []c.VkPresentModeKHR = try gpa.alloc(c.VkPresentModeKHR, present_modes_count);
+fn getPresentMode(gpa: std.mem.Allocator, instance: Instance, physical_device: PhysicalDevice, surface: Surface) !vk.PresentModeKHR {
+    const present_modes = try instance.proxy.getPhysicalDeviceSurfacePresentModesAllocKHR(physical_device.handle, surface.handle, gpa);
     defer gpa.free(present_modes);
-    try check(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, surface.handle, &present_modes_count, present_modes.ptr));
-
-    var found_present_mode: u32 = c.VK_PRESENT_MODE_FIFO_KHR;
-
+    var found: vk.PresentModeKHR = .fifo_khr;
     for (present_modes) |mode| {
-        if (mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
-            found_present_mode = mode;
-            break;
-        }
-
-        if (mode == c.VK_PRESENT_MODE_IMMEDIATE_KHR) {
-            found_present_mode = mode;
-        } else if (mode == c.VK_PRESENT_MODE_FIFO_RELAXED_KHR and found_present_mode == c.VK_PRESENT_MODE_FIFO_KHR) {
-            found_present_mode = mode;
+        if (mode == .mailbox_khr) return mode;
+        if (mode == .immediate_khr) {
+            found = mode;
+        } else if (mode == .fifo_relaxed_khr and found == .fifo_khr) {
+            found = mode;
         }
     }
-    return found_present_mode;
+    return found;
 }

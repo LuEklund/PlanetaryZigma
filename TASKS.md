@@ -39,7 +39,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 ### Phase 4 — Lucas decisions (2026-10-09)
 - [x] V1 — Drop `VK_EXT_shader_object` and `VK_EXT_descriptor_buffer`. Target = Vulkan 1.3 core only, per `~/Obsidian/Projects/Zeta/zeta-design.md` "Feature set": BDA, dynamic rendering, synchronization2, extended dynamic state, descriptor indexing, one persistent descriptor set, pipeline cache. Zero optional extensions in the critical path. Remove the `VK_LAYER_KHRONOS_shader_object` emulation layer. Decision note first.
   - Result: decision 0010. 14 pipelines from a comptime table (blend baked, rest core dynamic state), descriptor sets (texture array update-after-bind), only VK_KHR_swapchain. Ran locally on RX 9060 XT: renders, 0 validation errors. Shader hot reload rebuilds affected pipelines (not yet exercised). Untested on NVIDIA/older GPUs.
-- [ ] V2 — Port the renderer from the C header (`@import("vulkan")` translate-c) to Snektron/vulkan-zig, pinned to the same commit dvui/gifer use (b496a6a5…) so U1 shares one `vk` module.
+- [x] V2 — Port the renderer from the C header (`@import("vulkan")` translate-c) to Snektron/vulkan-zig, pinned to the same commit dvui/gifer use (b496a6a5…) so U1 shares one `vk` module.
+  - Result: decision 0011. vulkan-zig everywhere, VMA removed (own 2-heap first-fit allocator). Runs on RX 9060 XT, 0 validation errors. Untested: NVIDIA, heap overflow on big planets (watch for "gpu memory: out of space").
 - [ ] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
 - [ ] D2 — Delete `Scene.particle_lab` and everything only it uses.
 - [x] T0 — Local dev loop (run on Lucas's PC, not cloud): screenshot hotkey/CLI flag writing PNG from the swapchain + a state-snapshot dump (scene, UI tree rects, entity counts) to a file Claude can read; usable with hot reload to check UI.

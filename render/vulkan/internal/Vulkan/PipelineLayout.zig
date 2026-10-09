@@ -1,34 +1,24 @@
 const PipelineLayout = @This();
 
-const c = @import("vulkan");
+const vk = @import("vulkan");
 const Device = @import("device.zig").Logical;
-const check = @import("utils.zig").check;
 
 pub const Kind = enum { world, particle, sky, ui };
-handle: c.VkPipelineLayout,
+pub const push_stages: vk.ShaderStageFlags = .{ .vertex_bit = true, .fragment_bit = true };
 
-pub fn init(device: Device, push_constant_size: u32, stage_flags: c.VkShaderStageFlags, descriptor_set_layouts: []const c.VkDescriptorSetLayout) !PipelineLayout {
-    const ranges: c.VkPushConstantRange = .{
-        .stageFlags = stage_flags,
-        .offset = 0,
-        .size = push_constant_size,
-    };
+handle: vk.PipelineLayout,
 
-    var layout_create_info: c.VkPipelineLayoutCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pSetLayouts = descriptor_set_layouts.ptr,
-        .setLayoutCount = @intCast(descriptor_set_layouts.len),
-        .pPushConstantRanges = &ranges,
-        .pushConstantRangeCount = if (push_constant_size != 0) 1 else 0,
-    };
-
-    var layout: c.VkPipelineLayout = undefined;
-    try check(c.vkCreatePipelineLayout(device.handle, &layout_create_info, null, &layout));
-    return .{
-        .handle = layout,
-    };
+pub fn init(device: Device, push_constant_size: u32, descriptor_set_layouts: []const vk.DescriptorSetLayout) !PipelineLayout {
+    const range = [_]vk.PushConstantRange{.{ .stage_flags = push_stages, .offset = 0, .size = push_constant_size }};
+    const handle = try device.proxy.createPipelineLayout(&.{
+        .set_layout_count = @intCast(descriptor_set_layouts.len),
+        .p_set_layouts = descriptor_set_layouts.ptr,
+        .push_constant_range_count = if (push_constant_size != 0) 1 else 0,
+        .p_push_constant_ranges = &range,
+    }, null);
+    return .{ .handle = handle };
 }
 
 pub fn deinit(self: PipelineLayout, device: Device) void {
-    c.vkDestroyPipelineLayout(device.handle, self.handle, null);
+    device.proxy.destroyPipelineLayout(self.handle, null);
 }

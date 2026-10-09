@@ -1,15 +1,14 @@
 const FrameData = @This();
 
-const c = @import("vulkan");
-const Vma = @import("Vma.zig");
+const vk = @import("vulkan");
+const GpuMemory = @import("GpuMemory.zig");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
 const DrawList = @import("renderer_contract").DrawList;
-const check = @import("utils.zig").check;
 
-swapchain_semaphore: c.VkSemaphore,
-render_fence: c.VkFence,
-command_buffer: c.VkCommandBuffer,
+swapchain_semaphore: vk.Semaphore,
+render_fence: vk.Fence,
+command_buffer: vk.CommandBuffer,
 gpu_scene: Buffer,
 ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
@@ -42,100 +41,34 @@ pub const GPUScene = extern struct {
     sky_horizon: [4]f32,
 };
 
-pub fn init(vma: Vma, device: Device) !FrameData {
-    var alloc_info: c.VkCommandBufferAllocateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = device.command_pool.handle,
-        .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-
-    var command_buffer: c.VkCommandBuffer = undefined;
-    try check(c.vkAllocateCommandBuffers(device.handle, &alloc_info, &command_buffer));
-
-    var semaphoreCreateInfo: c.VkSemaphoreCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-    };
-    var swapchain_semaphore: c.VkSemaphore = undefined;
-    try check(c.vkCreateSemaphore(device.handle, &semaphoreCreateInfo, null, &swapchain_semaphore));
-
-    var fence_info: c.VkFenceCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = c.VK_FENCE_CREATE_SIGNALED_BIT,
-    };
-
-    var render_fence: c.VkFence = undefined;
-    try check(c.vkCreateFence(device.handle, &fence_info, null, &render_fence));
-
+pub fn init(heap: *GpuMemory, device: Device) !FrameData {
+    var command_buffer: vk.CommandBuffer = undefined;
+    try device.proxy.allocateCommandBuffers(&.{
+        .command_pool = device.command_pool,
+        .level = .primary,
+        .command_buffer_count = 1,
+    }, @ptrCast(&command_buffer));
+    const storage: vk.BufferUsageFlags = .{ .storage_buffer_bit = true, .shader_device_address_bit = true };
+    const uniform: vk.BufferUsageFlags = .{ .uniform_buffer_bit = true, .storage_buffer_bit = true, .shader_device_address_bit = true };
     return .{
         .command_buffer = command_buffer,
-        .swapchain_semaphore = swapchain_semaphore,
-        .render_fence = render_fence,
-        .gpu_scene = try .init(
-            device,
-            vma,
-            GPUScene,
-            1,
-            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            .{
-                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            },
-        ),
-        .ui_vertex_buffer = try .init(
-            device,
-            vma,
-            DrawList.UiVertex,
-            DrawList.max_ui_quads * 4,
-            c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
-            .{
-                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            },
-        ),
-        .debug_vertex_buffer = try .init(
-            device,
-            vma,
-            DebugVertex,
-            DrawList.max_lines * 2,
-            c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
-            .{
-                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            },
-        ),
-        .emitter_buffer = try .init(
-            device,
-            vma,
-            GPUEmitter,
-            DrawList.max_emitters,
-            c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
-            .{
-                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            },
-        ),
-        .joint_buffer = try .init(
-            device,
-            vma,
-            [16]f32,
-            DrawList.max_joint_matrices,
-            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            .{
-                .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-                .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-            },
-        ),
+        .swapchain_semaphore = try device.proxy.createSemaphore(&.{}, null),
+        .render_fence = try device.proxy.createFence(&.{ .flags = .{ .signaled_bit = true } }, null),
+        .gpu_scene = try .init(device, heap, GPUScene, 1, uniform),
+        .ui_vertex_buffer = try .init(device, heap, DrawList.UiVertex, DrawList.max_ui_quads * 4, storage),
+        .debug_vertex_buffer = try .init(device, heap, DebugVertex, DrawList.max_lines * 2, storage),
+        .emitter_buffer = try .init(device, heap, GPUEmitter, DrawList.max_emitters, storage),
+        .joint_buffer = try .init(device, heap, [16]f32, DrawList.max_joint_matrices, uniform),
     };
 }
 
-pub fn deinit(self: *FrameData, vma: Vma, device: Device) void {
-    c.vkDestroySemaphore(device.handle, self.swapchain_semaphore, null);
-    c.vkDestroyFence(device.handle, self.render_fence, null);
-    c.vkFreeCommandBuffers(device.handle, device.command_pool.handle, 1, &self.command_buffer);
-    self.gpu_scene.deinit(vma);
-    self.ui_vertex_buffer.deinit(vma);
-    self.debug_vertex_buffer.deinit(vma);
-    self.emitter_buffer.deinit(vma);
-    self.joint_buffer.deinit(vma);
+pub fn deinit(self: *FrameData, heap: *GpuMemory, device: Device) void {
+    device.proxy.destroySemaphore(self.swapchain_semaphore, null);
+    device.proxy.destroyFence(self.render_fence, null);
+    device.proxy.freeCommandBuffers(device.command_pool, &.{self.command_buffer});
+    self.gpu_scene.deinit(heap);
+    self.ui_vertex_buffer.deinit(heap);
+    self.debug_vertex_buffer.deinit(heap);
+    self.emitter_buffer.deinit(heap);
+    self.joint_buffer.deinit(heap);
 }

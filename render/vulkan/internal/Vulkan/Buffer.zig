@@ -1,65 +1,48 @@
 const Buffer = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
-const Vma = @import("Vma.zig");
+const vk = @import("vulkan");
+const GpuMemory = @import("GpuMemory.zig");
 const Device = @import("device.zig").Logical;
-const check = @import("utils.zig").check;
 
-buffer: c.VkBuffer,
-vma_allocation: Vma.Allocation,
+buffer: vk.Buffer,
+range: GpuMemory.Range,
+mapped: [*]u8,
+size: u64,
 device: Device,
-info: Vma.AllocationInfo,
-len: u32,
 
-pub fn init(device: Device, vma: Vma, comptime T: type, amount: usize, vk_buffer_usage: c.VkBufferUsageFlags, vmaalloc_info: Vma.c.VmaAllocationCreateInfo) !Buffer {
-    var buffer_info: Vma.c.VkBufferCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = amount * @sizeOf(T),
-        .usage = vk_buffer_usage,
-    };
-
-    var new_buffer: c.VkBuffer = undefined;
-    var allocation: Vma.Allocation = undefined;
-    var info: Vma.AllocationInfo = undefined;
-
-    try check(Vma.c.vmaCreateBuffer(
-        vma.handle,
-        &buffer_info,
-        &vmaalloc_info,
-        @ptrCast(&new_buffer),
-        &allocation,
-        &info,
-    ));
-
+pub fn init(device: Device, heap: *GpuMemory, comptime T: type, amount: usize, usage: vk.BufferUsageFlags) !Buffer {
+    const size: u64 = @max(1, amount) * @sizeOf(T);
+    const buffer = try device.proxy.createBuffer(&.{
+        .size = size,
+        .usage = usage,
+        .sharing_mode = .exclusive,
+    }, null);
+    errdefer device.proxy.destroyBuffer(buffer, null);
+    const range = try heap.alloc(device.proxy.getBufferMemoryRequirements(buffer));
+    errdefer heap.free(range);
+    try device.proxy.bindBufferMemory(buffer, heap.memory, range.offset);
     return .{
-        .buffer = new_buffer,
-        .vma_allocation = allocation,
-        .info = info,
+        .buffer = buffer,
+        .range = range,
+        .mapped = heap.bytes(range),
+        .size = size,
         .device = device,
-        .len = @intCast(amount),
     };
 }
 
-pub fn deinit(self: *Buffer, vma: Vma) void {
-    Vma.c.vmaDestroyBuffer(vma.handle, @ptrCast(self.buffer), self.vma_allocation);
+pub fn deinit(self: *Buffer, heap: *GpuMemory) void {
+    self.device.proxy.destroyBuffer(self.buffer, null);
+    heap.free(self.range);
 }
 
-pub fn getGPUAddress(self: *const Buffer) c.VkDeviceAddress {
-    var device_address_info: c.VkBufferDeviceAddressInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-        .buffer = self.buffer,
-    };
-    return c.vkGetBufferDeviceAddress(self.device.handle, &device_address_info);
+pub fn getGPUAddress(self: *const Buffer) vk.DeviceAddress {
+    return self.device.proxy.getBufferDeviceAddress(&.{ .buffer = self.buffer });
 }
 
 pub fn copy(self: *Buffer, comptime T: type, data: []const T) void {
     const size = @sizeOf(T) * data.len;
-    std.debug.assert(size <= self.info.size);
-    var mapped: [*]u8 = @ptrCast(self.info.pMappedData);
-    var byte_data: [*]const u8 = @ptrCast(data.ptr);
-    @memcpy(
-        mapped[0..size],
-        byte_data[0..size],
-    );
+    std.debug.assert(size <= self.size);
+    const byte_data: [*]const u8 = @ptrCast(data.ptr);
+    @memcpy(self.mapped[0..size], byte_data[0..size]);
 }

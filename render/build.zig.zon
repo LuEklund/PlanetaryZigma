@@ -37,11 +37,6 @@
             .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#33d7f512583b8de44d1b6384aa1cf482f92e53e9",
             .hash = "N-V-__8AABoW_QEK-3TzuDEzM4iIfxXkfm2qHw0hBj0rutkl",
         },
-        .vma = .{ //TODO: Update to v3.4.0
-            .url = "git+https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator#v3.3.0",
-            .hash = "N-V-__8AAIutPgABk6NlXZhlJ5P8qVECvakZIKoO94h7xUOw",
-        },
-
         .zgltf = .{
             .url = "git+https://github.com/LuEklund/zgltf.git#551aac1c241370e32fc26c288bec6da71413a937",
             .hash = "zgltf-0.6.1-i6Tcb2QkAQAmIT81AQPl4bt5EBllj_AzLlDA37kY4b9U",
@@ -54,6 +49,10 @@
         .ztracy = .{
             .url = "git+https://github.com/HTRMC/ztracy?ref=v0.2.1#822b2eb73d18995fbc8d9c52fc9edf8d0e84fff2",
             .hash = "ztracy-0.2.0-q8LWRV4dAACRTyehcC2WT4l1rGZvx3vppsbwDr8GoWlv",
+        },
+        .vulkan_zig = .{
+            .url = "git+https://github.com/Snektron/vulkan-zig#b496a6a561ffbbeb530b0f9ed4e059f88c0723a5",
+            .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",
         },
     },
     .paths = .{

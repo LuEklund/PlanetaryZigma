@@ -95,32 +95,8 @@ pub fn build(b: *std.Build) void {
     const stb_image_module = stb_image.addModule("stb_image");
 
     const vulkandeps = b.dependency("vulkan_headers", .{});
-    const vmadep = b.dependency("vma", .{});
 
-    const vulkan_c = b.addTranslateC(.{
-        .root_source_file = b.addWriteFiles().add("vma_vulkan.h",
-            \\#include <vulkan/vulkan.h>
-            \\#include <vk_mem_alloc.h>
-        ),
-        .target = target,
-        .optimize = optimize,
-    });
-    vulkan_c.addIncludePath(vulkandeps.path("include/"));
-    vulkan_c.addIncludePath(vmadep.path("include/"));
-
-    const vulkan = vulkan_c.createModule();
-    vulkan.link_libcpp = true;
-    for (vulkan_c.include_dirs.items) |include_dir| vulkan.addIncludePath(include_dir.path);
-
-    vulkan.addCSourceFile(.{
-        .file = b.addWriteFiles().add("vma_impl.cpp",
-            \\#define VMA_STATIC_VULKAN_FUNCTIONS 1
-            \\#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
-            \\#define VMA_IMPLEMENTATION
-            \\#include <vk_mem_alloc.h>
-        ),
-        .flags = &.{ "-std=c++17", "-fvisibility=hidden" },
-    });
+    const vk = b.dependency("vulkan_zig", .{ .registry = vulkandeps.path("registry/vk.xml") }).module("vulkan-zig");
 
     _ = b.addModule("ui", .{
         .root_source_file = b.path("ui/root.zig"),
@@ -172,7 +148,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "Window", .module = window },
                 .{ .name = "stb_truetype", .module = stb_truetype_module },
                 .{ .name = "ztracy", .module = ztracy },
-                .{ .name = "vulkan", .module = vulkan },
+                .{ .name = "vulkan", .module = vk },
                 .{ .name = "renderer_contract", .module = renderer_contract },
             },
             .link_libc = true,

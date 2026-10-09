@@ -1,18 +1,17 @@
 const Image = @This();
 
 const std = @import("std");
-const c = @import("vulkan");
-const Vma = @import("Vma.zig");
+const vk = @import("vulkan");
+const GpuMemory = @import("GpuMemory.zig");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const check = @import("utils.zig").check;
 
-vk_image: c.VkImage = undefined,
-vk_imageview: c.VkImageView = undefined,
-vma_allocation: Vma.Allocation = undefined,
-extent: c.VkExtent3D = undefined,
-format: c.VkFormat = undefined,
-mip_mapped: bool = undefined,
+vk_image: vk.Image,
+vk_imageview: vk.ImageView,
+range: GpuMemory.Range,
+extent: vk.Extent3D,
+format: vk.Format,
+mip_levels: u32,
 
 pub const Kind = enum(u8) {
     @"2d" = 0,
@@ -21,399 +20,204 @@ pub const Kind = enum(u8) {
 };
 
 pub fn init(
-    vma: Vma,
+    heap: *GpuMemory,
     device: Device,
-    format: c.VkFormat,
-    extent: c.VkExtent3D,
+    format: vk.Format,
+    extent: vk.Extent3D,
     kind: Kind,
-    usages_flags: c.VkImageUsageFlags,
-    view_mask: c.VkImageAspectFlags,
+    usage: vk.ImageUsageFlags,
+    aspect: vk.ImageAspectFlags,
     mip_mapped: bool,
 ) !Image {
-    var image_info: c.VkImageCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = null,
+    const mip_levels: u32 = if (mip_mapped) std.math.log2_int(u32, @max(extent.width, extent.height)) + 1 else 1;
+    const layer_count: u32 = if (kind == .cube_map) 6 else 1;
+    const image = try device.proxy.createImage(&.{
+        .flags = .{ .cube_compatible_bit = kind == .cube_map },
+        .image_type = if (kind == .@"3d") .@"3d" else .@"2d",
+        .format = format,
         .extent = extent,
-        .format = format,
-        .mipLevels = 1,
-        .imageType = switch (kind) {
-            .@"2d" => c.VK_IMAGE_TYPE_2D,
-            .@"3d" => c.VK_IMAGE_TYPE_3D,
-            .cube_map => c.VK_IMAGE_TYPE_2D,
-        },
-        .arrayLayers = if (kind == .cube_map) 6 else 1,
-        .samples = c.VK_SAMPLE_COUNT_1_BIT,
-        .tiling = c.VK_IMAGE_TILING_OPTIMAL,
-        .usage = usages_flags,
-        .flags = if (kind == .cube_map) c.VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT else 0,
-    };
+        .mip_levels = mip_levels,
+        .array_layers = layer_count,
+        .samples = .{ .@"1_bit" = true },
+        .tiling = .optimal,
+        .usage = usage,
+        .sharing_mode = .exclusive,
+        .initial_layout = .undefined,
+    }, null);
+    errdefer device.proxy.destroyImage(image, null);
+    const range = try heap.alloc(device.proxy.getImageMemoryRequirements(image));
+    errdefer heap.free(range);
+    try device.proxy.bindImageMemory(image, heap.memory, range.offset);
 
-    const max: f32 = @floatFromInt(@max(extent.width, extent.height));
-    if (mip_mapped) {
-        image_info.mipLevels = @as(u32, @intFromFloat(@floor(@log2(max)))) + 1;
-    }
-
-    var vma_alloc_info: Vma.c.VmaAllocationCreateInfo = .{
-        .usage = Vma.c.VMA_MEMORY_USAGE_GPU_ONLY,
-        .requiredFlags = c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    };
-
-    var image: c.VkImage = undefined;
-    var vma_image_allocation: Vma.Allocation = undefined;
-    _ = Vma.c.vmaCreateImage(
-        vma.handle,
-        @ptrCast(&image_info),
-        &vma_alloc_info,
-        @ptrCast(&image),
-        &vma_image_allocation,
-        null,
-    );
-
-    var image_view_info: c.VkImageViewCreateInfo = .{
-        .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .viewType = switch (kind) {
-            .@"2d" => c.VK_IMAGE_VIEW_TYPE_2D,
-            .@"3d" => c.VK_IMAGE_VIEW_TYPE_3D,
-            .cube_map => c.VK_IMAGE_VIEW_TYPE_CUBE,
-        },
+    const image_view = try device.proxy.createImageView(&.{
         .image = image,
-        .format = format,
-        .subresourceRange = .{
-            .baseMipLevel = 0,
-            .levelCount = image_info.mipLevels,
-            .baseArrayLayer = 0,
-            .layerCount = if (kind == .cube_map) 6 else 1,
-            .aspectMask = view_mask,
+        .view_type = switch (kind) {
+            .@"2d" => .@"2d",
+            .@"3d" => .@"3d",
+            .cube_map => .cube,
         },
-    };
-
-    var image_view: c.VkImageView = undefined;
-    try check(c.vkCreateImageView(device.handle, &image_view_info, null, &image_view));
+        .format = format,
+        .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
+        .subresource_range = .{
+            .aspect_mask = aspect,
+            .base_mip_level = 0,
+            .level_count = mip_levels,
+            .base_array_layer = 0,
+            .layer_count = layer_count,
+        },
+    }, null);
 
     return .{
-        .format = format,
-        .extent = extent,
         .vk_image = image,
         .vk_imageview = image_view,
-        .vma_allocation = vma_image_allocation,
-        .mip_mapped = mip_mapped,
+        .range = range,
+        .extent = extent,
+        .format = format,
+        .mip_levels = mip_levels,
     };
 }
 
-pub fn deinit(self: *Image, vulkan_mem_alloc: Vma, device: Device) void {
-    c.vkDestroyImageView(device.handle, self.vk_imageview, null);
-    Vma.c.vmaDestroyImage(vulkan_mem_alloc.handle, @ptrCast(self.vk_image), self.vma_allocation);
+pub fn deinit(self: *Image, heap: *GpuMemory, device: Device) void {
+    device.proxy.destroyImageView(self.vk_imageview, null);
+    device.proxy.destroyImage(self.vk_image, null);
+    heap.free(self.range);
 }
 
-pub fn uploadDataToImage(self: *Image, vma: Vma, device: Device, data: anytype, bytes_per_pixel: u32, layer: u32) !void {
-    var upload_buffers: std.ArrayList(Buffer) = .empty;
-    defer {
-        for (upload_buffers.items) |*upload_buffer| upload_buffer.deinit(vma);
-        upload_buffers.deinit(std.heap.page_allocator);
-    }
-
-    const cmd = try device.beginImmediateCommand();
-    try self.recordUploadDataToImage(
-        std.heap.page_allocator,
-        vma,
-        device,
-        cmd,
-        data,
-        layer,
-        bytes_per_pixel,
-        &upload_buffers,
-    );
-    try device.endImmediateCommand(cmd);
-}
-
-pub fn recordUploadDataToImage(
-    self: *Image,
-    gpa: std.mem.Allocator,
-    vma: Vma,
-    device: Device,
-    cmd: c.VkCommandBuffer,
-    data: anytype,
-    layer: u32,
-    bytes_per_pixel: u32,
-    upload_buffers: *std.ArrayList(Buffer),
-) !void {
-    const data_size: u32 = self.extent.depth * self.extent.width * self.extent.height * bytes_per_pixel;
-
-    var upload_buffer: Buffer = try .init(
-        device,
-        vma,
-        u8,
-        data_size,
-        c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        .{
-            .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
-            .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        },
-    );
-    errdefer upload_buffer.deinit(vma);
-
-    @memcpy(
-        @as([*]u8, @ptrCast(upload_buffer.info.pMappedData))[0..@intCast(data_size)],
-        @as([*]const u8, @ptrCast(data))[0..@intCast(data_size)],
-    );
-
-    var image_barrier: Barrier = .init(cmd, self.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
+pub fn recordUpload(self: *Image, device: Device, cmd: vk.CommandBuffer, upload_buffer: Buffer, layer: u32, buffer_offset: u64) void {
+    var image_barrier: Barrier = .init(device, cmd, self.vk_image, .{ .color_bit = true });
     image_barrier.base_array_layer = layer;
-    image_barrier.transition(
-        c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        c.VK_PIPELINE_STAGE_TRANSFER_BIT,
-        c.VK_ACCESS_MEMORY_WRITE_BIT,
-    );
+    image_barrier.level_count = self.mip_levels;
+    image_barrier.transition(.transfer_dst_optimal, .{ .all_transfer_bit = true }, .{ .transfer_write_bit = true });
 
-    var copy_region: c.VkBufferImageCopy = .{
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = .{
-            .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = layer,
-            .layerCount = 1,
-        },
-        .imageExtent = self.extent,
-    };
+    const region = [_]vk.BufferImageCopy{.{
+        .buffer_offset = buffer_offset,
+        .buffer_row_length = 0,
+        .buffer_image_height = 0,
+        .image_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = layer, .layer_count = 1 },
+        .image_offset = .{ .x = 0, .y = 0, .z = 0 },
+        .image_extent = self.extent,
+    }};
+    device.proxy.cmdCopyBufferToImage(cmd, upload_buffer.buffer, self.vk_image, .transfer_dst_optimal, &region);
 
-    c.vkCmdCopyBufferToImage(
-        cmd,
-        upload_buffer.buffer,
-        self.vk_image,
-        c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &copy_region,
-    );
-
-    if (self.mip_mapped) {
-        generateMipmaps(self, cmd, self.extent);
+    if (self.mip_levels > 1) {
+        self.generateMipmaps(device, cmd, layer);
     } else {
-        image_barrier.transition(
-            c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            0,
-            0,
-        );
+        image_barrier.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
     }
-
-    try upload_buffers.append(gpa, upload_buffer);
 }
 
-fn generateMipmaps(self: *Image, cmd_buffer: c.VkCommandBuffer, image_size: c.VkExtent3D) void {
-    var size = image_size;
-    const mip_levels: usize = @as(usize, @intFromFloat(@floor(@log2(@as(f32, @floatFromInt(@max(size.width, size.height))))))) + 1;
+fn generateMipmaps(self: *Image, device: Device, cmd: vk.CommandBuffer, layer: u32) void {
+    var width: i32 = @intCast(self.extent.width);
+    var height: i32 = @intCast(self.extent.height);
+    for (0..self.mip_levels - 1) |mip| {
+        var source: Barrier = .init(device, cmd, self.vk_image, .{ .color_bit = true });
+        source.base_array_layer = layer;
+        source.base_mip_level = @intCast(mip);
+        source.old_layout = .transfer_dst_optimal;
+        source.src_stage = .{ .all_transfer_bit = true };
+        source.src_access = .{ .transfer_write_bit = true };
+        source.transition(.transfer_src_optimal, .{ .all_transfer_bit = true }, .{ .transfer_read_bit = true });
 
-    var mip_levels_barrier: Barrier = .init(cmd_buffer, self.vk_image, c.VK_IMAGE_ASPECT_COLOR_BIT);
-    mip_levels_barrier.transitionMipLevel(
-        c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        c.VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        c.VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        @intCast(mip_levels),
-        0,
-        1,
-    );
-
-    for (0..mip_levels) |mip| {
-        const half_size: c.VkExtent3D = .{
-            .height = size.height / 2,
-            .width = size.width / 2,
-        };
-        mip_levels_barrier.old_layout = c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        mip_levels_barrier.src_access = c.VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        mip_levels_barrier.src_stage = c.VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        mip_levels_barrier.transitionMipLevel(
-            c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            c.VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            c.VK_ACCESS_2_MEMORY_READ_BIT,
-            1,
-            @intCast(mip),
-            c.VK_REMAINING_ARRAY_LAYERS,
-        );
-        if (mip >= mip_levels - 1) continue;
-
-        var blit_info: c.VkBlitImageInfo2 = .{
-            .sType = c.VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-            .pNext = null,
-            .pRegions = &.{
-                .sType = c.VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-                .pNext = null,
-                .srcOffsets = .{
-                    .{},
-                    .{
-                        .x = @intCast(size.width),
-                        .y = @intCast(size.height),
-                        .z = 1,
-                    },
-                },
-                .dstOffsets = .{
-                    .{},
-                    .{
-                        .x = @intCast(half_size.width),
-                        .y = @intCast(half_size.height),
-                        .z = 1,
-                    },
-                },
-                .srcSubresource = .{
-                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                    .mipLevel = @intCast(mip),
-                },
-                .dstSubresource = .{
-                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                    .mipLevel = @intCast(mip + 1),
-                },
-            },
-            .dstImage = self.vk_image,
-            .dstImageLayout = c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .srcImage = self.vk_image,
-            .srcImageLayout = c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .filter = c.VK_FILTER_LINEAR,
-            .regionCount = 1,
-        };
-
-        c.vkCmdBlitImage2(cmd_buffer, &blit_info);
-
-        size = half_size;
+        const half_width = @max(1, @divTrunc(width, 2));
+        const half_height = @max(1, @divTrunc(height, 2));
+        const region = [_]vk.ImageBlit2{.{
+            .src_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = @intCast(mip), .base_array_layer = layer, .layer_count = 1 },
+            .src_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = width, .y = height, .z = 1 } },
+            .dst_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = @intCast(mip + 1), .base_array_layer = layer, .layer_count = 1 },
+            .dst_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = half_width, .y = half_height, .z = 1 } },
+        }};
+        device.proxy.cmdBlitImage2(cmd, &.{
+            .src_image = self.vk_image,
+            .src_image_layout = .transfer_src_optimal,
+            .dst_image = self.vk_image,
+            .dst_image_layout = .transfer_dst_optimal,
+            .region_count = region.len,
+            .p_regions = &region,
+            .filter = .linear,
+        });
+        source.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
+        width = half_width;
+        height = half_height;
     }
-    mip_levels_barrier.transitionMipLevel(
-        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        c.VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        c.VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        @intCast(mip_levels),
-        0,
-        1,
-    );
+    var last: Barrier = .init(device, cmd, self.vk_image, .{ .color_bit = true });
+    last.base_array_layer = layer;
+    last.base_mip_level = self.mip_levels - 1;
+    last.old_layout = .transfer_dst_optimal;
+    last.src_stage = .{ .all_transfer_bit = true };
+    last.src_access = .{ .transfer_write_bit = true };
+    last.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
 }
 
-pub fn copyOntoImage(self: Image, cmd: c.VkCommandBuffer, dest_image: Image) void {
-    var blit_region: c.VkImageBlit2 = .{
-        .sType = c.VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-        .pNext = null,
-        .srcOffsets = .{ .{}, .{
-            .x = @intCast(self.extent.width),
-            .y = @intCast(self.extent.height),
-            .z = 1,
-        } },
-        .dstOffsets = .{ .{}, .{
-            .x = @intCast(dest_image.extent.width),
-            .y = @intCast(dest_image.extent.height),
-            .z = 1,
-        } },
-        .srcSubresource = .{
-            .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-            .mipLevel = 0,
-        },
-        .dstSubresource = .{
-            .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-            .mipLevel = 0,
-        },
-    };
-
-    var blit_info: c.VkBlitImageInfo2 = .{
-        .sType = c.VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-        .pNext = null,
-        .dstImage = dest_image.vk_image,
-        .dstImageLayout = c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcImage = self.vk_image,
-        .srcImageLayout = c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .filter = c.VK_FILTER_LINEAR,
-        .regionCount = 1,
-        .pRegions = &blit_region,
-    };
-
-    c.vkCmdBlitImage2(cmd, &blit_info);
+pub fn copyOntoImage(self: Image, device: Device, cmd: vk.CommandBuffer, dest_image: vk.Image, dest_extent: vk.Extent3D) void {
+    const region = [_]vk.ImageBlit2{.{
+        .src_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
+        .src_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = @intCast(self.extent.width), .y = @intCast(self.extent.height), .z = 1 } },
+        .dst_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
+        .dst_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = @intCast(dest_extent.width), .y = @intCast(dest_extent.height), .z = 1 } },
+    }};
+    device.proxy.cmdBlitImage2(cmd, &.{
+        .src_image = self.vk_image,
+        .src_image_layout = .transfer_src_optimal,
+        .dst_image = dest_image,
+        .dst_image_layout = .transfer_dst_optimal,
+        .region_count = region.len,
+        .p_regions = &region,
+        .filter = .linear,
+    });
 }
 
 pub const Barrier = struct {
-    cmd: c.VkCommandBuffer,
-    image: c.VkImage,
-    aspect_mask: c.VkImageAspectFlags,
+    device: Device,
+    cmd: vk.CommandBuffer,
+    image: vk.Image,
+    aspect_mask: vk.ImageAspectFlags,
+    old_layout: vk.ImageLayout,
+    src_stage: vk.PipelineStageFlags2,
+    src_access: vk.AccessFlags2,
+    base_array_layer: u32,
+    base_mip_level: u32,
+    level_count: u32,
 
-    old_layout: c.VkImageLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-    src_stage: c.VkPipelineStageFlags = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-    src_access: c.VkAccessFlags = 0,
-
-    base_array_layer: u32 = 0,
-
-    pub fn init(cmd: c.VkCommandBuffer, image: c.VkImage, aspect_mask: c.VkImageAspectFlags) Barrier {
+    pub fn init(device: Device, cmd: vk.CommandBuffer, image: vk.Image, aspect_mask: vk.ImageAspectFlags) Barrier {
         return .{
+            .device = device,
             .cmd = cmd,
             .image = image,
             .aspect_mask = aspect_mask,
+            .old_layout = .undefined,
+            .src_stage = .{ .top_of_pipe_bit = true },
+            .src_access = .{},
+            .base_array_layer = 0,
+            .base_mip_level = 0,
+            .level_count = 1,
         };
     }
 
-    pub fn transition(self: *Barrier, layout: c.VkImageLayout, stage: c.VkPipelineStageFlags, access: c.VkAccessFlags) void {
-        var new: c.VkImageMemoryBarrier = .{
-            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = self.src_access,
-            .dstAccessMask = access,
-            .oldLayout = self.old_layout,
-            .newLayout = layout,
-            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+    pub fn transition(self: *Barrier, layout: vk.ImageLayout, stage: vk.PipelineStageFlags2, access: vk.AccessFlags2) void {
+        const barrier = [_]vk.ImageMemoryBarrier2{.{
+            .src_stage_mask = self.src_stage,
+            .src_access_mask = self.src_access,
+            .dst_stage_mask = stage,
+            .dst_access_mask = access,
+            .old_layout = self.old_layout,
+            .new_layout = layout,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
             .image = self.image,
-            .subresourceRange = .{
-                .aspectMask = self.aspect_mask,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = self.base_array_layer,
-                .layerCount = 1,
+            .subresource_range = .{
+                .aspect_mask = self.aspect_mask,
+                .base_mip_level = self.base_mip_level,
+                .level_count = self.level_count,
+                .base_array_layer = self.base_array_layer,
+                .layer_count = 1,
             },
-        };
-        c.vkCmdPipelineBarrier(self.cmd, self.src_stage, stage, 0, 0, null, 0, null, 1, &new);
-        self.*.old_layout = layout;
-        self.*.src_stage = stage;
-        self.*.src_access = access;
-    }
-
-    pub fn transitionMipLevel(
-        self: *Barrier,
-        new_layout: c.VkImageLayout,
-        dst_stage: c.VkPipelineStageFlags,
-        dst_access: c.VkAccessFlags,
-        level_count: u32,
-        base_mip_level: u32,
-        layer_count: u32,
-    ) void {
-        var new: c.VkImageMemoryBarrier2 = .{
-            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = self.src_stage,
-
-            .srcAccessMask = self.src_access,
-            .dstStageMask = dst_stage,
-            .dstAccessMask = dst_access,
-            .oldLayout = self.old_layout,
-            .newLayout = new_layout,
-            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = self.image,
-            .subresourceRange = .{
-                .aspectMask = self.aspect_mask,
-                .baseMipLevel = base_mip_level,
-                .levelCount = level_count,
-                .baseArrayLayer = 0,
-                .layerCount = layer_count,
-            },
-        };
-        var dep: c.VkDependencyInfo = .{
-            .sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = null,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &new,
-        };
-        c.vkCmdPipelineBarrier2(self.cmd, &dep);
-        self.*.old_layout = new_layout;
-        self.*.src_stage = dst_stage;
-        self.*.src_access = dst_access;
+        }};
+        self.device.proxy.cmdPipelineBarrier2(self.cmd, &.{
+            .image_memory_barrier_count = barrier.len,
+            .p_image_memory_barriers = &barrier,
+        });
+        self.old_layout = layout;
+        self.src_stage = stage;
+        self.src_access = access;
     }
 };
-

@@ -2,10 +2,14 @@ const Instance = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @import("vulkan");
-const check = @import("utils.zig").check;
+const vk = @import("vulkan");
 
-handle: c.VkInstance,
+handle: vk.Instance,
+base: *vk.BaseWrapper,
+api: *vk.InstanceWrapper,
+proxy: vk.InstanceProxy,
+
+extern fn vkGetInstanceProcAddr(instance: vk.Instance, name: [*:0]const u8) vk.PfnVoidFunction;
 
 const layers: []const [*:0]const u8 = if (builtin.mode == .Debug)
     &.{"VK_LAYER_KHRONOS_validation"}
@@ -13,27 +17,23 @@ else
     &.{};
 
 pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) !Instance {
-    var version: u32 = undefined;
-    try check(c.vkEnumerateInstanceVersion(&version));
-    if (c.VK_API_VERSION_MAJOR(version) < 1 or c.VK_API_VERSION_MINOR(version) < 3) {
-        std.log.err("this game needs Vulkan 1.3+, your driver reports {d}.{d} — please update your graphics drivers", .{ c.VK_API_VERSION_MAJOR(version), c.VK_API_VERSION_MINOR(version) });
-        return error.DynamicRenderingUnsupported;
+    const base = try gpa.create(vk.BaseWrapper);
+    errdefer gpa.destroy(base);
+    base.* = .load(vkGetInstanceProcAddr);
+
+    const version: vk.Version = @bitCast(try base.enumerateInstanceVersion());
+    if (version.major < 1 or (version.major == 1 and version.minor < 3)) {
+        std.log.err("this game needs Vulkan 1.3+, your driver reports {d}.{d} — please update your graphics drivers", .{ version.major, version.minor });
+        return error.VulkanVersionUnsupported;
     }
 
-    var count: u32 = undefined;
-    try check(c.vkEnumerateInstanceExtensionProperties(null, &count, null));
-
-    const enum_extensions: []c.VkExtensionProperties = try gpa.alloc(c.VkExtensionProperties, count);
-    defer gpa.free(enum_extensions);
-
-    try check(c.vkEnumerateInstanceExtensionProperties(null, &count, enum_extensions.ptr));
-
+    const available_extensions = try base.enumerateInstanceExtensionPropertiesAlloc(null, gpa);
+    defer gpa.free(available_extensions);
     var found: usize = 0;
-
-    for (enum_extensions) |enum_extension| {
-        const extension_name_len = std.mem.findScalar(u8, enum_extension.extensionName[0..], 0).?;
+    for (available_extensions) |available_extension| {
+        const available_name = std.mem.sliceTo(&available_extension.extension_name, 0);
         for (required_extensions) |required_extension| {
-            if (!std.mem.eql(u8, std.mem.span(required_extension), (enum_extension.extensionName[0..extension_name_len]))) continue;
+            if (!std.mem.eql(u8, std.mem.span(required_extension), available_name)) continue;
             std.log.info("found ext: [{d}/{d}] {s}", .{ found + 1, required_extensions.len, required_extension });
             found += 1;
         }
@@ -43,46 +43,42 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
         return error.ExtensionsNotFound;
     }
 
-    var layer_count: u32 = undefined;
-    try check(c.vkEnumerateInstanceLayerProperties(&layer_count, null));
-    const available_layers: []c.VkLayerProperties = try gpa.alloc(c.VkLayerProperties, layer_count);
+    const available_layers = try base.enumerateInstanceLayerPropertiesAlloc(gpa);
     defer gpa.free(available_layers);
-    try check(c.vkEnumerateInstanceLayerProperties(&layer_count, available_layers.ptr));
-
     var enabled_layers: std.ArrayList([*:0]const u8) = .empty;
     defer enabled_layers.deinit(gpa);
     for (layers) |requested_layer| {
-        const requested_name = std.mem.span(requested_layer);
         for (available_layers) |available_layer| {
-            const available_name_len = std.mem.findScalar(u8, available_layer.layerName[0..], 0).?;
-            if (std.mem.eql(u8, requested_name, available_layer.layerName[0..available_name_len])) {
+            if (std.mem.eql(u8, std.mem.span(requested_layer), std.mem.sliceTo(&available_layer.layer_name, 0))) {
                 try enabled_layers.append(gpa, requested_layer);
                 break;
             }
         } else std.log.warn("vulkan layer not installed, skipping: {s}", .{requested_layer});
     }
 
-    const instance_create_info: *const c.VkInstanceCreateInfo = &.{
-        .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &.{
-            .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            .pApplicationName = "PlanetaryZigma",
-            .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
-            .pEngineName = "Zigma",
-            .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-            .apiVersion = c.VK_API_VERSION_1_3,
-        },
-        .enabledExtensionCount = @intCast(required_extensions.len),
-        .ppEnabledExtensionNames = required_extensions.ptr,
-        .enabledLayerCount = @intCast(enabled_layers.items.len),
-        .ppEnabledLayerNames = enabled_layers.items.ptr,
+    const app_info: vk.ApplicationInfo = .{
+        .p_application_name = "PlanetaryZigma",
+        .application_version = vk.makeApiVersion(0, 1, 0, 0).toU32(),
+        .p_engine_name = "Zigma",
+        .engine_version = vk.makeApiVersion(0, 1, 0, 0).toU32(),
+        .api_version = vk.API_VERSION_1_3.toU32(),
     };
+    const handle = try base.createInstance(&.{
+        .p_application_info = &app_info,
+        .enabled_extension_count = @intCast(required_extensions.len),
+        .pp_enabled_extension_names = required_extensions.ptr,
+        .enabled_layer_count = @intCast(enabled_layers.items.len),
+        .pp_enabled_layer_names = enabled_layers.items.ptr,
+    }, null);
 
-    var instance: c.VkInstance = undefined;
-    try check(c.vkCreateInstance(instance_create_info, null, @ptrCast(&instance)));
-    return .{ .handle = instance };
+    const api = try gpa.create(vk.InstanceWrapper);
+    errdefer gpa.destroy(api);
+    api.* = .load(handle, base.dispatch.vkGetInstanceProcAddr.?);
+    return .{ .handle = handle, .base = base, .api = api, .proxy = .init(handle, api) };
 }
 
-pub fn deinit(self: Instance) void {
-    c.vkDestroyInstance(self.handle, null);
+pub fn deinit(self: Instance, gpa: std.mem.Allocator) void {
+    self.proxy.destroyInstance(null);
+    gpa.destroy(self.api);
+    gpa.destroy(self.base);
 }

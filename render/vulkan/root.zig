@@ -52,12 +52,11 @@ pub const ffi = struct {
         if (pre_reload) return;
         const context: *Context = @ptrCast(@alignCast(handle));
         contract.log.io = context.io;
-        context.vulkan.rebindProcs();
     }
 
     pub export fn uploadImage(handle: *anyopaque, upload: *const contract.ImageUpload) contract.TextureHandle {
         const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadImage(upload) catch |err| {
+        return context.vulkan.resources.uploadImage(&context.vulkan.heaps, upload) catch |err| {
             std.log.err("upload image: {s}", .{@errorName(err)});
             return .missing;
         };
@@ -65,14 +64,14 @@ pub const ffi = struct {
 
     pub export fn uploadSkybox(handle: *anyopaque, upload: *const contract.SkyboxUpload) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.uploadSkybox(upload, context.vulkan.current_frame_inflight) catch |err| {
+        context.vulkan.resources.uploadSkybox(&context.vulkan.heaps, upload, context.vulkan.current_frame_inflight) catch |err| {
             std.log.err("upload skybox: {s}", .{@errorName(err)});
         };
     }
 
     pub export fn uploadMesh(handle: *anyopaque, old: contract.MeshHandle, upload: *const contract.MeshUpload) contract.MeshHandle {
         const context: *Context = @ptrCast(@alignCast(handle));
-        return context.vulkan.resources.uploadMesh(old, context.vulkan.current_frame_inflight, upload) catch |err| {
+        return context.vulkan.resources.uploadMesh(&context.vulkan.heaps, old, context.vulkan.current_frame_inflight, upload) catch |err| {
             std.log.err("upload mesh {s}: {s}", .{ upload.name, @errorName(err) });
             return .none;
         };
@@ -80,12 +79,12 @@ pub const ffi = struct {
 
     pub export fn freeMesh(handle: *anyopaque, mesh: contract.MeshHandle) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.freeMesh(mesh, context.vulkan.current_frame_inflight);
+        context.vulkan.resources.freeMesh(&context.vulkan.heaps, mesh, context.vulkan.current_frame_inflight);
     }
 
     pub export fn freeImage(handle: *anyopaque, texture: contract.TextureHandle) void {
         const context: *Context = @ptrCast(@alignCast(handle));
-        context.vulkan.resources.freeTexture(texture, context.vulkan.current_frame_inflight);
+        context.vulkan.resources.freeTexture(&context.vulkan.heaps, texture, context.vulkan.current_frame_inflight);
     }
 
     pub export fn uploadShader(handle: *anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) void {

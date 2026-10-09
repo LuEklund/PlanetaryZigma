@@ -2,10 +2,10 @@ const Mesh = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const c = @import("vulkan");
+const vk = @import("vulkan");
 const Device = @import("device.zig").Logical;
 const Buffer = @import("Buffer.zig");
-const Vma = @import("Vma.zig");
+const GpuMemory = @import("GpuMemory.zig");
 const contract = @import("renderer_contract");
 
 surfaces: []Surface,
@@ -25,7 +25,7 @@ pub const Surface = struct {
 
 pub fn init(
     gpa: std.mem.Allocator,
-    vma: Vma,
+    heap: *GpuMemory,
     name: []const u8,
     device: Device,
     comptime VertexType: type,
@@ -34,30 +34,12 @@ pub fn init(
     surfaces: []Surface,
     opaque_count: u32,
 ) !Mesh {
-    var vertex_buffer: Buffer = try .init(
-        device,
-        vma,
-        VertexType,
-        vertices.len,
-        c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR,
-        .{
-            .usage = c.VMA_MEMORY_USAGE_AUTO,
-            .flags = c.VMA_ALLOCATION_CREATE_MAPPED_BIT | c.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-        },
-    );
+    var vertex_buffer: Buffer = try .init(device, heap, VertexType, vertices.len, .{ .storage_buffer_bit = true, .shader_device_address_bit = true });
+    errdefer vertex_buffer.deinit(heap);
     vertex_buffer.copy(VertexType, vertices);
 
-    var index_buffer: Buffer = try .init(
-        device,
-        vma,
-        u32,
-        indices.len,
-        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR,
-        .{
-            .usage = c.VMA_MEMORY_USAGE_AUTO,
-            .flags = c.VMA_ALLOCATION_CREATE_MAPPED_BIT | c.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-        },
-    );
+    var index_buffer: Buffer = try .init(device, heap, u32, indices.len, .{ .index_buffer_bit = true, .shader_device_address_bit = true });
+    errdefer index_buffer.deinit(heap);
     index_buffer.copy(u32, indices);
 
     return .{
@@ -69,9 +51,9 @@ pub fn init(
     };
 }
 
-pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, vma: Vma) void {
-    self.index_buffer.deinit(vma);
-    self.vertex_buffer.deinit(vma);
+pub fn deinit(self: *Mesh, gpa: std.mem.Allocator, heap: *GpuMemory) void {
+    self.index_buffer.deinit(heap);
+    self.vertex_buffer.deinit(heap);
     gpa.free(self.name);
     gpa.free(self.surfaces);
 }
