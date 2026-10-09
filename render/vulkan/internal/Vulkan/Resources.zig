@@ -2,10 +2,8 @@ const Resources = @This();
 
 const std = @import("std");
 const c = @import("vulkan");
-const ext = @import("procs.zig").device.ProcTable;
 const nz = @import("numz");
 const Vma = @import("Vma.zig");
-const PhysicalDevice = @import("device.zig").Physical;
 const Device = @import("device.zig").Logical;
 const DescriptorLayout = @import("DescriptorLayout.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
@@ -69,19 +67,22 @@ effect_params_buffer: Buffer,
 
 shadow_image: Image,
 shadow_sampler: c.VkSampler,
-shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer,
-shadow_cascade_offset: c.VkDeviceSize,
+cascade_buffers: [FrameData.max_frames_inflight]Buffer,
 
-pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device) !*Resources {
+descriptor_pool: c.VkDescriptorPool,
+scene_sets: [FrameData.max_frames_inflight]c.VkDescriptorSet,
+shadow_sets: [FrameData.max_frames_inflight]c.VkDescriptorSet,
+
+pub fn init(gpa: std.mem.Allocator, vma: Vma, device: Device) !*Resources {
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
             .{
                 .binding = 0,
-                .descriptorCount = @sizeOf(FrameData.GPUScene),
-                .descriptorType = c.VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
+                .descriptorCount = 1,
+                .descriptorType = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
-        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
+        }, 0, null),
         .material = try .init(device, &.{
             .{
                 .binding = 0,
@@ -90,7 +91,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
                 .pImmutableSamplers = null,
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
-        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
+        }, 0, null),
         .shadow = try .init(device, &.{
             .{
                 .binding = 0,
@@ -101,11 +102,11 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
             },
             .{
                 .binding = 1,
-                .descriptorCount = @sizeOf(GPUCascades),
-                .descriptorType = c.VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
+                .descriptorCount = 1,
+                .descriptorType = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
-        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
+        }, 0, null),
         .textures = try .init(device, &.{
             .{
                 .binding = 0,
@@ -114,7 +115,9 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
                 .pImmutableSamplers = null,
                 .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT | c.VK_SHADER_STAGE_FRAGMENT_BIT,
             },
-        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT),
+        }, c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT, &.{
+            c.VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | c.VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | c.VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        }),
     });
 
     const pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout) = .init(.{
@@ -142,7 +145,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         vma,
         nz.Mat4x4(f32),
         1,
-        c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+        c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         .{
             .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
             .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
@@ -209,41 +212,52 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     var shadow_sampler: c.VkSampler = undefined;
     try check(c.vkCreateSampler(device.handle, &shadow_sampler_info, null, &shadow_sampler));
 
-    var shadow_set_size: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutSizeEXT(device.handle, descriptor_layouts.get(.shadow).handle, &shadow_set_size);
-    var shadow_sampler_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.shadow).handle, 0, &shadow_sampler_offset);
-    var shadow_cascade_offset: c.VkDeviceSize = 0;
-    ext.vkGetDescriptorSetLayoutBindingOffsetEXT(device.handle, descriptor_layouts.get(.shadow).handle, 1, &shadow_cascade_offset);
-
-    var shadow_descriptor_buffers: [FrameData.max_frames_inflight]Buffer = undefined;
-    for (&shadow_descriptor_buffers) |*shadow_descriptor_buffer| {
-        shadow_descriptor_buffer.* = try .init(
+    var cascade_buffers: [FrameData.max_frames_inflight]Buffer = undefined;
+    for (&cascade_buffers) |*cascade_buffer| {
+        cascade_buffer.* = try .init(
             device,
             vma,
-            u8,
-            shadow_set_size,
-            c.VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-                c.VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            GPUCascades,
+            1,
+            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             .{ .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU, .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT },
         );
-        const shadow_image_info: c.VkDescriptorImageInfo = .{
-            .sampler = shadow_sampler,
-            .imageView = shadow_image.vk_imageview,
-            .imageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-        const shadow_descriptor_get_info: c.VkDescriptorGetInfoEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .data = .{ .pCombinedImageSampler = &shadow_image_info },
-        };
-        const shadow_descriptor_bytes: [*]u8 = @ptrCast(shadow_descriptor_buffer.info.pMappedData);
-        ext.vkGetDescriptorEXT(
-            device.handle,
-            &shadow_descriptor_get_info,
-            physical_device.combined_image_sampler_descriptor_size,
-            shadow_descriptor_bytes + shadow_sampler_offset,
-        );
+    }
+
+    const frame_count: u32 = FrameData.max_frames_inflight;
+    const pool_sizes = [_]c.VkDescriptorPoolSize{
+        .{ .type = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = frame_count * 2 },
+        .{ .type = c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = max_textures + 1 + frame_count },
+    };
+    var descriptor_pool: c.VkDescriptorPool = null;
+    try check(c.vkCreateDescriptorPool(device.handle, &.{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = c.VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+        .maxSets = frame_count * 2 + 2,
+        .poolSizeCount = pool_sizes.len,
+        .pPoolSizes = &pool_sizes,
+    }, null, &descriptor_pool));
+
+    var scene_sets: [FrameData.max_frames_inflight]c.VkDescriptorSet = undefined;
+    var shadow_sets: [FrameData.max_frames_inflight]c.VkDescriptorSet = undefined;
+    const scene_layouts: [FrameData.max_frames_inflight]c.VkDescriptorSetLayout = @splat(descriptor_layouts.get(.scene).handle);
+    const shadow_layouts: [FrameData.max_frames_inflight]c.VkDescriptorSetLayout = @splat(descriptor_layouts.get(.shadow).handle);
+    try check(c.vkAllocateDescriptorSets(device.handle, &.{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = frame_count,
+        .pSetLayouts = &scene_layouts,
+    }, &scene_sets));
+    try check(c.vkAllocateDescriptorSets(device.handle, &.{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = frame_count,
+        .pSetLayouts = &shadow_layouts,
+    }, &shadow_sets));
+
+    for (shadow_sets, cascade_buffers) |shadow_set, cascade_buffer| {
+        TextureTable.writeCombinedSampler(device, shadow_set, 0, shadow_image.vk_imageview, shadow_sampler);
+        writeUniformBuffer(device, shadow_set, 1, cascade_buffer);
     }
 
     const self = try gpa.create(Resources);
@@ -265,8 +279,10 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         .effect_params_buffer = effect_params_buffer,
         .shadow_image = shadow_image,
         .shadow_sampler = shadow_sampler,
-        .shadow_descriptor_buffers = shadow_descriptor_buffers,
-        .shadow_cascade_offset = shadow_cascade_offset,
+        .cascade_buffers = cascade_buffers,
+        .descriptor_pool = descriptor_pool,
+        .scene_sets = scene_sets,
+        .shadow_sets = shadow_sets,
         .gpa = gpa,
         .vma = vma,
         .device = device,
@@ -275,15 +291,15 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
         gpa,
         vma,
         device,
+        descriptor_pool,
         descriptor_layouts.get(.textures).handle,
         descriptor_layouts.get(.material).handle,
-        physical_device.combined_image_sampler_descriptor_size,
     );
-    try self.shaders.init(gpa, device, .init(.{
-        .scene = descriptor_layouts.get(.scene).handle,
-        .material = descriptor_layouts.get(.material).handle,
-        .textures = descriptor_layouts.get(.textures).handle,
-        .shadow = descriptor_layouts.get(.shadow).handle,
+    self.shaders = .init(device, .init(.{
+        .world = pipeline_layouts.get(.world).handle,
+        .particle = pipeline_layouts.get(.particle).handle,
+        .sky = pipeline_layouts.get(.sky).handle,
+        .ui = pipeline_layouts.get(.ui).handle,
     }));
 
     var blank: Image = try .init(
@@ -369,16 +385,34 @@ pub fn deinit(self: *Resources, gpa: std.mem.Allocator, vma: Vma, device: Device
     self.effect_params_buffer.deinit(vma);
     self.shadow_image.deinit(vma, device);
     c.vkDestroySampler(device.handle, self.shadow_sampler, null);
-    for (&self.shadow_descriptor_buffers) |*shadow_descriptor_buffer| shadow_descriptor_buffer.deinit(vma);
+    for (&self.cascade_buffers) |*cascade_buffer| cascade_buffer.deinit(vma);
+    c.vkDestroyDescriptorPool(device.handle, self.descriptor_pool, null);
     gpa.destroy(self);
 }
 
 pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUCascades) void {
-    const bytes: [*]u8 = @ptrCast(self.shadow_descriptor_buffers[frame_index].info.pMappedData);
-    @memcpy(
-        bytes[self.shadow_cascade_offset..][0..@sizeOf(GPUCascades)],
-        @as([*]const u8, @ptrCast(cascades))[0..@sizeOf(GPUCascades)],
-    );
+    self.cascade_buffers[frame_index].copy(GPUCascades, cascades[0..1]);
+}
+
+pub fn writeSceneSet(self: *Resources, frame_index: usize, scene_buffer: Buffer) void {
+    writeUniformBuffer(self.device, self.scene_sets[frame_index], 0, scene_buffer);
+}
+
+fn writeUniformBuffer(device: Device, set: c.VkDescriptorSet, binding: u32, buffer: Buffer) void {
+    const buffer_info: c.VkDescriptorBufferInfo = .{
+        .buffer = buffer.buffer,
+        .offset = 0,
+        .range = c.VK_WHOLE_SIZE,
+    };
+    const descriptor_write: c.VkWriteDescriptorSet = .{
+        .sType = c.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = set,
+        .dstBinding = binding,
+        .descriptorCount = 1,
+        .descriptorType = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .pBufferInfo = &buffer_info,
+    };
+    c.vkUpdateDescriptorSets(device.handle, 1, &descriptor_write, 0, null);
 }
 
 pub fn meshAt(self: *Resources, handle: contract.MeshHandle) ?*Mesh {

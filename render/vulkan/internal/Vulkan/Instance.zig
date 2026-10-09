@@ -8,9 +8,9 @@ const check = @import("utils.zig").check;
 handle: c.VkInstance,
 
 const layers: []const [*:0]const u8 = if (builtin.mode == .Debug)
-    &.{ "VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_shader_object" }
+    &.{"VK_LAYER_KHRONOS_validation"}
 else
-    &.{"VK_LAYER_KHRONOS_shader_object"};
+    &.{};
 
 pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) !Instance {
     var version: u32 = undefined;
@@ -70,7 +70,7 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
             .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
             .pEngineName = "Zigma",
             .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-            .apiVersion = c.VK_API_VERSION_1_4,
+            .apiVersion = c.VK_API_VERSION_1_3,
         },
         .enabledExtensionCount = @intCast(required_extensions.len),
         .ppEnabledExtensionNames = required_extensions.ptr,

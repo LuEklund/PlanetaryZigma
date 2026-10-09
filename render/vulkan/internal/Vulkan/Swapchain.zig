@@ -20,6 +20,10 @@ draw_image: Image,
 depth_image: Image,
 mask_image: Image,
 
+pub const draw_format = c.VK_FORMAT_R16G16B16A16_SFLOAT;
+pub const depth_format = c.VK_FORMAT_D32_SFLOAT;
+pub const mask_format = c.VK_FORMAT_R8_UNORM;
+
 pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, device: Device, surface: Surface, width: u32, height: u32) !Swapchain {
     const present_mode = try getPresentMode(gpa, physical_device, surface);
     const surface_format = try surface.getFormat(gpa, physical_device);
@@ -48,7 +52,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     const draw_image: Image = try .init(
         vma,
         device,
-        c.VK_FORMAT_R16G16B16A16_SFLOAT,
+        draw_format,
         extent_3d,
         .@"2d",
         c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -61,7 +65,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     const depth_image: Image = try .init(
         vma,
         device,
-        c.VK_FORMAT_D32_SFLOAT,
+        depth_format,
         extent_3d,
         .@"2d",
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -81,7 +85,7 @@ pub fn init(gpa: std.mem.Allocator, vma: Vma, physical_device: PhysicalDevice, d
     const mask_image: Image = try .init(
         vma,
         device,
-        c.VK_FORMAT_R8_UNORM,
+        mask_format,
         extent_3d,
         .@"2d",
         c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -185,7 +189,7 @@ pub fn recreate(
     self.draw_image = try .init(
         vma,
         device,
-        c.VK_FORMAT_R16G16B16A16_SFLOAT,
+        draw_format,
         self.extent,
         .@"2d",
         c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -199,7 +203,7 @@ pub fn recreate(
     self.depth_image = try .init(
         vma,
         device,
-        c.VK_FORMAT_D32_SFLOAT,
+        depth_format,
         self.extent,
         .@"2d",
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -210,7 +214,7 @@ pub fn recreate(
     self.mask_image = try .init(
         vma,
         device,
-        c.VK_FORMAT_R8_UNORM,
+        mask_format,
         self.extent,
         .@"2d",
         c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,

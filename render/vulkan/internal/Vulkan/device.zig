@@ -7,7 +7,6 @@ pub const Physical = struct {
     handle: c.VkPhysicalDevice,
     max_anisotropy: f32,
     graphics_queue_family_index: u32,
-    combined_image_sampler_descriptor_size: usize,
 
     pub fn pick(instance: Instance, surface: c.VkSurfaceKHR) !Physical {
         var device_count: u32 = 0;
@@ -37,20 +36,10 @@ pub const Physical = struct {
                     const device_name = std.mem.sliceTo(&properties.deviceName, 0);
                     std.log.info("found physical device: {s}, queue family: {d}", .{ device_name, i });
 
-                    var device_desc_buffer_properties: c.VkPhysicalDeviceDescriptorBufferPropertiesEXT = .{
-                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT,
-                    };
-                    var device_properties: c.VkPhysicalDeviceProperties2 = .{
-                        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                        .pNext = &device_desc_buffer_properties,
-                    };
-                    c.vkGetPhysicalDeviceProperties2(device, &device_properties);
-
                     return .{
                         .handle = device,
                         .max_anisotropy = properties.limits.maxSamplerAnisotropy,
                         .graphics_queue_family_index = @intCast(i),
-                        .combined_image_sampler_descriptor_size = device_desc_buffer_properties.combinedImageSamplerDescriptorSize,
                     };
                 }
             }
@@ -88,11 +77,7 @@ pub const Logical = struct {
 
     pub fn init(physical_device: Physical) !Logical {
         const extensions: []const [*:0]const u8 = &.{
-            c.VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-            c.VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
-            c.VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
             c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-            c.VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
         };
         var extension_count: u32 = undefined;
         try check(c.vkEnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
@@ -118,57 +103,30 @@ pub const Logical = struct {
         var features: c.VkPhysicalDeviceFeatures = undefined;
         c.vkGetPhysicalDeviceFeatures(physical_device.handle, &features);
 
-        var dynamic_rendering_features: c.VkPhysicalDeviceDynamicRenderingFeatures = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
-            .pNext = null,
+        var vulkan13_features: c.VkPhysicalDeviceVulkan13Features = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
             .dynamicRendering = c.VK_TRUE,
-        };
-
-        var sync2_features: c.VkPhysicalDeviceSynchronization2Features = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-            .pNext = &dynamic_rendering_features,
             .synchronization2 = c.VK_TRUE,
         };
-
-        var shader_obj_features: c.VkPhysicalDeviceShaderObjectFeaturesEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,
-            .pNext = &sync2_features,
-            .shaderObject = c.VK_TRUE,
-        };
-
-        var buffer_device_address_features = c.VkPhysicalDeviceBufferDeviceAddressFeatures{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-            .pNext = &shader_obj_features,
+        var vulkan12_features: c.VkPhysicalDeviceVulkan12Features = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            .pNext = &vulkan13_features,
             .bufferDeviceAddress = c.VK_TRUE,
-        };
-
-        var descriptor_buffer_features: c.VkPhysicalDeviceDescriptorBufferFeaturesEXT = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT,
-            .pNext = &buffer_device_address_features,
-            .descriptorBuffer = c.VK_TRUE,
-            .descriptorBufferPushDescriptors = c.VK_TRUE,
-        };
-        var inline_uniform_block_features: c.VkPhysicalDeviceInlineUniformBlockFeatures = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES,
-            .pNext = &descriptor_buffer_features,
-            .inlineUniformBlock = c.VK_TRUE,
-        };
-
-        var descriptor_indexing_feature: c.VkPhysicalDeviceDescriptorIndexingFeatures = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-            .pNext = &inline_uniform_block_features,
+            .descriptorIndexing = c.VK_TRUE,
             .shaderSampledImageArrayNonUniformIndexing = c.VK_TRUE,
+            .descriptorBindingSampledImageUpdateAfterBind = c.VK_TRUE,
+            .descriptorBindingUpdateUnusedWhilePending = c.VK_TRUE,
+            .descriptorBindingPartiallyBound = c.VK_TRUE,
         };
-
-        var shader_draw_parameters_features: c.VkPhysicalDeviceShaderDrawParametersFeatures = .{
-            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
-            .pNext = &descriptor_indexing_feature,
+        var vulkan11_features: c.VkPhysicalDeviceVulkan11Features = .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+            .pNext = &vulkan12_features,
             .shaderDrawParameters = c.VK_TRUE,
         };
 
         const device_info = c.VkDeviceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &shader_draw_parameters_features,
+            .pNext = &vulkan11_features,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queue_info,
             .pEnabledFeatures = &features,

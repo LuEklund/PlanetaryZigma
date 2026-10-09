@@ -76,7 +76,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             vma,
             GPUScene,
             1,
-            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
@@ -120,7 +120,7 @@ pub fn init(vma: Vma, device: Device) !FrameData {
             vma,
             [16]f32,
             DrawList.max_joint_matrices,
-            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | c.VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+            c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             .{
                 .usage = Vma.c.VMA_MEMORY_USAGE_CPU_TO_GPU,
                 .flags = Vma.c.VMA_ALLOCATION_CREATE_MAPPED_BIT,
