@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const shared = @import("shared");
 const System = @import("system");
-const World = System.World;
 const Window = @import("Window");
 const tracy = @import("ztracy");
 
@@ -37,66 +36,20 @@ pub fn main(init: std.process.Init) !void {
     window_zone.end();
     defer window.close();
 
-    var world: World = try .init(gpa);
-    defer world.deinit();
-
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
     system_lib.handle = system_lib.api.systemInit(&System.Data{
         .gpa = gpa,
         .window = &window,
         .io = io,
-        .world = &world,
         .log_connection_status = init.environ_map.contains("NET"),
         .discord_dir = init.environ_map.get("XDG_RUNTIME_DIR"),
     }) orelse return error.SystemInit;
     ctx_zone.end();
     defer system_lib.api.systemDeinit(system_lib.handle);
 
-    var accumulated_time: f32 = 0;
-    var fps_window_seconds: f32 = 0;
-    var fps_window_frames: u32 = 0;
-    const time_step: f32 = shared.tick_seconds;
     startup_zone.end();
     while (!window.should_close) {
-        tracy.frameMark();
-        const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("client main loop stalled {d:.0}ms", .{delta_time * 1000});
-        accumulated_time += delta_time;
-        fps_window_seconds += delta_time;
-        if (accumulated_time < time_step) {
-            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch |err| std.log.err("main loop sleep: {s}", .{@errorName(err)});
-            continue;
-        }
-        accumulated_time -= time_step;
-        world.elapsed_time += time_step;
-        world.delta_time = time_step;
-        fps_window_frames += 1;
-        if (fps_window_seconds >= 0.5) {
-            world.fps = @as(f32, @floatFromInt(fps_window_frames)) / fps_window_seconds;
-            fps_window_frames = 0;
-            fps_window_seconds = 0;
-        }
-
-        if (system_lib.api.systemUpdate(system_lib.handle, &world)) break;
         system_lib.trySwap(io);
+        if (system_lib.api.systemUpdate(system_lib.handle)) break;
     }
-}
-
-pub fn getDeltaTime(io: std.Io) f32 {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-    const static = struct {
-        var previous: ?std.Io.Timestamp = null;
-    };
-
-    const now: std.Io.Timestamp = .now(io, .real);
-    const prev = static.previous orelse {
-        static.previous = now;
-        return getDeltaTime(io);
-    };
-
-    const dt_ns = prev.durationTo(now);
-    static.previous = now;
-
-    return @as(f32, @floatFromInt(dt_ns.nanoseconds)) / 1_000_000_000.0;
 }

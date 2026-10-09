@@ -17,15 +17,15 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 
 | Module | File(s) | Owns | Talks through |
 |---|---|---|---|
-| Client host | `client/src/main.zig` | gpa, window, client `World`, `HotLib(system_client)`, fixed-step loop + fps | `system_contract.Api` (4 fns) |
-| Client System | `client/src/System.zig` | render `HotLib`, audio, assets, animator, particles, NetworkManager, Hud, scene | World (mailbox), DrawList |
+| Client host | `client/src/main.zig` | gpa, window, `HotLib(system_client)`; loop is `trySwap → systemUpdate` | `system_contract.Api` (5 fns) |
+| Client System | `client/src/System.zig` | client `World`, fixed-step `Clock` + fps, render `HotLib`, audio, assets, animator, particles, NetworkManager, Hud, scene | World (mailbox), DrawList |
 | Client World | `client/src/World.zig` | replicated entities, dying list, damage events, camera/controller/chat/options, planet | packets in, read by extract/hud |
 | Client NetworkManager | `client/src/system/NetworkManager.zig` | Steam client, server process spawning, `packets` inbox, tick estimate | `packets` list consumed by World/System |
 | Hud | `client/src/system/Hud.zig`, `hud/` | screen/overlay state, UI context, damage popups | returns `Hud.Request` |
 | extract | `client/src/system/extract.zig` | — | World → DrawList |
 | Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
-| Server host | `server/src/main.zig` | gpa, args, server `World`, `System` instance memory, viewer window, fixed-step loop | `System.ffi.Table` (4 fns) |
-| Server System | `server/src/System.zig` | NetworkManager, Physics, Viewer | World |
+| Server host | `server/src/main.zig` | gpa, args, viewer window, `HotLib(system_server)`; loop is `trySwap → systemUpdate` | `server/src/system_contract.zig` `Api` (5 fns) |
+| Server System | `server/src/System.zig` | server `World`, fixed-step `Clock` + tick counter, NetworkManager, Physics, Viewer | World |
 | Server World | `server/src/World.zig` | entities, players, spawn/despawn queues, physics command + impact queues, client_updates outbox, director, planet, navmesh, stage | `flush()` is the one drain |
 | Physics | `server/src/system/Physics.zig` | box3d world | `physics_commands` in, `impacts` out |
 | gameplay | `server/src/system/gameplay.zig` | — | enemies, director, projectiles, items, teleporter, regen, wipe |
@@ -73,6 +73,10 @@ flowchart LR
   (`reload(handle, true)` → swap → `reload(handle, false)`).
 - Three hot libs: `system_client` (host: client exe), `render` (host: client
   System), `system_server` (host: server exe).
-- Persistent memory survives a swap and is reinterpreted by the new code:
-  client `World` (host stack), client `System` (gpa, created by the `.so`),
-  server `World` + `System` (host stack). A layout change there needs a restart.
+- Each `.so` allocates its whole persistent state (System, which holds World)
+  in `systemInit` and hands the host an opaque handle; the host never sees a
+  `.so`-defined layout. That state survives a swap and is reinterpreted by the
+  new code, so each library exports `layoutHash` and `HotLib` refuses a build
+  whose persistent layout differs (decision 0001).
+- Tick policy (fixed step, sleep, stall warning, fps) lives in the `.so`
+  (`shared/src/Clock.zig`), decision 0002.

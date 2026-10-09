@@ -49,6 +49,10 @@ network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
 request_exit: bool,
+world: World,
+clock: shared.Clock,
+fps_window_start: std.Io.Timestamp,
+fps_window_steps: u32,
 
 teleport_sphere_model: u32,
 button_hover_sound: Audio.Sound,
@@ -62,6 +66,11 @@ pub fn init(self: *System, data: Data) !void {
     self.gpa = data.gpa;
     self.io = data.io;
     self.window = data.window;
+    self.world = try .init(data.gpa);
+    errdefer self.world.deinit();
+    self.clock = .init(data.io);
+    self.fps_window_start = self.clock.previous;
+    self.fps_window_steps = 0;
 
     self.discord = if (data.discord_dir) |discord_dir| .{
         .socket = null,
@@ -106,7 +115,7 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.hud.deinit(data.gpa);
     try self.network_manager.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network_manager.deinit();
-    try self.enterScene(data.world, .menu);
+    try self.enterScene(&self.world, .menu);
     self.request_exit = false;
 }
 
@@ -120,6 +129,7 @@ pub fn deinit(self: *System) void {
     self.assets.deinit(self.gpa, self.io);
     self.render.api.deinit(self.render.handle);
     self.render.deinit(self.io);
+    self.world.deinit();
 }
 
 fn enterScene(self: *System, world: *World, next: Scene) !void {
@@ -135,7 +145,24 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     self.scene = next;
 }
 
-pub fn update(self: *System, world: *World) !void {
+pub fn update(self: *System) !void {
+    if (!self.clock.stepDue(self.io, shared.tick_seconds)) return;
+    const world = &self.world;
+    world.elapsed_time += shared.tick_seconds;
+    world.delta_time = shared.tick_seconds;
+    self.fps_window_steps += 1;
+    const now: std.Io.Timestamp = .now(self.io, .awake);
+    const fps_window_seconds = @as(f32, @floatFromInt(self.fps_window_start.durationTo(now).nanoseconds)) / std.time.ns_per_s;
+    if (fps_window_seconds >= 0.5) {
+        world.fps = @as(f32, @floatFromInt(self.fps_window_steps)) / fps_window_seconds;
+        self.fps_window_steps = 0;
+        self.fps_window_start = now;
+    }
+    try self.step(world);
+    tracy.frameMark();
+}
+
+fn step(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     world.planet.clearOutboxes();
@@ -330,11 +357,11 @@ pub const ffi = struct {
         gpa.destroy(context);
     }
 
-    pub export fn systemUpdate(handle: *anyopaque, world: *World) bool {
+    pub export fn systemUpdate(handle: *anyopaque) bool {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const context: *System = @ptrCast(@alignCast(handle));
-        context.update(world) catch |err| {
+        context.update() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system update: {s}", .{@errorName(err)});
         };

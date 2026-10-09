@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const System = @import("system");
 const shared = @import("shared");
 const tracy = @import("ztracy");
-const World = System.World;
 const build_options = @import("build_options");
 const Window = System.Window;
 
@@ -45,11 +44,8 @@ pub fn main(init: std.process.Init) !void {
         break;
     }
 
-    var system_lib: shared.HotLib(System.ffi.Table, *System) = try .init("system_server", gpa, io);
+    var system_lib: shared.HotLib(System.Api, *anyopaque) = try .init("system_server", gpa, io);
     defer system_lib.deinit(io);
-
-    var world: World = try .init(gpa, dev_mode);
-    defer world.deinit();
 
     var window: Window = undefined;
     if (build_options.viewer) {
@@ -63,58 +59,19 @@ pub fn main(init: std.process.Init) !void {
         window.close();
     };
 
-    var system_instance: System = undefined;
-    system_lib.handle = &system_instance;
-
-    if (!system_lib.api.systemInit(&system_instance, &System.Data{
+    system_lib.handle = system_lib.api.systemInit(&System.Data{
         .io = io,
-        .world = &world,
         .gpa = gpa,
         .mode = server_mode,
         .host_steam_id = host_steam_id,
+        .dev_mode = dev_mode,
         .log_connection_status = init.environ_map.contains("NET"),
         .window = if (build_options.viewer) &window else {},
-    })) return error.SystemInit;
+    }) orelse return error.SystemInit;
+    defer system_lib.api.systemDeinit(system_lib.handle);
 
-    defer system_lib.api.systemDeinit(&system_instance);
-
-    var loop_time_tracker: f32 = 0;
-    const time_step: f32 = shared.tick_seconds;
     while (true) {
-        if (system_instance.request_exit) break;
-        const delta_time = getDeltaTime(io);
-        if (delta_time > 0.1) std.log.warn("server main loop stalled {d:.0}ms", .{delta_time * 1000});
-        loop_time_tracker += delta_time;
-        if (loop_time_tracker < time_step) {
-            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch {};
-            continue;
-        }
-        world.tick += 1;
-        world.elapsed_time += time_step;
-        world.delta_time = time_step;
-        loop_time_tracker -= time_step;
-
-        system_lib.api.systemUpdate(&system_instance, &world);
-
         system_lib.trySwap(io);
+        if (system_lib.api.systemUpdate(system_lib.handle)) break;
     }
-}
-
-pub fn getDeltaTime(io: std.Io) f32 {
-    const tracy_scope = tracy.zone(@src());
-    defer tracy_scope.end();
-    const static = struct {
-        var previous: ?std.Io.Timestamp = null;
-    };
-
-    const now: std.Io.Timestamp = .now(io, .real);
-    const prev = static.previous orelse {
-        static.previous = now;
-        return getDeltaTime(io);
-    };
-
-    const dt_ns = prev.durationTo(now);
-    static.previous = now;
-
-    return @as(f32, @floatFromInt(dt_ns.nanoseconds)) / 1_000_000_000.0;
 }

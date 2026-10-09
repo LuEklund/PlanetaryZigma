@@ -118,6 +118,17 @@ fn addServerArtifacts(
     system.root_module.linkLibrary(box3d_lib);
     if (target.result.os.tag != .windows) system.link_z_defs = true;
 
+    const system_contract = b.createModule(.{
+        .root_source_file = b.path("src/system_contract.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shared", .module = shared },
+            .{ .name = "build_options", .module = build_options_module },
+        },
+    });
+    if (render_dep) |dep| system_contract.addImport("Window", dep.module("Window"));
+
     const exe = b.addExecutable(.{
         .name = "server",
         .root_module = b.createModule(.{
@@ -126,7 +137,7 @@ fn addServerArtifacts(
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "shared", .module = shared },
-                .{ .name = "system", .module = system.root_module },
+                .{ .name = "system", .module = system_contract },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "build_options", .module = build_options_module },

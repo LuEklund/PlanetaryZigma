@@ -1,12 +1,17 @@
 const std = @import("std");
-const Window = @import("Window");
+const shared = @import("shared");
+const build_options = @import("build_options");
+
+pub const Window = if (build_options.viewer) @import("Window") else void;
 
 pub const Data = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    window: *Window,
+    mode: shared.SteamNet.Server.Mode,
+    host_steam_id: u64,
+    dev_mode: bool,
     log_connection_status: bool,
-    discord_dir: ?[]const u8,
+    window: if (build_options.viewer) *Window else void,
 };
 
 pub const Api = struct {

@@ -12,7 +12,7 @@ const PlayerController = @import("system/PlayerController.zig");
 const build_options = @import("build_options");
 
 pub const Viewer = if (build_options.viewer) @import("viewer/Viewer.zig") else void;
-pub const Window = if (build_options.viewer) @import("Window") else void;
+pub const Window = @import("system_contract.zig").Window;
 
 pub const World = @import("World.zig");
 pub const Entity = World.Entity;
@@ -24,46 +24,51 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
 gpa: std.mem.Allocator,
 io: std.Io,
-world: *World,
+world: World,
+clock: shared.Clock,
 network_manager: NetworkManager,
 physics: Physics,
 request_exit: bool,
 viewer: Viewer,
 
-pub const Data = struct {
-    gpa: std.mem.Allocator,
-    world: *World,
-    io: std.Io,
-    mode: shared.SteamNet.Server.Mode,
-    host_steam_id: u64,
-    log_connection_status: bool,
-    window: if (build_options.viewer) *Window else void,
-};
+pub const Data = @import("system_contract.zig").Data;
 
 pub fn init(self: *System, data: *const Data) !void {
     shared.log_io = data.io;
     self.gpa = data.gpa;
     self.io = data.io;
-    self.world = data.world;
+    self.world = try .init(data.gpa, data.dev_mode);
+    errdefer self.world.deinit();
+    self.clock = .init(data.io);
     self.request_exit = false;
     try self.network_manager.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
     errdefer self.network_manager.deinit() catch {};
     self.physics = .init();
     errdefer self.physics.deinit();
     self.viewer = undefined;
-    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, data.world.planet.radiusFloat());
+    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, self.world.planet.radiusFloat());
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
-    try data.world.loadPlace(&self.physics, .ship);
+    try self.world.loadPlace(&self.physics, .ship);
 }
 
 pub fn deinit(self: *System) !void {
     if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
     try self.network_manager.deinit();
+    self.world.deinit();
 }
 
-pub fn update(self: *System, world: *World) !void {
+pub fn update(self: *System) !void {
+    if (!self.clock.stepDue(self.io, shared.tick_seconds)) return;
+    const world = &self.world;
+    world.tick += 1;
+    world.elapsed_time += shared.tick_seconds;
+    world.delta_time = shared.tick_seconds;
+    try self.step(world);
+}
+
+fn step(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     world.planet.clearOutboxes();
@@ -124,7 +129,7 @@ fn reload(self: *System, pre_reload: bool) !void {
             self.world.navmesh.worker = null;
         }
     }
-    try self.physics.reload(pre_reload, self.world);
+    try self.physics.reload(pre_reload, &self.world);
 }
 
 comptime {
@@ -134,54 +139,49 @@ comptime {
 const layout_hash = shared.layout.hash(&.{ System, World });
 
 pub const ffi = struct {
-    pub const Table = struct {
-        systemInit: *const fn (*System, data: *const Data) callconv(.c) bool,
-        systemDeinit: *const fn (*System) callconv(.c) void,
-        systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
-        reload: *const fn (*System, pre_reload: bool) callconv(.c) void,
-        layoutHash: *const fn () callconv(.c) u64,
-    };
-
     pub export fn layoutHash() u64 {
         return layout_hash;
     }
 
-    pub export fn systemInit(system: *System, data: *const Data) bool {
+    pub export fn systemInit(data: *const Data) ?*anyopaque {
         std.log.info("system init", .{});
+        const system = data.gpa.create(System) catch return null;
         system.init(data) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system init: {s}", .{@errorName(err)});
-            return false;
+            data.gpa.destroy(system);
+            return null;
         };
-        return true;
+        return system;
     }
 
-    pub export fn systemDeinit(system: *System) void {
+    pub export fn systemDeinit(handle: *anyopaque) void {
         std.log.info("system deinit", .{});
+        const system: *System = @ptrCast(@alignCast(handle));
+        const gpa = system.gpa;
         system.deinit() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system deinit: {s}", .{@errorName(err)});
-            return;
         };
-        system.* = undefined;
+        gpa.destroy(system);
     }
 
-    pub export fn systemUpdate(system: *System, world: *World) void {
+    pub export fn systemUpdate(handle: *anyopaque) bool {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
-        const result = system.update(world);
-        result catch |err| {
+        const system: *System = @ptrCast(@alignCast(handle));
+        system.update() catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system update: {s}", .{@errorName(err)});
-            return;
         };
+        return system.request_exit;
     }
-    pub export fn reload(system: *System, pre_reload: bool) void {
-        const result = system.reload(pre_reload);
-        result catch |err| {
+
+    pub export fn reload(handle: *anyopaque, pre_reload: bool) void {
+        const system: *System = @ptrCast(@alignCast(handle));
+        system.reload(pre_reload) catch |err| {
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             std.log.err("system reload: {s}", .{@errorName(err)});
-            return;
         };
     }
 };
