@@ -22,26 +22,28 @@ pub const WireStatus = enum {
 };
 
 pub const Client = struct {
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    steam_server: *shared.SteamNet.Server,
     conn: shared.SteamNet.Connection,
     name: []const u8 = "",
     entity_id: shared.entity.Id = .none,
     needs_full_sync: bool = true,
     command_queue: shared.net.PacketQueue(shared.net.ClientPacket) = .{},
 
-    pub fn sendCommand(self: *Client, writer: *std.Io.Writer, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
-        writer.end = 0;
-        try shared.net.write(shared.net.ServerPacket, command, writer);
-
-        try self.steam_server.packets.pushOutgoing(self.gpa, self.conn, writer.buffered(), flags);
+    pub fn deinit(self: *Client, gpa: std.mem.Allocator, io: std.Io) !void {
+        if (self.name.len != 0) gpa.free(self.name);
+        clearClientCommands(gpa, self);
+        try self.command_queue.deinit(gpa, io);
     }
+};
 
-    pub fn deinit(self: *Client) !void {
-        if (self.name.len != 0) self.gpa.free(self.name);
-        clearClientCommands(self.gpa, self);
-        try self.command_queue.deinit(self.gpa, self.io);
+const Outbox = struct {
+    steam_server: *shared.SteamNet.Server,
+    gpa: std.mem.Allocator,
+    writer: *std.Io.Writer,
+
+    fn send(outbox: Outbox, client: *const Client, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
+        outbox.writer.end = 0;
+        try shared.net.write(shared.net.ServerPacket, command, outbox.writer);
+        try outbox.steam_server.packets.pushOutgoing(outbox.gpa, client.conn, outbox.writer.buffered(), flags);
     }
 };
 
@@ -69,7 +71,7 @@ pub fn init(
 
 pub fn deinit(self: *NetworkManager) !void {
     var it = self.clients.iterator();
-    while (it.next()) |pair| try pair.value_ptr.deinit();
+    while (it.next()) |pair| try pair.value_ptr.deinit(self.gpa, self.io);
     self.clients.deinit();
     self.pending_motions.deinit(self.gpa);
     self.last_motions.deinit();
@@ -117,19 +119,14 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         .connected => |conn| {
             const gop = try self.clients.getOrPut(conn);
             if (!gop.found_existing) {
-                gop.value_ptr.* = .{
-                    .gpa = self.gpa,
-                    .io = self.io,
-                    .steam_server = &self.steam_server,
-                    .conn = conn,
-                };
+                gop.value_ptr.* = .{ .conn = conn };
                 std.log.info("client connected: conn={d}", .{conn});
             }
         },
         .disconnected => |conn| {
             if (self.clients.getPtr(conn)) |client| {
                 if (client.entity_id != .none) world.queueRemove(client.entity_id);
-                try client.deinit();
+                try client.deinit(self.gpa, self.io);
                 _ = self.clients.remove(conn);
                 self.session_metadata_dirty = true;
                 std.log.info("client disconnected: conn={d}", .{conn});
@@ -154,7 +151,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
 
     var fixed_writer_buffer: [1024]u8 = undefined;
     var fix_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
-    const writer = &fix_writer;
+    const outbox: Outbox = .{ .steam_server = &self.steam_server, .gpa = self.gpa, .writer = &fix_writer };
 
     var sync_all_clients = false;
     var it = self.clients.iterator();
@@ -190,15 +187,13 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         self.session_metadata_dirty = true;
                         sync_all_clients = true;
 
-                        try client.sendCommand(
-                            writer,
-                            .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
+                        try outbox.send(client, .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
                             .reliable,
                         );
-                        try client.sendCommand(writer, .{ .event = .{ .new_stage = world.stage } }, .reliable);
+                        try outbox.send(client, .{ .event = .{ .new_stage = world.stage } }, .reliable);
                         if (world.getPtr(world.teleporter_id)) |entity| {
                             if (entity.teleporter.state == .active) {
-                                try client.sendCommand(writer, .{
+                                try outbox.send(client, .{
                                     .event = .teleport_start,
                                 }, .reliable);
                             }
@@ -226,7 +221,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                     const text = sanitizeText(&text_buf, chat.text);
                     if (text.len == 0) continue;
                     std.log.debug("chat {s}: {s}", .{ client.name, text });
-                    try self.broadcastChat(writer, client.entity_id, text);
+                    try self.broadcastChat(outbox, client.entity_id, text);
                 },
             }
         }
@@ -281,7 +276,7 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         const client = pair.value_ptr;
         if (client.entity_id == .none) continue;
 
-        try client.sendCommand(writer, .{ .server_tick = world.tick }, .unreliable_no_delay);
+        try outbox.send(client, .{ .server_tick = world.tick }, .unreliable_no_delay);
 
         if (world.getPtrRaw(client.entity_id)) |player_entity| {
             client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.reload;
@@ -291,33 +286,33 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         if (did_full_sync) {
             std.log.debug("FULL SYNC", .{});
             const full_sync_planet_radius: u32 = world.planet.planet_radius;
-            try client.sendCommand(writer, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
+            try outbox.send(client, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
-                try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendHealth(client, writer, entity);
-                try sendInventory(client, writer, entity);
+                try outbox.send(client, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
+                try sendHealth(outbox, client, entity);
+                try sendInventory(outbox, client, entity);
                 if (tracksMotion(entity)) {
-                    try client.sendCommand(writer, .{ .motion = motionPacket(world, entity) }, .reliable);
+                    try outbox.send(client, .{ .motion = motionPacket(world, entity) }, .reliable);
                 }
             }
             client.needs_full_sync = false;
         } else {
             for (self.pending_motions.items) |motion| {
-                try client.sendCommand(writer, .{ .motion = motion }, .unreliable_no_delay);
+                try outbox.send(client, .{ .motion = motion }, .unreliable_no_delay);
             }
         }
 
         for (world.client_updates.items) |packet| {
             if (did_full_sync and packet == .spawn_planet) continue;
-            try client.sendCommand(writer, packet, .reliable);
+            try outbox.send(client, packet, .reliable);
         }
 
         if (!did_full_sync) for (world.spawned.items) |id| {
             const entity = world.getPtr(id) orelse continue;
-            try client.sendCommand(writer, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-            try sendHealth(client, writer, entity);
-            try sendInventory(client, writer, entity);
+            try outbox.send(client, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
+            try sendHealth(outbox, client, entity);
+            try sendInventory(outbox, client, entity);
         };
     }
     for (world.client_updates.items) |packet| switch (packet) {
@@ -332,10 +327,10 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
     return .running;
 }
 
-fn sendHealth(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+fn sendHealth(outbox: Outbox, client: *const Client, entity: *const system.Entity) !void {
     if (entity.max_health <= 0) return;
-    try client.sendCommand(writer, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
-    try client.sendCommand(writer, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
+    try outbox.send(client, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
+    try outbox.send(client, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
 }
 
 fn tracksMotion(entity: *const system.Entity) bool {
@@ -354,11 +349,11 @@ fn motionPacket(world: *World, entity: *const system.Entity) shared.net.UpdateMo
     };
 }
 
-fn sendInventory(client: *Client, writer: *std.Io.Writer, entity: *const system.Entity) !void {
+fn sendInventory(outbox: Outbox, client: *const Client, entity: *const system.Entity) !void {
     if (entity.kind != .player) return;
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const count = entity.inventory.get(item_kind);
-        if (count > 0) try client.sendCommand(writer, .{ .inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+        if (count > 0) try outbox.send(client, .{ .inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
     }
 }
 
@@ -395,11 +390,11 @@ fn markAllClientsForFullSync(self: *NetworkManager) void {
     }
 }
 
-fn broadcastChat(self: *NetworkManager, writer: *std.Io.Writer, sender_id: shared.entity.Id, text: []const u8) !void {
+fn broadcastChat(self: *NetworkManager, outbox: Outbox, sender_id: shared.entity.Id, text: []const u8) !void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == .none) continue;
-        try client.sendCommand(writer, .{ .chat_message = .{
+        try outbox.send(client, .{ .chat_message = .{
             .id = sender_id,
             .text_len = @intCast(text.len),
             .text = text,

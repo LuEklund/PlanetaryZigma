@@ -39,8 +39,6 @@ pub fn updateDirector(world: *World) !void {
             61...75 => .hunkloid,
             76...90 => .healer,
             else => .bloorp_lord,
-            // 0...50 => .tubloid,
-            // else => .acorn,
         };
         const cost = shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency;
         if (director.credits >= cost) {
@@ -95,7 +93,6 @@ pub fn updateEnemies(world: *World, physics: *system.Physics) !void {
     for (world.entities.values()) |*enemy| {
         if (enemy.kind != .enemy or enemy.flags.is_dead) continue;
         if (enemy.un_stun_at > world.elapsed_time) continue;
-        // const body_id = enemy.body_id orelse continue;
 
         var closest_player: ?*system.Entity = null;
         var closest_distance: f32 = std.math.floatMax(f32);

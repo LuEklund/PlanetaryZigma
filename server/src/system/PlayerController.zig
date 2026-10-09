@@ -30,7 +30,6 @@ pub fn update(world: *World, physics: *system.Physics) !void {
 
         if (input.keys.dev_f1) {
             input.keys.dev_f1 = false;
-            // _ = world.giveItem(player, .energy_drink, 1);
             _ = try world.spawn(.{ .kind = .{ .enemy = .grass_tank }, .transform = player.transform });
         }
         if (input.keys.dev_f2) {

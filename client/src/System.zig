@@ -279,11 +279,6 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
     return player_input;
 }
 
-// if (self.window.keyboard.get(.f4) == .release and self.scene == .menu) {
-//     try self.enterScene(world, .particle_lab);
-//     return;
-// }
-
 fn applyOptions(self: *System, world: *World) !void {
     try self.window.setFullscreen(world.options.fullscreen);
     const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;

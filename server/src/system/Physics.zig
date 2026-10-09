@@ -20,8 +20,6 @@ const Category = struct {
     const planet_only: u64 = 1 << 2;
 };
 
-gpa: std.mem.Allocator,
-io: std.Io,
 world: c.b3WorldId,
 
 pub const MotionType = shared.entity.MotionType;
@@ -60,12 +58,8 @@ fn makeWorld() c.b3WorldId {
     return c.b3CreateWorld(&world_def);
 }
 
-pub fn init(gpa: std.mem.Allocator, io: std.Io) Physics {
-    return .{
-        .gpa = gpa,
-        .io = io,
-        .world = makeWorld(),
-    };
+pub fn init() Physics {
+    return .{ .world = makeWorld() };
 }
 
 pub fn deinit(self: *Physics) void {
