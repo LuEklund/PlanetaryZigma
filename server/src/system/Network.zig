@@ -42,10 +42,20 @@ const Outbox = struct {
     gpa: std.mem.Allocator,
     writer: *std.Io.Writer,
 
-    fn send(outbox: Outbox, client: *const Client, command: shared.net.ServerPacket, flags: shared.SteamNet.SendFlags) !void {
+    fn send(
+        outbox: Outbox,
+        client: *const Client,
+        command: shared.net.ServerPacket,
+        flags: shared.SteamNet.SendFlags,
+    ) !void {
         outbox.writer.end = 0;
         try shared.net.write(shared.net.ServerPacket, command, outbox.writer);
-        try outbox.steam_server.packets.pushOutgoing(outbox.gpa, client.conn, outbox.writer.buffered(), flags);
+        try outbox.steam_server.packets.pushOutgoing(
+            outbox.gpa,
+            client.conn,
+            outbox.writer.buffered(),
+            flags,
+        );
     }
 };
 
@@ -80,7 +90,10 @@ pub fn deinit(self: *Network) !void {
     self.steam_server.deinit();
 }
 
-fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !shared.net.ClientPacket {
+fn cloneClientPacket(
+    gpa: std.mem.Allocator,
+    packet: shared.net.ClientPacket,
+) !shared.net.ClientPacket {
     return switch (packet) {
         .connect => |connect| .{ .connect = connect },
         .disconnect => .disconnect,
@@ -118,222 +131,33 @@ pub fn update(self: *Network, world: *World) !WireStatus {
     try self.steam_server.packet_mutex.lock(self.io);
     defer self.steam_server.packet_mutex.unlock(self.io);
 
-    for (self.steam_server.packets.events.items) |ev| switch (ev) {
-        .connected => |conn| {
-            const gop = try self.clients.getOrPut(conn);
-            if (!gop.found_existing) {
-                gop.value_ptr.* = .{ .conn = conn };
-                std.log.info("client connected: conn={d}", .{conn});
-            }
-        },
-        .disconnected => |conn| {
-            if (self.clients.getPtr(conn)) |client| {
-                if (client.entity_id != .none) world.queueRemove(client.entity_id);
-                try client.deinit(self.gpa, self.io);
-                _ = self.clients.remove(conn);
-                self.session_metadata_dirty = true;
-                std.log.info("client disconnected: conn={d}", .{conn});
-            }
-        },
-    };
-    self.steam_server.packets.events.clearRetainingCapacity();
-
-    for (self.steam_server.packets.incoming.items) |*msg| {
-        const client = self.clients.getPtr(msg.conn) orelse continue;
-        var msg_reader: std.Io.Reader = .fixed(msg.slice());
-        const reader = &msg_reader;
-        const parsed = shared.net.parse(shared.net.ClientPacket, reader) catch |err| {
-            std.log.err("parse packet: {s}", .{@errorName(err)});
-            continue;
-        };
-        var queued_packet = try cloneClientPacket(self.gpa, parsed);
-        errdefer freeClientPacket(self.gpa, &queued_packet);
-        try client.command_queue.commands.append(self.gpa, queued_packet);
-    }
-    self.steam_server.packets.incoming.clearRetainingCapacity();
+    try self.drainConnectionEvents(world);
+    try self.queueIncomingPackets();
 
     var fixed_writer_buffer: [1024]u8 = undefined;
-    var fix_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
-    const outbox: Outbox = .{ .steam_server = &self.steam_server, .gpa = self.gpa, .writer = &fix_writer };
+    var fixed_writer: std.Io.Writer = .fixed(&fixed_writer_buffer);
+    const outbox: Outbox = .{
+        .steam_server = &self.steam_server,
+        .gpa = self.gpa,
+        .writer = &fixed_writer,
+    };
 
     var sync_all_clients = false;
-    var it = self.clients.iterator();
-    while (it.next()) |pair| {
+    var clients = self.clients.iterator();
+    while (clients.next()) |pair| {
         const client = pair.value_ptr;
         for (client.command_queue.commands.items) |command| {
-            switch (command) {
-                .connect => |connect| {
-                    if (connect.protocol_version != shared.net.protocol_version) {
-                        std.log.warn("rejecting client conn={d}: protocol {d} != server {d}", .{ client.conn, connect.protocol_version, shared.net.protocol_version });
-                        _ = self.steam_server.socket.CloseConnection(client.conn, 0, "protocol version mismatch", false);
-                        continue;
-                    }
-                    var name_buf: [shared.max_player_name_len]u8 = undefined;
-                    const name = sanitizeText(&name_buf, connect.player_name.slice());
-                    const display_name = if (name.len == 0) shared.default_player_name else name;
-                    if (!std.mem.eql(u8, client.name, display_name)) {
-                        if (client.name.len != 0) self.gpa.free(client.name);
-                        client.name = try self.gpa.dupe(u8, display_name);
-                        self.session_metadata_dirty = true;
-                        if (client.entity_id != .none) sync_all_clients = true;
-                    }
-
-                    if (client.entity_id == .none) {
-                        if (world.players.items.len >= shared.max_players) {
-                            std.log.warn("rejecting client conn={d}: server full ({d} players)", .{ client.conn, world.players.items.len });
-                            _ = self.steam_server.socket.CloseConnection(client.conn, 0, "server full", false);
-                            continue;
-                        }
-                        const new_player_entity = world.spawn(.{
-                            .kind = .player,
-                            .survivor = connect.survivor,
-                            .transform = .{ .position = stage.playerSpawnPosition(world) },
-                            .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
-                        }) catch continue;
-
-                        client.entity_id = new_player_entity.id;
-                        world.players.appendAssumeCapacity(client.entity_id);
-                        self.session_metadata_dirty = true;
-
-                        try outbox.send(client, .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
-                            .reliable,
-                        );
-                        try outbox.send(client, .{ .event = .{ .new_stage = world.stage } }, .reliable);
-                        if (world.getPtr(world.teleporter_id)) |entity| {
-                            if (entity.teleporter.state == .active) {
-                                try outbox.send(client, .{
-                                    .event = .teleport_start,
-                                }, .reliable);
-                            }
-                        }
-                        std.log.info("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
-                    }
-                },
-                .disconnect => {
-                    if (client.entity_id == .none) continue;
-                    world.queueRemove(client.entity_id);
-                    std.log.info("player disconnect", .{});
-                },
-                .input => {
-                    if (world.getPtrRaw(client.entity_id)) |entity| {
-                        entity.controller.input = command.input;
-                    }
-                },
-                .lobby => |lobby_command| {
-                    const player = world.getPtrRaw(client.entity_id) orelse continue;
-                    switch (lobby_command) {
-                        .survivor => |survivor| lobby.setSurvivor(world, player, survivor),
-                        .ready => |ready| lobby.setReady(world, player, ready),
-                        .difficulty => |setting| if (client.conn == self.steam_server.host_conn) lobby.setDifficulty(world, setting),
-                    }
-                },
-                .go_again => {
-                    if (client.conn != self.steam_server.host_conn) continue;
-                    world.go_again_requested = true;
-                },
-                .chat => |chat| {
-                    if (client.entity_id == .none) continue;
-                    var text_buf: [shared.max_chat_len]u8 = undefined;
-                    const text = sanitizeText(&text_buf, chat.text);
-                    if (text.len == 0) continue;
-                    std.log.debug("chat {s}: {s}", .{ client.name, text });
-                    try self.broadcastChat(outbox, client.entity_id, text);
-                },
-            }
+            if (try self.applyCommand(world, outbox, client, command)) sync_all_clients = true;
         }
         clearClientCommands(self.gpa, client);
     }
-
     if (sync_all_clients) self.markAllClientsForFullSync();
+    if (self.session_metadata_dirty) self.updateAdvertisedSession();
 
-    if (self.session_metadata_dirty) {
-        self.updateAdvertisedSession();
-    }
+    try self.collectMotions(world);
+    clients = self.clients.iterator();
+    while (clients.next()) |pair| try self.sendFrame(world, outbox, pair.value_ptr);
 
-    self.pending_motions.clearRetainingCapacity();
-    for (world.entities.values()) |*entity| {
-        if (!tracksMotion(entity)) continue;
-
-        const position = entity.transform.position;
-        const rotation = entity.transform.rotation.toVec();
-
-        const entry = try self.last_motions.getOrPut(entity.id);
-        if (!entry.found_existing) {
-            entry.value_ptr.* = .{
-                .id = entity.id,
-                .position = position,
-                .velocity = entity.replicated_velocity,
-                .rotation = rotation,
-                .tick = world.tick,
-            };
-            continue;
-        }
-
-        const last_motion = entry.value_ptr;
-        const elapsed = @as(f32, @floatFromInt(world.tick - last_motion.tick)) * shared.tick_seconds;
-        const predicted = last_motion.position + nz.vec.scale(last_motion.velocity, elapsed);
-        const position_drift = nz.vec.length(position - predicted);
-        const rotation_drift = 1.0 - @abs(nz.vec.dot(rotation, last_motion.rotation));
-        const velocity_drift = nz.vec.length(entity.replicated_velocity - last_motion.velocity);
-
-        if (position_drift > 0.25 or rotation_drift > 0.01 or velocity_drift > 1.0) {
-            last_motion.* = .{
-                .id = entity.id,
-                .position = position,
-                .velocity = entity.replicated_velocity,
-                .rotation = rotation,
-                .tick = world.tick,
-            };
-            try self.pending_motions.append(self.gpa, last_motion.*);
-        }
-    }
-    it = self.clients.iterator();
-    while (it.next()) |pair| {
-        const client = pair.value_ptr;
-        if (client.entity_id == .none) continue;
-
-        try outbox.send(client, .{ .server_tick = world.tick }, .unreliable_no_delay);
-
-        if (world.getPtrRaw(client.entity_id)) |player_entity| {
-            client.needs_full_sync = client.needs_full_sync or player_entity.controller.resync_requested;
-            player_entity.controller.resync_requested = false;
-        }
-
-        const did_full_sync = client.needs_full_sync;
-        if (did_full_sync) {
-            std.log.debug("FULL SYNC", .{});
-            const full_sync_planet_radius: u32 = world.planet.planet_radius;
-            try outbox.send(client, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
-            try outbox.send(client, .{ .lobby_difficulty = world.difficulty_setting }, .reliable);
-            for (world.entities.values()) |*entity| {
-                std.log.debug("sent id {d}", .{entity.id});
-                try outbox.send(client, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-                try sendHealth(outbox, client, entity);
-                try sendInventory(outbox, client, entity);
-                if (entity.kind == .player) try outbox.send(client, .{ .lobby_player = .{ .id = entity.id, .survivor = entity.survivor, .ready = entity.ready } }, .reliable);
-                if (tracksMotion(entity)) {
-                    try outbox.send(client, .{ .motion = motionPacket(world, entity) }, .reliable);
-                }
-            }
-            client.needs_full_sync = false;
-        } else {
-            for (self.pending_motions.items) |motion| {
-                try outbox.send(client, .{ .motion = motion }, .unreliable_no_delay);
-            }
-        }
-
-        for (world.client_updates.items) |packet| {
-            if (did_full_sync and packet == .spawn_planet) continue;
-            try outbox.send(client, packet, .reliable);
-        }
-
-        if (!did_full_sync) for (world.spawned.items) |id| {
-            const entity = world.getPtr(id) orelse continue;
-            try outbox.send(client, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
-            try sendHealth(outbox, client, entity);
-            try sendInventory(outbox, client, entity);
-        };
-    }
     for (world.client_updates.items) |packet| switch (packet) {
         .despawn_entity => |despawn_entity| _ = self.last_motions.remove(despawn_entity.id),
         else => {},
@@ -346,10 +170,275 @@ pub fn update(self: *Network, world: *World) !WireStatus {
     return .running;
 }
 
+fn drainConnectionEvents(self: *Network, world: *World) !void {
+    defer self.steam_server.packets.events.clearRetainingCapacity();
+    for (self.steam_server.packets.events.items) |event| switch (event) {
+        .connected => |conn| {
+            const entry = try self.clients.getOrPut(conn);
+            if (entry.found_existing) continue;
+            entry.value_ptr.* = .{ .conn = conn };
+            std.log.info("client connected: conn={d}", .{conn});
+        },
+        .disconnected => |conn| {
+            const client = self.clients.getPtr(conn) orelse continue;
+            if (client.entity_id != .none) world.queueRemove(client.entity_id);
+            try client.deinit(self.gpa, self.io);
+            _ = self.clients.remove(conn);
+            self.session_metadata_dirty = true;
+            std.log.info("client disconnected: conn={d}", .{conn});
+        },
+    };
+}
+
+fn queueIncomingPackets(self: *Network) !void {
+    defer self.steam_server.packets.incoming.clearRetainingCapacity();
+    for (self.steam_server.packets.incoming.items) |*message| {
+        const client = self.clients.getPtr(message.conn) orelse continue;
+        var reader: std.Io.Reader = .fixed(message.slice());
+        const parsed = shared.net.parse(shared.net.ClientPacket, &reader) catch |err| {
+            std.log.err("parse packet: {s}", .{@errorName(err)});
+            continue;
+        };
+        var queued_packet = try cloneClientPacket(self.gpa, parsed);
+        errdefer freeClientPacket(self.gpa, &queued_packet);
+        try client.command_queue.commands.append(self.gpa, queued_packet);
+    }
+}
+
+/// Returns true when every client needs a full resync.
+fn applyCommand(
+    self: *Network,
+    world: *World,
+    outbox: Outbox,
+    client: *Client,
+    command: shared.net.ClientPacket,
+) !bool {
+    switch (command) {
+        .connect => |request| return self.acceptConnect(world, outbox, client, request),
+        .disconnect => {
+            if (client.entity_id == .none) return false;
+            world.queueRemove(client.entity_id);
+            std.log.info("player disconnect", .{});
+        },
+        .input => |input| {
+            const entity = world.getPtrRaw(client.entity_id) orelse return false;
+            entity.controller.input = input;
+        },
+        .lobby => |lobby_command| {
+            const player = world.getPtrRaw(client.entity_id) orelse return false;
+            const is_host = client.conn == self.steam_server.host_conn;
+            switch (lobby_command) {
+                .survivor => |survivor| lobby.setSurvivor(world, player, survivor),
+                .ready => |ready| lobby.setReady(world, player, ready),
+                .difficulty => |setting| if (is_host) lobby.setDifficulty(world, setting),
+            }
+        },
+        .go_again => {
+            if (client.conn == self.steam_server.host_conn) world.go_again_requested = true;
+        },
+        .chat => |chat| {
+            if (client.entity_id == .none) return false;
+            var text_buffer: [shared.max_chat_len]u8 = undefined;
+            const text = sanitizeText(&text_buffer, chat.text);
+            if (text.len == 0) return false;
+            std.log.debug("chat {s}: {s}", .{ client.name, text });
+            try self.broadcastChat(outbox, client.entity_id, text);
+        },
+    }
+    return false;
+}
+
+fn acceptConnect(
+    self: *Network,
+    world: *World,
+    outbox: Outbox,
+    client: *Client,
+    request: shared.net.Connect,
+) !bool {
+    if (request.protocol_version != shared.net.protocol_version) {
+        std.log.warn("rejecting client conn={d}: protocol {d} != server {d}", .{
+            client.conn,
+            request.protocol_version,
+            shared.net.protocol_version,
+        });
+        _ = self.steam_server.socket.CloseConnection(
+            client.conn,
+            0,
+            "protocol version mismatch",
+            false,
+        );
+        return false;
+    }
+    const renamed = try self.rename(client, request.player_name.slice());
+    if (client.entity_id != .none) return renamed;
+    if (world.players.items.len >= shared.max_players) {
+        std.log.warn(
+            "rejecting client conn={d}: server full ({d} players)",
+            .{ client.conn, world.players.items.len },
+        );
+        _ = self.steam_server.socket.CloseConnection(client.conn, 0, "server full", false);
+        return false;
+    }
+    try self.spawnPlayer(world, outbox, client, request.survivor);
+    return false;
+}
+
+/// Returns true when an already spawned player changed name.
+fn rename(self: *Network, client: *Client, raw_name: []const u8) !bool {
+    var name_buffer: [shared.max_player_name_len]u8 = undefined;
+    const name = sanitizeText(&name_buffer, raw_name);
+    const display_name = if (name.len == 0) shared.default_player_name else name;
+    if (std.mem.eql(u8, client.name, display_name)) return false;
+    if (client.name.len != 0) self.gpa.free(client.name);
+    client.name = try self.gpa.dupe(u8, display_name);
+    self.session_metadata_dirty = true;
+    return client.entity_id != .none;
+}
+
+fn spawnPlayer(
+    self: *Network,
+    world: *World,
+    outbox: Outbox,
+    client: *Client,
+    survivor: shared.Survivor.Kind,
+) !void {
+    const player = world.spawn(.{
+        .kind = .player,
+        .survivor = survivor,
+        .transform = .{ .position = stage.playerSpawnPosition(world) },
+        .camera = .{ .transform = .{ .position = .{ 0, 0, 100 } } },
+    }) catch return;
+    client.entity_id = player.id;
+    world.players.appendAssumeCapacity(client.entity_id);
+    self.session_metadata_dirty = true;
+
+    try outbox.send(
+        client,
+        .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
+        .reliable,
+    );
+    try outbox.send(client, .{ .event = .{ .new_stage = world.stage } }, .reliable);
+    const teleporter_active = if (world.getPtr(
+        world.teleporter_id,
+    )) |entity| entity.teleporter.state == .active else false;
+    if (teleporter_active) try outbox.send(client, .{ .event = .teleport_start }, .reliable);
+    std.log.info("PLAYER SPAWN entity_id={d} name=\"{s}\"", .{ client.entity_id, client.name });
+}
+
+fn collectMotions(self: *Network, world: *World) !void {
+    self.pending_motions.clearRetainingCapacity();
+    for (world.entities.values()) |*entity| {
+        if (!tracksMotion(entity)) continue;
+        const current: shared.net.UpdateMotion = .{
+            .id = entity.id,
+            .position = entity.transform.position,
+            .velocity = entity.replicated_velocity,
+            .rotation = entity.transform.rotation.toVec(),
+            .tick = world.tick,
+        };
+        const entry = try self.last_motions.getOrPut(entity.id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = current;
+            continue;
+        }
+        if (!drifted(entry.value_ptr.*, current)) continue;
+        entry.value_ptr.* = current;
+        try self.pending_motions.append(self.gpa, current);
+    }
+}
+
+fn drifted(last: shared.net.UpdateMotion, current: shared.net.UpdateMotion) bool {
+    const elapsed = @as(f32, @floatFromInt(current.tick - last.tick)) * shared.tick_seconds;
+    const predicted = last.position + nz.vec.scale(last.velocity, elapsed);
+    const position_drift = nz.vec.length(current.position - predicted);
+    const rotation_drift = 1.0 - @abs(nz.vec.dot(current.rotation, last.rotation));
+    const velocity_drift = nz.vec.length(current.velocity - last.velocity);
+    return position_drift > 0.25 or rotation_drift > 0.01 or velocity_drift > 1.0;
+}
+
+fn sendFrame(self: *Network, world: *World, outbox: Outbox, client: *Client) !void {
+    if (client.entity_id == .none) return;
+    try outbox.send(client, .{ .server_tick = world.tick }, .unreliable_no_delay);
+    if (world.getPtrRaw(client.entity_id)) |player| {
+        client.needs_full_sync = client.needs_full_sync or player.controller.resync_requested;
+        player.controller.resync_requested = false;
+    }
+
+    const full_sync = client.needs_full_sync;
+    if (full_sync) {
+        try self.sendFullSync(world, outbox, client);
+    } else for (self.pending_motions.items) |motion| {
+        try outbox.send(client, .{ .motion = motion }, .unreliable_no_delay);
+    }
+
+    for (world.client_updates.items) |packet| {
+        if (full_sync and packet == .spawn_planet) continue;
+        try outbox.send(client, packet, .reliable);
+    }
+    if (full_sync) return;
+    for (world.spawned.items) |id| {
+        const entity = world.getPtr(id) orelse continue;
+        try self.sendSpawn(world, outbox, client, entity);
+    }
+}
+
+fn sendFullSync(self: *Network, world: *World, outbox: Outbox, client: *Client) !void {
+    std.log.debug("FULL SYNC", .{});
+    try outbox.send(client, .{ .spawn_planet = world.planet.planet_radius }, .reliable);
+    try outbox.send(client, .{ .lobby_difficulty = world.difficulty_setting }, .reliable);
+    for (world.entities.values()) |*entity| {
+        try self.sendSpawn(world, outbox, client, entity);
+        if (entity.kind == .player) try outbox.send(client, .{ .lobby_player = .{
+            .id = entity.id,
+            .survivor = entity.survivor,
+            .ready = entity.ready,
+        } }, .reliable);
+        if (tracksMotion(entity)) try outbox.send(
+            client,
+            .{ .motion = motionPacket(world, entity) },
+            .reliable,
+        );
+    }
+    client.needs_full_sync = false;
+}
+
+fn sendSpawn(
+    self: *Network,
+    world: *World,
+    outbox: Outbox,
+    client: *const Client,
+    entity: *const system.Entity,
+) !void {
+    const packet = spawnPacket(world, entity, self.nameForEntity(entity.id));
+    try outbox.send(client, .{ .spawn_entity = packet }, .reliable);
+    try sendHealth(outbox, client, entity);
+    try sendInventory(outbox, client, entity);
+}
+
 fn sendHealth(outbox: Outbox, client: *const Client, entity: *const system.Entity) !void {
     if (entity.max_health <= 0) return;
-    try outbox.send(client, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_max = @floatCast(entity.max_health) } } }, .reliable);
-    try outbox.send(client, .{ .health = .{ .id = entity.id, .source = .none, .amount = .{ .set_current = @floatCast(entity.health) } } }, .reliable);
+    try outbox.send(
+        client,
+        .{
+            .health = .{
+                .id = entity.id,
+                .source = .none,
+                .amount = .{ .set_max = @floatCast(entity.max_health) },
+            },
+        },
+        .reliable,
+    );
+    try outbox.send(
+        client,
+        .{
+            .health = .{
+                .id = entity.id,
+                .source = .none,
+                .amount = .{ .set_current = @floatCast(entity.health) },
+            },
+        },
+        .reliable,
+    );
 }
 
 fn tracksMotion(entity: *const system.Entity) bool {
@@ -372,11 +461,19 @@ fn sendInventory(outbox: Outbox, client: *const Client, entity: *const system.En
     if (entity.kind != .player) return;
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const count = entity.inventory.get(item_kind);
-        if (count > 0) try outbox.send(client, .{ .inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } }, .reliable);
+        if (count > 0) try outbox.send(
+            client,
+            .{ .inventory = .{ .id = entity.id, .item_kind = item_kind, .set = count } },
+            .reliable,
+        );
     }
 }
 
-fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const u8) shared.net.SpawnEntity {
+fn spawnPacket(
+    world: *World,
+    entity: *const system.Entity,
+    player_name: []const u8,
+) shared.net.SpawnEntity {
     return .{
         .id = entity.id,
         .kind = entity.kind,
@@ -411,7 +508,12 @@ fn markAllClientsForFullSync(self: *Network) void {
     }
 }
 
-fn broadcastChat(self: *Network, outbox: Outbox, sender_id: shared.entity.Id, text: []const u8) !void {
+fn broadcastChat(
+    self: *Network,
+    outbox: Outbox,
+    sender_id: shared.entity.Id,
+    text: []const u8,
+) !void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == .none) continue;
@@ -439,7 +541,12 @@ fn updateAdvertisedSession(self: *Network) void {
     }
 
     if (host_name.len == 0 and player_count != 0) host_name = player_names[0];
-    self.steam_server.updateSessionMetadata(shared.max_players, shared.net.protocol_version, host_name, player_names[0..player_count]);
+    self.steam_server.updateSessionMetadata(
+        shared.max_players,
+        shared.net.protocol_version,
+        host_name,
+        player_names[0..player_count],
+    );
     self.session_metadata_dirty = false;
 }
 
