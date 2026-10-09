@@ -88,5 +88,7 @@ Lucas splits the work: the cloud session implements ideas while he's away; he bu
 - Task queue: `TASKS.md`. Take the top unchecked task under "Queue", do it, tick it, append a 1-3 line result under it (what changed, what you could NOT verify).
 - The cloud box has no Steam and no GPU: you can't run the game. `cd server && zig build` must pass; try `cd client && zig build` (needs `slangc` — if it's missing, say so and don't fake it). If Zig 0.16 isn't installed, install the official 0.16.0 tarball.
 - Never mark a gameplay/render task "done" — mark it "built, needs playtest".
-- Stuck on a design choice that is Lucas's to make? Write the question under the task in TASKS.md, skip to the next task.
+- Lucas is AWAY. Never end your turn to ask him something and never stop at uncertainty. Keep working the queue until it's empty or every remaining task is blocked.
+- Uncertain? Write the question under "Questions for Lucas" in TASKS.md (task id, the options, which one you picked and why), then pick the most reversible option and keep going. If no option is safely reversible, skip to the next task.
+- Commit after every finished step so nothing is lost if the session dies.
 - Bug list items are from a 2026-08-14 review: verify the bug still exists in the tree before fixing. If it's already fixed, tick it with "already fixed".

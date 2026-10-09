@@ -6,16 +6,16 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
 ## Queue
 
 ### Phase 1 — architecture (one commit per step, every step must build)
-- [ ] A0 — Audit only, no code. Write `docs/ARCHITECTURE.md` (module table + mermaid data flow of client/server/shared/render as they are today) and `docs/refactor-plan.md`: every `self:`-method struct and every struct that acts instead of being data (grep-measured list: file, symbol, callers), stored sibling pointers, policy living in the host exe (e.g. tick accumulator in `client/src/main.zig`), files mixing unrelated concepts. Rank steps by value/cost. Stop and put the plan under "Questions for Lucas".
+- [ ] A0 — Audit only, no code. Write `docs/ARCHITECTURE.md` (module table + mermaid data flow of client/server/shared/render as they are today) and `docs/refactor-plan.md`: every `self:`-method struct and every struct that acts instead of being data (grep-measured list: file, symbol, callers), stored sibling pointers, policy living in the host exe (e.g. tick accumulator in `client/src/main.zig`), files mixing unrelated concepts. Rank steps by value/cost. Then carry out the steps that don't change gameplay or wire format; list the rest under "Questions for Lucas".
 - [ ] A1 — Layout guard (also closes R13): each System exports a comptime FNV hash of the host-allocated layout; HotLib rejects a mismatched build with a "restart needed" log. Decision note `docs/decisions/0001-layout-guard.md`.
 - [ ] A2 — Move game-loop policy (fixed-step accumulator, fps counting) out of `client/src/main.zig` and `server/src/main.zig` into the .so. Host becomes `poll → trySwap → update`.
-- [ ] A3… — Execute `docs/refactor-plan.md` steps Lucas approved, one per commit. Mechanical moves (renames, file splits) land as their own commit before behavior changes.
+- [ ] A3… — Execute `docs/refactor-plan.md` steps, one per commit (skip the ones you listed as questions). Mechanical moves (renames, file splits) land as their own commit before behavior changes.
 
-### Phase 2 — Risk of Rain 2 loop (after Phase 1 is approved)
-- [ ] G0 — Audit only: compare what exists (items, skills, teleporter, lootbox, currency, stages, enemies) against the RoR2 core loop: difficulty timer, director spawn credits, teleporter boss event + charge zone, item rarity tiers, chest cost scaling, stage-to-stage carry-over, respawn between stages, survivors. Write the gap list under "Questions for Lucas" ranked by fun/cost. Stop.
+### Phase 2 — Risk of Rain 2 loop
+- [ ] G0 — Audit only: compare what exists (items, skills, teleporter, lootbox, currency, stages, enemies) against the RoR2 core loop: difficulty timer, director spawn credits, teleporter boss event + charge zone, item rarity tiers, chest cost scaling, stage-to-stage carry-over, respawn between stages, survivors. Write the gap list ranked by fun/cost in `docs/ror2-gaps.md`, then build the top items one per commit.
 
-### Phase 3 — content and features (after G0 is ruled)
-Each one: write a short proposal under "Questions for Lucas" first (what, how it fits the data layout, cost), build after his OK. New monsters/items/classes use placeholder primitives + an entry under "Needs asset from Lucas". Web search for design references (RoR2 wiki, GDC talks) is encouraged.
+### Phase 3 — content and features
+Each one: write a short proposal in `docs/decisions/` first (what, how it fits the data layout, cost), then build it. New monsters/items/classes use placeholder primitives + an entry under "Needs asset from Lucas". Web search for design references (RoR2 wiki, GDC talks) is encouraged.
 - [ ] C1 — Biomes: per-planet/per-stage terrain params, palette and enemy pool as data rows. Terrain is code-generated, so this is fair game.
 - [ ] C2 — Monster ideas: 5+ enemy designs with distinct behaviors (ranged, charger, flyer, swarm, elite modifiers), each as a spec row + behavior function.
 - [ ] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
