@@ -6,7 +6,8 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
 ## Queue
 
 ### Phase 1 — architecture (one commit per step, every step must build)
-- [ ] A0 — Audit only, no code. Write `docs/ARCHITECTURE.md` (module table + mermaid data flow of client/server/shared/render as they are today) and `docs/refactor-plan.md`: every `self:`-method struct and every struct that acts instead of being data (grep-measured list: file, symbol, callers), stored sibling pointers, policy living in the host exe (e.g. tick accumulator in `client/src/main.zig`), files mixing unrelated concepts. Rank steps by value/cost. Then carry out the steps that don't change gameplay or wire format; list the rest under "Questions for Lucas".
+- [x] A0 — Audit only, no code. Write `docs/ARCHITECTURE.md` (module table + mermaid data flow of client/server/shared/render as they are today) and `docs/refactor-plan.md`: every `self:`-method struct and every struct that acts instead of being data (grep-measured list: file, symbol, callers), stored sibling pointers, policy living in the host exe (e.g. tick accumulator in `client/src/main.zig`), files mixing unrelated concepts. Rank steps by value/cost. Then carry out the steps that don't change gameplay or wire format; list the rest under "Questions for Lucas".
+  - Result: `docs/ARCHITECTURE.md` + `docs/refactor-plan.md` written. Done in A0: plan steps 1-3 (Physics passed as a parameter, no more `World.physics`; network `Client` holds no pointers/allocator; dead `Physics.{gpa,io}` and commented-out code removed). Steps 4-10 continue under A1/A2/A3. Server + client build; behavior unchanged, not playtested.
 - [ ] A1 — Layout guard (also closes R13): each System exports a comptime FNV hash of the host-allocated layout; HotLib rejects a mismatched build with a "restart needed" log. Decision note `docs/decisions/0001-layout-guard.md`.
 - [ ] A2 — Move game-loop policy (fixed-step accumulator, fps counting) out of `client/src/main.zig` and `server/src/main.zig` into the .so. Host becomes `poll → trySwap → update`.
 - [ ] A3… — Execute `docs/refactor-plan.md` steps, one per commit (skip the ones you listed as questions). Mechanical moves (renames, file splits) land as their own commit before behavior changes.
@@ -41,3 +42,5 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 ## Needs asset from Lucas
 
 ## Questions for Lucas
+- A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
+- A0: `Scene.particle_lab` is unreachable since its F4 entry was commented out (now deleted). Keep the scene (dev tool) or delete it? Kept.
