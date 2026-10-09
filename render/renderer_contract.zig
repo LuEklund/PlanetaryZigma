@@ -23,6 +23,7 @@ pub const Api = struct {
     deinit: *const fn (*anyopaque) callconv(.c) void,
     update: *const fn (*anyopaque, list: *DrawList) callconv(.c) void,
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
+    layoutHash: *const fn () callconv(.c) u64,
 
     uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,

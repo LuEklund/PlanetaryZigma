@@ -131,13 +131,20 @@ comptime {
     _ = ffi;
 }
 
+const layout_hash = shared.layout.hash(&.{ System, World });
+
 pub const ffi = struct {
     pub const Table = struct {
         systemInit: *const fn (*System, data: *const Data) callconv(.c) bool,
         systemDeinit: *const fn (*System) callconv(.c) void,
         systemUpdate: *const fn (*System, world: *World) callconv(.c) void,
         reload: *const fn (*System, pre_reload: bool) callconv(.c) void,
+        layoutHash: *const fn () callconv(.c) u64,
     };
+
+    pub export fn layoutHash() u64 {
+        return layout_hash;
+    }
 
     pub export fn systemInit(system: *System, data: *const Data) bool {
         std.log.info("system init", .{});

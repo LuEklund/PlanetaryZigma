@@ -10,6 +10,7 @@ extern "kernel32" fn GetFileAttributesW(path: [*:0]const u16) callconv(.winapi) 
 pub fn HotLib(comptime Api: type, comptime Handle: type) type {
     return struct {
         const Self = @This();
+        const has_layout_guard = @hasField(Api, "layoutHash");
 
         api: Api,
         handle: Handle,
@@ -22,6 +23,7 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
         source_name: []const u8,
         copy_id: u64,
         process_id: u32,
+        layout_hash: u64,
 
         pub fn init(comptime library_name: []const u8, gpa: std.mem.Allocator, io: std.Io) !Self {
             const source_name = if (is_windows) library_name ++ ".dll" else "lib" ++ library_name ++ ".so";
@@ -48,8 +50,10 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
                 .source_name = source_name,
                 .copy_id = 0,
                 .process_id = if (is_windows) std.os.windows.GetCurrentProcessId() else 0,
+                .layout_hash = 0,
             };
             self.dynlib, self.api, self.mtime = try self.open(io);
+            if (has_layout_guard) self.layout_hash = self.api.layoutHash();
             return self;
         }
 
@@ -74,6 +78,17 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
                 std.log.err("{s}: reload failed, keeping the running build: {t}", .{ self.source_name, err });
                 return;
             };
+
+            if (has_layout_guard) {
+                const next_layout_hash = next_api.layoutHash();
+                if (next_layout_hash != self.layout_hash) {
+                    std.log.err("{s}: persistent memory layout changed ({x} -> {x}), restart needed; keeping the running build", .{ self.source_name, self.layout_hash, next_layout_hash });
+                    var rejected = next_dynlib;
+                    rejected.close();
+                    self.mtime = next_mtime;
+                    return;
+                }
+            }
 
             self.api.reload(self.handle, true);
             self.retired.append(self.gpa, self.dynlib) catch {};

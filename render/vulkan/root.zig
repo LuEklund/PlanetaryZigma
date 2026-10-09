@@ -17,7 +17,13 @@ comptime {
     _ = ffi;
 }
 
+const layout_hash = @import("shared").layout.hash(&.{Context});
+
 pub const ffi = struct {
+    pub export fn layoutHash() u64 {
+        return layout_hash;
+    }
+
     pub export fn init(data: *const InitOptions) ?*anyopaque {
         contract.log.io = data.io;
         std.log.info("render init", .{});

@@ -303,7 +303,13 @@ comptime {
 
 pub const Api = @import("system_contract.zig").Api;
 
+const layout_hash = shared.layout.hash(&.{ System, World });
+
 pub const ffi = struct {
+    pub export fn layoutHash() u64 {
+        return layout_hash;
+    }
+
     pub export fn systemInit(data: *const Data) ?*anyopaque {
         std.log.info("system init", .{});
         const context = data.gpa.create(System) catch return null;

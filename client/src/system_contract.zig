@@ -17,4 +17,5 @@ pub const Api = struct {
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque, world: *World) callconv(.c) bool,
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
+    layoutHash: *const fn () callconv(.c) u64,
 };

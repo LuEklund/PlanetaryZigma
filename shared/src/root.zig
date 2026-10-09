@@ -8,6 +8,7 @@ pub const StaticVertex = @import("vertex.zig").StaticVertex;
 pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 
 pub const HotLib = @import("HotLib.zig").HotLib;
+pub const layout = @import("layout.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 
