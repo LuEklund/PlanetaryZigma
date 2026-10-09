@@ -14,14 +14,21 @@ pub fn getViewMatrix(transform: *const nz.Transform3D(f32)) nz.Mat4x4(f32) {
 pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) nz.Mat4x4(f32) {
     const f = 1.0 / std.math.tan(fovy_rad / 2.0);
     return .new(.{
-        f / aspect, 0, 0, 0,
-        0, -f, 0,                           0,
-        0, 0,  far / (near - far),          -1,
-        0, 0,  (far * near) / (near - far), 0,
+        f / aspect, 0,  0,                           0,
+        0,          -f, 0,                           0,
+        0,          0,  far / (near - far),          -1,
+        0,          0,  (far * near) / (near - far), 0,
     });
 }
 
-pub fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, slice_near: f32, slice_far: f32, light_dir: nz.Vec3(f32)) nz.Mat4x4(f32) {
+pub fn cascadeViewProj(
+    camera: nz.Transform3D(f32),
+    fov_rad: f32,
+    aspect: f32,
+    slice_near: f32,
+    slice_far: f32,
+    light_dir: nz.Vec3(f32),
+) nz.Mat4x4(f32) {
     const forward = camera.rotation.rotateVec(.{ 0, 0, -1 });
     const right = camera.rotation.rotateVec(.{ 1, 0, 0 });
     const up = camera.rotation.rotateVec(.{ 0, 1, 0 });
@@ -48,7 +55,9 @@ pub fn cascadeViewProj(camera: nz.Transform3D(f32), fov_rad: f32, aspect: f32, s
     for (corners) |corner| radius = @max(radius, nz.vec.length(corner - center));
 
     const normalized_light = nz.vec.normalize(light_dir);
-    const up_reference: nz.Vec3(f32) = if (@abs(normalized_light[1]) > 0.99) .{ 0, 0, 1 } else .{ 0, 1, 0 };
+    const up_reference: nz.Vec3(f32) = if (@abs(
+        normalized_light[1],
+    ) > 0.99) .{ 0, 0, 1 } else .{ 0, 1, 0 };
     const light_view = nz.Mat4x4(f32).lookAt(.{ 0, 0, 0 }, -normalized_light, up_reference);
 
     const center_light = light_view.mulVec4(.{ center[0], center[1], center[2], 1 });

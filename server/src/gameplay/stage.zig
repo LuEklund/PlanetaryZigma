@@ -16,7 +16,12 @@ pub fn playerSpawnPosition(world: *const World) nz.Vec3(f32) {
     };
 }
 
-pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place: World.Place) !void {
+pub fn loadPlace(
+    world: *World,
+    gpa: std.mem.Allocator,
+    physics: *Physics,
+    place: World.Place,
+) !void {
     world.place = place;
     for (world.entities.values()) |entry| {
         if (entry.kind != .player) world.queueDespawn(entry.id);
@@ -28,7 +33,11 @@ pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place
     const spawn_planet_radius: u32 = switch (place) {
         .ship => World.ship_planet_radius,
         .planet => if (world.dev_mode)
-            random.intRangeAtMost(u32, shared.Planet.dev_radius_min, shared.Planet.dev_radius_min + 1)
+            random.intRangeAtMost(
+                u32,
+                shared.Planet.dev_radius_min,
+                shared.Planet.dev_radius_min + 1,
+            )
         else
             shared.Planet.radius_min + (world.stage - 1) * 9,
     };
@@ -45,7 +54,9 @@ pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place
                 .kind = .platform,
                 .transform = .{ .position = floor_position },
             });
-            const slab: shared.entity.ColliderShape.HalfBoxExtent = shared.entity.Kind.collider(.platform).?.shape.box;
+            const slab: shared.entity.ColliderShape.HalfBoxExtent = shared.entity.Kind.collider(
+                .platform,
+            ).?.shape.box;
             const wall_center: nz.Vec3(f32) = floor_position + nz.Vec3(f32){ 0, slab.x, 0 };
             const wall_distance: f32 = slab.x + slab.y;
             const walls: [4]struct { offset: nz.Vec3(f32), axis: nz.Vec3(f32) } = .{
@@ -59,7 +70,10 @@ pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place
                     .kind = .platform,
                     .transform = .{
                         .position = wall_center + wall.offset,
-                        .rotation = nz.quat.Hamiltonian(f32).angleAxis(std.math.pi / 2.0, wall.axis),
+                        .rotation = nz.quat.Hamiltonian(f32).angleAxis(
+                            std.math.pi / 2.0,
+                            wall.axis,
+                        ),
                     },
                 });
             }
@@ -92,7 +106,9 @@ pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place
             const teleporter_position = world.planet.surfacePoint(teleporter_direction);
             for (0..25) |_| {
                 const vector_direction = if (world.dev_mode)
-                    nz.vec.normalize(world.planet.surfacePointNear(teleporter_position, 5, 10, random))
+                    nz.vec.normalize(
+                        world.planet.surfacePointNear(teleporter_position, 5, 10, random),
+                    )
                 else
                     nz.vec.randomUnitVector(nz.Vec3(f32), random);
                 const transform = world.planet.surfaceTransform(vector_direction, 0.2);
@@ -129,7 +145,15 @@ pub fn loadPlace(world: *World, gpa: std.mem.Allocator, physics: *Physics, place
             player.flags.is_dead = false;
             player.health = player.max_health;
             try physics.createBody(player);
-            world.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.max_health) } } });
+            world.client_updates.appendAssumeCapacity(
+                .{
+                    .health = .{
+                        .id = player.id,
+                        .source = .none,
+                        .amount = .{ .set_current = @floatCast(player.max_health) },
+                    },
+                },
+            );
         } else {
             world.act(.{ .id = player.id, .verb = .{ .teleport = player_spawn_position } });
             world.act(.{ .id = player.id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });

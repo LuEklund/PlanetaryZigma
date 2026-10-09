@@ -10,7 +10,14 @@ pub fn update(hud: *Hud) Request {
     defer panel.deinit();
     style.title(@src(), "Paused");
     if (style.button(@src(), "Resume", 0, button_size, false, true)) hud.overlay = .none;
-    if (style.button(@src(), "Options", 0, button_size, false, true)) hud.overlay = .{ .options = .{ .return_to_pause = true } };
+    if (style.button(
+        @src(),
+        "Options",
+        0,
+        button_size,
+        false,
+        true,
+    )) hud.overlay = .{ .options = .{ .return_to_pause = true } };
     if (style.button(@src(), "Main Menu", 0, button_size, false, true)) return .main_menu;
     return .none;
 }

@@ -161,7 +161,16 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 0.38, 0.82, 0.38, 0.8 },
             .{ 0.74, 1.0, 0.66, 0.8 },
         },
-        .placement = .{ .orbit = .{ .radius = 0.8, .spin = 0.55, .strands = 7, .height = 1.1, .scroll = 1.15, .jitter = 0.03 } },
+        .placement = .{
+            .orbit = .{
+                .radius = 0.8,
+                .spin = 0.55,
+                .strands = 7,
+                .height = 1.1,
+                .scroll = 1.15,
+                .jitter = 0.03,
+            },
+        },
     },
     .tracer = .{
         .count = 1,

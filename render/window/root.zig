@@ -143,12 +143,21 @@ pub const OpenOptions = struct {
     position: ?Position = null,
 };
 
-pub fn open(self: *Window, gpa: std.mem.Allocator, minimal: std.process.Init.Minimal, options: OpenOptions) !void {
+pub fn open(
+    self: *Window,
+    gpa: std.mem.Allocator,
+    minimal: std.process.Init.Minimal,
+    options: OpenOptions,
+) !void {
     self.inner = switch (native_os) {
         .linux, .freebsd, .netbsd, .openbsd => blk: {
             const session_type = XdgSessionType.detect(minimal) orelse .x11;
             switch (session_type) {
-                inline else => |inline_session_type| break :blk @unionInit(Inner, @tagName(inline_session_type), undefined),
+                inline else => |inline_session_type| break :blk @unionInit(
+                    Inner,
+                    @tagName(inline_session_type),
+                    undefined,
+                ),
             }
         },
         else => undefined,

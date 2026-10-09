@@ -24,14 +24,36 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     };
     list.time = world.elapsed_time;
     const server_seconds = system.network.server_tick_estimate * shared.tick_seconds;
-    list.sun_direction = shared.daynight.sunDirection(if (server_seconds > 0) server_seconds else world.elapsed_time);
+    list.sun_direction = shared.daynight.sunDirection(
+        if (server_seconds > 0) server_seconds else world.elapsed_time,
+    );
     const day = shared.daynight.daylight(list.sun_direction, world.camera.transform.position);
-    const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };
+    const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
+        1,
+        0.5,
+        0.5,
+        1,
+    };
     const daylight_color = shared.daynight.lightColor(day);
-    list.light_color = .{ daylight_color[0] * boss_tint[0], daylight_color[1] * boss_tint[1], daylight_color[2] * boss_tint[2], 1 };
+    list.light_color = .{
+        daylight_color[0] * boss_tint[0],
+        daylight_color[1] * boss_tint[1],
+        daylight_color[2] * boss_tint[2],
+        1,
+    };
     const biome = shared.Biome.forRadius(world.planet.planet_radius);
-    list.sky_zenith = .{ biome.sky_zenith[0] * boss_tint[0], biome.sky_zenith[1] * boss_tint[1], biome.sky_zenith[2] * boss_tint[2], 1 };
-    list.sky_horizon = .{ biome.sky_horizon[0] * boss_tint[0], biome.sky_horizon[1] * boss_tint[1], biome.sky_horizon[2] * boss_tint[2], 1 };
+    list.sky_zenith = .{
+        biome.sky_zenith[0] * boss_tint[0],
+        biome.sky_zenith[1] * boss_tint[1],
+        biome.sky_zenith[2] * boss_tint[2],
+        1,
+    };
+    list.sky_horizon = .{
+        biome.sky_horizon[0] * boss_tint[0],
+        biome.sky_horizon[1] * boss_tint[1],
+        biome.sky_horizon[2] * boss_tint[2],
+        1,
+    };
     list.draw_sky = draw_sky;
     list.planet_radius = world.planet.radiusFloat();
     list.surface_width = system.window.size.width;
@@ -65,33 +87,66 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         }
     }
 
-    const player_interact: shared.entity.Id = if (world.getPtr(world.player_id)) |player| player.interacting else .none;
+    const player_interact: shared.entity.Id = if (world.getPtr(
+        world.player_id,
+    )) |player| player.interacting else .none;
     for (world.entities.values()) |*entity| {
         switch (entity.kind) {
             .item_pickup => {
-                const effect_offset = nz.vec.scale(nz.vec.normalize(entity.transform.position), 0.5);
-                system.particles.keepAlive(.item_effect, @intFromEnum(entity.id), entity.transform.position - effect_offset, entity.transform.position - effect_offset, world.elapsed_time);
+                const effect_offset = nz.vec.scale(
+                    nz.vec.normalize(entity.transform.position),
+                    0.5,
+                );
+                system.particles.keepAlive(
+                    .item_effect,
+                    @intFromEnum(entity.id),
+                    entity.transform.position - effect_offset,
+                    entity.transform.position - effect_offset,
+                    world.elapsed_time,
+                );
             },
             .projectile_cube => {
-                const velocity: nz.Vec3(f32) = if (entity.motion.update) |update| update.velocity else .{ 0, 0, 0 };
-                system.particles.keepAlive(.tracer, @intFromEnum(entity.id), entity.transform.position, entity.transform.position + velocity, world.elapsed_time);
+                const velocity: nz.Vec3(
+                    f32,
+                ) = if (entity.motion.update) |update| update.velocity else .{
+                    0,
+                    0,
+                    0,
+                };
+                system.particles.keepAlive(
+                    .tracer,
+                    @intFromEnum(entity.id),
+                    entity.transform.position,
+                    entity.transform.position + velocity,
+                    world.elapsed_time,
+                );
                 continue;
             },
             else => {},
         }
 
         const pose = animator.pose(entity.animation) orelse continue;
-        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
+        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{
+            .path = "",
+            .loop_clips = null,
+        };
         var transform = entity.transform;
         if (entity.elite != .none) transform.scale = @splat(elite_scale);
         if (entity.kind == .item_pickup) {
             const spawn_duration = shared.entity.Kind.spec(.item_pickup).spawn_duration;
             const alive_time = world.elapsed_time - entity.spawned_at;
             if (spawn_duration > 0) {
-                transform.scale = @splat(0.1 + 0.9 * easeOutBack(std.math.clamp(alive_time / spawn_duration, 0, 1)));
+                transform.scale = @splat(
+                    0.1 + 0.9 * easeOutBack(std.math.clamp(alive_time / spawn_duration, 0, 1)),
+                );
             }
             transform.rotation = transform.rotation
-                .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * alive_time, .{ 0, 1, 0 }))
+                .mul(
+                    nz.Quat(f32).angleAxis(
+                        graphics.Animator.item_spin_speed * alive_time,
+                        .{ 0, 1, 0 },
+                    ),
+                )
                 .normalize();
         }
         appendDraws(
@@ -105,12 +160,17 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     }
     for (world.dying.items) |corpse| {
         const pose = animator.pose(corpse.animation) orelse continue;
-        const corpse_spec: shared.entity.ModelSpec = corpse.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
+        const corpse_spec: shared.entity.ModelSpec = corpse.kind.modelSpec() orelse .{
+            .path = "",
+            .loop_clips = null,
+        };
         var transform = corpse.transform;
         if (corpse.kind == .lootbox) {
             const death_duration = models.rig(models.get(corpse.kind)).death_duration;
             if (death_duration > 0) {
-                transform.scale = @splat(1.0 - std.math.clamp(corpse.elapsed / death_duration, 0, 1));
+                transform.scale = @splat(
+                    1.0 - std.math.clamp(corpse.elapsed / death_duration, 0, 1),
+                );
             }
         }
         appendDraws(
@@ -129,12 +189,16 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             var collider_transform = entity.transform;
             collider_transform.scale = @splat(1);
             switch (collider_shape) {
-                .capsule => |capsule| appendCapsuleLines(list, collider_transform, capsule.half_height, capsule.radius),
+                .capsule => |capsule| appendCapsuleLines(
+                    list,
+                    collider_transform,
+                    capsule.half_height,
+                    capsule.radius,
+                ),
                 .box => |box| appendBoxLines(list, collider_transform, box),
             }
         }
     }
-
 
     for (system.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
@@ -156,7 +220,14 @@ fn easeOutBack(x: f32) f32 {
     return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
 }
 
-fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: graphics.Animator.Pose, top_matrix: nz.Mat4x4(f32), position: nz.Vec3(f32), highlight: bool) void {
+fn appendDraws(
+    list: *DrawList,
+    models: *const graphics.Assets.Models,
+    pose: graphics.Animator.Pose,
+    top_matrix: nz.Mat4x4(f32),
+    position: nz.Vec3(f32),
+    highlight: bool,
+) void {
     if (pose.skeleton) |skeleton| {
         var skin_offsets: [graphics.Animator.max_skins]u32 = undefined;
         const palette_base: u32 = @intCast(list.joint_matrices.items.len);
@@ -170,7 +241,9 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
             if (mesh_id >= mesh_handles.len) continue;
             list.draw_meshes.appendAssumeCapacity(.{
                 .mesh = @enumFromInt(mesh_handles[mesh_id]),
-                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
+                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(
+                    node.model_matrix,
+                ),
                 .position = position,
                 .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
                 .skinned = true,
@@ -206,7 +279,12 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
     }
 }
 
-fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32), to: nz.Vec3(f32)) void {
+fn appendLine(
+    list: *DrawList,
+    transform: nz.Transform3D(f32),
+    from: nz.Vec3(f32),
+    to: nz.Vec3(f32),
+) void {
     list.draw_lines.appendAssumeCapacity(.{
         .a = transform.position + transform.rotation.rotateVec(from),
         .b = transform.position + transform.rotation.rotateVec(to),
@@ -214,7 +292,12 @@ fn appendLine(list: *DrawList, transform: nz.Transform3D(f32), from: nz.Vec3(f32
     });
 }
 
-fn appendCapsuleLines(list: *DrawList, transform: nz.Transform3D(f32), half_height: f32, radius: f32) void {
+fn appendCapsuleLines(
+    list: *DrawList,
+    transform: nz.Transform3D(f32),
+    half_height: f32,
+    radius: f32,
+) void {
     for (0..circle_segments) |segment| {
         const angle_start = std.math.tau * @as(f32, @floatFromInt(segment)) / circle_segments;
         const angle_end = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / circle_segments;
@@ -245,20 +328,32 @@ fn appendCapsuleLines(list: *DrawList, transform: nz.Transform3D(f32), half_heig
             appendLine(
                 list,
                 transform,
-                .{ radius * @cos(angle_start), cap_y + cap_direction * radius * @sin(angle_start), 0 },
+                .{
+                    radius * @cos(angle_start),
+                    cap_y + cap_direction * radius * @sin(angle_start),
+                    0,
+                },
                 .{ radius * @cos(angle_end), cap_y + cap_direction * radius * @sin(angle_end), 0 },
             );
             appendLine(
                 list,
                 transform,
-                .{ 0, cap_y + cap_direction * radius * @sin(angle_start), radius * @cos(angle_start) },
+                .{
+                    0,
+                    cap_y + cap_direction * radius * @sin(angle_start),
+                    radius * @cos(angle_start),
+                },
                 .{ 0, cap_y + cap_direction * radius * @sin(angle_end), radius * @cos(angle_end) },
             );
         }
     }
 }
 
-fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.entity.ColliderShape.HalfBoxExtent) void {
+fn appendBoxLines(
+    list: *DrawList,
+    transform: nz.Transform3D(f32),
+    box: shared.entity.ColliderShape.HalfBoxExtent,
+) void {
     const bottom_corners = [4]nz.Vec3(f32){
         .{ -box.x, -box.y, -box.z },
         .{ box.x, -box.y, -box.z },
@@ -270,7 +365,12 @@ fn appendBoxLines(list: *DrawList, transform: nz.Transform3D(f32), box: shared.e
 
     for (0..4) |corner_index| {
         const next_corner_index = (corner_index + 1) % 4;
-        appendLine(list, transform, bottom_corners[corner_index], bottom_corners[next_corner_index]);
+        appendLine(
+            list,
+            transform,
+            bottom_corners[corner_index],
+            bottom_corners[next_corner_index],
+        );
         appendLine(list, transform, top_corners[corner_index], top_corners[next_corner_index]);
         appendLine(list, transform, bottom_corners[corner_index], top_corners[corner_index]);
     }

@@ -33,7 +33,14 @@ pub fn screen() dvui.Rect {
     return .{ .x = natural.x, .y = natural.y, .w = natural.w, .h = natural.h };
 }
 
-pub fn button(src: std.builtin.SourceLocation, label: []const u8, id_extra: usize, size: dvui.Size, selected: bool, enabled: bool) bool {
+pub fn button(
+    src: std.builtin.SourceLocation,
+    label: []const u8,
+    id_extra: usize,
+    size: dvui.Size,
+    selected: bool,
+    enabled: bool,
+) bool {
     const fill = if (!enabled) disabled else if (selected) accent else control;
     const fg = if (!enabled) text_dim else if (selected) text_dark else text;
     const clicked = dvui.button(src, label, .{ .draw_focus = false }, .{
@@ -59,7 +66,12 @@ pub fn fillScreen(color: dvui.Color) void {
 
 pub fn fillRect(rect: dvui.Rect, color: dvui.Color) void {
     const scale = dvui.windowNaturalScale();
-    const physical: dvui.Rect.Physical = .{ .x = rect.x * scale, .y = rect.y * scale, .w = rect.w * scale, .h = rect.h * scale };
+    const physical: dvui.Rect.Physical = .{
+        .x = rect.x * scale,
+        .y = rect.y * scale,
+        .w = rect.w * scale,
+        .h = rect.h * scale,
+    };
     physical.fill(.all(0), .{ .color = .fromColor(color) });
 }
 
@@ -75,7 +87,17 @@ pub fn centeredPanel(src: std.builtin.SourceLocation, width: f32, height: f32) *
 }
 
 pub fn title(src: std.builtin.SourceLocation, label: []const u8) void {
-    dvui.labelNoFmt(src, label, .{}, .{ .font = font(34), .color_text = .fromColor(text), .gravity_x = 0.5, .padding = .{ .y = 4, .h = 12 } });
+    dvui.labelNoFmt(
+        src,
+        label,
+        .{},
+        .{
+            .font = font(34),
+            .color_text = .fromColor(text),
+            .gravity_x = 0.5,
+            .padding = .{ .y = 4, .h = 12 },
+        },
+    );
 }
 
 pub fn worldToScreen(view_proj: nz.Mat4x4(f32), world_position: nz.Vec3(f32)) ?[2]f32 {
@@ -93,10 +115,18 @@ pub fn texture(handle: contract.TextureHandle) dvui.Texture {
 
 pub fn bar(rect: dvui.Rect, fraction: f32, fill: dvui.Color) void {
     fillRect(rect, .{ .r = 0, .g = 0, .b = 0, .a = 140 });
-    fillRect(.{ .x = rect.x, .y = rect.y, .w = rect.w * std.math.clamp(fraction, 0, 1), .h = rect.h }, fill);
+    fillRect(
+        .{ .x = rect.x, .y = rect.y, .w = rect.w * std.math.clamp(fraction, 0, 1), .h = rect.h },
+        fill,
+    );
 }
 
-pub fn wrapped(src: std.builtin.SourceLocation, content: []const u8, size: f32, color: dvui.Color) void {
+pub fn wrapped(
+    src: std.builtin.SourceLocation,
+    content: []const u8,
+    size: f32,
+    color: dvui.Color,
+) void {
     var layout = dvui.textLayout(src, .{}, .{
         .expand = .horizontal,
         .background = false,

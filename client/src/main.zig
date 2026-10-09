@@ -12,7 +12,9 @@ pub fn main(init: std.process.Init) !void {
     defer tracy_scope.end();
     tracy.setThreadName("main");
     const startup_zone = tracy.zoneNamed(@src(), "Startup");
-    var gpa_impl = if (builtin.mode == .Debug) std.heap.DebugAllocator(.{ .stack_trace_frames = 16, .verbose_log = false }).init else init.gpa;
+    var gpa_impl = if (builtin.mode == .Debug) std.heap.DebugAllocator(
+        .{ .stack_trace_frames = 16, .verbose_log = false },
+    ).init else init.gpa;
     defer {
         if (builtin.mode == .Debug) _ = gpa_impl.deinit();
     }

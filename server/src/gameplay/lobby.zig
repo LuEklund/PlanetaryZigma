@@ -8,8 +8,24 @@ pub fn setSurvivor(world: *World, player: *Entity, survivor: shared.Survivor.Kin
     player.survivor = survivor;
     player.max_health = player.stat(.health);
     player.health = player.max_health;
-    world.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_max = @floatCast(player.max_health) } } });
-    world.client_updates.appendAssumeCapacity(.{ .health = .{ .id = player.id, .source = .none, .amount = .{ .set_current = @floatCast(player.health) } } });
+    world.client_updates.appendAssumeCapacity(
+        .{
+            .health = .{
+                .id = player.id,
+                .source = .none,
+                .amount = .{ .set_max = @floatCast(player.max_health) },
+            },
+        },
+    );
+    world.client_updates.appendAssumeCapacity(
+        .{
+            .health = .{
+                .id = player.id,
+                .source = .none,
+                .amount = .{ .set_current = @floatCast(player.health) },
+            },
+        },
+    );
     announce(world, player);
 }
 
@@ -40,5 +56,13 @@ pub fn updateLobby(world: *World) void {
 }
 
 fn announce(world: *World, player: *const Entity) void {
-    world.client_updates.appendAssumeCapacity(.{ .lobby_player = .{ .id = player.id, .survivor = player.survivor, .ready = player.ready } });
+    world.client_updates.appendAssumeCapacity(
+        .{
+            .lobby_player = .{
+                .id = player.id,
+                .survivor = player.survivor,
+                .ready = player.ready,
+            },
+        },
+    );
 }

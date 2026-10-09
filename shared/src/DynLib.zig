@@ -35,9 +35,16 @@ pub const DynLib = struct {
 const WindowsDynLib = struct {
     handle: std.os.windows.HMODULE,
 
-    extern "kernel32" fn LoadLibraryW(path: [*:0]const u16) callconv(.winapi) ?std.os.windows.HMODULE;
-    extern "kernel32" fn GetProcAddress(module: std.os.windows.HMODULE, name: [*:0]const u8) callconv(.winapi) ?*anyopaque;
-    extern "kernel32" fn FreeLibrary(module: std.os.windows.HMODULE) callconv(.winapi) std.os.windows.BOOL;
+    extern "kernel32" fn LoadLibraryW(
+        path: [*:0]const u16,
+    ) callconv(.winapi) ?std.os.windows.HMODULE;
+    extern "kernel32" fn GetProcAddress(
+        module: std.os.windows.HMODULE,
+        name: [*:0]const u8,
+    ) callconv(.winapi) ?*anyopaque;
+    extern "kernel32" fn FreeLibrary(
+        module: std.os.windows.HMODULE,
+    ) callconv(.winapi) std.os.windows.BOOL;
 
     fn open(path: []const u8) !WindowsDynLib {
         var buf: [std.fs.max_path_bytes]u16 = undefined;

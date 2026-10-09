@@ -23,7 +23,9 @@ pub fn updateProjectiles(world: *World) void {
                     .cube => {},
                     .rocket => {
                         damageRocketImpact(world, owner_entity, projectile.damage, impact.point);
-                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
+                        world.client_updates.appendAssumeCapacity(
+                            .{ .event = .{ .effect = .{ .rocket_impact = impact.point } } },
+                        );
                     },
                 }
             },
@@ -37,13 +39,25 @@ pub fn updateProjectiles(world: *World) void {
 
                 switch (projectile_kind) {
                     .cube => {
-                        if (combat.removeHealth(world, hit_entity, projectile.damage, owner_entity) != .ignored) {
-                            tryProcLightning(world, owner_entity, hit_entity.transform.position, hit_entity);
+                        if (combat.removeHealth(
+                            world,
+                            hit_entity,
+                            projectile.damage,
+                            owner_entity,
+                        ) != .ignored) {
+                            tryProcLightning(
+                                world,
+                                owner_entity,
+                                hit_entity.transform.position,
+                                hit_entity,
+                            );
                         }
                     },
                     .rocket => {
                         damageRocketImpact(world, owner_entity, projectile.damage, impact.point);
-                        world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = impact.point } } });
+                        world.client_updates.appendAssumeCapacity(
+                            .{ .event = .{ .effect = .{ .rocket_impact = impact.point } } },
+                        );
                     },
                 }
                 if (!projectile.flags.invincible) world.queueDespawn(projectile.id);
@@ -53,12 +67,19 @@ pub fn updateProjectiles(world: *World) void {
     world.impacts.clearRetainingCapacity();
 }
 
-fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: nz.Vec3(f32), hit_entity: ?*const system.Entity) void {
+fn tryProcLightning(
+    world: *World,
+    owner_entity: *const system.Entity,
+    origin: nz.Vec3(f32),
+    hit_entity: ?*const system.Entity,
+) void {
     const lightning_count = owner_entity.inventory.get(.lightning);
     var lightning_jumps = lightning_count;
     const damage = owner_entity.stat(.damage) * lightning_count * 0.1;
     const lightning_chance = owner_entity.stat(.lightning_chance);
-    if (!(owner_entity.kind == .player or lightning_jumps > 0 and world.prng.random().float(f32) < lightning_chance)) return;
+    if (!(owner_entity.kind == .player or lightning_jumps > 0 and world.prng.random().float(
+        f32,
+    ) < lightning_chance)) return;
 
     var visited: [lightning.max_victims]shared.entity.Id = undefined;
     var visited_count: usize = 0;
@@ -83,8 +104,15 @@ fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: n
         const max_targets = @min(chained.len, visited.len - visited_count);
         for (world.entities.values()) |*candidate| {
             if (candidate.kind.eql(owner_entity.kind) or candidate.max_health <= 0) continue;
-            if (std.mem.indexOfScalar(shared.entity.Id, visited[0..visited_count], candidate.id) != null) continue;
-            const candidate_distance = nz.vec.distance(candidate.transform.position, source.position);
+            if (std.mem.indexOfScalar(
+                shared.entity.Id,
+                visited[0..visited_count],
+                candidate.id,
+            ) != null) continue;
+            const candidate_distance = nz.vec.distance(
+                candidate.transform.position,
+                source.position,
+            );
             if (candidate_distance > lightning_count + 5) continue;
             if (chained_count < max_targets) {
                 chained_count += 1;
@@ -117,7 +145,12 @@ fn tryProcLightning(world: *World, owner_entity: *const system.Entity, origin: n
     }
 }
 
-fn damageRocketImpact(world: *World, owner_entity: *const system.Entity, base_damage: f32, impact_position: nz.Vec3(f32)) void {
+fn damageRocketImpact(
+    world: *World,
+    owner_entity: *const system.Entity,
+    base_damage: f32,
+    impact_position: nz.Vec3(f32),
+) void {
     const blast_radius: f32 = @as(f32, owner_entity.inventory.get(.rocket)) * 0.5 + 2;
     for (world.entities.values()) |*candidate| {
         if (candidate.max_health <= 0) continue;

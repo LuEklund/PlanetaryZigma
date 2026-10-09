@@ -45,7 +45,11 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
         _ = try self.add(gpa, std.fs.path.basename(model_spec.path), kind);
     }
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
-        const handle = try self.add(gpa, std.fs.path.basename(shared.Item.model_paths[@intFromEnum(item_kind)]), null);
+        const handle = try self.add(
+            gpa,
+            std.fs.path.basename(shared.Item.model_paths[@intFromEnum(item_kind)]),
+            null,
+        );
         self.item_models.set(item_kind, handle);
     }
     return self;

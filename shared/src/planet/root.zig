@@ -76,7 +76,12 @@ pub fn clearOutboxes(self: *Planet) void {
     self.removes.clearRetainingCapacity();
 }
 
-pub fn update(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
+pub fn update(
+    self: *Planet,
+    gpa: std.mem.Allocator,
+    anchors: []const nz.Vec3(f32),
+    view_distance: i32,
+) !void {
     if (self.planet_radius == 0) return;
 
     try self.collectJob(gpa, anchors, view_distance);
@@ -100,7 +105,12 @@ pub fn update(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
     if (self.job == null) try self.startJob(gpa, anchors, view_distance);
 }
 
-fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
+fn collectJob(
+    self: *Planet,
+    gpa: std.mem.Allocator,
+    anchors: []const nz.Vec3(f32),
+    view_distance: i32,
+) !void {
     const running = self.job orelse return;
     var results = running.job.collect() orelse return;
     self.job = null;
@@ -129,15 +139,32 @@ fn collectJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f3
             freed += 1;
             continue;
         }
-        slot.value_ptr.* = .{ .chunk = result.chunk, .mesh = result.mesh, .nav = result.nav, .mesh_handle = 0 };
+        slot.value_ptr.* = .{
+            .chunk = result.chunk,
+            .mesh = result.mesh,
+            .nav = result.nav,
+            .mesh_handle = 0,
+        };
         inserted += 1;
         if (result.mesh.indices.items.len != 0) {
-            try self.uploads.append(gpa, .{ .coord = result.chunk.coord, .vertices = result.mesh.vertices.items, .indices = result.mesh.indices.items });
+            try self.uploads.append(
+                gpa,
+                .{
+                    .coord = result.chunk.coord,
+                    .vertices = result.mesh.vertices.items,
+                    .indices = result.mesh.indices.items,
+                },
+            );
         }
     }
 }
 
-fn startJob(self: *Planet, gpa: std.mem.Allocator, anchors: []const nz.Vec3(f32), view_distance: i32) !void {
+fn startJob(
+    self: *Planet,
+    gpa: std.mem.Allocator,
+    anchors: []const nz.Vec3(f32),
+    view_distance: i32,
+) !void {
     var missing: std.ArrayList(Chunk.Coord) = .empty;
     errdefer missing.deinit(gpa);
 
@@ -217,14 +244,25 @@ pub fn surfacePoint(self: *const Planet, direction: nz.Vec3(f32)) nz.Vec3(f32) {
     var outer: f32 = planet_radius + sdf_math.noise_amplitude + cell_margin;
     for (0..24) |_| {
         const middle = (inner + outer) * 0.5;
-        if (sdf_math.sdf(nz.vec.scale(unit_direction, middle), planet_radius) < 0) inner = middle else outer = middle;
+        if (sdf_math.sdf(
+            nz.vec.scale(unit_direction, middle),
+            planet_radius,
+        ) < 0) inner = middle else outer = middle;
     }
     return nz.vec.scale(unit_direction, (inner + outer) * 0.5);
 }
 
-pub fn surfacePointNear(self: *const Planet, direction: nz.Vec3(f32), min_distance: f32, max_distance: f32, random: std.Random) nz.Vec3(f32) {
+pub fn surfacePointNear(
+    self: *const Planet,
+    direction: nz.Vec3(f32),
+    min_distance: f32,
+    max_distance: f32,
+    random: std.Random,
+) nz.Vec3(f32) {
     const unit_direction = nz.vec.normalize(direction);
-    const reference: nz.Vec3(f32) = if (@abs(unit_direction[1]) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
+    const reference: nz.Vec3(f32) = if (@abs(
+        unit_direction[1],
+    ) < 0.99) .{ 0, 1, 0 } else .{ 1, 0, 0 };
     const tangent_a = nz.vec.normalize(nz.vec.cross(unit_direction, reference));
     const tangent_b = nz.vec.cross(unit_direction, tangent_a);
     const spin = random.float(f32) * std.math.tau;
@@ -235,7 +273,11 @@ pub fn surfacePointNear(self: *const Planet, direction: nz.Vec3(f32), min_distan
     return self.surfacePoint(tilted);
 }
 
-pub fn surfaceTransform(self: *const Planet, direction: nz.Vec3(f32), hover: f32) nz.Transform3D(f32) {
+pub fn surfaceTransform(
+    self: *const Planet,
+    direction: nz.Vec3(f32),
+    hover: f32,
+) nz.Transform3D(f32) {
     const surface = self.surfacePoint(direction);
     const surface_up = up(surface) orelse nz.Vec3(f32){ 0, 1, 0 };
     const default_up: nz.Vec3(f32) = .{ 0, 1, 0 };
@@ -262,7 +304,12 @@ pub fn surfaceUp(position: nz.Vec3(f32)) nz.Vec3(f32) {
     return up(position) orelse .{ 0, 1, 0 };
 }
 
-pub fn surfaceLaunch(position: nz.Vec3(f32), direction: nz.Vec3(f32), angle: f32, speed: f32) nz.Vec3(f32) {
+pub fn surfaceLaunch(
+    position: nz.Vec3(f32),
+    direction: nz.Vec3(f32),
+    angle: f32,
+    speed: f32,
+) nz.Vec3(f32) {
     const surface_up = surfaceUp(position);
     const flat_direction = direction - nz.vec.scale(surface_up, nz.vec.dot(direction, surface_up));
     const heading = if (nz.vec.length(flat_direction) > 0.001)

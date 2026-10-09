@@ -48,7 +48,11 @@ pub fn update(self: *Discord, io: std.Io, state: Presence, elapsed_time: f32) vo
 fn connect(self: *Discord, io: std.Io) void {
     var path_buffer: [256]u8 = undefined;
     for (0..10) |index| {
-        const path = std.fmt.bufPrint(&path_buffer, "{s}/discord-ipc-{d}", .{ self.dir, index }) catch return;
+        const path = std.fmt.bufPrint(
+            &path_buffer,
+            "{s}/discord-ipc-{d}",
+            .{ self.dir, index },
+        ) catch return;
         const address = std.Io.net.UnixAddress.init(path) catch return;
         self.socket = address.connect(io) catch continue;
         self.send(io, 0, handshake);

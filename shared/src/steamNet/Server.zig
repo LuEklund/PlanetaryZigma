@@ -52,7 +52,10 @@ pub const Hosting = enum(u8) {
 /// Fills the caller's Server rather than returning one: the packet pump holds `self`, and
 /// a returned struct would be copied out from under it.
 pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOptions) !void {
-    std.log.info("\n====\nNET = {s}\n====\n", .{if (options.log_connection_status) "TRUE" else "FALSE"});
+    std.log.info(
+        "\n====\nNET = {s}\n====\n",
+        .{if (options.log_connection_status) "TRUE" else "FALSE"},
+    );
     const server_mode: steam.EServerMode = switch (options.mode) {
         .steam_p2p => .eServerModeAuthentication,
         .local_singleplayer => .eServerModeNoAuthentication,
@@ -75,7 +78,11 @@ pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOpti
     gs.SetMapName("default");
     gs.SetPasswordProtected(false);
     var product_buf: [16]u8 = undefined;
-    const product = std.fmt.bufPrintZ(&product_buf, "{d}", .{steam.SteamGameServerUtils().GetAppID()}) catch unreachable;
+    const product = std.fmt.bufPrintZ(
+        &product_buf,
+        "{d}",
+        .{steam.SteamGameServerUtils().GetAppID()},
+    ) catch unreachable;
     gs.SetProduct(product);
     gs.SetAdvertiseServerActive(options.mode == .steam_p2p);
 
@@ -105,7 +112,9 @@ pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOpti
     if (options.mode == .steam_p2p) {
         _ = sock.InitAuthentication();
         var auth_status: steam.SteamNetAuthenticationStatus_t = undefined;
-        var availability: steam.ESteamNetworkingAvailability = sock.GetAuthenticationStatus(&auth_status);
+        var availability: steam.ESteamNetworkingAvailability = sock.GetAuthenticationStatus(
+            &auth_status,
+        );
         var waited_milliseconds: u32 = 0;
         while (availability != .k_ESteamNetworkingAvailability_Current and waited_milliseconds < auth_timeout_milliseconds) : (waited_milliseconds += auth_poll_milliseconds) {
             _ = try steamCallback(null, gpa, pipe, null);
@@ -140,8 +149,15 @@ pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOpti
         },
         .local_singleplayer => {
             var id_buf: [20]u8 = undefined;
-            const id_text = try std.fmt.bufPrint(&id_buf, "local:{d}", .{SteamNet.local_server_port});
-            std.log.info("local singleplayer listening on localhost:{d}", .{SteamNet.local_server_port});
+            const id_text = try std.fmt.bufPrint(
+                &id_buf,
+                "local:{d}",
+                .{SteamNet.local_server_port},
+            );
+            std.log.info(
+                "local singleplayer listening on localhost:{d}",
+                .{SteamNet.local_server_port},
+            );
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_file_name, .data = id_text });
         },
     }
@@ -164,7 +180,13 @@ pub fn init(self: *Server, gpa: std.mem.Allocator, io: std.Io, options: InitOpti
     self.handle_packets_future = try io.concurrent(handlePackets, .{self});
 }
 
-pub fn updateSessionMetadata(self: *Server, max_players: usize, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) void {
+pub fn updateSessionMetadata(
+    self: *Server,
+    max_players: usize,
+    protocol_version: u32,
+    host_name: []const u8,
+    player_names: []const []const u8,
+) void {
     self.gs.SetMaxPlayerCount(@intCast(max_players));
 
     const host = if (host_name.len == 0) "Unknown" else host_name;
@@ -188,7 +210,12 @@ pub fn deinit(self: *Server) void {
     self.packets.deinit(self.gpa);
 }
 
-fn writeSessionTags(buffer: *[128]u8, protocol_version: u32, host_name: []const u8, player_names: []const []const u8) !void {
+fn writeSessionTags(
+    buffer: *[128]u8,
+    protocol_version: u32,
+    host_name: []const u8,
+    player_names: []const []const u8,
+) !void {
     var writer: std.Io.Writer = .fixed(buffer[0 .. buffer.len - 1]);
     try writer.print("ver={d};", .{protocol_version});
     try writer.writeAll("host=");
@@ -219,10 +246,15 @@ pub fn handlePackets(self: *Server) !void {
     var last_status_log = last_iteration;
     while (true) {
         const now: std.Io.Timestamp = .now(self.io, .real);
-        const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
+        const gap_milliseconds = @divFloor(
+            last_iteration.durationTo(now).nanoseconds,
+            std.time.ns_per_ms,
+        );
         if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
         last_iteration = now;
-        if (self.log_connection_status and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
+        if (self.log_connection_status and last_status_log.durationTo(
+            now,
+        ).nanoseconds > std.time.ns_per_s) {
             last_status_log = now;
             for (self.connections) |conn| {
                 if (conn != 0) @import("../SteamNet.zig").logConnectionStatus(self.socket, conn);
@@ -268,7 +300,13 @@ pub fn receivePackets(self: *Server) !void {
 }
 
 pub fn sendPackets(self: *Server) !void {
-    SteamNet.sendOutgoing(&self.packets, self.socket, &self.last_send_result, &self.send_stats, self.log_connection_status);
+    SteamNet.sendOutgoing(
+        &self.packets,
+        self.socket,
+        &self.last_send_result,
+        &self.send_stats,
+        self.log_connection_status,
+    );
 }
 
 fn steamCallback(
@@ -286,7 +324,10 @@ fn steamCallback(
             1221 => {
                 const data = msg.data() orelse return msg.m_iCallback;
                 const event = data.SteamNetConnectionStatusChangedCallback;
-                std.log.info("server net state: {s} (conn={d})", .{ @tagName(event.m_info.m_eState), event.m_hConn });
+                std.log.info(
+                    "server net state: {s} (conn={d})",
+                    .{ @tagName(event.m_info.m_eState), event.m_hConn },
+                );
                 switch (event.m_info.m_eState) {
                     .k_ESteamNetworkingConnectionState_Connecting => {
                         if (socket) |sock| {
@@ -311,7 +352,12 @@ fn steamCallback(
                     .k_ESteamNetworkingConnectionState_ClosedByPeer,
                     .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
                     => {
-                        if (socket) |s| _ = s.CloseConnection(event.m_hConn, 0, "peer-closed", false);
+                        if (socket) |s| _ = s.CloseConnection(
+                            event.m_hConn,
+                            0,
+                            "peer-closed",
+                            false,
+                        );
                         if (event.m_hConn == self.?.host_conn) {
                             self.?.host_state = .left;
                             std.log.info("host disconnected, shutting down", .{});

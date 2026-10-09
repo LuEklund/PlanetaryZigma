@@ -4,11 +4,22 @@ const Entity = World.Entity;
 
 pub const HealthChange = enum { ignored, changed, killed };
 
-pub fn removeHealth(world: *World, entity: *Entity, amount: f32, source: ?*const Entity) HealthChange {
+pub fn removeHealth(
+    world: *World,
+    entity: *Entity,
+    amount: f32,
+    source: ?*const Entity,
+) HealthChange {
     return dealDamage(world, entity, amount, source, true);
 }
 
-pub fn dealDamage(world: *World, entity: *Entity, amount: f32, source: ?*const Entity, can_proc: bool) HealthChange {
+pub fn dealDamage(
+    world: *World,
+    entity: *Entity,
+    amount: f32,
+    source: ?*const Entity,
+    can_proc: bool,
+) HealthChange {
     if (entity.flags.is_dead or entity.max_health <= 0) return .ignored;
     if (entity.flags.invincible and amount > 0) return .ignored;
     const random = world.prng.random();
@@ -22,7 +33,9 @@ pub fn dealDamage(world: *World, entity: *Entity, amount: f32, source: ?*const E
         if (random.float(f32) < source_entity.stat(.stun_chance)) {
             const stun_duration: f32 = 2;
             entity.un_stun_at = world.elapsed_time + stun_duration;
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } });
+            world.client_updates.appendAssumeCapacity(
+                .{ .event = .{ .stun = .{ .id = entity.id, .duration = stun_duration } } },
+            );
         }
     }
     const health_fraction_before = entity.health / entity.max_health;

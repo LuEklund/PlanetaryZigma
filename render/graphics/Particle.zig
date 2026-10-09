@@ -58,7 +58,14 @@ pub fn spawn(self: *Particle, request: Spawn, elapsed_time: f32) void {
     }, elapsed_time);
 }
 
-pub fn keepAlive(self: *Particle, effect: ParticleEffect, owner: u64, origin: nz.Vec3(f32), target: nz.Vec3(f32), elapsed_time: f32) void {
+pub fn keepAlive(
+    self: *Particle,
+    effect: ParticleEffect,
+    owner: u64,
+    origin: nz.Vec3(f32),
+    target: nz.Vec3(f32),
+    elapsed_time: f32,
+) void {
     std.debug.assert(effects.get(effect).lifetime == 0);
     for (&self.emitters) |*emitter| {
         if (emitter.owner != owner or emitter.effect != effect) continue;

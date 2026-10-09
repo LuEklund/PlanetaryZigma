@@ -9,15 +9,30 @@ const OptionsTab = Hud.OptionsTab;
 pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
     const area = style.screen();
     style.fillScreen(style.scrim);
-    var panel = style.centeredPanel(@src(), @min(area.w - 8, @max(740, area.w * 0.6)), @min(area.h - 8, @max(460, area.h * 0.75)));
+    var panel = style.centeredPanel(
+        @src(),
+        @min(area.w - 8, @max(740, area.w * 0.6)),
+        @min(area.h - 8, @max(460, area.h * 0.75)),
+    );
     defer panel.deinit();
     style.title(@src(), "Options");
 
     {
-        var tabs = dvui.box(@src(), .{ .dir = .horizontal, .equal_space = true }, .{ .expand = .horizontal });
+        var tabs = dvui.box(
+            @src(),
+            .{ .dir = .horizontal, .equal_space = true },
+            .{ .expand = .horizontal },
+        );
         defer tabs.deinit();
         for (std.enums.values(OptionsTab), 0..) |tab, index| {
-            if (style.button(@src(), tabLabel(tab), index, .{ .w = 100, .h = 36 }, hud.options_tab == tab, true)) hud.options_tab = tab;
+            if (style.button(
+                @src(),
+                tabLabel(tab),
+                index,
+                .{ .w = 100, .h = 36 },
+                hud.options_tab == tab,
+                true,
+            )) hud.options_tab = tab;
         }
     }
 
@@ -27,12 +42,21 @@ pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
         switch (hud.options_tab) {
             .gameplay => toggle(@src(), "Crosshair", &options.show_crosshair),
             .keyboard_mouse => {
-                slider(@src(), "Mouse Sensitivity", &options.mouse_sensitivity, 0.25, 3.0, "{d:.2}x");
+                slider(
+                    @src(),
+                    "Mouse Sensitivity",
+                    &options.mouse_sensitivity,
+                    0.25,
+                    3.0,
+                    "{d:.2}x",
+                );
                 toggle(@src(), "Invert Y", &options.invert_y);
                 var index: usize = 0;
                 for (std.enums.values(Controller.ActionKind)) |action| {
                     const label = Controller.bindable.get(action) orelse continue;
-                    const value = if (controller.rebinding_action == action) "Listening" else Controller.bindingLabel(controller.bindings.get(action));
+                    const value = if (controller.rebinding_action == action) "Listening" else Controller.bindingLabel(
+                        controller.bindings.get(action),
+                    );
                     if (row(@src(), index, label, value)) {
                         controller.rebinding_action = action;
                         controller.rebinding_fresh = true;
@@ -57,7 +81,12 @@ pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
     }
 }
 
-fn row(src: std.builtin.SourceLocation, id_extra: usize, label: []const u8, value: []const u8) bool {
+fn row(
+    src: std.builtin.SourceLocation,
+    id_extra: usize,
+    label: []const u8,
+    value: []const u8,
+) bool {
     var line = dvui.box(src, .{ .dir = .horizontal }, .{
         .id_extra = id_extra,
         .expand = .horizontal,
@@ -67,8 +96,22 @@ fn row(src: std.builtin.SourceLocation, id_extra: usize, label: []const u8, valu
         .padding = .{ .x = 12, .w = 6 },
     });
     defer line.deinit();
-    dvui.labelNoFmt(@src(), label, .{}, .{ .font = style.font(20), .color_text = .fromColor(style.text), .gravity_y = 0.5, .expand = .horizontal });
-    var value_box = dvui.box(@src(), .{ .dir = .vertical }, .{ .min_size_content = .{ .w = 180, .h = 0 }, .gravity_x = 1 });
+    dvui.labelNoFmt(
+        @src(),
+        label,
+        .{},
+        .{
+            .font = style.font(20),
+            .color_text = .fromColor(style.text),
+            .gravity_y = 0.5,
+            .expand = .horizontal,
+        },
+    );
+    var value_box = dvui.box(
+        @src(),
+        .{ .dir = .vertical },
+        .{ .min_size_content = .{ .w = 180, .h = 0 }, .gravity_x = 1 },
+    );
     defer value_box.deinit();
     return style.button(@src(), value, 0, .{ .w = 170, .h = 32 }, false, true);
 }
@@ -77,7 +120,14 @@ fn toggle(src: std.builtin.SourceLocation, label: []const u8, value: *bool) void
     if (row(src, 0, label, if (value.*) "On" else "Off")) value.* = !value.*;
 }
 
-fn slider(src: std.builtin.SourceLocation, label: []const u8, value: *f32, min: f32, max: f32, comptime value_format: []const u8) void {
+fn slider(
+    src: std.builtin.SourceLocation,
+    label: []const u8,
+    value: *f32,
+    min: f32,
+    max: f32,
+    comptime value_format: []const u8,
+) void {
     var line = dvui.box(src, .{ .dir = .horizontal }, .{
         .expand = .horizontal,
         .background = true,
@@ -86,12 +136,36 @@ fn slider(src: std.builtin.SourceLocation, label: []const u8, value: *f32, min: 
         .padding = .{ .x = 12, .w = 12, .y = 6, .h = 6 },
     });
     defer line.deinit();
-    dvui.labelNoFmt(@src(), label, .{}, .{ .font = style.font(20), .color_text = .fromColor(style.text), .gravity_y = 0.5, .min_size_content = .{ .w = 230, .h = 0 } });
+    dvui.labelNoFmt(
+        @src(),
+        label,
+        .{},
+        .{
+            .font = style.font(20),
+            .color_text = .fromColor(style.text),
+            .gravity_y = 0.5,
+            .min_size_content = .{ .w = 230, .h = 0 },
+        },
+    );
     var fraction = std.math.clamp((value.* - min) / (max - min), 0, 1);
-    if (dvui.slider(@src(), .{ .fraction = &fraction, .color_bar = style.accent }, .{ .expand = .horizontal, .gravity_y = 0.5, .min_size_content = .{ .w = 160, .h = 24 } })) {
+    if (dvui.slider(
+        @src(),
+        .{ .fraction = &fraction, .color_bar = style.accent },
+        .{ .expand = .horizontal, .gravity_y = 0.5, .min_size_content = .{ .w = 160, .h = 24 } },
+    )) {
         value.* = min + fraction * (max - min);
     }
-    dvui.label(@src(), value_format, .{value.*}, .{ .font = style.font(20), .color_text = .fromColor(style.text), .gravity_y = 0.5, .min_size_content = .{ .w = 80, .h = 0 } });
+    dvui.label(
+        @src(),
+        value_format,
+        .{value.*},
+        .{
+            .font = style.font(20),
+            .color_text = .fromColor(style.text),
+            .gravity_y = 0.5,
+            .min_size_content = .{ .w = 80, .h = 0 },
+        },
+    );
 }
 
 fn tabLabel(tab: OptionsTab) []const u8 {

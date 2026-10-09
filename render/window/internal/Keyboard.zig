@@ -192,7 +192,11 @@ pub fn format(self: Keyboard, w: *std.Io.Writer) std.Io.Writer.Error!void {
     if (try self.formatState(w, .release)) try w.writeByte('\n');
 }
 
-pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State) std.Io.Writer.Error!bool {
+pub fn formatState(
+    self: Keyboard,
+    w: *std.Io.Writer,
+    comptime state: Key.State,
+) std.Io.Writer.Error!bool {
     var first = true;
     var any_found = false;
 
@@ -277,7 +281,10 @@ pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
         .F12 => .f12,
 
         // Modifiers
-        .SHIFT => switch (std.enums.fromInt(win32.VIRTUAL_KEY, win32.MapVirtualKeyW(scancode, win32.MAPVK_VSC_TO_VK_EX)) orelse .LSHIFT) {
+        .SHIFT => switch (std.enums.fromInt(
+            win32.VIRTUAL_KEY,
+            win32.MapVirtualKeyW(scancode, win32.MAPVK_VSC_TO_VK_EX),
+        ) orelse .LSHIFT) {
             .LSHIFT => .left_shift,
             .RSHIFT => .right_shift,
             else => .left_shift, // fallback

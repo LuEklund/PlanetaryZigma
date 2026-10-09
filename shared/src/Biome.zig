@@ -24,7 +24,20 @@ pub const rows = struct {
         .steep_color = .{ 0.55, 0.3, 0.25 },
         .sky_zenith = .{ 0.25, 0.45, 0.75 },
         .sky_horizon = .{ 0.95, 0.7, 0.55 },
-        .enemy_weights = .initDefault(0, .{ .grass1 = 11, .tubloid = 25, .tubloida = 15, .hunkloid = 12, .healer = 12, .bloorp_lord = 7, .spitter = 8, .bomber = 6, .mite = 4 }),
+        .enemy_weights = .initDefault(
+            0,
+            .{
+                .grass1 = 11,
+                .tubloid = 25,
+                .tubloida = 15,
+                .hunkloid = 12,
+                .healer = 12,
+                .bloorp_lord = 7,
+                .spitter = 8,
+                .bomber = 6,
+                .mite = 4,
+            },
+        ),
     };
 
     pub const verdant: Biome = .{
@@ -36,7 +49,18 @@ pub const rows = struct {
         .steep_color = .{ 0.4, 0.33, 0.25 },
         .sky_zenith = .{ 0.3, 0.55, 0.9 },
         .sky_horizon = .{ 0.75, 0.88, 0.95 },
-        .enemy_weights = .initDefault(0, .{ .grass1 = 30, .tubloid = 25, .tubloida = 10, .healer = 10, .bloorp_lord = 5, .grass_tank = 12, .mite = 8 }),
+        .enemy_weights = .initDefault(
+            0,
+            .{
+                .grass1 = 30,
+                .tubloid = 25,
+                .tubloida = 10,
+                .healer = 10,
+                .bloorp_lord = 5,
+                .grass_tank = 12,
+                .mite = 8,
+            },
+        ),
     };
 
     pub const frost: Biome = .{
@@ -48,7 +72,18 @@ pub const rows = struct {
         .steep_color = .{ 0.4, 0.5, 0.65 },
         .sky_zenith = .{ 0.45, 0.6, 0.85 },
         .sky_horizon = .{ 0.85, 0.9, 1 },
-        .enemy_weights = .initDefault(0, .{ .tubloida = 20, .blooploid = 20, .healer = 15, .hunkloid = 10, .bloorp_lord = 8, .wisp = 17, .spitter = 10 }),
+        .enemy_weights = .initDefault(
+            0,
+            .{
+                .tubloida = 20,
+                .blooploid = 20,
+                .healer = 15,
+                .hunkloid = 10,
+                .bloorp_lord = 8,
+                .wisp = 17,
+                .spitter = 10,
+            },
+        ),
     };
 
     pub const dust: Biome = .{
@@ -60,7 +95,19 @@ pub const rows = struct {
         .steep_color = .{ 0.55, 0.35, 0.2 },
         .sky_zenith = .{ 0.5, 0.45, 0.6 },
         .sky_horizon = .{ 0.95, 0.75, 0.5 },
-        .enemy_weights = .initDefault(0, .{ .hunkloid = 25, .tubloid = 15, .tubloida = 10, .healer = 8, .bloorp_lord = 10, .bomber = 14, .grass_tank = 10, .mite = 8 }),
+        .enemy_weights = .initDefault(
+            0,
+            .{
+                .hunkloid = 25,
+                .tubloid = 15,
+                .tubloida = 10,
+                .healer = 8,
+                .bloorp_lord = 10,
+                .bomber = 14,
+                .grass_tank = 10,
+                .mite = 8,
+            },
+        ),
     };
 };
 

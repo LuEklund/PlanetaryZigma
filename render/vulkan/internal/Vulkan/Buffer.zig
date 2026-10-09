@@ -11,7 +11,13 @@ mapped: [*]u8,
 size: u64,
 device: Device,
 
-pub fn init(device: Device, heap: *GpuMemory, comptime T: type, amount: usize, usage: vk.BufferUsageFlags) !Buffer {
+pub fn init(
+    device: Device,
+    heap: *GpuMemory,
+    comptime T: type,
+    amount: usize,
+    usage: vk.BufferUsageFlags,
+) !Buffer {
     const size: u64 = @max(1, amount) * @sizeOf(T);
     const buffer = try device.proxy.createBuffer(&.{
         .size = size,

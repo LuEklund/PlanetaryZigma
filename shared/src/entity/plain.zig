@@ -7,7 +7,11 @@ pub const unknown: Spec = .{
 };
 
 pub const player: Spec = .{
-    .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } }, .motion = .dynamic, .layer = .moving },
+    .collider = .{
+        .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.3 } },
+        .motion = .dynamic,
+        .layer = .moving,
+    },
     .model = .{
         .path = "objects/benbozo.glb",
         .offset = .{ .position = .{ 0, -0.5, 0 }, .rotation = entity.face_camera },
@@ -29,24 +33,40 @@ pub const player: Spec = .{
 };
 
 pub const teleporter: Spec = .{
-    .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } }, .motion = .static, .layer = .non_moving },
+    .collider = .{
+        .shape = .{ .box = .{ .x = 1, .y = 5, .z = 1 } },
+        .motion = .static,
+        .layer = .non_moving,
+    },
     .model = .{ .path = "objects/pillar.glb", .loop_clips = null },
 };
 
 pub const lootbox: Spec = .{
-    .collider = .{ .shape = .{ .box = .{ .x = 0.6, .y = 0.6, .z = 0.6 } }, .motion = .static, .layer = .moving },
+    .collider = .{
+        .shape = .{ .box = .{ .x = 0.6, .y = 0.6, .z = 0.6 } },
+        .motion = .static,
+        .layer = .moving,
+    },
     .model = .{ .path = "objects/lootbox.glb", .loop_clips = null },
     .death_duration = 0.35,
     .currency = 10,
 };
 
 pub const platform: Spec = .{
-    .collider = .{ .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } }, .motion = .static, .layer = .non_moving },
+    .collider = .{
+        .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } },
+        .motion = .static,
+        .layer = .non_moving,
+    },
     .model = null,
 };
 
 pub const target_dummy: Spec = .{
-    .collider = .{ .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } }, .motion = .static, .layer = .non_moving },
+    .collider = .{
+        .shape = .{ .capsule = .{ .half_height = 0.3, .radius = 0.5 } },
+        .motion = .static,
+        .layer = .non_moving,
+    },
     .model = .{ .path = "objects/tubloid.glb", .offset = entity.enemy_model_offset, .loop_clips = .initDefault(entity.no_clip, .{
         .idle = "idle",
         .walk = "walk",
@@ -57,7 +77,11 @@ pub const target_dummy: Spec = .{
 };
 
 pub const item_pickup: Spec = .{
-    .collider = .{ .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } }, .motion = .dynamic, .layer = .planet_only },
+    .collider = .{
+        .shape = .{ .box = .{ .x = 1, .y = 1, .z = 1 } },
+        .motion = .dynamic,
+        .layer = .planet_only,
+    },
     .model = null,
     .spawn_duration = 0.35,
 };

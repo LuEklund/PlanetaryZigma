@@ -5,8 +5,14 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const ztracy = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("ztracy");
-    const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    const ztracy = b.dependency(
+        "ztracy",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    ).module("ztracy");
+    const shared = b.dependency(
+        "shared",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    ).module("shared");
     const numz = b.dependency("numz", .{ .target = target, .optimize = optimize }).module("numz");
 
     const renderer_contract = b.addModule("renderer_contract", .{
@@ -41,11 +47,25 @@ pub fn build(b: *std.Build) void {
             });
 
             scanner.addCustomProtocol(wayland_protocols.path("stable/xdg-shell/xdg-shell.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml"));
-            scanner.addCustomProtocol(wayland_protocols.path("unstable/relative-pointer/relative-pointer-unstable-v1.xml"));
+            scanner.addCustomProtocol(
+                wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"),
+            );
+            scanner.addCustomProtocol(
+                wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"),
+            );
+            scanner.addCustomProtocol(
+                wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"),
+            );
+            scanner.addCustomProtocol(
+                wayland_protocols.path(
+                    "unstable/pointer-constraints/pointer-constraints-unstable-v1.xml",
+                ),
+            );
+            scanner.addCustomProtocol(
+                wayland_protocols.path(
+                    "unstable/relative-pointer/relative-pointer-unstable-v1.xml",
+                ),
+            );
 
             scanner.generate("wl_compositor", 1);
             scanner.generate("wl_output", 4);
@@ -88,7 +108,10 @@ pub fn build(b: *std.Build) void {
 
     const vulkandeps = b.dependency("vulkan_headers", .{});
 
-    const vk = b.dependency("vulkan_zig", .{ .registry = vulkandeps.path("registry/vk.xml") }).module("vulkan-zig");
+    const vk = b.dependency(
+        "vulkan_zig",
+        .{ .registry = vulkandeps.path("registry/vk.xml") },
+    ).module("vulkan-zig");
 
     const dvui_dep = b.dependency("dvui", .{
         .target = target,
@@ -125,7 +148,13 @@ pub fn build(b: *std.Build) void {
             .{ .name = "shared", .module = shared },
             .{ .name = "numz", .module = numz },
             .{ .name = "renderer_contract", .module = renderer_contract },
-            .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
+            .{
+                .name = "zgltf",
+                .module = b.dependency(
+                    "zgltf",
+                    .{ .target = target, .optimize = optimize },
+                ).module("zgltf"),
+            },
             .{ .name = "stb_image", .module = stb_image_module },
             .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
@@ -165,7 +194,11 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(backend);
 }
 
-pub fn linkVulkan(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
+pub fn linkVulkan(
+    b: *std.Build,
+    compile: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+) void {
     if (target.result.os.tag == .windows) {
         if (b.graph.environ_map.get("VULKAN_SDK")) |sdk| {
             compile.root_module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "Lib" }) });

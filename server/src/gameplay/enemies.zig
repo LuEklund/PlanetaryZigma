@@ -19,7 +19,10 @@ fn steer(
     flee: bool,
 ) nz.Vec3(f32) {
     const to_player = player_position - enemy_position;
-    const toward = if (nz.vec.dot(to_player, to_player) < system.Navmesh.rebuild_distance * system.Navmesh.rebuild_distance)
+    const toward = if (nz.vec.dot(
+        to_player,
+        to_player,
+    ) < system.Navmesh.rebuild_distance * system.Navmesh.rebuild_distance)
         to_player
     else
         navmesh.direction(planet, enemy_position) orelse to_player;
@@ -28,7 +31,10 @@ fn steer(
     const goal_tangent = goal - nz.vec.scale(up, nz.vec.dot(goal, up));
     if (nz.vec.dot(goal_tangent, goal_tangent) <= 0.000001) return enemy_forward;
     const forward_tangent = enemy_forward - nz.vec.scale(up, nz.vec.dot(enemy_forward, up));
-    const heading = forward_tangent + nz.vec.scale(nz.vec.normalize(goal_tangent) - forward_tangent, 1 - @exp(-delta_time / heading_blend_seconds));
+    const heading = forward_tangent + nz.vec.scale(
+        nz.vec.normalize(goal_tangent) - forward_tangent,
+        1 - @exp(-delta_time / heading_blend_seconds),
+    );
     if (nz.vec.dot(heading, heading) <= 0.000001) return nz.vec.normalize(goal_tangent);
     return nz.vec.normalize(heading);
 }
@@ -47,7 +53,10 @@ pub fn updateEnemies(world: *World, physics: *system.Physics) !void {
         var closest_distance: f32 = std.math.floatMax(f32);
         for (world.players.items) |player_id| {
             const current_player = world.getPtr(player_id) orelse continue;
-            const player_distance = nz.vec.distance(current_player.transform.position, enemy.transform.position);
+            const player_distance = nz.vec.distance(
+                current_player.transform.position,
+                enemy.transform.position,
+            );
             if (player_distance >= closest_distance) continue;
             closest_distance = player_distance;
             closest_player = current_player;
@@ -82,10 +91,24 @@ pub fn updateEnemies(world: *World, physics: *system.Physics) !void {
             .leap => try leap(context),
             .plant => plant(context),
             .heal => |height| try heal(context, height),
-            .kite => |kite_range| try kite(context, kite_range.min_distance, kite_range.max_distance),
+            .kite => |kite_range| try kite(
+                context,
+                kite_range.min_distance,
+                kite_range.max_distance,
+            ),
             .orbit => |orbit_shape| try orbit(context, orbit_shape.radius, orbit_shape.height),
-            .charge => |charge_tuning| charge(context, charge_tuning.trigger_distance, charge_tuning.windup_seconds, charge_tuning.dash_seconds, charge_tuning.speed_multiplier),
-            .fuse => |fuse_tuning| fuse(context, fuse_tuning.fuse_seconds, fuse_tuning.blast_radius),
+            .charge => |charge_tuning| charge(
+                context,
+                charge_tuning.trigger_distance,
+                charge_tuning.windup_seconds,
+                charge_tuning.dash_seconds,
+                charge_tuning.speed_multiplier,
+            ),
+            .fuse => |fuse_tuning| fuse(
+                context,
+                fuse_tuning.fuse_seconds,
+                fuse_tuning.blast_radius,
+            ),
         }
     }
 }
@@ -105,27 +128,54 @@ const Locomotion = union(enum) { walk, hover: f32 };
 
 fn steerTo(context: Context, flee: bool) nz.Vec3(f32) {
     const world = context.world;
-    return steer(&world.navmesh, &world.planet, context.enemy.transform.position, context.forward, context.player.transform.position, world.delta_time, flee);
+    return steer(
+        &world.navmesh,
+        &world.planet,
+        context.enemy.transform.position,
+        context.forward,
+        context.player.transform.position,
+        world.delta_time,
+        flee,
+    );
 }
 
 fn move(context: Context, locomotion: Locomotion, direction: nz.Vec3(f32), speed: f32) void {
     const id = context.enemy.id;
     switch (locomotion) {
-        .walk => context.world.act(.{ .id = id, .verb = .{ .walk = .{ .direction = direction, .speed = speed } } }),
-        .hover => |height| context.world.act(.{ .id = id, .verb = .{ .hover = .{ .direction = direction, .speed = speed, .height = height } } }),
+        .walk => context.world.act(
+            .{ .id = id, .verb = .{ .walk = .{ .direction = direction, .speed = speed } } },
+        ),
+        .hover => |height| context.world.act(
+            .{
+                .id = id,
+                .verb = .{ .hover = .{ .direction = direction, .speed = speed, .height = height } },
+            },
+        ),
     }
 }
 
 fn firePrimary(context: Context, target: *system.Entity) !void {
     if (skills.useAction(context.world, context.enemy, target, .primary) == .fired) {
-        try skills.executeSkill(context.world, context.physics, context.enemy, target, context.primary);
+        try skills.executeSkill(
+            context.world,
+            context.physics,
+            context.enemy,
+            target,
+            context.primary,
+        );
     }
 }
 
 fn chase(context: Context, locomotion: Locomotion) !void {
     const direction = steerTo(context, false);
     context.world.act(.{ .id = context.enemy.id, .verb = .{ .face = direction } });
-    const chase_direction: nz.Vec3(f32) = if (context.distance >= context.primary.range) direction else .{ 0, 0, 0 };
+    const chase_direction: nz.Vec3(
+        f32,
+    ) = if (context.distance >= context.primary.range) direction else .{
+        0,
+        0,
+        0,
+    };
     move(context, locomotion, chase_direction, context.speed);
     try firePrimary(context, context.player);
 }
@@ -134,10 +184,21 @@ fn leap(context: Context) !void {
     const enemy = context.enemy;
     const direction = steerTo(context, false);
     context.world.act(.{ .id = enemy.id, .verb = .{ .face = direction } });
-    const chase_direction: nz.Vec3(f32) = if (context.distance >= context.primary.range) direction else .{ 0, 0, 0 };
+    const chase_direction: nz.Vec3(
+        f32,
+    ) = if (context.distance >= context.primary.range) direction else .{
+        0,
+        0,
+        0,
+    };
     if (enemy.mode == .walking) move(context, .walk, chase_direction, context.speed);
     if (enemy.kind.spec().skills.get(.utility)) |utility| {
-        if (context.distance > utility.range * 0.75 and skills.useAction(context.world, enemy, context.player, .utility) == .fired) {
+        if (context.distance > utility.range * 0.75 and skills.useAction(
+            context.world,
+            enemy,
+            context.player,
+            .utility,
+        ) == .fired) {
             try skills.executeSkill(context.world, context.physics, enemy, context.player, utility);
         }
     }
@@ -149,7 +210,13 @@ fn plant(context: Context) void {
     if (context.distance < 10) {
         const direction = steerTo(context, true);
         context.world.act(.{ .id = enemy.id, .verb = .{ .face = direction } });
-        const chase_direction: nz.Vec3(f32) = if (context.distance >= context.primary.range) direction else .{ 0, 0, 0 };
+        const chase_direction: nz.Vec3(
+            f32,
+        ) = if (context.distance >= context.primary.range) direction else .{
+            0,
+            0,
+            0,
+        };
         move(context, .walk, chase_direction, context.speed);
         enemy.lifetime = 0;
         return;
@@ -163,7 +230,13 @@ fn heal(context: Context, height: f32) !void {
     const enemy = context.enemy;
     const direction = steerTo(context, false);
     world.act(.{ .id = enemy.id, .verb = .{ .face = direction } });
-    const chase_direction: nz.Vec3(f32) = if (context.distance >= context.primary.range) direction else .{ 0, 0, 0 };
+    const chase_direction: nz.Vec3(
+        f32,
+    ) = if (context.distance >= context.primary.range) direction else .{
+        0,
+        0,
+        0,
+    };
     move(context, .{ .hover = height }, chase_direction, context.speed);
     if (!skills.ready(enemy, .primary, world.elapsed_time)) return;
 
@@ -186,7 +259,13 @@ fn kite(context: Context, min_distance: f32, max_distance: f32) !void {
     const direction = steerTo(context, flee);
     const face_direction = if (flee) steerTo(context, false) else direction;
     context.world.act(.{ .id = context.enemy.id, .verb = .{ .face = face_direction } });
-    const move_direction: nz.Vec3(f32) = if (flee or context.distance > max_distance) direction else .{ 0, 0, 0 };
+    const move_direction: nz.Vec3(
+        f32,
+    ) = if (flee or context.distance > max_distance) direction else .{
+        0,
+        0,
+        0,
+    };
     move(context, .walk, move_direction, context.speed);
     try firePrimary(context, context.player);
 }
@@ -207,7 +286,13 @@ fn orbit(context: Context, radius: f32, height: f32) !void {
     try firePrimary(context, context.player);
 }
 
-fn charge(context: Context, trigger_distance: f32, windup_seconds: f32, dash_seconds: f32, speed_multiplier: f32) void {
+fn charge(
+    context: Context,
+    trigger_distance: f32,
+    windup_seconds: f32,
+    dash_seconds: f32,
+    speed_multiplier: f32,
+) void {
     const world = context.world;
     const enemy = context.enemy;
     const ai = &enemy.ai;
@@ -222,7 +307,12 @@ fn charge(context: Context, trigger_distance: f32, windup_seconds: f32, dash_sec
             const to_player = context.player.transform.position - enemy.transform.position;
             const flat = to_player - nz.vec.scale(up, nz.vec.dot(to_player, up));
             if (nz.vec.length(flat) < 0.0001) return;
-            ai.* = .{ .phase = .windup, .phase_until = world.elapsed_time + windup_seconds, .direction = nz.vec.normalize(flat), .struck = false };
+            ai.* = .{
+                .phase = .windup,
+                .phase_until = world.elapsed_time + windup_seconds,
+                .direction = nz.vec.normalize(flat),
+                .struck = false,
+            };
         },
         .windup => {
             world.act(.{ .id = enemy.id, .verb = .{ .face = ai.direction } });
@@ -236,7 +326,10 @@ fn charge(context: Context, trigger_distance: f32, windup_seconds: f32, dash_sec
             move(context, .walk, ai.direction, context.speed * speed_multiplier);
             if (!ai.struck) for (world.players.items) |player_id| {
                 const player = world.getPtr(player_id) orelse continue;
-                if (nz.vec.distance(player.transform.position, enemy.transform.position) > contact_distance) continue;
+                if (nz.vec.distance(
+                    player.transform.position,
+                    enemy.transform.position,
+                ) > contact_distance) continue;
                 _ = combat.removeHealth(world, player, enemy.stat(.damage), enemy);
                 ai.struck = true;
                 break;
@@ -268,11 +361,21 @@ fn fuse(context: Context, fuse_seconds: f32, blast_radius: f32) void {
             const damage = enemy.stat(.damage);
             for (world.players.items) |player_id| {
                 const player = world.getPtr(player_id) orelse continue;
-                const distance = nz.vec.distance(player.transform.position, enemy.transform.position);
+                const distance = nz.vec.distance(
+                    player.transform.position,
+                    enemy.transform.position,
+                );
                 if (distance > blast_radius) continue;
-                _ = combat.removeHealth(world, player, damage * (1 - 0.5 * distance / blast_radius), enemy);
+                _ = combat.removeHealth(
+                    world,
+                    player,
+                    damage * (1 - 0.5 * distance / blast_radius),
+                    enemy,
+                );
             }
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = enemy.transform.position } } });
+            world.client_updates.appendAssumeCapacity(
+                .{ .event = .{ .effect = .{ .rocket_impact = enemy.transform.position } } },
+            );
             _ = combat.addHealth(world, enemy, -enemy.health, null);
         },
     }

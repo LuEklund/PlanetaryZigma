@@ -17,7 +17,10 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     if (followed) |player| {
         const planet_up = shared.Planet.surfaceUp(player.transform.position);
         const player_back = nz.vec.scale(player.transform.forward(), -1);
-        camera_position = player.transform.position + nz.vec.scale(planet_up, 6) + nz.vec.scale(player_back, 10);
+        camera_position = player.transform.position + nz.vec.scale(planet_up, 6) + nz.vec.scale(
+            player_back,
+            10,
+        );
         const look_target = player.transform.position + nz.vec.scale(planet_up, 2);
         camera_rotation = .lookAt(nz.vec.normalize(look_target - camera_position), planet_up);
     }
@@ -51,7 +54,9 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
             .texture = .blank,
             .transparent = false,
         }};
-        entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(entry.mesh_handle), &.{
+        entry.mesh_handle = @intFromEnum(viewer.render.api.uploadMesh(viewer.render.handle, @enumFromInt(
+            entry.mesh_handle,
+        ), &.{
             .name = "chunk",
             .vertices = std.mem.sliceAsBytes(chunk_upload.vertices),
             .skinned = false,
@@ -73,9 +78,16 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
 
     const followed_aim: ?graphics.Animator.Aim = if (followed) |player| aim: {
         const planet_up = shared.Planet.up(player.transform.position) orelse break :aim null;
-        const pitch = std.math.asin(std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1));
+        const pitch = std.math.asin(
+            std.math.clamp(nz.vec.dot(camera_rotation.rotateVec(.{ 0, 0, -1 }), planet_up), -1, 1),
+        );
         var yaw_offset = player.transform.rotation.conjugate().mul(player.camera.yaw_rotation);
-        if (yaw_offset.w < 0) yaw_offset = .{ .w = -yaw_offset.w, .x = -yaw_offset.x, .y = -yaw_offset.y, .z = -yaw_offset.z };
+        if (yaw_offset.w < 0) yaw_offset = .{
+            .w = -yaw_offset.w,
+            .x = -yaw_offset.x,
+            .y = -yaw_offset.y,
+            .z = -yaw_offset.z,
+        };
         var yaw = std.math.clamp(2 * std.math.atan2(yaw_offset.y, yaw_offset.w), -1.2, 1.2);
         if (@abs(yaw) < 0.05) yaw = 0;
         break :aim .{ .pitch = std.math.clamp(-pitch, -1.0, 1.0), .yaw = yaw };
@@ -83,14 +95,23 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
 
     for (world.entities.values()) |*entity| {
         const slot = try viewer.animations.getOrPut(gpa, entity.id);
-        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(if (entity.kind == .item_pickup) models.getItem(entity.item.?) else models.get(entity.kind), models);
+        if (!slot.found_existing) slot.value_ptr.* = try viewer.animator.create(
+            if (entity.kind == .item_pickup) models.getItem(
+                entity.item.?,
+            ) else models.get(entity.kind),
+            models,
+        );
         const loop = shared.entity.animationLoop(
             entity.replicated_velocity,
             @max(0, entity.un_stun_at - world.elapsed_time),
             null,
         );
         const rig = models.rig(models.get(entity.kind));
-        viewer.animator.setLoop(slot.value_ptr.*, rig.loop_clips.get(loop), if (loop == .death) .hold_last else .loop);
+        viewer.animator.setLoop(
+            slot.value_ptr.*,
+            rig.loop_clips.get(loop),
+            if (loop == .death) .hold_last else .loop,
+        );
         const is_followed = if (followed) |player| player.id == entity.id else false;
         viewer.animator.setAim(slot.value_ptr.*, if (is_followed) followed_aim else null);
     }
@@ -108,11 +129,19 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const handle = viewer.animations.get(entity.id) orelse continue;
         const pose = viewer.animator.pose(handle) orelse continue;
-        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
+        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{
+            .path = "",
+            .loop_clips = null,
+        };
         var transform = entity.transform;
         if (entity.kind == .item_pickup) {
             transform.rotation = transform.rotation
-                .mul(nz.Quat(f32).angleAxis(graphics.Animator.item_spin_speed * world.elapsed_time, .{ 0, 1, 0 }))
+                .mul(
+                    nz.Quat(f32).angleAxis(
+                        graphics.Animator.item_spin_speed * world.elapsed_time,
+                        .{ 0, 1, 0 },
+                    ),
+                )
                 .normalize();
         }
         appendDraws(
@@ -125,9 +154,12 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
         );
     }
 
-    if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
-    if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);
-
+    if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(
+        viewer.arrow_lines.items,
+    );
+    if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(
+        viewer.border_lines.items,
+    );
 
     for (viewer.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;
@@ -142,7 +174,14 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     viewer.render.api.update(viewer.render.handle, list);
 }
 
-fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: graphics.Animator.Pose, top_matrix: nz.Mat4x4(f32), position: nz.Vec3(f32), highlight: bool) void {
+fn appendDraws(
+    list: *DrawList,
+    models: *const graphics.Assets.Models,
+    pose: graphics.Animator.Pose,
+    top_matrix: nz.Mat4x4(f32),
+    position: nz.Vec3(f32),
+    highlight: bool,
+) void {
     if (pose.skeleton) |skeleton| {
         var skin_offsets: [graphics.Animator.max_skins]u32 = undefined;
         const palette_base: u32 = @intCast(list.joint_matrices.items.len);
@@ -156,7 +195,9 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
             if (mesh_id >= mesh_handles.len) continue;
             list.draw_meshes.appendAssumeCapacity(.{
                 .mesh = @enumFromInt(mesh_handles[mesh_id]),
-                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(node.model_matrix),
+                .model_matrix = if (node.skin_id != null) top_matrix else top_matrix.mul(
+                    node.model_matrix,
+                ),
                 .position = position,
                 .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
                 .skinned = true,
@@ -195,7 +236,11 @@ fn appendDraws(list: *DrawList, models: *const graphics.Assets.Models, pose: gra
 const navmesh_arrow_color: [4]f32 = .{ 0.2, 0.9, 1.0, 1 };
 const navmesh_arrow_budget: usize = 200000;
 
-pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.ArrayList(DrawList.Line)) !void {
+pub fn collectNavmeshArrows(
+    world: *World,
+    gpa: std.mem.Allocator,
+    lines: *std.ArrayList(DrawList.Line),
+) !void {
     lines.clearRetainingCapacity();
     const navmesh = &world.navmesh;
     const active = navmesh.internal.active;
@@ -210,15 +255,27 @@ pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.A
                 .none => continue,
                 .boundary_edge => to: {
                     const cell = nav_chunk.graph.neighborCell(node_index, next_slot);
-                    const chunk_coord: shared.Planet.Chunk.Coord = .{ .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))) };
-                    const neighbor_chunk = navmesh.internal.chunks.getPtr(chunk_coord) orelse continue;
-                    const neighbor_index = neighbor_chunk.graph.cells.getIndex(cell) orelse continue;
+                    const chunk_coord: shared.Planet.Chunk.Coord = .{
+                        .position = @divFloor(
+                            cell,
+                            @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim)),
+                        ),
+                    };
+                    const neighbor_chunk = navmesh.internal.chunks.getPtr(
+                        chunk_coord,
+                    ) orelse continue;
+                    const neighbor_index = neighbor_chunk.graph.cells.getIndex(
+                        cell,
+                    ) orelse continue;
                     break :to neighbor_chunk.graph.cells.values()[neighbor_index];
                 },
                 _ => positions[@intFromEnum(neighbor)],
             };
             const lift = nz.vec.scale(nz.vec.normalize(from), 0.2);
-            try lines.append(gpa, .{ .a = from + lift, .b = to + lift, .color = navmesh_arrow_color });
+            try lines.append(
+                gpa,
+                .{ .a = from + lift, .b = to + lift, .color = navmesh_arrow_color },
+            );
             budget -= 1;
             if (budget == 0) return;
         }
@@ -227,7 +284,11 @@ pub fn collectNavmeshArrows(world: *World, gpa: std.mem.Allocator, lines: *std.A
 
 const chunk_border_color: [4]f32 = .{ 1.0, 0.0, 0.1, 1 };
 
-pub fn collectChunkBorders(world: *World, gpa: std.mem.Allocator, lines: *std.ArrayList(DrawList.Line)) !void {
+pub fn collectChunkBorders(
+    world: *World,
+    gpa: std.mem.Allocator,
+    lines: *std.ArrayList(DrawList.Line),
+) !void {
     lines.clearRetainingCapacity();
     for (world.navmesh.internal.chunks.keys()) |coord| {
         const low: nz.Vec3(f32) = @floatFromInt(shared.Planet.Chunk.min(coord));
@@ -247,7 +308,10 @@ pub fn collectChunkBorders(world: *World, gpa: std.mem.Allocator, lines: *std.Ar
             .{ 0, 2 }, .{ 1, 3 }, .{ 4, 6 }, .{ 5, 7 },
             .{ 0, 4 }, .{ 1, 5 }, .{ 2, 6 }, .{ 3, 7 },
         };
-        for (edges) |edge| try lines.append(gpa, .{ .a = corners[edge[0]], .b = corners[edge[1]], .color = chunk_border_color });
+        for (edges) |edge| try lines.append(
+            gpa,
+            .{ .a = corners[edge[0]], .b = corners[edge[1]], .color = chunk_border_color },
+        );
     }
 }
 

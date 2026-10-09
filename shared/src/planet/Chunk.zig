@@ -48,7 +48,9 @@ pub const CellRegion = struct {
     }
 };
 
-pub const quad_axes = [3]struct { edge_axis: nz.Vec3(i32), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
+pub const quad_axes = [3]struct { edge_axis: nz.Vec3(
+    i32,
+), perp_b: nz.Vec3(i32), perp_c: nz.Vec3(i32) }{
     .{ .edge_axis = .{ 1, 0, 0 }, .perp_b = .{ 0, 1, 0 }, .perp_c = .{ 0, 0, 1 } },
     .{ .edge_axis = .{ 0, 1, 0 }, .perp_b = .{ 0, 0, 1 }, .perp_c = .{ 1, 0, 0 } },
     .{ .edge_axis = .{ 0, 0, 1 }, .perp_b = .{ 1, 0, 0 }, .perp_c = .{ 0, 1, 0 } },
@@ -59,7 +61,12 @@ pub const DensityGrid = struct {
     resolution: usize,
     values: []f32,
 
-    pub fn initRegion(gpa: std.mem.Allocator, planet_radius: f32, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !DensityGrid {
+    pub fn initRegion(
+        gpa: std.mem.Allocator,
+        planet_radius: f32,
+        cell_min: nz.Vec3(i32),
+        cell_max: nz.Vec3(i32),
+    ) !DensityGrid {
         const tracy_scope = tracy.zone(@src());
         defer tracy_scope.end();
         const origin = cell_min;
@@ -76,8 +83,13 @@ pub const DensityGrid = struct {
                 const y_coord: i32 = origin[1] + @as(i32, @intCast(y));
                 for (0..resolution) |z| {
                     const z_coord: i32 = origin[2] + @as(i32, @intCast(z));
-                    const position: nz.Vec3(f32) = @floatFromInt(nz.Vec3(i32){ x_coord, y_coord, z_coord });
-                    values[(x * resolution + y) * resolution + z] = sdf.sdf(position, planet_radius);
+                    const position: nz.Vec3(f32) = @floatFromInt(
+                        nz.Vec3(i32){ x_coord, y_coord, z_coord },
+                    );
+                    values[(x * resolution + y) * resolution + z] = sdf.sdf(
+                        position,
+                        planet_radius,
+                    );
                 }
             }
         }
@@ -113,7 +125,13 @@ const cube_edges = [_][2]u3{
     .{ 4, 5 }, .{ 4, 6 }, .{ 5, 7 }, .{ 6, 7 },
 };
 
-fn buildSurfaceCells(gpa: std.mem.Allocator, surface_cells: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)), density: *const DensityGrid, cell_min: nz.Vec3(i32), cell_max: nz.Vec3(i32)) !void {
+fn buildSurfaceCells(
+    gpa: std.mem.Allocator,
+    surface_cells: *std.AutoArrayHashMapUnmanaged(nz.Vec3(i32), nz.Vec3(f32)),
+    density: *const DensityGrid,
+    cell_min: nz.Vec3(i32),
+    cell_max: nz.Vec3(i32),
+) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     var x = cell_min[0];
@@ -152,7 +170,10 @@ fn cellCentroid(density: *const DensityGrid, cell: nz.Vec3(i32)) ?nz.Vec3(f32) {
             const crossing_fraction: f32 = start_distance / (start_distance - end_distance);
             const start_corner = corners[edge[0]];
             const end_corner = corners[edge[1]];
-            crossing_sum += nz.vec.scale(start_corner, 1.0 - crossing_fraction) + nz.vec.scale(end_corner, crossing_fraction);
+            crossing_sum += nz.vec.scale(
+                start_corner,
+                1.0 - crossing_fraction,
+            ) + nz.vec.scale(end_corner, crossing_fraction);
         }
     }
     return nz.vec.scale(crossing_sum, 1 / crossing_count);
@@ -164,7 +185,11 @@ pub const Coord = struct {
     position: nz.Vec3(i32),
 
     pub fn fromPosition(position: nz.Vec3(f32)) Coord {
-        return .{ .position = @intFromFloat(@floor(position / @as(nz.Vec3(f32), @splat(@floatFromInt(dim))))) };
+        return .{
+            .position = @intFromFloat(
+                @floor(position / @as(nz.Vec3(f32), @splat(@floatFromInt(dim)))),
+            ),
+        };
     }
 
     pub fn offset(self: Coord, delta: nz.Vec3(i32)) Coord {
@@ -177,7 +202,10 @@ pub const Coord = struct {
 
     pub fn within(self: Coord, center: Coord, reach: i32) bool {
         const difference = self.position - center.position;
-        return @reduce(.And, difference >= @as(nz.Vec3(i32), @splat(-reach))) and @reduce(.And, difference <= @as(nz.Vec3(i32), @splat(reach)));
+        return @reduce(
+            .And,
+            difference >= @as(nz.Vec3(i32), @splat(-reach)),
+        ) and @reduce(.And, difference <= @as(nz.Vec3(i32), @splat(reach)));
     }
 };
 
@@ -193,9 +221,13 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
         span_min = @max(span_min, box.min.position);
         span_max = @min(span_max, box.max.position);
     }
-    const surface_reach: f32 = @floatFromInt(planet_radius + sdf.noise_amplitude + planet.cell_margin);
+    const surface_reach: f32 = @floatFromInt(
+        planet_radius + sdf.noise_amplitude + planet.cell_margin,
+    );
     const surface_reach_squared = surface_reach * surface_reach;
-    const solid_depth: f32 = @floatFromInt(planet_radius - @min(planet_radius, sdf.noise_amplitude + planet.cell_margin));
+    const solid_depth: f32 = @floatFromInt(
+        planet_radius - @min(planet_radius, sdf.noise_amplitude + planet.cell_margin),
+    );
     const solid_depth_squared = solid_depth * solid_depth;
     var x = span_min[0];
     while (x <= span_max[0]) : (x += 1) {
@@ -206,11 +238,20 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
                 const chunk_coord: Coord = .{ .position = .{ x, y, z } };
                 const box_min: nz.Vec3(f32) = @floatFromInt(min(chunk_coord));
                 const box_max: nz.Vec3(f32) = @floatFromInt(max(chunk_coord));
-                const chunk_nearest_point_to_planet = @max(box_min, @min(box_max, @as(nz.Vec3(f32), @splat(0))));
-                if (nz.vec.dot(chunk_nearest_point_to_planet, chunk_nearest_point_to_planet) > surface_reach_squared) continue;
+                const chunk_nearest_point_to_planet = @max(
+                    box_min,
+                    @min(box_max, @as(nz.Vec3(f32), @splat(0))),
+                );
+                if (nz.vec.dot(
+                    chunk_nearest_point_to_planet,
+                    chunk_nearest_point_to_planet,
+                ) > surface_reach_squared) continue;
                 // TODO: (CAVES): DELETE THIS SKIP when caves carve the sdf!
                 const chunk_farthest_point_to_planet = @max(@abs(box_min), @abs(box_max));
-                if (nz.vec.dot(chunk_farthest_point_to_planet, chunk_farthest_point_to_planet) < solid_depth_squared) continue;
+                if (nz.vec.dot(
+                    chunk_farthest_point_to_planet,
+                    chunk_farthest_point_to_planet,
+                ) < solid_depth_squared) continue;
                 try chunks.append(gpa, chunk_coord);
             }
         }
@@ -246,7 +287,10 @@ test "chunk range contains the complete planet density field" {
 }
 
 test "chunk coords respect the clamp box" {
-    const box: Box = .{ .min = .{ .position = .{ 0, 0, 0 } }, .max = .{ .position = .{ 1, 1, 1 } } };
+    const box: Box = .{
+        .min = .{ .position = .{ 0, 0, 0 } },
+        .max = .{ .position = .{ 1, 1, 1 } },
+    };
     const clamped_coords = try coords(std.testing.allocator, 67, box);
     defer std.testing.allocator.free(clamped_coords);
     try std.testing.expect(clamped_coords.len > 0);
@@ -278,7 +322,13 @@ pub const Job = struct {
         errdefer gpa.free(job_coords);
         const state = try gpa.create(State);
         errdefer gpa.destroy(state);
-        state.* = .{ .gpa = gpa, .planet_radius = planet_radius, .coords = job_coords, .results = .empty, .done = .init(false) };
+        state.* = .{
+            .gpa = gpa,
+            .planet_radius = planet_radius,
+            .coords = job_coords,
+            .results = .empty,
+            .done = .init(false),
+        };
         return .{ .thread = try std.Thread.spawn(.{}, run, .{state}), .state = state };
     }
 
@@ -317,7 +367,10 @@ pub const Job = struct {
                 chunk_mesh.deinit(state.gpa);
                 continue;
             };
-            state.results.append(state.gpa, .{ .chunk = chunk, .mesh = chunk_mesh, .nav = nav }) catch {
+            state.results.append(
+                state.gpa,
+                .{ .chunk = chunk, .mesh = chunk_mesh, .nav = nav },
+            ) catch {
                 chunk.deinit(state.gpa);
                 chunk_mesh.deinit(state.gpa);
                 nav.deinit(state.gpa);

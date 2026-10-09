@@ -48,7 +48,12 @@ pub const rows = struct {
             .equipment_cooldown = 5,
         }),
         .abilities = .initDefault(null, .{
-            .primary = .{ .skill = .melee_cone, .range = 3.5, .damage_multiplier = 1.5, .clip = "Throw" },
+            .primary = .{
+                .skill = .melee_cone,
+                .range = 3.5,
+                .damage_multiplier = 1.5,
+                .clip = "Throw",
+            },
             .secondary = .{ .skill = .ground_slam, .radius = 6, .damage_multiplier = 3 },
             .utility = .{ .skill = .blink, .range = 14 },
             .special = .{ .skill = .heal_pulse, .radius = 12, .damage_multiplier = 0.35 },

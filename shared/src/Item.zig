@@ -151,7 +151,13 @@ pub const items = struct {
     };
 
     pub const crowbar: Item = .{
-        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .healthy_bonus = .{ .threshold = 0.9, .damage_fraction = 0.75 } } }},
+        .procs = &.{
+            .{
+                .trigger = .on_hit,
+                .chance = 1,
+                .effect = .{ .healthy_bonus = .{ .threshold = 0.9, .damage_fraction = 0.75 } },
+            },
+        },
         .description = "+75% damage to enemies above 90% health, +75% per stack",
     };
 
@@ -167,7 +173,15 @@ pub const items = struct {
 
     pub const gasoline: Item = .{
         .tier = .uncommon,
-        .procs = &.{.{ .trigger = .on_kill, .chance = 1, .effect = .{ .blast = .{ .radius = 4, .radius_per_stack = 1.5, .damage_fraction = 1.5 } } }},
+        .procs = &.{
+            .{
+                .trigger = .on_kill,
+                .chance = 1,
+                .effect = .{
+                    .blast = .{ .radius = 4, .radius_per_stack = 1.5, .damage_fraction = 1.5 },
+                },
+            },
+        },
         .description = "kills explode for 150% damage, bigger blast per stack",
     };
 
@@ -197,7 +211,15 @@ pub const items = struct {
 
     pub const brilliant_hammer: Item = .{
         .tier = .legendary,
-        .procs = &.{.{ .trigger = .on_hit, .chance = 1, .effect = .{ .blast = .{ .radius = 3, .radius_per_stack = 2.5, .damage_fraction = 0.6 } } }},
+        .procs = &.{
+            .{
+                .trigger = .on_hit,
+                .chance = 1,
+                .effect = .{
+                    .blast = .{ .radius = 3, .radius_per_stack = 2.5, .damage_fraction = 0.6 },
+                },
+            },
+        },
         .description = "every hit explodes for 60% damage, bigger blast per stack",
     };
 
@@ -334,7 +356,10 @@ pub const Stat = enum(u16) {
         const linear = (base.get(stat) + flat) * @max(min_percent_scale, 1 + percent);
         return switch (stat) {
             .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance => linear,
-            .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown, .special_cooldown => @max(0.1, base.get(stat) + flat) / @max(0.01, 1 + percent),
+            .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown, .special_cooldown => @max(
+                0.1,
+                base.get(stat) + flat,
+            ) / @max(0.01, 1 + percent),
             .block_chance => 1 - 1 / (1 + linear),
         };
     }

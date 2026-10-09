@@ -55,17 +55,39 @@ pub const Skeleton = struct {
 
         const joints_bytes = @sizeOf(nz.Mat4x4(f32)) * joint_count;
         const nodes_at = std.mem.alignForward(usize, joints_bytes, @alignOf(Node));
-        const fade_at = std.mem.alignForward(usize, nodes_at + @sizeOf(Node) * node_count, @alignOf(JointTransform));
-        const starts_at = std.mem.alignForward(usize, fade_at + @sizeOf(JointTransform) * node_count, @alignOf(u32));
+        const fade_at = std.mem.alignForward(
+            usize,
+            nodes_at + @sizeOf(Node) * node_count,
+            @alignOf(JointTransform),
+        );
+        const starts_at = std.mem.alignForward(
+            usize,
+            fade_at + @sizeOf(JointTransform) * node_count,
+            @alignOf(u32),
+        );
         const total_bytes = starts_at + @sizeOf(u32) * (model.skins.len + 1);
 
         const block = try gpa.alignedAlloc(u8, .fromByteUnits(block_align), total_bytes);
         errdefer gpa.free(block);
 
-        const joints: []nz.Mat4x4(f32) = @alignCast(std.mem.bytesAsSlice(nz.Mat4x4(f32), block[0..joints_bytes]));
-        const nodes: []Node = @alignCast(std.mem.bytesAsSlice(Node, block[nodes_at..][0 .. @sizeOf(Node) * node_count]));
-        const fade_joints: []JointTransform = @alignCast(std.mem.bytesAsSlice(JointTransform, block[fade_at..][0 .. @sizeOf(JointTransform) * node_count]));
-        const skin_starts: []u32 = @alignCast(std.mem.bytesAsSlice(u32, block[starts_at..][0 .. @sizeOf(u32) * (model.skins.len + 1)]));
+        const joints: []nz.Mat4x4(f32) = @alignCast(
+            std.mem.bytesAsSlice(nz.Mat4x4(f32), block[0..joints_bytes]),
+        );
+        const nodes: []Node = @alignCast(
+            std.mem.bytesAsSlice(Node, block[nodes_at..][0 .. @sizeOf(Node) * node_count]),
+        );
+        const fade_joints: []JointTransform = @alignCast(
+            std.mem.bytesAsSlice(
+                JointTransform,
+                block[fade_at..][0 .. @sizeOf(JointTransform) * node_count],
+            ),
+        );
+        const skin_starts: []u32 = @alignCast(
+            std.mem.bytesAsSlice(
+                u32,
+                block[starts_at..][0 .. @sizeOf(u32) * (model.skins.len + 1)],
+            ),
+        );
 
         @memcpy(nodes, model.nodes.items);
         @memset(joints, .identity);
@@ -94,7 +116,11 @@ pub const Skeleton = struct {
 
     pub fn startFade(self: *Skeleton) void {
         for (self.nodes, self.fade_joints) |node, *pose| {
-            pose.* = .{ .translation = node.translation, .rotation = node.rotation, .scale = node.scale };
+            pose.* = .{
+                .translation = node.translation,
+                .rotation = node.rotation,
+                .scale = node.scale,
+            };
         }
         self.fade_time = fade_duration;
     }

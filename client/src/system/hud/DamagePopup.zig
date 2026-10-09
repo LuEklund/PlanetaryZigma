@@ -23,9 +23,19 @@ pub const List = struct {
         return self.popups[0..self.count];
     }
 
-    pub fn spawn(self: *List, random: std.Random, position: nz.Vec3(f32), amount: f32, color: [3]f32) void {
+    pub fn spawn(
+        self: *List,
+        random: std.Random,
+        position: nz.Vec3(f32),
+        amount: f32,
+        color: [3]f32,
+    ) void {
         if (self.count >= max_popups) {
-            std.mem.copyForwards(DamagePopup, self.popups[0 .. max_popups - 1], self.popups[1..max_popups]);
+            std.mem.copyForwards(
+                DamagePopup,
+                self.popups[0 .. max_popups - 1],
+                self.popups[1..max_popups],
+            );
             self.count = max_popups - 1;
         }
         const jitter = nz.vec.scale(nz.vec.randomUnitVector(nz.Vec3(f32), random), 0.35);

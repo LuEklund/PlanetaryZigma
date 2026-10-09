@@ -40,7 +40,10 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Textures {
     self.shoot_entry = try self.add(gpa, "shoot.png");
     self.spread_entry = try self.add(gpa, "spread.png");
     for (std.enums.values(shared.Item.Kind)) |item| {
-        self.icon_entries.set(item, try self.add(gpa, shared.Item.icon_paths[@intFromEnum(item)]["textures/".len..]));
+        self.icon_entries.set(
+            item,
+            try self.add(gpa, shared.Item.icon_paths[@intFromEnum(item)]["textures/".len..]),
+        );
     }
     return self;
 }
@@ -72,7 +75,12 @@ pub fn spread(self: *const Textures) contract.TextureHandle {
     return self.entries.items[self.spread_entry].handle;
 }
 
-pub fn update(self: *Textures, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
+pub fn update(
+    self: *Textures,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    renderer: *const RenderLib,
+) !void {
     for (self.entries.items) |*entry| {
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
         const bytes = try assets.read(gpa, io, self.dir, entry.path);

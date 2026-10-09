@@ -51,7 +51,10 @@ pub fn PacketStats(comptime Packet: type) type {
 
         pub fn record(self: *@This(), message_bytes: []const u8) void {
             if (message_bytes.len < 2) return;
-            const tag = std.enums.fromInt(std.meta.Tag(Packet), std.mem.readInt(u16, message_bytes[0..2], endian)) orelse return;
+            const tag = std.enums.fromInt(
+                std.meta.Tag(Packet),
+                std.mem.readInt(u16, message_bytes[0..2], endian),
+            ) orelse return;
             self.counts[@intFromEnum(tag)] += 1;
             self.bytes[@intFromEnum(tag)] += message_bytes.len;
         }
@@ -63,19 +66,31 @@ pub fn PacketStats(comptime Packet: type) type {
             inline for (std.meta.fields(std.meta.Tag(Packet)), 0..) |field, kind| {
                 total_bytes += self.bytes[kind];
                 if (self.counts[kind] != 0) {
-                    const part = std.fmt.bufPrint(buffer[len..], "{s}={d}x/{d}B ", .{ field.name, self.counts[kind], self.bytes[kind] }) catch break;
+                    const part = std.fmt.bufPrint(
+                        buffer[len..],
+                        "{s}={d}x/{d}B ",
+                        .{ field.name, self.counts[kind], self.bytes[kind] },
+                    ) catch break;
                     len += part.len;
                 }
             }
             std.log.info("{s} send/s: {s}total={d}B", .{ side, buffer[0..len], total_bytes });
-            if (total_bytes > send_warn_bytes_per_second) std.log.warn("{s} send rate HIGH: {d}B/s", .{ side, total_bytes });
+            if (total_bytes > send_warn_bytes_per_second) std.log.warn(
+                "{s} send rate HIGH: {d}B/s",
+                .{ side, total_bytes },
+            );
             self.* = .{};
         }
     };
 }
 
-pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.HSteamNetConnection) void {
-    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
+pub fn logConnectionStatus(
+    sockets: steam.ISteamNetworkingSockets,
+    conn: steam.HSteamNetConnection,
+) void {
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(
+        steam.SteamNetConnectionRealTimeStatus_t,
+    );
     if (sockets.GetConnectionRealTimeStatus(conn, &status, &.{}) != .k_EResultOK) return;
     std.log.info("conn={d} ping={d}ms qual={d:.2}/{d:.2} out={d:.0}pps in={d:.0}pps rate={d}Bps pending={d}u/{d}r unacked={d}", .{
         conn,
@@ -93,20 +108,35 @@ pub fn logConnectionStatus(sockets: steam.ISteamNetworkingSockets, conn: steam.H
 
 pub const max_blocked_connections: usize = 16;
 
-pub fn sendOutgoing(packets: *Packets, socket: anytype, last_send_result: *steam.EResult, send_stats: anytype, log_connection_status: bool) void {
+pub fn sendOutgoing(
+    packets: *Packets,
+    socket: anytype,
+    last_send_result: *steam.EResult,
+    send_stats: anytype,
+    log_connection_status: bool,
+) void {
     var blocked: [max_blocked_connections]Connection = undefined;
     var blocked_count: usize = 0;
     var kept: usize = 0;
     for (packets.outgoing.items) |*message| {
         const reliable = message.flags == .reliable or message.flags == .reliable_no_nagle;
-        if (reliable and std.mem.indexOfScalar(Connection, blocked[0..blocked_count], message.conn) != null) {
+        if (reliable and std.mem.indexOfScalar(
+            Connection,
+            blocked[0..blocked_count],
+            message.conn,
+        ) != null) {
             packets.outgoing.items[kept] = message.*;
             kept += 1;
             continue;
         }
         if (log_connection_status) send_stats.record(message.bytes[0..message.len]);
         var message_number: i64 = 0;
-        const result = socket.SendMessageToConnection(message.conn, message.bytes[0..message.len], @intFromEnum(message.flags), &message_number);
+        const result = socket.SendMessageToConnection(
+            message.conn,
+            message.bytes[0..message.len],
+            @intFromEnum(message.flags),
+            &message_number,
+        );
         if (result != last_send_result.*) {
             last_send_result.* = result;
             std.log.warn("send result changed: {t} (conn={d})", .{ result, message.conn });
@@ -133,14 +163,25 @@ pub const Packets = struct {
         self.events.deinit(gpa);
     }
 
-    pub fn pushIncoming(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8) !void {
+    pub fn pushIncoming(
+        self: *Packets,
+        gpa: std.mem.Allocator,
+        conn: Connection,
+        bytes: []const u8,
+    ) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);
         try self.incoming.append(gpa, msg);
     }
 
-    pub fn pushOutgoing(self: *Packets, gpa: std.mem.Allocator, conn: Connection, bytes: []const u8, flags: SendFlags) !void {
+    pub fn pushOutgoing(
+        self: *Packets,
+        gpa: std.mem.Allocator,
+        conn: Connection,
+        bytes: []const u8,
+        flags: SendFlags,
+    ) !void {
         const len: u32 = @intCast(@min(bytes.len, max_msg_bytes));
         var msg: Message = .{ .conn = conn, .flags = flags, .len = len };
         @memcpy(msg.bytes[0..len], bytes[0..len]);

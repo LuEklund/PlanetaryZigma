@@ -16,7 +16,13 @@ const pitch_limit: f32 = std.math.degreesToRadians(80);
 const look_sensitivity: f32 = 0.0025;
 
 pub fn init(position: nz.Vec3(f32)) Camera {
-    return .{ .position = position, .yaw_rotation = .identity, .pitch = 0, .speed = 20, .follow = .none };
+    return .{
+        .position = position,
+        .yaw_rotation = .identity,
+        .pitch = 0,
+        .speed = 20,
+        .follow = .none,
+    };
 }
 
 pub fn rotation(self: Camera) Quat {
@@ -24,8 +30,15 @@ pub fn rotation(self: Camera) Quat {
     return self.yaw_rotation.mul(pitch_quat).normalize();
 }
 
-pub fn update(self: *Camera, window: *Window, delta_time: f32, players: []const shared.entity.Id) void {
-    if (window.keyboard.get(.f) == .press) self.follow = if (self.follow == .none and players.len > 0) players[0] else .none;
+pub fn update(
+    self: *Camera,
+    window: *Window,
+    delta_time: f32,
+    players: []const shared.entity.Id,
+) void {
+    if (window.keyboard.get(
+        .f,
+    ) == .press) self.follow = if (self.follow == .none and players.len > 0) players[0] else .none;
     if (self.follow != .none and players.len == 0) self.follow = .none;
     if (self.follow != .none) {
         var index = std.mem.indexOfScalar(shared.entity.Id, players, self.follow) orelse 0;
@@ -35,7 +48,11 @@ pub fn update(self: *Camera, window: *Window, delta_time: f32, players: []const 
         return;
     }
 
-    self.speed = std.math.clamp(self.speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(window.pointer.axis.vertical))), 1, 1000);
+    self.speed = std.math.clamp(
+        self.speed * std.math.pow(f32, 1.2, @as(f32, @floatCast(window.pointer.axis.vertical))),
+        1,
+        1000,
+    );
 
     const look = switch (window.pointer.movement) {
         .relative => |relative| nz.Vec3(f32){ @floatCast(relative.dx), @floatCast(relative.dy), 0 },
@@ -45,9 +62,16 @@ pub fn update(self: *Camera, window: *Window, delta_time: f32, players: []const 
         const planet_up = nz.vec.normalize(self.position);
         const yaw_quat: Quat = .angleAxis(-look[0] * look_sensitivity, planet_up);
         self.yaw_rotation = yaw_quat.mul(self.yaw_rotation).normalize();
-        self.pitch = std.math.clamp(self.pitch - look[1] * look_sensitivity, -pitch_limit, pitch_limit);
+        self.pitch = std.math.clamp(
+            self.pitch - look[1] * look_sensitivity,
+            -pitch_limit,
+            pitch_limit,
+        );
         const camera_forward = self.yaw_rotation.rotateVec(.{ 0, 0, -1 });
-        const tangent_forward = camera_forward - nz.vec.scale(planet_up, nz.vec.dot(camera_forward, planet_up));
+        const tangent_forward = camera_forward - nz.vec.scale(
+            planet_up,
+            nz.vec.dot(camera_forward, planet_up),
+        );
         if (nz.vec.length(tangent_forward) > 0.0001) {
             self.yaw_rotation = .lookAt(tangent_forward, planet_up);
         }

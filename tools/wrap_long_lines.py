@@ -33,7 +33,7 @@ def opener_ok(line, index):
     if line[index] == "{":
         return index > 0 and line[index - 1] == "."
     before = line[:index].rstrip()
-    if not before or not (before[-1].isalnum() or before[-1] in "_)]"):
+    if not before or not (before[-1].isalnum() or before[-1] == "_"):
         return False
     word = before.split()[-1] if before.split() else ""
     word = word.lstrip("(!&*.")
@@ -77,10 +77,17 @@ def wrap(text):
     return "\n".join(out)
 
 
+import subprocess
+
 for path in sys.argv[1:]:
     with open(path) as file:
-        text = file.read()
-    wrapped = wrap(text)
-    if wrapped != text:
+        original = file.read()
+    wrapped = wrap(original)
+    if wrapped == original:
+        continue
+    with open(path, "w") as file:
+        file.write(wrapped)
+    if subprocess.run(["zig", "fmt", path], capture_output=True).returncode != 0:
         with open(path, "w") as file:
-            file.write(wrapped)
+            file.write(original)
+        print("skipped (zig fmt failed):", path)

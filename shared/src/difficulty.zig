@@ -52,7 +52,11 @@ pub fn coefficient(setting: Setting, run_seconds: f32, players: usize, stages_co
 }
 
 pub fn level(difficulty_coefficient: f32, players: usize) f32 {
-    return std.math.clamp(@floor(1 + (difficulty_coefficient - playerFactor(players)) / coefficient_per_level), 1, max_level);
+    return std.math.clamp(
+        @floor(1 + (difficulty_coefficient - playerFactor(players)) / coefficient_per_level),
+        1,
+        max_level,
+    );
 }
 
 pub fn healthMultiplier(monster_level: f32) f32 {
@@ -64,7 +68,15 @@ pub fn damageMultiplier(monster_level: f32) f32 {
 }
 
 pub fn chestCost(base_cost: u32, difficulty_coefficient: f32) u32 {
-    return @intFromFloat(@round(@as(f32, @floatFromInt(base_cost)) * std.math.pow(f32, difficulty_coefficient, chest_cost_exponent)));
+    return @intFromFloat(
+        @round(
+            @as(f32, @floatFromInt(base_cost)) * std.math.pow(
+                f32,
+                difficulty_coefficient,
+                chest_cost_exponent,
+            ),
+        ),
+    );
 }
 
 pub fn killReward(base_reward: u32, difficulty_coefficient: f32) u32 {

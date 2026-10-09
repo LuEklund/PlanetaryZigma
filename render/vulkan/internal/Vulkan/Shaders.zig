@@ -37,20 +37,118 @@ const Row = struct {
 };
 
 const rows: std.EnumArray(Pipeline, Row) = .init(.{
-    .shadow_static = .{ .vert = .shadow_static, .frag = null, .layout = .world, .target = .shadow, .blend = .none, .lines = false },
-    .shadow_skinned = .{ .vert = .shadow_skinned, .frag = null, .layout = .world, .target = .shadow, .blend = .none, .lines = false },
-    .highlight_static = .{ .vert = .highlight_static, .frag = .highlight_static, .layout = .world, .target = .mask, .blend = .none, .lines = false },
-    .highlight_skinned = .{ .vert = .highlight_skinned, .frag = .highlight_static, .layout = .world, .target = .mask, .blend = .none, .lines = false },
-    .opaque_static = .{ .vert = .static, .frag = .mesh, .layout = .world, .target = .main, .blend = .none, .lines = false },
-    .opaque_skinned = .{ .vert = .skinned, .frag = .mesh, .layout = .world, .target = .main, .blend = .none, .lines = false },
-    .transparent_static = .{ .vert = .static, .frag = .mesh, .layout = .world, .target = .main, .blend = .alpha, .lines = false },
-    .transparent_skinned = .{ .vert = .skinned, .frag = .mesh, .layout = .world, .target = .main, .blend = .alpha, .lines = false },
-    .sky = .{ .vert = .sky, .frag = .sky, .layout = .sky, .target = .main, .blend = .none, .lines = false },
-    .particles_alpha = .{ .vert = .particles, .frag = .particles, .layout = .particle, .target = .main, .blend = .alpha, .lines = false },
-    .particles_additive = .{ .vert = .particles, .frag = .particles, .layout = .particle, .target = .main, .blend = .additive, .lines = false },
-    .outline = .{ .vert = .highlight_outline, .frag = .highlight_outline, .layout = .world, .target = .main, .blend = .none, .lines = false },
-    .debug = .{ .vert = .debug, .frag = .debug, .layout = .world, .target = .main, .blend = .none, .lines = true },
-    .dvui = .{ .vert = .dvui, .frag = .dvui, .layout = .dvui, .target = .main, .blend = .premultiplied, .lines = false },
+    .shadow_static = .{
+        .vert = .shadow_static,
+        .frag = null,
+        .layout = .world,
+        .target = .shadow,
+        .blend = .none,
+        .lines = false,
+    },
+    .shadow_skinned = .{
+        .vert = .shadow_skinned,
+        .frag = null,
+        .layout = .world,
+        .target = .shadow,
+        .blend = .none,
+        .lines = false,
+    },
+    .highlight_static = .{
+        .vert = .highlight_static,
+        .frag = .highlight_static,
+        .layout = .world,
+        .target = .mask,
+        .blend = .none,
+        .lines = false,
+    },
+    .highlight_skinned = .{
+        .vert = .highlight_skinned,
+        .frag = .highlight_static,
+        .layout = .world,
+        .target = .mask,
+        .blend = .none,
+        .lines = false,
+    },
+    .opaque_static = .{
+        .vert = .static,
+        .frag = .mesh,
+        .layout = .world,
+        .target = .main,
+        .blend = .none,
+        .lines = false,
+    },
+    .opaque_skinned = .{
+        .vert = .skinned,
+        .frag = .mesh,
+        .layout = .world,
+        .target = .main,
+        .blend = .none,
+        .lines = false,
+    },
+    .transparent_static = .{
+        .vert = .static,
+        .frag = .mesh,
+        .layout = .world,
+        .target = .main,
+        .blend = .alpha,
+        .lines = false,
+    },
+    .transparent_skinned = .{
+        .vert = .skinned,
+        .frag = .mesh,
+        .layout = .world,
+        .target = .main,
+        .blend = .alpha,
+        .lines = false,
+    },
+    .sky = .{
+        .vert = .sky,
+        .frag = .sky,
+        .layout = .sky,
+        .target = .main,
+        .blend = .none,
+        .lines = false,
+    },
+    .particles_alpha = .{
+        .vert = .particles,
+        .frag = .particles,
+        .layout = .particle,
+        .target = .main,
+        .blend = .alpha,
+        .lines = false,
+    },
+    .particles_additive = .{
+        .vert = .particles,
+        .frag = .particles,
+        .layout = .particle,
+        .target = .main,
+        .blend = .additive,
+        .lines = false,
+    },
+    .outline = .{
+        .vert = .highlight_outline,
+        .frag = .highlight_outline,
+        .layout = .world,
+        .target = .main,
+        .blend = .none,
+        .lines = false,
+    },
+    .debug = .{
+        .vert = .debug,
+        .frag = .debug,
+        .layout = .world,
+        .target = .main,
+        .blend = .none,
+        .lines = true,
+    },
+    .dvui = .{
+        .vert = .dvui,
+        .frag = .dvui,
+        .layout = .dvui,
+        .target = .main,
+        .blend = .premultiplied,
+        .lines = false,
+    },
 });
 
 const dynamic_states = [_]vk.DynamicState{
@@ -67,14 +165,22 @@ const dynamic_states = [_]vk.DynamicState{
     .line_width,
 };
 
-const all_components: vk.ColorComponentFlags = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true };
+const all_components: vk.ColorComponentFlags = .{
+    .r_bit = true,
+    .g_bit = true,
+    .b_bit = true,
+    .a_bit = true,
+};
 
 device: Device,
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, vk.PipelineLayout),
 modules: std.EnumArray(Shader.Kind, vk.ShaderModule),
 pipelines: std.EnumArray(Pipeline, vk.Pipeline),
 
-pub fn init(device: Device, pipeline_layouts: std.EnumArray(PipelineLayout.Kind, vk.PipelineLayout)) Shaders {
+pub fn init(
+    device: Device,
+    pipeline_layouts: std.EnumArray(PipelineLayout.Kind, vk.PipelineLayout),
+) Shaders {
     return .{
         .device = device,
         .pipeline_layouts = pipeline_layouts,
@@ -84,8 +190,14 @@ pub fn init(device: Device, pipeline_layouts: std.EnumArray(PipelineLayout.Kind,
 }
 
 pub fn deinit(self: *Shaders) void {
-    for (self.pipelines.values) |pipeline| if (pipeline != .null_handle) self.device.proxy.destroyPipeline(pipeline, null);
-    for (self.modules.values) |module| if (module != .null_handle) self.device.proxy.destroyShaderModule(module, null);
+    for (self.pipelines.values) |pipeline| if (pipeline != .null_handle) self.device.proxy.destroyPipeline(
+        pipeline,
+        null,
+    );
+    for (self.modules.values) |module| if (module != .null_handle) self.device.proxy.destroyShaderModule(
+        module,
+        null,
+    );
 }
 
 pub fn get(self: *const Shaders, pipeline: Pipeline) vk.Pipeline {
@@ -123,10 +235,18 @@ pub fn apply(self: *Shaders, kind: Shader.Kind, spirv: []align(4) const u8) !voi
 
 fn build(self: *Shaders, row: Row) !vk.Pipeline {
     var stages: [2]vk.PipelineShaderStageCreateInfo = undefined;
-    stages[0] = .{ .stage = .{ .vertex_bit = true }, .module = self.modules.get(row.vert), .p_name = Shader.get(row.vert).vert.?.ptr };
+    stages[0] = .{
+        .stage = .{ .vertex_bit = true },
+        .module = self.modules.get(row.vert),
+        .p_name = Shader.get(row.vert).vert.?.ptr,
+    };
     var stage_count: u32 = 1;
     if (row.frag) |frag| {
-        stages[1] = .{ .stage = .{ .fragment_bit = true }, .module = self.modules.get(frag), .p_name = Shader.get(frag).frag.?.ptr };
+        stages[1] = .{
+            .stage = .{ .fragment_bit = true },
+            .module = self.modules.get(frag),
+            .p_name = Shader.get(frag).frag.?.ptr,
+        };
         stage_count = 2;
     }
 
@@ -233,7 +353,10 @@ fn build(self: *Shaders, row: Row) !vk.Pipeline {
             .p_attachments = &color_attachment,
             .blend_constants = .{ 0, 0, 0, 0 },
         },
-        .p_dynamic_state = &.{ .dynamic_state_count = dynamic_states.len, .p_dynamic_states = &dynamic_states },
+        .p_dynamic_state = &.{
+            .dynamic_state_count = dynamic_states.len,
+            .p_dynamic_states = &dynamic_states,
+        },
         .layout = self.pipeline_layouts.get(row.layout),
         .subpass = 0,
         .base_pipeline_index = -1,

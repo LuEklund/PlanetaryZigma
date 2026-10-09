@@ -33,19 +33,91 @@ pub const Spec = struct {
 };
 
 const specs: std.EnumArray(Kind, Spec) = .init(.{
-    .static = .{ .path = "mesh.spv", .vert = "static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .skinned = .{ .path = "mesh.spv", .vert = "skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .mesh = .{ .path = "mesh.spv", .vert = null, .frag = "mesh_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .shadow_static = .{ .path = "shadow.spv", .vert = "shadow_static_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .shadow_skinned = .{ .path = "shadow.spv", .vert = "shadow_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .sky = .{ .path = "sky.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .material }, .push_constant_size = 0 },
-    .debug = .{ .path = "debug.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .highlight_static = .{ .path = "highlight.spv", .vert = "highlight_static_vert", .frag = "highlight_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .highlight_skinned = .{ .path = "highlight.spv", .vert = "highlight_skinned_vert", .frag = null, .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(WorldPushConstant) },
-    .highlight_outline = .{ .path = "highlight.spv", .vert = "highlight_outline_vert", .frag = "highlight_outline_frag", .descriptors = &.{ .scene, .textures }, .push_constant_size = @sizeOf(WorldPushConstant) },
+    .static = .{
+        .path = "mesh.spv",
+        .vert = "static_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .skinned = .{
+        .path = "mesh.spv",
+        .vert = "skinned_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .mesh = .{
+        .path = "mesh.spv",
+        .vert = null,
+        .frag = "mesh_frag",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .shadow_static = .{
+        .path = "shadow.spv",
+        .vert = "shadow_static_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .shadow_skinned = .{
+        .path = "shadow.spv",
+        .vert = "shadow_skinned_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .sky = .{
+        .path = "sky.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{ .scene, .material },
+        .push_constant_size = 0,
+    },
+    .debug = .{
+        .path = "debug.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .highlight_static = .{
+        .path = "highlight.spv",
+        .vert = "highlight_static_vert",
+        .frag = "highlight_frag",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .highlight_skinned = .{
+        .path = "highlight.spv",
+        .vert = "highlight_skinned_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .highlight_outline = .{
+        .path = "highlight.spv",
+        .vert = "highlight_outline_vert",
+        .frag = "highlight_outline_frag",
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
 
-    .dvui = .{ .path = "dvui.spv", .vert = "vertex", .frag = "fragment", .descriptors = &.{.textures}, .push_constant_size = @sizeOf(DvuiPushConstant) },
-    .particles = .{ .path = "particles.spv", .vert = "particles_vert", .frag = "particles_frag", .descriptors = &.{ .scene, .textures, .shadow }, .push_constant_size = @sizeOf(ParticlePushConstant) },
+    .dvui = .{
+        .path = "dvui.spv",
+        .vert = "vertex",
+        .frag = "fragment",
+        .descriptors = &.{.textures},
+        .push_constant_size = @sizeOf(DvuiPushConstant),
+    },
+    .particles = .{
+        .path = "particles.spv",
+        .vert = "particles_vert",
+        .frag = "particles_frag",
+        .descriptors = &.{ .scene, .textures, .shadow },
+        .push_constant_size = @sizeOf(ParticlePushConstant),
+    },
 });
 
 pub fn get(kind: Kind) Spec {

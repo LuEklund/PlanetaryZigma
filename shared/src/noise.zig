@@ -118,8 +118,18 @@ pub fn simplex3(xin: f32, yin: f32, zin: f32) f32 {
     const kk: usize = @intCast(@mod(k, 256));
 
     const gi0 = perm[ii + perm[jj + perm[kk]]] % 12;
-    const gi1 = perm[ii + @as(usize, @intCast(i_1)) + perm[jj + @as(usize, @intCast(j_1)) + perm[kk + @as(usize, @intCast(k_1))]]] % 12;
-    const gi2 = perm[ii + @as(usize, @intCast(i_2)) + perm[jj + @as(usize, @intCast(j_2)) + perm[kk + @as(usize, @intCast(k_2))]]] % 12;
+    const gi1 = perm[
+        ii + @as(
+            usize,
+            @intCast(i_1),
+        ) + perm[jj + @as(usize, @intCast(j_1)) + perm[kk + @as(usize, @intCast(k_1))]]
+    ] % 12;
+    const gi2 = perm[
+        ii + @as(
+            usize,
+            @intCast(i_2),
+        ) + perm[jj + @as(usize, @intCast(j_2)) + perm[kk + @as(usize, @intCast(k_2))]]
+    ] % 12;
     const gi3 = perm[ii + 1 + perm[jj + 1 + perm[kk + 1]]] % 12;
 
     var n0: f32 = 0;

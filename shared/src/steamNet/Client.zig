@@ -29,7 +29,11 @@ const Browser = extern struct {
     const VTable = extern struct {
         responded: *const fn (*Browser, steam.HServerListRequest, i32) callconv(.c) void,
         failed: *const fn (*Browser, steam.HServerListRequest, i32) callconv(.c) void,
-        complete: *const fn (*Browser, steam.HServerListRequest, steam.EMatchMakingServerResponse) callconv(.c) void,
+        complete: *const fn (
+            *Browser,
+            steam.HServerListRequest,
+            steam.EMatchMakingServerResponse,
+        ) callconv(.c) void,
     };
     //NOTE: vtable_ptr only exist cuz of CPP BS.
     vtable: *const VTable = &.{
@@ -40,7 +44,11 @@ const Browser = extern struct {
     list: ServerList = .{},
     request: steam.HServerListRequest = 0,
 
-    fn responded(_: *Browser, request: steam.HServerListRequest, server_index: i32) callconv(.c) void {
+    fn responded(
+        _: *Browser,
+        request: steam.HServerListRequest,
+        server_index: i32,
+    ) callconv(.c) void {
         const server = steam.SteamMatchmakingServers().GetServerDetails(request, server_index);
         std.log.info("Server[{d}] steamID={d} name=\"{s}\"", .{
             server_index, server.*.m_steamID, std.mem.sliceTo(server.*.m_szServerName[0..], 0),
@@ -51,7 +59,11 @@ const Browser = extern struct {
             server_index,
         });
     }
-    fn complete(self: *Browser, request: steam.HServerListRequest, response: steam.EMatchMakingServerResponse) callconv(.c) void {
+    fn complete(
+        self: *Browser,
+        request: steam.HServerListRequest,
+        response: steam.EMatchMakingServerResponse,
+    ) callconv(.c) void {
         std.log.info("server list refresh complete: {s}", .{@tagName(response)});
         const servers = steam.SteamMatchmakingServers();
         const server_count = servers.GetServerCount(request);
@@ -91,9 +103,15 @@ pipe: steam.HSteamPipe,
 browser: Browser,
 
 pub fn init(self: *Client, gpa: std.mem.Allocator, io: std.Io, log_connection_status: bool) !void {
-    std.log.info("\n====\nNET-DEBUG = {s}\n====\n", .{if (log_connection_status) "TRUE" else "FALSE"});
+    std.log.info(
+        "\n====\nNET-DEBUG = {s}\n====\n",
+        .{if (log_connection_status) "TRUE" else "FALSE"},
+    );
     if (!steam.SteamAPI_Init()) {
-        std.log.err("SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.", .{});
+        std.log.err(
+            "SteamAPI_Init failed. Check: Steam is running, you are logged in, and steam_appid.txt exists in the working directory with a valid app id.",
+            .{},
+        );
         return error.InitSteamworks;
     }
     steam.SteamAPI_ManualDispatch_Init();
@@ -168,8 +186,14 @@ pub fn disconnect(self: *Client) void {
 
 pub fn pingMilliseconds(self: *const Client) i32 {
     if (self.server_conn == 0) return -1;
-    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(steam.SteamNetConnectionRealTimeStatus_t);
-    if (steam.SteamNetworkingSockets_SteamAPI().GetConnectionRealTimeStatus(self.server_conn, &status, &.{}) != .k_EResultOK) return -1;
+    var status: steam.SteamNetConnectionRealTimeStatus_t = std.mem.zeroes(
+        steam.SteamNetConnectionRealTimeStatus_t,
+    );
+    if (steam.SteamNetworkingSockets_SteamAPI().GetConnectionRealTimeStatus(
+        self.server_conn,
+        &status,
+        &.{},
+    ) != .k_EResultOK) return -1;
     return status.m_nPing;
 }
 
@@ -216,12 +240,20 @@ pub fn handlePackets(self: *Client) !void {
     var last_status_log = last_iteration;
     while (true) {
         const now: std.Io.Timestamp = .now(self.io, .real);
-        const gap_milliseconds = @divFloor(last_iteration.durationTo(now).nanoseconds, std.time.ns_per_ms);
+        const gap_milliseconds = @divFloor(
+            last_iteration.durationTo(now).nanoseconds,
+            std.time.ns_per_ms,
+        );
         if (gap_milliseconds > 100) std.log.warn("packet pump stalled {d}ms", .{gap_milliseconds});
         last_iteration = now;
-        if (self.log_connection_status and self.server_conn != 0 and last_status_log.durationTo(now).nanoseconds > std.time.ns_per_s) {
+        if (self.log_connection_status and self.server_conn != 0 and last_status_log.durationTo(
+            now,
+        ).nanoseconds > std.time.ns_per_s) {
             last_status_log = now;
-            @import("../SteamNet.zig").logConnectionStatus(steam.SteamNetworkingSockets_SteamAPI(), self.server_conn);
+            @import("../SteamNet.zig").logConnectionStatus(
+                steam.SteamNetworkingSockets_SteamAPI(),
+                self.server_conn,
+            );
             self.send_stats.logAndReset("client");
         }
         try self.io.checkCancel();
@@ -239,7 +271,12 @@ pub fn handlePackets(self: *Client) !void {
                 const servers = steam.SteamMatchmakingServers();
                 const app_id = steam.SteamUtils().GetAppID();
                 std.log.info("requesting internet server list for app {d}...", .{app_id});
-                self.browser.request = servers.RequestInternetServerList(app_id, null, 0, @ptrCast(&self.browser));
+                self.browser.request = servers.RequestInternetServerList(
+                    app_id,
+                    null,
+                    0,
+                    @ptrCast(&self.browser),
+                );
             }
         }
         try self.io.sleep(.{ .nanoseconds = 1_000_000 }, .real);
@@ -260,11 +297,17 @@ fn steamPump(self: *Client) !void {
         const callback_data = callback.data() orelse continue;
         switch (callback_data) {
             .SteamNetConnectionStatusChangedCallback => |status_changed| {
-                std.log.info("client net state: {s} (conn={d})", .{ @tagName(status_changed.m_info.m_eState), status_changed.m_hConn });
+                std.log.info(
+                    "client net state: {s} (conn={d})",
+                    .{ @tagName(status_changed.m_info.m_eState), status_changed.m_hConn },
+                );
                 switch (status_changed.m_info.m_eState) {
                     .k_ESteamNetworkingConnectionState_Connected => {
                         self.server_conn = status_changed.m_hConn;
-                        try self.packets.pushEvent(self.gpa, .{ .connected = status_changed.m_hConn });
+                        try self.packets.pushEvent(
+                            self.gpa,
+                            .{ .connected = status_changed.m_hConn },
+                        );
                     },
                     .k_ESteamNetworkingConnectionState_ClosedByPeer,
                     .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
@@ -275,9 +318,17 @@ fn steamPump(self: *Client) !void {
                             endReasonName(status_changed.m_info.m_eEndReason),
                             std.mem.sliceTo(&status_changed.m_info.m_szEndDebug, 0),
                         });
-                        _ = steam.SteamNetworkingSockets_SteamAPI().CloseConnection(status_changed.m_hConn, 0, "client-close", false);
+                        _ = steam.SteamNetworkingSockets_SteamAPI().CloseConnection(
+                            status_changed.m_hConn,
+                            0,
+                            "client-close",
+                            false,
+                        );
                         if (self.server_conn == status_changed.m_hConn) self.server_conn = 0;
-                        try self.packets.pushEvent(self.gpa, .{ .disconnected = status_changed.m_hConn });
+                        try self.packets.pushEvent(
+                            self.gpa,
+                            .{ .disconnected = status_changed.m_hConn },
+                        );
                     },
                     else => {},
                 }
@@ -293,7 +344,11 @@ pub fn receivePackets(self: *Client) !void {
 
     var messages: [16][*c]steam.SteamNetworkingMessage_t = undefined;
     while (true) {
-        const received = sockets.ReceiveMessagesOnConnection(self.server_conn, &messages[0], @intCast(messages.len));
+        const received = sockets.ReceiveMessagesOnConnection(
+            self.server_conn,
+            &messages[0],
+            @intCast(messages.len),
+        );
         if (received <= 0) break;
         const received_count: usize = @intCast(received);
         for (messages[0..received_count]) |raw_message| {
@@ -308,7 +363,13 @@ pub fn receivePackets(self: *Client) !void {
 }
 
 pub fn sendPackets(self: *Client) !void {
-    SteamNet.sendOutgoing(&self.packets, steam.SteamNetworkingSockets_SteamAPI(), &self.last_send_result, &self.send_stats, self.log_connection_status);
+    SteamNet.sendOutgoing(
+        &self.packets,
+        steam.SteamNetworkingSockets_SteamAPI(),
+        &self.last_send_result,
+        &self.send_stats,
+        self.log_connection_status,
+    );
 }
 
 pub fn connectToServer(self: *Client, steam_id: u64) !void {

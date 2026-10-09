@@ -11,7 +11,9 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 pub fn main(init: std.process.Init) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    var gpa_impl = if (builtin.mode == .Debug) std.heap.DebugAllocator(.{ .verbose_log = false }).init else init.gpa;
+    var gpa_impl = if (builtin.mode == .Debug) std.heap.DebugAllocator(
+        .{ .verbose_log = false },
+    ).init else init.gpa;
     defer {
         if (builtin.mode == .Debug) _ = gpa_impl.deinit();
     }

@@ -20,10 +20,17 @@ pub fn elapsedSinceLast(clock: *Clock, io: std.Io) f32 {
 
 pub fn stepDue(clock: *Clock, io: std.Io, step_seconds: f32) bool {
     const delta_seconds = clock.elapsedSinceLast(io);
-    if (delta_seconds > stall_seconds) std.log.warn("main loop stalled {d:.0}ms", .{delta_seconds * 1000});
+    if (delta_seconds > stall_seconds) std.log.warn(
+        "main loop stalled {d:.0}ms",
+        .{delta_seconds * 1000},
+    );
     clock.accumulated_seconds += delta_seconds;
     if (clock.accumulated_seconds < step_seconds) {
-        std.Io.sleep(io, .fromMilliseconds(1), .awake) catch |err| std.log.err("main loop sleep: {t}", .{err});
+        std.Io.sleep(
+            io,
+            .fromMilliseconds(1),
+            .awake,
+        ) catch |err| std.log.err("main loop sleep: {t}", .{err});
         return false;
     }
     clock.accumulated_seconds -= step_seconds;

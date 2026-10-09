@@ -40,9 +40,17 @@ pub fn push(
     self.buttons = pointer.buttons;
 
     if (pointer.axis.vertical != 0)
-        _ = try win.addEventMouseWheel(@floatCast(pointer.axis.vertical * scroll_pixels_per_notch), .vertical, null);
+        _ = try win.addEventMouseWheel(
+            @floatCast(pointer.axis.vertical * scroll_pixels_per_notch),
+            .vertical,
+            null,
+        );
     if (pointer.axis.horizontal != 0)
-        _ = try win.addEventMouseWheel(@floatCast(pointer.axis.horizontal * scroll_pixels_per_notch), .horizontal, null);
+        _ = try win.addEventMouseWheel(
+            @floatCast(pointer.axis.horizontal * scroll_pixels_per_notch),
+            .horizontal,
+            null,
+        );
 
     if (typed.len > 0) _ = try win.addEventText(.{ .text = typed });
 
@@ -55,7 +63,11 @@ pub fn push(
             .repeat => .repeat,
             .release => .up,
         };
-        if (std.mem.indexOfScalar(Window.Keyboard.Key, keys_owned_by_the_app, key) != null) continue;
+        if (std.mem.indexOfScalar(
+            Window.Keyboard.Key,
+            keys_owned_by_the_app,
+            key,
+        ) != null) continue;
         const code = translate(key) orelse continue;
         _ = try win.addEventKey(.{ .code = code, .action = action, .mod = mod });
     }

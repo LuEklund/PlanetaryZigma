@@ -33,8 +33,18 @@ pub const actions: []const Action = &.{
     .{ .id = .attack, .default = .{ .mouse = .{ .left = true } }, .bindable = "Attack" },
     .{ .id = .aim, .default = .{ .mouse = .{ .right = true } }, .bindable = "Aim" },
     .{ .id = .use_equipment, .default = .{ .key = .q }, .bindable = "Use Equipment" },
-    .{ .id = .free_camera, .default = .{ .key = .f }, .bindable = "Free Camera", .behavior = .pressed },
-    .{ .id = .debug_colliders, .default = .{ .key = .g }, .bindable = "Debug Colliders", .behavior = .pressed },
+    .{
+        .id = .free_camera,
+        .default = .{ .key = .f },
+        .bindable = "Free Camera",
+        .behavior = .pressed,
+    },
+    .{
+        .id = .debug_colliders,
+        .default = .{ .key = .g },
+        .bindable = "Debug Colliders",
+        .behavior = .pressed,
+    },
     .{ .id = .utility, .default = .{ .key = .left_shift }, .bindable = "Utility" },
     .{ .id = .secondary, .default = .{ .mouse = .{ .right = true } }, .bindable = "Secondary" },
     .{ .id = .dev_f1, .default = .{ .key = .f1 }, .behavior = .pressed },
@@ -109,7 +119,12 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
     return new_player_inputs;
 }
 
-fn applyAction(self: *Controller, inputs: *shared.net.Input, action: ActionKind, pressed: bool) void {
+fn applyAction(
+    self: *Controller,
+    inputs: *shared.net.Input,
+    action: ActionKind,
+    pressed: bool,
+) void {
     switch (action) {
         .free_camera => if (pressed) {
             self.free_camera = !self.free_camera;
@@ -119,7 +134,10 @@ fn applyAction(self: *Controller, inputs: *shared.net.Input, action: ActionKind,
         },
         inline else => |inline_action| {
             const Keys = @FieldType(shared.net.Input, "keys");
-            if (@hasField(Keys, @tagName(inline_action))) @field(inputs.keys, @tagName(inline_action)) = pressed;
+            if (@hasField(Keys, @tagName(inline_action))) @field(
+                inputs.keys,
+                @tagName(inline_action),
+            ) = pressed;
         },
     }
 }
@@ -145,7 +163,10 @@ pub fn captureBinding(self: *Controller, window: *const Window) void {
         return;
     }
 
-    const clicked: u8 = @as(u8, @bitCast(window.pointer.buttons)) & ~@as(u8, @bitCast(self.previous_buttons));
+    const clicked: u8 = @as(
+        u8,
+        @bitCast(window.pointer.buttons),
+    ) & ~@as(u8, @bitCast(self.previous_buttons));
     if (clicked == 0) return;
     self.bindings.set(action, .{ .mouse = @bitCast(clicked) });
     self.rebinding_action = null;
@@ -160,7 +181,10 @@ pub fn bindingLabel(binding: Binding) []const u8 {
         .mouse => |mask| label: {
             const bits: u8 = @bitCast(mask);
             inline for (@typeInfo(Window.Pointer.Buttons).@"struct".fields, 0..) |field, index| {
-                if (bits == @as(u8, 1) << @as(u3, @intCast(index))) break :label "Mouse " ++ comptime titleCase(field.name);
+                if (bits == @as(u8, 1) << @as(
+                    u3,
+                    @intCast(index),
+                )) break :label "Mouse " ++ comptime titleCase(field.name);
             }
             break :label "Mouse Combo";
         },

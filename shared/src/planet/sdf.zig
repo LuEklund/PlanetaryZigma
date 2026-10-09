@@ -15,8 +15,13 @@ pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
     var height: f32 = 0;
     inline for (Field.fields, 0..) |field, index| {
         const shift: f32 = @mod(planet_radius * 137, 1024) + @as(f32, @floatFromInt(index)) * 512;
-        const sample = nz.vec.scale(surface_point, field.frequency * biome.frequency_scale) + @as(nz.Vec3(f32), @splat(shift));
-        height += field.evaluate(noise.simplex3(sample[0], sample[1], sample[2])) * biome.field_scale[index];
+        const sample = nz.vec.scale(
+            surface_point,
+            field.frequency * biome.frequency_scale,
+        ) + @as(nz.Vec3(f32), @splat(shift));
+        height += field.evaluate(
+            noise.simplex3(sample[0], sample[1], sample[2]),
+        ) * biome.field_scale[index];
     }
     return nz.vec.length(position) - planet_radius - height * height_scale;
 }
@@ -24,9 +29,18 @@ pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
 pub fn gradient(position: nz.Vec3(f32), planet_radius: f32) nz.Vec3(f32) {
     const epsilon: f32 = 0.05;
     return .{
-        (sdf(position + nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius) - sdf(position - nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius)) / (2 * epsilon),
-        (sdf(position + nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius) - sdf(position - nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius)) / (2 * epsilon),
-        (sdf(position + nz.Vec3(f32){ 0, 0, epsilon }, planet_radius) - sdf(position - nz.Vec3(f32){ 0, 0, epsilon }, planet_radius)) / (2 * epsilon),
+        (sdf(
+            position + nz.Vec3(f32){ epsilon, 0, 0 },
+            planet_radius,
+        ) - sdf(position - nz.Vec3(f32){ epsilon, 0, 0 }, planet_radius)) / (2 * epsilon),
+        (sdf(
+            position + nz.Vec3(f32){ 0, epsilon, 0 },
+            planet_radius,
+        ) - sdf(position - nz.Vec3(f32){ 0, epsilon, 0 }, planet_radius)) / (2 * epsilon),
+        (sdf(
+            position + nz.Vec3(f32){ 0, 0, epsilon },
+            planet_radius,
+        ) - sdf(position - nz.Vec3(f32){ 0, 0, epsilon }, planet_radius)) / (2 * epsilon),
     };
 }
 

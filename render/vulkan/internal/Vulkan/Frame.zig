@@ -49,18 +49,46 @@ pub fn init(heap: *GpuMemory, device: Device) !Frame {
         .level = .primary,
         .command_buffer_count = 1,
     }, @ptrCast(&command_buffer));
-    const storage: vk.BufferUsageFlags = .{ .storage_buffer_bit = true, .shader_device_address_bit = true };
-    const uniform: vk.BufferUsageFlags = .{ .uniform_buffer_bit = true, .storage_buffer_bit = true, .shader_device_address_bit = true };
+    const storage: vk.BufferUsageFlags = .{
+        .storage_buffer_bit = true,
+        .shader_device_address_bit = true,
+    };
+    const uniform: vk.BufferUsageFlags = .{
+        .uniform_buffer_bit = true,
+        .storage_buffer_bit = true,
+        .shader_device_address_bit = true,
+    };
     return .{
         .command_buffer = command_buffer,
         .swapchain_semaphore = try device.proxy.createSemaphore(&.{}, null),
-        .render_fence = try device.proxy.createFence(&.{ .flags = .{ .signaled_bit = true } }, null),
+        .render_fence = try device.proxy.createFence(
+            &.{ .flags = .{ .signaled_bit = true } },
+            null,
+        ),
         .gpu_scene = try .init(device, heap, GPUScene, 1, uniform),
-        .debug_vertex_buffer = try .init(device, heap, DebugVertex, DrawList.max_lines * 2, storage),
+        .debug_vertex_buffer = try .init(
+            device,
+            heap,
+            DebugVertex,
+            DrawList.max_lines * 2,
+            storage,
+        ),
         .emitter_buffer = try .init(device, heap, GPUEmitter, DrawList.max_emitters, storage),
         .joint_buffer = try .init(device, heap, [16]f32, DrawList.max_joint_matrices, uniform),
-        .dvui_vertex_buffer = try .init(device, heap, DrawList.DvuiVertex, DrawList.max_dvui_vertices, storage),
-        .dvui_index_buffer = try .init(device, heap, u32, DrawList.max_dvui_indices, .{ .index_buffer_bit = true }),
+        .dvui_vertex_buffer = try .init(
+            device,
+            heap,
+            DrawList.DvuiVertex,
+            DrawList.max_dvui_vertices,
+            storage,
+        ),
+        .dvui_index_buffer = try .init(
+            device,
+            heap,
+            u32,
+            DrawList.max_dvui_indices,
+            .{ .index_buffer_bit = true },
+        ),
     };
 }
 

@@ -18,23 +18,53 @@ pub fn update(world: *World, options: *Options, is_host: bool) Request {
     const column_height = area.h - bottom_height - 3 * margin;
     var request: Request = .none;
 
-    if (survivorColumn(options, .{ .x = margin, .y = margin, .w = column_width, .h = column_height })) |survivor| {
+    if (survivorColumn(
+        options,
+        .{ .x = margin, .y = margin, .w = column_width, .h = column_height },
+    )) |survivor| {
         request = .{ .lobby = .{ .survivor = survivor } };
     }
-    const right: dvui.Rect = .{ .x = area.w - column_width - margin, .y = margin, .w = column_width, .h = column_height };
-    if (infoColumn(world, is_host, right)) |setting| request = .{ .lobby = .{ .difficulty = setting } };
-    playerList(world, .{ .x = margin, .y = area.h - bottom_height - margin, .w = column_width, .h = bottom_height });
+    const right: dvui.Rect = .{
+        .x = area.w - column_width - margin,
+        .y = margin,
+        .w = column_width,
+        .h = column_height,
+    };
+    if (infoColumn(world, is_host, right)) |setting| request = .{
+        .lobby = .{ .difficulty = setting },
+    };
+    playerList(
+        world,
+        .{
+            .x = margin,
+            .y = area.h - bottom_height - margin,
+            .w = column_width,
+            .h = bottom_height,
+        },
+    );
 
     const ready = if (world.getPtr(world.player_id)) |player| player.ready else false;
     var ready_box = dvui.box(@src(), .{ .dir = .vertical }, .{
-        .rect = .{ .x = right.x, .y = area.h - bottom_height - margin, .w = column_width, .h = bottom_height },
+        .rect = .{
+            .x = right.x,
+            .y = area.h - bottom_height - margin,
+            .w = column_width,
+            .h = bottom_height,
+        },
     });
     defer ready_box.deinit();
     const ready_label = if (ready) "READY  (click to cancel)" else "READY";
     if (style.button(@src(), ready_label, 0, .{ .w = column_width, .h = 72 }, ready, true)) {
         request = .{ .lobby = .{ .ready = !ready } };
     }
-    if (style.button(@src(), "Leave", 0, .{ .w = column_width, .h = 40 }, false, true)) request = .main_menu;
+    if (style.button(
+        @src(),
+        "Leave",
+        0,
+        .{ .w = column_width, .h = 40 },
+        false,
+        true,
+    )) request = .main_menu;
     return request;
 }
 
@@ -48,7 +78,16 @@ fn panel(src: std.builtin.SourceLocation, rect: dvui.Rect) *dvui.BoxWidget {
 }
 
 fn heading(src: std.builtin.SourceLocation, text: []const u8) void {
-    dvui.labelNoFmt(src, text, .{}, .{ .font = style.font(16), .color_text = .fromColor(style.text_dim), .padding = .{ .h = 6 } });
+    dvui.labelNoFmt(
+        src,
+        text,
+        .{},
+        .{
+            .font = style.font(16),
+            .color_text = .fromColor(style.text_dim),
+            .padding = .{ .h = 6 },
+        },
+    );
 }
 
 fn survivorColumn(options: *Options, rect: dvui.Rect) ?shared.Survivor.Kind {
@@ -59,7 +98,14 @@ fn survivorColumn(options: *Options, rect: dvui.Rect) ?shared.Survivor.Kind {
     for (std.enums.values(shared.Survivor.Kind), 0..) |kind, index| {
         const selected = options.survivor == kind;
         const name = shared.Survivor.get(kind).name;
-        if (style.button(@src(), name, index, .{ .w = rect.w - 28, .h = 44 }, selected, true) and !selected) {
+        if (style.button(
+            @src(),
+            name,
+            index,
+            .{ .w = rect.w - 28, .h = 44 },
+            selected,
+            true,
+        ) and !selected) {
             options.survivor = kind;
             picked = kind;
         }
@@ -71,7 +117,12 @@ fn survivorColumn(options: *Options, rect: dvui.Rect) ?shared.Survivor.Kind {
 }
 
 fn overview(survivor: *const shared.Survivor) void {
-    dvui.labelNoFmt(@src(), survivor.name, .{}, .{ .font = style.font(36), .color_text = .fromColor(style.text), .padding = .{ .y = 10 } });
+    dvui.labelNoFmt(
+        @src(),
+        survivor.name,
+        .{},
+        .{ .font = style.font(36), .color_text = .fromColor(style.text), .padding = .{ .y = 10 } },
+    );
     style.wrapped(@src(), survivor.description, 17, style.text_dim);
     var stats_buffer: [96]u8 = undefined;
     const stats = std.fmt.bufPrint(&stats_buffer, "Health {d:.0}   Base Damage {d:.1}   Speed {d:.0}", .{
@@ -97,22 +148,56 @@ fn abilityList(survivor: *const shared.Survivor) void {
             .padding = .all(10),
         });
         defer row.deinit();
-        dvui.labelNoFmt(@src(), info.name, .{}, .{ .font = style.font(22), .color_text = .fromColor(style.text) });
+        dvui.labelNoFmt(
+            @src(),
+            info.name,
+            .{},
+            .{ .font = style.font(22), .color_text = .fromColor(style.text) },
+        );
         var line_buffer: [96]u8 = undefined;
-        const line = abilityLine(&line_buffer, slot_label, survivor.base_stats.get(cooldownStat(slot)), assigned, info);
-        dvui.labelNoFmt(@src(), line, .{}, .{ .font = style.font(15), .color_text = .fromColor(style.accent) });
+        const line = abilityLine(
+            &line_buffer,
+            slot_label,
+            survivor.base_stats.get(cooldownStat(slot)),
+            assigned,
+            info,
+        );
+        dvui.labelNoFmt(
+            @src(),
+            line,
+            .{},
+            .{ .font = style.font(15), .color_text = .fromColor(style.accent) },
+        );
         style.wrapped(@src(), info.description, 16, style.text_dim);
     }
 }
 
-fn abilityLine(buffer: []u8, slot_label: []const u8, cooldown: f32, assigned: shared.entity.AssignedSkill, info: shared.skill_info.Info) []const u8 {
+fn abilityLine(
+    buffer: []u8,
+    slot_label: []const u8,
+    cooldown: f32,
+    assigned: shared.entity.AssignedSkill,
+    info: shared.skill_info.Info,
+) []const u8 {
     const percent = assigned.damage_multiplier * 100;
     return switch (info.effect) {
         .damage => if (assigned.hits > 1)
-            std.fmt.bufPrint(buffer, "{s} - {d:.1}s - {d}x{d:.0}% base damage", .{ slot_label, cooldown, assigned.hits, percent })
+            std.fmt.bufPrint(
+                buffer,
+                "{s} - {d:.1}s - {d}x{d:.0}% base damage",
+                .{ slot_label, cooldown, assigned.hits, percent },
+            )
         else
-            std.fmt.bufPrint(buffer, "{s} - {d:.1}s - {d:.0}% base damage", .{ slot_label, cooldown, percent }),
-        .heal => std.fmt.bufPrint(buffer, "{s} - {d:.1}s - heals {d:.0}% max health", .{ slot_label, cooldown, percent }),
+            std.fmt.bufPrint(
+                buffer,
+                "{s} - {d:.1}s - {d:.0}% base damage",
+                .{ slot_label, cooldown, percent },
+            ),
+        .heal => std.fmt.bufPrint(
+            buffer,
+            "{s} - {d:.1}s - heals {d:.0}% max health",
+            .{ slot_label, cooldown, percent },
+        ),
         .none => std.fmt.bufPrint(buffer, "{s} - {d:.1}s", .{ slot_label, cooldown }),
     } catch slot_label;
 }
@@ -140,7 +225,11 @@ fn playerList(world: *World, rect: dvui.Rect) void {
     for (world.entities.values()) |*entity| {
         if (entity.kind != .player) continue;
         const name = if (entity.player_name.slice().len != 0) entity.player_name.slice() else shared.default_player_name;
-        dvui.label(@src(), "{s}  {s}  {s}", .{ if (entity.ready) "[READY]" else "[ ... ]", name, shared.Survivor.get(entity.survivor).name }, .{
+        dvui.label(@src(), "{s}  {s}  {s}", .{
+            if (entity.ready) "[READY]" else "[ ... ]",
+            name,
+            shared.Survivor.get(entity.survivor).name,
+        }, .{
             .id_extra = index,
             .font = style.font(18),
             .color_text = .fromColor(if (entity.ready) style.good else style.text),
@@ -155,7 +244,14 @@ fn difficultyPicker(world: *World, is_host: bool) ?shared.difficulty.Setting {
     for (std.enums.values(shared.difficulty.Setting), 0..) |setting, index| {
         const selected = world.difficulty_setting == setting;
         const enabled = is_host or selected;
-        if (style.button(@src(), setting.label(), index, .{ .w = 80, .h = 44 }, selected, enabled) and is_host and !selected) {
+        if (style.button(
+            @src(),
+            setting.label(),
+            index,
+            .{ .w = 80, .h = 44 },
+            selected,
+            enabled,
+        ) and is_host and !selected) {
             picked = setting;
         }
     }

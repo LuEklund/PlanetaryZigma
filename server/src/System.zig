@@ -48,12 +48,23 @@ pub fn init(self: *System, data: *const Init) !void {
     errdefer self.world.deinit(data.gpa);
     self.clock = .init(data.io);
     self.request_exit = false;
-    try self.network.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
+    try self.network.init(
+        data.gpa,
+        data.io,
+        data.mode,
+        data.host_steam_id,
+        data.log_connection_status,
+    );
     errdefer self.network.deinit() catch {};
     self.physics = .init();
     errdefer self.physics.deinit();
     self.viewer = undefined;
-    if (build_options.viewer) try self.viewer.init(data.gpa, data.io, data.window, self.world.planet.radiusFloat());
+    if (build_options.viewer) try self.viewer.init(
+        data.gpa,
+        data.io,
+        data.window,
+        self.world.planet.radiusFloat(),
+    );
     errdefer if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
 
     try stage.loadPlace(&self.world, data.gpa, &self.physics, .ship);

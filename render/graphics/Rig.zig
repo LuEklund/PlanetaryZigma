@@ -35,9 +35,18 @@ pub fn init(
     if (spec.look_node_names) |look_node_names| {
         var found: [3]usize = undefined;
         var count: usize = 0;
-        inline for (.{ look_node_names.spine, look_node_names.neck, look_node_names.head }) |maybe_node_name| {
+        inline for (.{
+            look_node_names.spine,
+            look_node_names.neck,
+            look_node_names.head,
+        }) |maybe_node_name| {
             if (maybe_node_name) |node_name| {
-                found[count] = model.nodeIndex(node_name) orelse return reportMissing(model, "look node", node_name, spec);
+                found[count] = model.nodeIndex(node_name) orelse return reportMissing(
+                    model,
+                    "look node",
+                    node_name,
+                    spec,
+                );
                 count += 1;
             }
         }
@@ -45,7 +54,12 @@ pub fn init(
     }
 
     if (spec.overlay_root_name) |root_name| {
-        const overlay_root = model.nodeIndex(root_name) orelse return reportMissing(model, "overlay root", root_name, spec);
+        const overlay_root = model.nodeIndex(root_name) orelse return reportMissing(
+            model,
+            "overlay root",
+            root_name,
+            spec,
+        );
         const overlay_mask = try gpa.alloc(bool, model.nodes.items.len);
         for (model.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
             masked.* = node_index == overlay_root or if (node.parent) |parent| overlay_mask[parent] else false;
@@ -66,7 +80,11 @@ pub fn init(
     for (kind_spec.skills.values, &self.action_clips.values) |maybe_assigned, *action_clip| {
         const assigned = maybe_assigned orelse continue;
         const clip_name = assigned.clip orelse continue;
-        action_clip.* = model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, spec);
+        action_clip.* = model.clipIndex(clip_name) orelse return reportMissingClip(
+            model,
+            clip_name,
+            spec,
+        );
     }
 }
 
@@ -76,14 +94,23 @@ pub fn deinit(self: *Rig, gpa: std.mem.Allocator) void {
     self.* = .empty;
 }
 
-fn reportMissing(model: *const Model, what: []const u8, name: []const u8, spec: shared.entity.ModelSpec) error{NodeNotFound} {
+fn reportMissing(
+    model: *const Model,
+    what: []const u8,
+    name: []const u8,
+    spec: shared.entity.ModelSpec,
+) error{NodeNotFound} {
     std.log.err("{s} \"{s}\" not found in {s}; nodes in this file:", .{ what, name, spec.path });
     for (model.node_names) |node_name| std.log.err("  \"{s}\"", .{node_name});
     std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
     return error.NodeNotFound;
 }
 
-fn reportMissingClip(model: *const Model, name: []const u8, spec: shared.entity.ModelSpec) error{ClipNotFound} {
+fn reportMissingClip(
+    model: *const Model,
+    name: []const u8,
+    spec: shared.entity.ModelSpec,
+) error{ClipNotFound} {
     std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path });
     for (model.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
     std.log.err("in the model spec assign null or one of these", .{});

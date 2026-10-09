@@ -111,7 +111,9 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
             },
         };
 
-        const result = xi_procs.XISelectEvents.?(display, window_handle, &event_masks, @intCast(event_masks.len));
+        const result = xi_procs.XISelectEvents.?(display, window_handle, &event_masks, @intCast(
+            event_masks.len,
+        ));
         if (result != 0) return error.XInputSelectEvents;
     }
 
@@ -219,19 +221,30 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
         switch (event.type) {
             .client_message => {
                 const client = event.client;
-                if (client.data.l[0] == @intFromEnum(self.atoms.WM_DELETE_WINDOW)) window.should_close = true;
+                if (client.data.l[0] == @intFromEnum(
+                    self.atoms.WM_DELETE_WINDOW,
+                )) window.should_close = true;
             },
 
             .expose => {
                 const expose = event.expose;
-                const size: Window.Size = .{ .width = @intCast(expose.width), .height = @intCast(expose.height) };
+                const size: Window.Size = .{
+                    .width = @intCast(expose.width),
+                    .height = @intCast(expose.height),
+                };
 
                 window.size = size;
             },
             .configure_notify => {
                 const configure = event.configure;
-                const size: Window.Size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) };
-                const position: Window.Position = .{ .x = @intCast(configure.x), .y = @intCast(configure.y) };
+                const size: Window.Size = .{
+                    .width = @intCast(configure.width),
+                    .height = @intCast(configure.height),
+                };
+                const position: Window.Position = .{
+                    .x = @intCast(configure.x),
+                    .y = @intCast(configure.y),
+                };
                 window.size = size;
                 window.position = position;
             },
@@ -1044,7 +1057,11 @@ const xlib = struct {
         XMapWindow: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
         XUnmapWindow: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
-        XSelectInput: ?*const fn (*Display, window: xlib.Window, event_mask: Event.Mask) callconv(.c) c_int,
+        XSelectInput: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            event_mask: Event.Mask,
+        ) callconv(.c) c_int,
 
         XChangeProperty: ?*const fn (
             *Display,
@@ -1057,9 +1074,17 @@ const xlib = struct {
             nelements: c_int,
         ) callconv(.c) c_int,
 
-        XSetWMNormalHints: ?*const fn (*Display, window: xlib.Window, hints: *SizeHints) callconv(.c) void,
+        XSetWMNormalHints: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            hints: *SizeHints,
+        ) callconv(.c) void,
 
-        XIconifyWindow: ?*const fn (*Display, window: xlib.Window, screen_number: c_int) callconv(.c) c_int,
+        XIconifyWindow: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            screen_number: c_int,
+        ) callconv(.c) c_int,
 
         XNextEvent: ?*const fn (*Display, event_return: *Event) callconv(.c) c_int,
         XPending: ?*const fn (*Display) callconv(.c) c_int,
@@ -1082,7 +1107,12 @@ const xlib = struct {
             only_if_exists: Bool,
         ) callconv(.c) Atom,
 
-        XSetWMProtocols: ?*const fn (*Display, window: xlib.Window, protocols: *Atom, count: c_int) callconv(.c) c_int,
+        XSetWMProtocols: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            protocols: *Atom,
+            count: c_int,
+        ) callconv(.c) c_int,
 
         XLookupKeysym: ?*const fn (event_key: *Event.Key, index: c_int) callconv(.c) KeySym,
 
@@ -1134,7 +1164,11 @@ const xlib = struct {
         ) callconv(.c) Cursor,
         XFreeCursor: ?*const fn (*Display, cursor: Cursor) callconv(.c) void,
 
-        XDefineCursor: ?*const fn (*Display, window: xlib.Window, cursor: Cursor) callconv(.c) c_int,
+        XDefineCursor: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            cursor: Cursor,
+        ) callconv(.c) c_int,
         XUndefineCursor: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
         XQueryPointer: ?*const fn (
@@ -1182,7 +1216,10 @@ const xlib = struct {
             inline for (std.meta.fields(ProcTable)) |field| {
                 if (field.type == @FieldType(ProcTable, "lib")) continue;
 
-                @field(table, field.name) = table.lib.lookup(std.meta.Child(field.type), field.name);
+                @field(table, field.name) = table.lib.lookup(
+                    std.meta.Child(field.type),
+                    field.name,
+                );
             }
 
             return table;
@@ -1457,10 +1494,23 @@ const xi = struct {
     const ProcTable = struct {
         lib: ?std.DynLib = undefined,
 
-        XIQueryVersion: ?*const fn (*xlib.Display, major_version: *c_int, minor_version: *c_int) callconv(.c) c_int,
-        XIQueryDevice: ?*const fn (*xlib.Display, device_id: c_int, device_count: *c_int) callconv(.c) ?*DeviceInfo,
+        XIQueryVersion: ?*const fn (
+            *xlib.Display,
+            major_version: *c_int,
+            minor_version: *c_int,
+        ) callconv(.c) c_int,
+        XIQueryDevice: ?*const fn (
+            *xlib.Display,
+            device_id: c_int,
+            device_count: *c_int,
+        ) callconv(.c) ?*DeviceInfo,
         XIFreeDeviceInfo: ?*const fn (devices: *DeviceInfo) callconv(.c) void,
-        XISelectEvents: ?*const fn (*xlib.Display, window: xlib.Window, masks: [*]Event.Mask, num_masks: c_int) callconv(.c) c_int,
+        XISelectEvents: ?*const fn (
+            *xlib.Display,
+            window: xlib.Window,
+            masks: [*]Event.Mask,
+            num_masks: c_int,
+        ) callconv(.c) c_int,
 
         fn load() std.DynLib.Error!ProcTable {
             var table: ProcTable = undefined;
@@ -1472,7 +1522,10 @@ const xi = struct {
             inline for (std.meta.fields(ProcTable)) |field| {
                 if (field.type == @FieldType(ProcTable, "lib")) continue;
 
-                @field(table, field.name) = table.lib.?.lookup(std.meta.Child(field.type), field.name);
+                @field(table, field.name) = table.lib.?.lookup(
+                    std.meta.Child(field.type),
+                    field.name,
+                );
             }
 
             return table;

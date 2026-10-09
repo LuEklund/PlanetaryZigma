@@ -8,8 +8,16 @@ pub const push_stages: vk.ShaderStageFlags = .{ .vertex_bit = true, .fragment_bi
 
 handle: vk.PipelineLayout,
 
-pub fn init(device: Device, push_constant_size: u32, descriptor_set_layouts: []const vk.DescriptorSetLayout) !PipelineLayout {
-    const range = [_]vk.PushConstantRange{.{ .stage_flags = push_stages, .offset = 0, .size = push_constant_size }};
+pub fn init(
+    device: Device,
+    push_constant_size: u32,
+    descriptor_set_layouts: []const vk.DescriptorSetLayout,
+) !PipelineLayout {
+    const range = [_]vk.PushConstantRange{.{
+        .stage_flags = push_stages,
+        .offset = 0,
+        .size = push_constant_size,
+    }};
     const handle = try device.proxy.createPipelineLayout(&.{
         .set_layout_count = @intCast(descriptor_set_layouts.len),
         .p_set_layouts = descriptor_set_layouts.ptr,

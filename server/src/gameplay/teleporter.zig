@@ -18,13 +18,18 @@ pub fn updateTeleporter(world: *World) void {
     for (world.players.items) |player_id| {
         const player = world.getPtr(player_id) orelse continue;
         living_players += 1;
-        if (nz.vec.distance(player.transform.position, entity.transform.position) < shared.teleporter.charge_distance) players_in_zone += 1;
+        if (nz.vec.distance(
+            player.transform.position,
+            entity.transform.position,
+        ) < shared.teleporter.charge_distance) players_in_zone += 1;
     }
     if (teleporter.state == .active and players_in_zone > 0) {
         teleporter.charged += world.delta_time * charge_per_second * players_in_zone / living_players;
         teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
     }
     if (old_teleporter_charge != teleporter.charged) {
-        world.client_updates.appendAssumeCapacity(.{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } });
+        world.client_updates.appendAssumeCapacity(
+            .{ .event = .{ .teleporter_charge = @floatCast(teleporter.charged) } },
+        );
     }
 }

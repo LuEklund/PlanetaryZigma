@@ -62,8 +62,17 @@ pub fn deinit(self: Surface, instance: Instance) void {
     instance.proxy.destroySurfaceKHR(self.handle, null);
 }
 
-pub fn getFormat(self: Surface, gpa: std.mem.Allocator, instance: Instance, physical_device: device.Physical) !vk.SurfaceFormatKHR {
-    const formats = try instance.proxy.getPhysicalDeviceSurfaceFormatsAllocKHR(physical_device.handle, self.handle, gpa);
+pub fn getFormat(
+    self: Surface,
+    gpa: std.mem.Allocator,
+    instance: Instance,
+    physical_device: device.Physical,
+) !vk.SurfaceFormatKHR {
+    const formats = try instance.proxy.getPhysicalDeviceSurfaceFormatsAllocKHR(
+        physical_device.handle,
+        self.handle,
+        gpa,
+    );
     defer gpa.free(formats);
     for (formats) |format| {
         if (format.format == .r8g8b8a8_unorm or format.format == .b8g8r8a8_unorm) return format;
@@ -71,12 +80,29 @@ pub fn getFormat(self: Surface, gpa: std.mem.Allocator, instance: Instance, phys
     return formats[0];
 }
 
-pub fn getExtent(self: Surface, instance: Instance, physical_device: device.Physical, width: u32, height: u32) !vk.Extent2D {
-    const capabilities = try instance.proxy.getPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, self.handle);
-    if (capabilities.current_extent.width != std.math.maxInt(u32) and capabilities.current_extent.height != std.math.maxInt(u32))
+pub fn getExtent(
+    self: Surface,
+    instance: Instance,
+    physical_device: device.Physical,
+    width: u32,
+    height: u32,
+) !vk.Extent2D {
+    const capabilities = try instance.proxy.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        physical_device.handle,
+        self.handle,
+    );
+    if (capabilities.current_extent.width != std.math.maxInt(
+        u32,
+    ) and capabilities.current_extent.height != std.math.maxInt(u32))
         return capabilities.current_extent;
     return .{
-        .width = @max(capabilities.min_image_extent.width, @min(capabilities.max_image_extent.width, width)),
-        .height = @max(capabilities.min_image_extent.height, @min(capabilities.max_image_extent.height, height)),
+        .width = @max(
+            capabilities.min_image_extent.width,
+            @min(capabilities.max_image_extent.width, width),
+        ),
+        .height = @max(
+            capabilities.min_image_extent.height,
+            @min(capabilities.max_image_extent.height, height),
+        ),
     };
 }

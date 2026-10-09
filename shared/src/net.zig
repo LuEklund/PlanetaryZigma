@@ -61,14 +61,19 @@ pub const Connect = struct {
 
 pub const protocol_version: u32 = version: {
     @setEvalBranchQuota(100_000);
-    break :version std.hash.Fnv1a_32.hash(protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version);
+    break :version std.hash.Fnv1a_32.hash(
+        protocolDescription(ClientPacket) ++ protocolDescription(ServerPacket) ++ root.version,
+    );
 };
 
 fn protocolDescription(comptime T: type) []const u8 {
     return switch (@typeInfo(T)) {
         .optional => |optional| "?" ++ protocolDescription(optional.child),
         .pointer => |pointer| "[]" ++ protocolDescription(pointer.child),
-        .array => |array| std.fmt.comptimePrint("[{d}]", .{array.len}) ++ protocolDescription(array.child),
+        .array => |array| std.fmt.comptimePrint(
+            "[{d}]",
+            .{array.len},
+        ) ++ protocolDescription(array.child),
         .@"enum" => |@"enum"| description: {
             var description: []const u8 = "e" ++ @typeName(@"enum".tag_type) ++ "{";
             for (@"enum".fields) |field| description = description ++ field.name ++ ",";
@@ -76,12 +81,16 @@ fn protocolDescription(comptime T: type) []const u8 {
         },
         .@"struct" => |@"struct"| description: {
             var description: []const u8 = "s{";
-            for (@"struct".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            for (@"struct".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(
+                field.type,
+            ) ++ ",";
             break :description description ++ "}";
         },
         .@"union" => |@"union"| description: {
             var description: []const u8 = "u{";
-            for (@"union".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(field.type) ++ ",";
+            for (@"union".fields) |field| description = description ++ field.name ++ ":" ++ protocolDescription(
+                field.type,
+            ) ++ ",";
             break :description description ++ "}";
         },
         else => @typeName(T),
@@ -272,13 +281,20 @@ pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void 
 
 pub fn parse(comptime Packet: type, reader: *std.Io.Reader) !Packet {
     const Opcode = std.meta.Tag(Packet);
-    const opcode = std.enums.fromInt(Opcode, try reader.takeInt(u16, endian)) orelse return error.InvalidOpcode;
+    const opcode = std.enums.fromInt(
+        Opcode,
+        try reader.takeInt(u16, endian),
+    ) orelse return error.InvalidOpcode;
     switch (opcode) {
         inline else => |tag| return try parseFromOpcode(Packet, reader, tag),
     }
 }
 
-fn parseFromOpcode(comptime Packet: type, reader: *std.Io.Reader, comptime opcode: std.meta.Tag(Packet)) !Packet {
+fn parseFromOpcode(
+    comptime Packet: type,
+    reader: *std.Io.Reader,
+    comptime opcode: std.meta.Tag(Packet),
+) !Packet {
     const tag_name = @tagName(opcode);
     const T = @FieldType(Packet, tag_name);
     const out = try unmarshal(null, reader, T);
@@ -323,7 +339,9 @@ fn marshal(writer: *std.Io.Writer, value: anytype) !void {
             },
         },
         .enum_literal => try writer.writeAll(@tagName(value)),
-        else => @compileError("can not serialize type of " ++ @typeName(T) ++ " aka " ++ @tagName(@typeInfo(T))),
+        else => @compileError(
+            "can not serialize type of " ++ @typeName(T) ++ " aka " ++ @tagName(@typeInfo(T)),
+        ),
     }
 }
 
@@ -343,13 +361,20 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         .vector => |vector| out: {
             var val: Out = @splat(0);
-            inline for (0..vector.len) |i| val[i] = try unmarshal(opt_allocator, reader, vector.child);
+            inline for (0..vector.len) |i| val[i] = try unmarshal(
+                opt_allocator,
+                reader,
+                vector.child,
+            );
             break :out val;
         },
         .@"struct" => {
             var out: Out = undefined;
 
-            inline for (@typeInfo(Out).@"struct".fields) |field| @field(out, field.name) = switch (@typeInfo(field.type)) {
+            inline for (@typeInfo(Out).@"struct".fields) |field| @field(
+                out,
+                field.name,
+            ) = switch (@typeInfo(field.type)) {
                 .bool => try reader.takeByte() == 1,
                 .int => try reader.takeInt(field.type, endian),
                 .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
@@ -360,7 +385,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     if (ptr.child == u8) {
                         const slice = try reader.take(element_len);
                         try reader.discardAll((4 - (slice.len % 4)) % 4);
-                        break :slice if (opt_allocator) |allocator| try allocator.dupe(u8, slice) else slice;
+                        break :slice if (opt_allocator) |allocator| try allocator.dupe(
+                            u8,
+                            slice,
+                        ) else slice;
                     } else {
                         if (opt_allocator) |allocator| {
                             const slice = try allocator.alloc(ptr.child, element_len);
@@ -378,7 +406,9 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                         }
                     }
                 },
-                .array => |array| if (array.child == u8) (try reader.takeArray(array.len)).* else array: {
+                .array => |array| if (array.child == u8) (try reader.takeArray(
+                    array.len,
+                )).* else array: {
                     var val: field.type = std.mem.zeroes(field.type);
                     for (0..array.len) |i| {
                         val[i] = try unmarshal(opt_allocator, reader, array.child);
@@ -394,7 +424,10 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                 },
                 .@"enum" => e: {
                     break :e reader.takeEnum(field.type, endian) catch |err| {
-                        std.log.err("{s} {s} {s}", .{ @errorName(err), @typeName(Out), field.name });
+                        std.log.err(
+                            "{s} {s} {s}",
+                            .{ @errorName(err), @typeName(Out), field.name },
+                        );
                         return err;
                     };
                 },
@@ -403,17 +436,28 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
                     .@"packed" => try reader.takeStruct(field.type, endian),
                 },
                 .@"union" => try unmarshal(opt_allocator, reader, field.type),
-                else => @compileError("can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(@typeInfo(field.type))),
+                else => @compileError(
+                    "can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(
+                        @typeInfo(field.type),
+                    ),
+                ),
             };
             return out;
         },
         .@"union" => |u| {
             const Tag = u.tag_type orelse @compileError("can only deserialize tagged unions");
-            const tag = std.enums.fromInt(Tag, try reader.takeInt(u16, endian)) orelse return error.InvalidTag;
+            const tag = std.enums.fromInt(
+                Tag,
+                try reader.takeInt(u16, endian),
+            ) orelse return error.InvalidTag;
             switch (tag) {
                 inline else => |t| {
                     const name = @tagName(t);
-                    return @unionInit(Out, name, try unmarshal(opt_allocator, reader, @FieldType(Out, name)));
+                    return @unionInit(
+                        Out,
+                        name,
+                        try unmarshal(opt_allocator, reader, @FieldType(Out, name)),
+                    );
                 },
             }
         },

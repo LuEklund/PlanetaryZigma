@@ -114,7 +114,10 @@ fn applyReloads(self: *Animator, models: *Models) !void {
             const instance = if (slot.*) |*live| live else continue;
             if (instance.model != file_index) continue;
             if (instance.skeleton) |*skeleton| skeleton.deinit(self.gpa);
-            instance.skeleton = if (reloaded_model.isSkinned()) try .init(self.gpa, reloaded_model) else null;
+            instance.skeleton = if (reloaded_model.isSkinned()) try .init(
+                self.gpa,
+                reloaded_model,
+            ) else null;
         }
     }
     models.reloaded.clearRetainingCapacity();
@@ -131,7 +134,12 @@ pub fn clear(self: *Animator) void {
 fn animate(self: *Animator, delta_time: f32, models: *Models) void {
     for (self.instances.items) |*slot| {
         const instance = if (slot.*) |*live| live else continue;
-        playAnimation(delta_time, instance, resolveModel(models, instance), resolveRig(models, instance));
+        playAnimation(
+            delta_time,
+            instance,
+            resolveModel(models, instance),
+            resolveRig(models, instance),
+        );
     }
 }
 
@@ -179,15 +187,28 @@ fn playAnimation(delta_time: f32, instance: *Instance, model: *const Model, rig:
         }
     }
     if (skeleton.overlay) |overlay| {
-        sampleClip(skeleton.nodes, model.clips[overlay.active], overlay.current_time, rig.overlay_mask);
+        sampleClip(
+            skeleton.nodes,
+            model.clips[overlay.active],
+            overlay.current_time,
+            rig.overlay_mask,
+        );
     }
     if (skeleton.fade_time > 0) {
         skeleton.fade_time -= delta_time;
         const alpha = @max(skeleton.fade_time, 0) / Instance.fade_duration;
         for (skeleton.nodes, skeleton.fade_joints) |*node, fade_joint| {
-            node.translation = std.math.lerp(node.translation, fade_joint.translation, @as(nz.Vec3(f32), @splat(alpha)));
+            node.translation = std.math.lerp(
+                node.translation,
+                fade_joint.translation,
+                @as(nz.Vec3(f32), @splat(alpha)),
+            );
             node.rotation = nz.Quat(f32).slerp(node.rotation, fade_joint.rotation, alpha);
-            node.scale = std.math.lerp(node.scale, fade_joint.scale, @as(nz.Vec3(f32), @splat(alpha)));
+            node.scale = std.math.lerp(
+                node.scale,
+                fade_joint.scale,
+                @as(nz.Vec3(f32), @splat(alpha)),
+            );
         }
     }
     var saved_look_rotations: [3]nz.Quat(f32) = undefined;
@@ -246,8 +267,18 @@ fn sampleClip(nodes: []Node, animation: AnimationClip, time: f32, mask: ?[]const
                         node.translation = .{ translation[0], translation[1], translation[2] };
                     },
                     .rotation => node.rotation = nz.Quat(f32).slerp(
-                        .{ .w = sampler_out[3], .x = sampler_out[0], .y = sampler_out[1], .z = sampler_out[2] },
-                        .{ .w = sampler_out_next[3], .x = sampler_out_next[0], .y = sampler_out_next[1], .z = sampler_out_next[2] },
+                        .{
+                            .w = sampler_out[3],
+                            .x = sampler_out[0],
+                            .y = sampler_out[1],
+                            .z = sampler_out[2],
+                        },
+                        .{
+                            .w = sampler_out_next[3],
+                            .x = sampler_out_next[0],
+                            .y = sampler_out_next[1],
+                            .z = sampler_out_next[2],
+                        },
                         interpolate_value,
                     ),
                     .scale => {

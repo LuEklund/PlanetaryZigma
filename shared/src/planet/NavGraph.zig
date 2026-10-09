@@ -28,7 +28,10 @@ pub const neighbor_offsets = [max_neighbor_count]nz.Vec3(i32){
 pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk) !NavGraph {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const owned: Chunk.CellRegion = .{ .min = Chunk.min(chunk.coord), .max = Chunk.max(chunk.coord) };
+    const owned: Chunk.CellRegion = .{
+        .min = Chunk.min(chunk.coord),
+        .max = Chunk.max(chunk.coord),
+    };
 
     var nav_graph: NavGraph = try prepare(gpa, chunk, owned);
     errdefer nav_graph.deinit(gpa);
@@ -97,7 +100,12 @@ fn link(self: *NavGraph, chunk: *const Chunk, cell_a: nz.Vec3(i32), cell_b: nz.V
     self.linkDirected(chunk, cell_b, cell_a);
 }
 
-fn linkDirected(self: *NavGraph, chunk: *const Chunk, from_cell: nz.Vec3(i32), to_cell: nz.Vec3(i32)) void {
+fn linkDirected(
+    self: *NavGraph,
+    chunk: *const Chunk,
+    from_cell: nz.Vec3(i32),
+    to_cell: nz.Vec3(i32),
+) void {
     const from_index = self.cells.getIndex(from_cell) orelse return;
     const offset = to_cell - from_cell;
     const slot = for (neighbor_offsets, 0..) |candidate, candidate_slot| {
@@ -110,7 +118,9 @@ fn linkDirected(self: *NavGraph, chunk: *const Chunk, from_cell: nz.Vec3(i32), t
     const step = from_position - to_position;
     const distance = nz.vec.length(step);
     const slope = nz.vec.dot(nz.vec.scale(step, 1.0 / distance), nz.vec.normalize(to_position));
-    self.neighbors[entry_index] = if (self.cells.getIndex(to_cell)) |to_index| @enumFromInt(to_index) else .boundary_edge;
+    self.neighbors[entry_index] = if (self.cells.getIndex(to_cell)) |to_index| @enumFromInt(
+        to_index,
+    ) else .boundary_edge;
     const steep_penalty: f32 = if (slope > max_walkable_slope) 50 else 1;
     self.weights[entry_index] = distance * (1 + @max(0, slope)) * steep_penalty;
 }

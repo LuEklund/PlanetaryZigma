@@ -16,8 +16,12 @@ pub fn logFn(
     defer std.debug.unlockStderr();
     if (io) |clock_io| {
         const nanoseconds = std.Io.Timestamp.now(clock_io, .real).nanoseconds;
-        const day_seconds: u64 = @intCast(@mod(@divFloor(nanoseconds, std.time.ns_per_s), std.time.s_per_day));
-        const milliseconds: u64 = @intCast(@mod(@divFloor(nanoseconds, std.time.ns_per_ms), std.time.ms_per_s));
+        const day_seconds: u64 = @intCast(
+            @mod(@divFloor(nanoseconds, std.time.ns_per_s), std.time.s_per_day),
+        );
+        const milliseconds: u64 = @intCast(
+            @mod(@divFloor(nanoseconds, std.time.ns_per_ms), std.time.ms_per_s),
+        );
         terminal.writer.print("{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3} ", .{
             @divFloor(day_seconds, std.time.s_per_hour),
             @divFloor(@mod(day_seconds, std.time.s_per_hour), std.time.s_per_min),

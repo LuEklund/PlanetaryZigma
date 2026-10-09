@@ -31,14 +31,25 @@ pub fn init(self: *Audio, root: []const u8) !void {
     self.next_sound = 0;
     self.root = root;
     for (&self.voices) |*voice| voice.alive = false;
-    if (ma.ma_pcm_rb_init(ma.ma_format_f32, channel_count, 2048, null, null, &self.ring) != ma.MA_SUCCESS) return error.MiniaudioRing;
+    if (ma.ma_pcm_rb_init(
+        ma.ma_format_f32,
+        channel_count,
+        2048,
+        null,
+        null,
+        &self.ring,
+    ) != ma.MA_SUCCESS) return error.MiniaudioRing;
     var config: ma.ma_device_config = ma.ma_device_config_init(ma.ma_device_type_playback);
     config.playback.format = ma.ma_format_f32;
     config.playback.channels = channel_count;
     config.sampleRate = sample_rate;
     config.dataCallback = drain;
     config.pUserData = &self.ring;
-    if (ma.ma_device_init(null, &config, &self.device) != ma.MA_SUCCESS) return error.MiniaudioDevice;
+    if (ma.ma_device_init(
+        null,
+        &config,
+        &self.device,
+    ) != ma.MA_SUCCESS) return error.MiniaudioDevice;
     if (ma.ma_device_start(&self.device) != ma.MA_SUCCESS) return error.MiniaudioStart;
 }
 
@@ -53,7 +64,11 @@ pub fn update(self: *Audio) void {
     while (frames_free > 0) {
         var chunk: u32 = frames_free;
         var dst_raw: ?*anyopaque = undefined;
-        if (ma.ma_pcm_rb_acquire_write(&self.ring, &chunk, &dst_raw) != ma.MA_SUCCESS or chunk == 0) return;
+        if (ma.ma_pcm_rb_acquire_write(
+            &self.ring,
+            &chunk,
+            &dst_raw,
+        ) != ma.MA_SUCCESS or chunk == 0) return;
         const dst: []f32 = @as([*]f32, @ptrCast(@alignCast(dst_raw.?)))[0 .. chunk * channel_count];
         @memset(dst, 0);
         for (&self.voices) |*voice| {
@@ -102,12 +117,25 @@ pub fn load(
     options: struct { max_count: u8 = 5 },
 ) !Sound {
     var path_buffer: [256]u8 = undefined;
-    const path: [:0]u8 = try std.fmt.bufPrintZ(&path_buffer, "{s}/sounds/{s}", .{ self.root, file });
+    const path: [:0]u8 = try std.fmt.bufPrintZ(
+        &path_buffer,
+        "{s}/sounds/{s}",
+        .{ self.root, file },
+    );
 
-    var decoder_config: ma.ma_decoder_config = ma.ma_decoder_config_init(ma.ma_format_f32, channel_count, sample_rate);
+    var decoder_config: ma.ma_decoder_config = ma.ma_decoder_config_init(
+        ma.ma_format_f32,
+        channel_count,
+        sample_rate,
+    );
     var frame_count: u64 = undefined;
     var pcm: ?*anyopaque = undefined;
-    if (ma.ma_decode_file(path.ptr, &decoder_config, &frame_count, &pcm) != ma.MA_SUCCESS) return error.MiniaudioDecode;
+    if (ma.ma_decode_file(
+        path.ptr,
+        &decoder_config,
+        &frame_count,
+        &pcm,
+    ) != ma.MA_SUCCESS) return error.MiniaudioDecode;
 
     self.sounds[self.next_sound] = .{
         .max_count = options.max_count,
@@ -119,7 +147,12 @@ pub fn load(
 }
 
 //NOTE: Because of hellshit callbacks this function wont be updated on hotreload.
-fn drain(device: [*c]ma.ma_device, out: ?*anyopaque, _: ?*const anyopaque, frame_count: u32) callconv(.c) void {
+fn drain(
+    device: [*c]ma.ma_device,
+    out: ?*anyopaque,
+    _: ?*const anyopaque,
+    frame_count: u32,
+) callconv(.c) void {
     const ring: *ma.ma_pcm_rb = @ptrCast(@alignCast(device.*.pUserData.?));
     var dst: [*]f32 = @ptrCast(@alignCast(out.?));
     var frames_left: u32 = frame_count;
@@ -127,7 +160,10 @@ fn drain(device: [*c]ma.ma_device, out: ?*anyopaque, _: ?*const anyopaque, frame
         var chunk: u32 = frames_left;
         var src: ?*anyopaque = undefined;
         if (ma.ma_pcm_rb_acquire_read(ring, &chunk, &src) != ma.MA_SUCCESS or chunk == 0) break;
-        @memcpy(dst[0 .. chunk * channel_count], @as([*]f32, @ptrCast(@alignCast(src.?)))[0 .. chunk * channel_count]);
+        @memcpy(
+            dst[0 .. chunk * channel_count],
+            @as([*]f32, @ptrCast(@alignCast(src.?)))[0 .. chunk * channel_count],
+        );
         _ = ma.ma_pcm_rb_commit_read(ring, chunk);
         dst += chunk * channel_count;
         frames_left -= chunk;

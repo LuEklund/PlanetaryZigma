@@ -56,7 +56,11 @@ pub fn decodeAll(gpa: std.mem.Allocator, tasks: []Task) !void {
     }
 
     while (spawned < worker_count) : (spawned += 1) {
-        threads[spawned] = try std.Thread.spawn(.{}, decodeWorker, .{ tasks, spawned, worker_count });
+        threads[spawned] = try std.Thread.spawn(
+            .{},
+            decodeWorker,
+            .{ tasks, spawned, worker_count },
+        );
     }
     for (threads) |thread| thread.join();
 }
@@ -76,7 +80,14 @@ fn decodeTask(task: *Task) void {
     if (task.uri) |uri| {
         task.result.pixels = stb_image.stbi_load(uri, &width, &height, &nr_channel, 4);
     } else if (task.bytes) |bytes| {
-        task.result.pixels = stb_image.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &width, &height, &nr_channel, 4);
+        task.result.pixels = stb_image.stbi_load_from_memory(
+            bytes.ptr,
+            @intCast(bytes.len),
+            &width,
+            &height,
+            &nr_channel,
+            4,
+        );
     } else {
         task.result.err = error.FailedToLoadGLTFImage;
         return;

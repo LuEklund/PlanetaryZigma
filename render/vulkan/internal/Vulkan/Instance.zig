@@ -23,7 +23,10 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
 
     const version: vk.Version = @bitCast(try base.enumerateInstanceVersion());
     if (version.major < 1 or (version.major == 1 and version.minor < 3)) {
-        std.log.err("this game needs Vulkan 1.3+, your driver reports {d}.{d} — please update your graphics drivers", .{ version.major, version.minor });
+        std.log.err(
+            "this game needs Vulkan 1.3+, your driver reports {d}.{d} — please update your graphics drivers",
+            .{ version.major, version.minor },
+        );
         return error.VulkanVersionUnsupported;
     }
 
@@ -34,12 +37,18 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
         const available_name = std.mem.sliceTo(&available_extension.extension_name, 0);
         for (required_extensions) |required_extension| {
             if (!std.mem.eql(u8, std.mem.span(required_extension), available_name)) continue;
-            std.log.info("found ext: [{d}/{d}] {s}", .{ found + 1, required_extensions.len, required_extension });
+            std.log.info(
+                "found ext: [{d}/{d}] {s}",
+                .{ found + 1, required_extensions.len, required_extension },
+            );
             found += 1;
         }
     }
     if (found < required_extensions.len) {
-        std.log.err("your Vulkan driver is missing required instance extensions — please update your graphics drivers", .{});
+        std.log.err(
+            "your Vulkan driver is missing required instance extensions — please update your graphics drivers",
+            .{},
+        );
         return error.ExtensionsNotFound;
     }
 
@@ -49,7 +58,11 @@ pub fn init(gpa: std.mem.Allocator, required_extensions: []const [*:0]const u8) 
     defer enabled_layers.deinit(gpa);
     for (layers) |requested_layer| {
         for (available_layers) |available_layer| {
-            if (std.mem.eql(u8, std.mem.span(requested_layer), std.mem.sliceTo(&available_layer.layer_name, 0))) {
+            if (std.mem.eql(
+                u8,
+                std.mem.span(requested_layer),
+                std.mem.sliceTo(&available_layer.layer_name, 0),
+            )) {
                 try enabled_layers.append(gpa, requested_layer);
                 break;
             }

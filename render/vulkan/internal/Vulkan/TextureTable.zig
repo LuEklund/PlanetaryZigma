@@ -16,7 +16,12 @@ sampler_count: u32,
 empty_view: vk.ImageView,
 empty_sampler: vk.Sampler,
 
-pub fn init(device: Device, pool: vk.DescriptorPool, textures_layout: vk.DescriptorSetLayout, material_layout: vk.DescriptorSetLayout) !TextureTable {
+pub fn init(
+    device: Device,
+    pool: vk.DescriptorPool,
+    textures_layout: vk.DescriptorSetLayout,
+    material_layout: vk.DescriptorSetLayout,
+) !TextureTable {
     const layouts = [_]vk.DescriptorSetLayout{ textures_layout, material_layout };
     var sets: [2]vk.DescriptorSet = undefined;
     try device.proxy.allocateDescriptorSets(&.{
@@ -66,7 +71,12 @@ pub fn defaultSampler(self: *const TextureTable) vk.Sampler {
     return self.samplers[0];
 }
 
-pub fn registerEmpty(self: *TextureTable, device: Device, view: vk.ImageView, sampler: vk.Sampler) void {
+pub fn registerEmpty(
+    self: *TextureTable,
+    device: Device,
+    view: vk.ImageView,
+    sampler: vk.Sampler,
+) void {
     self.empty_view = view;
     self.empty_sampler = sampler;
     for (0..max_textures) |slot| self.write(device, @enumFromInt(slot), view, sampler);
@@ -92,7 +102,12 @@ pub fn addSampler(self: *TextureTable, device: Device, info: vk.SamplerCreateInf
     return sampler;
 }
 
-pub fn addFilterSampler(self: *TextureTable, device: Device, mag_linear: bool, min_linear: bool) !vk.Sampler {
+pub fn addFilterSampler(
+    self: *TextureTable,
+    device: Device,
+    mag_linear: bool,
+    min_linear: bool,
+) !vk.Sampler {
     return self.addSampler(device, .{
         .mag_filter = if (mag_linear) .linear else .nearest,
         .min_filter = if (min_linear) .linear else .nearest,
@@ -112,16 +127,34 @@ pub fn addFilterSampler(self: *TextureTable, device: Device, mag_linear: bool, m
     });
 }
 
-pub fn write(self: *TextureTable, device: Device, texture: contract.TextureHandle, view: vk.ImageView, sampler: vk.Sampler) void {
+pub fn write(
+    self: *TextureTable,
+    device: Device,
+    texture: contract.TextureHandle,
+    view: vk.ImageView,
+    sampler: vk.Sampler,
+) void {
     writeCombinedSampler(device, self.set, 0, @intFromEnum(texture), view, sampler);
 }
 
-pub fn writeSkybox(self: *TextureTable, device: Device, view: vk.ImageView, sampler: vk.Sampler) void {
+pub fn writeSkybox(
+    self: *TextureTable,
+    device: Device,
+    view: vk.ImageView,
+    sampler: vk.Sampler,
+) void {
     device.proxy.deviceWaitIdle() catch {};
     writeCombinedSampler(device, self.skybox_set, 0, 0, view, sampler);
 }
 
-pub fn writeCombinedSampler(device: Device, set: vk.DescriptorSet, binding: u32, array_element: u32, view: vk.ImageView, sampler: vk.Sampler) void {
+pub fn writeCombinedSampler(
+    device: Device,
+    set: vk.DescriptorSet,
+    binding: u32,
+    array_element: u32,
+    view: vk.ImageView,
+    sampler: vk.Sampler,
+) void {
     const image_info = [_]vk.DescriptorImageInfo{.{
         .sampler = sampler,
         .image_view = view,
@@ -140,8 +173,17 @@ pub fn writeCombinedSampler(device: Device, set: vk.DescriptorSet, binding: u32,
     device.proxy.updateDescriptorSets(&descriptor_write, null);
 }
 
-pub fn writeUniformBuffer(device: Device, set: vk.DescriptorSet, binding: u32, buffer: vk.Buffer) void {
-    const buffer_info = [_]vk.DescriptorBufferInfo{.{ .buffer = buffer, .offset = 0, .range = vk.WHOLE_SIZE }};
+pub fn writeUniformBuffer(
+    device: Device,
+    set: vk.DescriptorSet,
+    binding: u32,
+    buffer: vk.Buffer,
+) void {
+    const buffer_info = [_]vk.DescriptorBufferInfo{.{
+        .buffer = buffer,
+        .offset = 0,
+        .range = vk.WHOLE_SIZE,
+    }};
     const descriptor_write = [_]vk.WriteDescriptorSet{.{
         .dst_set = set,
         .dst_binding = binding,

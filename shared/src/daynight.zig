@@ -7,7 +7,12 @@ pub const night_light: [3]f32 = .{ 0.22, 0.26, 0.4 };
 
 pub fn sunDirection(server_seconds: f32) nz.Vec3(f32) {
     const angle = server_seconds / day_length_seconds * std.math.tau + 0.9;
-    return nz.vec.normalize(@as(nz.Vec3(f32), .{ @cos(angle), @sin(angle) * @cos(sun_axis_tilt), @sin(angle) * @sin(sun_axis_tilt) }));
+    return nz.vec.normalize(
+        @as(
+            nz.Vec3(f32),
+            .{ @cos(angle), @sin(angle) * @cos(sun_axis_tilt), @sin(angle) * @sin(sun_axis_tilt) },
+        ),
+    );
 }
 
 pub fn daylight(sun_direction: nz.Vec3(f32), position: nz.Vec3(f32)) f32 {

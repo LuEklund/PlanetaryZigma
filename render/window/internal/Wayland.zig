@@ -128,7 +128,9 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     const surface = try compositor.createSurface();
     const xdg_surface = try wm_base.getXdgSurface(surface);
     const toplevel = try xdg_surface.getToplevel();
-    const toplevel_decoration = if (decoration_manager) |manager| try manager.getToplevelDecoration(toplevel) else null;
+    const toplevel_decoration = if (decoration_manager) |manager| try manager.getToplevelDecoration(
+        toplevel,
+    ) else null;
 
     self.configured = false;
     surface.setListener(*Window, surfaceListener, window);
@@ -235,7 +237,9 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
         @as(u64, @intCast(@divTrunc(1000, self.repeat_key.info.rate))),
     );
 
-    const elapsed_repeats: usize = @intCast((now_ms - self.repeat_key.next_time_ms) / interval_ms + 1);
+    const elapsed_repeats: usize = @intCast(
+        (now_ms - self.repeat_key.next_time_ms) / interval_ms + 1,
+    );
     self.repeat_key.next_time_ms += @as(u64, elapsed_repeats) * interval_ms;
 
     const text = self.repeat_key.buffer[0..self.repeat_key.text_len];
@@ -301,7 +305,11 @@ pub fn setPointerVisible(self: *Wayland, _: *Window, visible: bool) !void {
     self.cursor_shape_device.?.setShape(serial, .default);
 }
 
-pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.Pointer.Constraint) !void {
+pub fn setPointerConstraint(
+    self: *Wayland,
+    window: *Window,
+    constraint: Window.Pointer.Constraint,
+) !void {
     _ = window;
 
     const pointer = self.pointer orelse return;
@@ -371,7 +379,11 @@ const RegistryData = struct {
             .global => |global| inline for (std.meta.fields(RegistryData)) |field| {
                 const GlobalType = std.meta.Child(std.meta.Child(field.type));
                 if (std.mem.orderZ(u8, global.interface, GlobalType.interface.name) == .eq) {
-                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, @min(global.version, GlobalType.interface.version)) catch return;
+                    @field(self.*, field.name) = registry.bind(
+                        global.name,
+                        GlobalType,
+                        @min(global.version, GlobalType.interface.version),
+                    ) catch return;
                     return;
                 }
             },
@@ -414,7 +426,9 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland
 
             if (self.pointer_visible) {
                 if (self.cursor_shape_device == null) {
-                    if (self.cursor_shape_manager) |manager| self.cursor_shape_device = manager.getPointer(pointer) catch null;
+                    if (self.cursor_shape_manager) |manager| self.cursor_shape_device = manager.getPointer(
+                        pointer,
+                    ) catch null;
                 }
                 if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.setShape(
                     enter.serial,
@@ -483,8 +497,21 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
                 xkb.keymap_data = &.{};
             }
 
-            xkb.keymap_data = std.posix.mmap(null, keymap.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, keymap.fd, 0) catch return;
-            xkb.keymap = xkbcommon.Keymap.newFromBuffer(xkb.context, xkb.keymap_data.ptr, xkb.keymap_data.len, .text_v1, .no_flags) orelse return;
+            xkb.keymap_data = std.posix.mmap(
+                null,
+                keymap.size,
+                .{ .READ = true },
+                .{ .TYPE = .PRIVATE },
+                keymap.fd,
+                0,
+            ) catch return;
+            xkb.keymap = xkbcommon.Keymap.newFromBuffer(
+                xkb.context,
+                xkb.keymap_data.ptr,
+                xkb.keymap_data.len,
+                .text_v1,
+                .no_flags,
+            ) orelse return;
             xkb.state = xkbcommon.State.new(xkb.keymap.?) orelse return;
             _ = xkb.state.?.updateMask(
                 xkb.modifiers.depressed,
@@ -504,7 +531,14 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             };
             if (xkb.state == null or xkb.keymap == null) return;
 
-            _ = xkb.state.?.updateMask(modifiers.mods_depressed, modifiers.mods_latched, modifiers.mods_locked, modifiers.group, 0, 0);
+            _ = xkb.state.?.updateMask(
+                modifiers.mods_depressed,
+                modifiers.mods_latched,
+                modifiers.mods_locked,
+                modifiers.group,
+                0,
+                0,
+            );
         },
         .enter => |enter| {
             window.focused = true;
@@ -618,14 +652,24 @@ fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayla
     }
 }
 
-fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.ToplevelDecorationV1.Event, self: *Wayland) void {
+fn zxdgToplevelDecorationListener(
+    _: *zxdg.ToplevelDecorationV1,
+    event: zxdg.ToplevelDecorationV1.Event,
+    self: *Wayland,
+) void {
     self.decoration_mode = event.configure.mode;
 }
 
-fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePointerV1.Event, window: *Window) void {
+fn zwpRelativePointerListener(
+    _: *zwp.RelativePointerV1,
+    event: zwp.RelativePointerV1.Event,
+    window: *Window,
+) void {
     switch (event) {
         .relative_motion => |motion| {
-            if (window.pointer.movement == .position) window.pointer.movement = .{ .relative = .{} };
+            if (window.pointer.movement == .position) window.pointer.movement = .{
+                .relative = .{},
+            };
             window.pointer.movement.relative.dx += motion.dx_unaccel.toDouble();
             window.pointer.movement.relative.dy += motion.dy_unaccel.toDouble();
         },
@@ -647,28 +691,66 @@ const Loader = struct {
     wl_display_create_queue: ?*const fn (display: *wl.Display) callconv(.c) ?*wl.EventQueue = null,
     wl_display_disconnect: ?*const fn (display: *wl.Display) callconv(.c) void = null,
     wl_display_dispatch_pending: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
-    wl_display_dispatch_queue_pending: ?*const fn (display: *wl.Display, queue: *wl.EventQueue) callconv(.c) c_int = null,
-    wl_display_dispatch_queue: ?*const fn (display: *wl.Display, queue: *wl.EventQueue) callconv(.c) c_int = null,
+    wl_display_dispatch_queue_pending: ?*const fn (
+        display: *wl.Display,
+        queue: *wl.EventQueue,
+    ) callconv(.c) c_int = null,
+    wl_display_dispatch_queue: ?*const fn (
+        display: *wl.Display,
+        queue: *wl.EventQueue,
+    ) callconv(.c) c_int = null,
     wl_display_dispatch: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
     wl_display_flush: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
     wl_display_get_error: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
     wl_display_get_fd: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
-    wl_display_prepare_read_queue: ?*const fn (display: *wl.Display, queue: *wl.EventQueue) callconv(.c) c_int = null,
+    wl_display_prepare_read_queue: ?*const fn (
+        display: *wl.Display,
+        queue: *wl.EventQueue,
+    ) callconv(.c) c_int = null,
     wl_display_prepare_read: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
     wl_display_read_events: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
-    wl_display_roundtrip_queue: ?*const fn (display: *wl.Display, queue: *wl.EventQueue) callconv(.c) c_int = null,
+    wl_display_roundtrip_queue: ?*const fn (
+        display: *wl.Display,
+        queue: *wl.EventQueue,
+    ) callconv(.c) c_int = null,
     wl_display_roundtrip: ?*const fn (display: *wl.Display) callconv(.c) c_int = null,
     wl_event_queue_destroy: ?*const fn (queue: *wl.EventQueue) callconv(.c) void = null,
-    wl_proxy_add_dispatcher: ?*const fn (proxy: *wl.Proxy, dispatcher: *const wl.Proxy.DispatcherFn, implementation: ?*const anyopaque, data: ?*anyopaque) callconv(.c) c_int = null,
-    wl_proxy_create: ?*const fn (factory: *wl.Proxy, interface: *const wl.Interface) callconv(.c) ?*wl.Proxy = null,
+    wl_proxy_add_dispatcher: ?*const fn (
+        proxy: *wl.Proxy,
+        dispatcher: *const wl.Proxy.DispatcherFn,
+        implementation: ?*const anyopaque,
+        data: ?*anyopaque,
+    ) callconv(.c) c_int = null,
+    wl_proxy_create: ?*const fn (
+        factory: *wl.Proxy,
+        interface: *const wl.Interface,
+    ) callconv(.c) ?*wl.Proxy = null,
     wl_proxy_destroy: ?*const fn (proxy: *wl.Proxy) callconv(.c) void = null,
     wl_proxy_get_id: ?*const fn (proxy: *wl.Proxy) callconv(.c) u32 = null,
     wl_proxy_get_user_data: ?*const fn (proxy: *wl.Proxy) callconv(.c) ?*anyopaque = null,
     wl_proxy_get_version: ?*const fn (proxy: *wl.Proxy) callconv(.c) u32 = null,
-    wl_proxy_marshal_array_constructor_versioned: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) callconv(.c) ?*wl.Proxy = null,
-    wl_proxy_marshal_array_constructor: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) callconv(.c) ?*wl.Proxy = null,
-    wl_proxy_marshal_array: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) callconv(.c) void = null,
-    wl_proxy_set_queue: ?*const fn (proxy: *wl.Proxy, queue: *wl.EventQueue) callconv(.c) void = null,
+    wl_proxy_marshal_array_constructor_versioned: ?*const fn (
+        proxy: *wl.Proxy,
+        opcode: u32,
+        args: [*]wl.Argument,
+        interface: *const wl.Interface,
+        version: u32,
+    ) callconv(.c) ?*wl.Proxy = null,
+    wl_proxy_marshal_array_constructor: ?*const fn (
+        proxy: *wl.Proxy,
+        opcode: u32,
+        args: [*]wl.Argument,
+        interface: *const wl.Interface,
+    ) callconv(.c) ?*wl.Proxy = null,
+    wl_proxy_marshal_array: ?*const fn (
+        proxy: *wl.Proxy,
+        opcode: u32,
+        args: ?[*]wl.Argument,
+    ) callconv(.c) void = null,
+    wl_proxy_set_queue: ?*const fn (
+        proxy: *wl.Proxy,
+        queue: *wl.EventQueue,
+    ) callconv(.c) void = null,
 
     comptime {
         _ = exports;
@@ -676,34 +758,34 @@ const Loader = struct {
 
     const exports = struct {
         // zig fmt: off
-        export fn wl_display_cancel_read(display: *wl.Display) void { proc("wl_display_cancel_read")(display); }
-        export fn wl_display_connect_to_fd(fd: c_int) ?*wl.Display { return proc("wl_display_connect_to_fd")(fd); }
-        export fn wl_display_connect(name: ?[*:0]const u8) ?*wl.Display { return proc("wl_display_connect")(name); }
-        export fn wl_display_create_queue(display: *wl.Display) ?*wl.EventQueue { return proc("wl_display_create_queue")(display); }
-        export fn wl_display_disconnect(display: *wl.Display) void { proc("wl_display_disconnect")(display); }
-        export fn wl_display_dispatch_pending(display: *wl.Display) c_int { return proc("wl_display_dispatch_pending")(display); }
-        export fn wl_display_dispatch_queue_pending(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_dispatch_queue_pending")(display, queue); }
-        export fn wl_display_dispatch_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_dispatch_queue")(display, queue); }
-        export fn wl_display_dispatch(display: *wl.Display) c_int { return proc("wl_display_dispatch")(display); }
-        export fn wl_display_flush(display: *wl.Display) c_int { return proc("wl_display_flush")(display); }
-        export fn wl_display_get_error(display: *wl.Display) c_int { return proc("wl_display_get_error")(display); }
-        export fn wl_display_get_fd(display: *wl.Display) c_int { return proc("wl_display_get_fd")(display); }
-        export fn wl_display_prepare_read_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_prepare_read_queue")(display, queue); }
-        export fn wl_display_prepare_read(display: *wl.Display) c_int { return proc("wl_display_prepare_read")(display); }
-        export fn wl_display_read_events(display: *wl.Display) c_int { return proc("wl_display_read_events")(display); }
-        export fn wl_display_roundtrip_queue(display: *wl.Display, queue: *wl.EventQueue) c_int { return proc("wl_display_roundtrip_queue")(display, queue); }
-        export fn wl_display_roundtrip(display: *wl.Display) c_int { return proc("wl_display_roundtrip")(display); }
-        export fn wl_event_queue_destroy(queue: *wl.EventQueue) void { proc("wl_event_queue_destroy")(queue); }
-        export fn wl_proxy_add_dispatcher(proxy: *wl.Proxy, dispatcher: *const wl.Proxy.DispatcherFn, implementation: ?*const anyopaque, data: ?*anyopaque) c_int { return proc("wl_proxy_add_dispatcher")(proxy, dispatcher, implementation, data); }
-        export fn wl_proxy_create(factory: *wl.Proxy, interface: *const wl.Interface) ?*wl.Proxy { return proc("wl_proxy_create")(factory, interface); }
+        export fn wl_display_cancel_read(display: *wl.Display,) void { proc("wl_display_cancel_read",)(display); }
+        export fn wl_display_connect_to_fd(fd: c_int,) ?*wl.Display { return proc("wl_display_connect_to_fd",)(fd); }
+        export fn wl_display_connect(name: ?[*:0]const u8,) ?*wl.Display { return proc("wl_display_connect",)(name); }
+        export fn wl_display_create_queue(display: *wl.Display,) ?*wl.EventQueue { return proc("wl_display_create_queue",)(display); }
+        export fn wl_display_disconnect(display: *wl.Display,) void { proc("wl_display_disconnect",)(display); }
+        export fn wl_display_dispatch_pending(display: *wl.Display,) c_int { return proc("wl_display_dispatch_pending",)(display); }
+        export fn wl_display_dispatch_queue_pending(display: *wl.Display, queue: *wl.EventQueue,) c_int { return proc("wl_display_dispatch_queue_pending",)(display, queue); }
+        export fn wl_display_dispatch_queue(display: *wl.Display, queue: *wl.EventQueue,) c_int { return proc("wl_display_dispatch_queue",)(display, queue); }
+        export fn wl_display_dispatch(display: *wl.Display,) c_int { return proc("wl_display_dispatch",)(display); }
+        export fn wl_display_flush(display: *wl.Display,) c_int { return proc("wl_display_flush",)(display); }
+        export fn wl_display_get_error(display: *wl.Display,) c_int { return proc("wl_display_get_error",)(display); }
+        export fn wl_display_get_fd(display: *wl.Display,) c_int { return proc("wl_display_get_fd",)(display); }
+        export fn wl_display_prepare_read_queue(display: *wl.Display, queue: *wl.EventQueue,) c_int { return proc("wl_display_prepare_read_queue",)(display, queue); }
+        export fn wl_display_prepare_read(display: *wl.Display,) c_int { return proc("wl_display_prepare_read",)(display); }
+        export fn wl_display_read_events(display: *wl.Display,) c_int { return proc("wl_display_read_events",)(display); }
+        export fn wl_display_roundtrip_queue(display: *wl.Display, queue: *wl.EventQueue,) c_int { return proc("wl_display_roundtrip_queue",)(display, queue); }
+        export fn wl_display_roundtrip(display: *wl.Display,) c_int { return proc("wl_display_roundtrip",)(display); }
+        export fn wl_event_queue_destroy(queue: *wl.EventQueue,) void { proc("wl_event_queue_destroy",)(queue); }
+        export fn wl_proxy_add_dispatcher(proxy: *wl.Proxy, dispatcher: *const wl.Proxy.DispatcherFn, implementation: ?*const anyopaque, data: ?*anyopaque,) c_int { return proc("wl_proxy_add_dispatcher",)(proxy, dispatcher, implementation, data); }
+        export fn wl_proxy_create(factory: *wl.Proxy, interface: *const wl.Interface,) ?*wl.Proxy { return proc("wl_proxy_create",)(factory, interface); }
         export fn wl_proxy_destroy(proxy: *wl.Proxy) void { proc("wl_proxy_destroy")(proxy); }
         export fn wl_proxy_get_id(proxy: *wl.Proxy) u32 { return proc("wl_proxy_get_id")(proxy); }
-        export fn wl_proxy_get_user_data(proxy: *wl.Proxy) ?*anyopaque { return proc("wl_proxy_get_user_data")(proxy); }
-        export fn wl_proxy_get_version(proxy: *wl.Proxy) u32 { return proc("wl_proxy_get_version")(proxy); }
-        export fn wl_proxy_marshal_array_constructor_versioned(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor_versioned")(proxy, opcode, args, interface, version); }
-        export fn wl_proxy_marshal_array_constructor(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor")(proxy, opcode, args, interface); }
-        export fn wl_proxy_marshal_array(proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) void { proc("wl_proxy_marshal_array")(proxy, opcode, args); }
-        export fn wl_proxy_set_queue(proxy: *wl.Proxy, queue: *wl.EventQueue) void { proc("wl_proxy_set_queue")(proxy, queue); }
+        export fn wl_proxy_get_user_data(proxy: *wl.Proxy,) ?*anyopaque { return proc("wl_proxy_get_user_data",)(proxy); }
+        export fn wl_proxy_get_version(proxy: *wl.Proxy,) u32 { return proc("wl_proxy_get_version",)(proxy); }
+        export fn wl_proxy_marshal_array_constructor_versioned(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32,) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor_versioned",)(proxy, opcode, args, interface, version); }
+        export fn wl_proxy_marshal_array_constructor(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface,) ?*wl.Proxy { return proc("wl_proxy_marshal_array_constructor",)(proxy, opcode, args, interface); }
+        export fn wl_proxy_marshal_array(proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument,) void { proc("wl_proxy_marshal_array",)(proxy, opcode, args); }
+        export fn wl_proxy_set_queue(proxy: *wl.Proxy, queue: *wl.EventQueue,) void { proc("wl_proxy_set_queue",)(proxy, queue); }
         // zig fmt: on
     };
 
@@ -712,13 +794,18 @@ const Loader = struct {
         loader.lib = try .openZ("libwayland-client.so.0");
         inline for (std.meta.fields(@This())) |field| {
             if (field.type != std.DynLib) {
-                @field(loader, field.name) = loader.lib.lookup(field.type, field.name) orelse @panic(field.name);
+                @field(loader, field.name) = loader.lib.lookup(
+                    field.type,
+                    field.name,
+                ) orelse @panic(field.name);
             }
         }
     }
 
     fn proc(comptime name: [:0]const u8) @typeInfo(@FieldType(Loader, name)).optional.child {
-        if (@field(loader, name) == null) Loader.load() catch @panic("libwayland-client.so.0 not found");
+        if (@field(loader, name) == null) Loader.load() catch @panic(
+            "libwayland-client.so.0 not found",
+        );
         return @field(loader, name).?;
     }
 

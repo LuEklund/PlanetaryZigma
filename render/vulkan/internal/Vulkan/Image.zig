@@ -29,7 +29,10 @@ pub fn init(
     aspect: vk.ImageAspectFlags,
     mip_mapped: bool,
 ) !Image {
-    const mip_levels: u32 = if (mip_mapped) std.math.log2_int(u32, @max(extent.width, extent.height)) + 1 else 1;
+    const mip_levels: u32 = if (mip_mapped) std.math.log2_int(
+        u32,
+        @max(extent.width, extent.height),
+    ) + 1 else 1;
     const layer_count: u32 = if (kind == .cube_map) 6 else 1;
     const image = try device.proxy.createImage(&.{
         .flags = .{ .cube_compatible_bit = kind == .cube_map },
@@ -83,26 +86,52 @@ pub fn deinit(self: *Image, heap: *GpuMemory, device: Device) void {
     heap.free(self.range);
 }
 
-pub fn recordUpload(self: *Image, device: Device, cmd: vk.CommandBuffer, upload_buffer: Buffer, layer: u32, buffer_offset: u64) void {
+pub fn recordUpload(
+    self: *Image,
+    device: Device,
+    cmd: vk.CommandBuffer,
+    upload_buffer: Buffer,
+    layer: u32,
+    buffer_offset: u64,
+) void {
     var image_barrier: Barrier = .init(device, cmd, self.vk_image, .{ .color_bit = true });
     image_barrier.base_array_layer = layer;
     image_barrier.level_count = self.mip_levels;
-    image_barrier.transition(.transfer_dst_optimal, .{ .all_transfer_bit = true }, .{ .transfer_write_bit = true });
+    image_barrier.transition(
+        .transfer_dst_optimal,
+        .{ .all_transfer_bit = true },
+        .{ .transfer_write_bit = true },
+    );
 
     const region = [_]vk.BufferImageCopy{.{
         .buffer_offset = buffer_offset,
         .buffer_row_length = 0,
         .buffer_image_height = 0,
-        .image_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = layer, .layer_count = 1 },
+        .image_subresource = .{
+            .aspect_mask = .{ .color_bit = true },
+            .mip_level = 0,
+            .base_array_layer = layer,
+            .layer_count = 1,
+        },
         .image_offset = .{ .x = 0, .y = 0, .z = 0 },
         .image_extent = self.extent,
     }};
-    device.proxy.cmdCopyBufferToImage(cmd, upload_buffer.buffer, self.vk_image, .transfer_dst_optimal, &region);
+    device.proxy.cmdCopyBufferToImage(
+        cmd,
+        upload_buffer.buffer,
+        self.vk_image,
+        .transfer_dst_optimal,
+        &region,
+    );
 
     if (self.mip_levels > 1) {
         self.generateMipmaps(device, cmd, layer);
     } else {
-        image_barrier.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
+        image_barrier.transition(
+            .shader_read_only_optimal,
+            .{ .fragment_shader_bit = true, .vertex_shader_bit = true },
+            .{ .shader_read_bit = true },
+        );
     }
 }
 
@@ -116,15 +145,32 @@ fn generateMipmaps(self: *Image, device: Device, cmd: vk.CommandBuffer, layer: u
         source.old_layout = .transfer_dst_optimal;
         source.src_stage = .{ .all_transfer_bit = true };
         source.src_access = .{ .transfer_write_bit = true };
-        source.transition(.transfer_src_optimal, .{ .all_transfer_bit = true }, .{ .transfer_read_bit = true });
+        source.transition(
+            .transfer_src_optimal,
+            .{ .all_transfer_bit = true },
+            .{ .transfer_read_bit = true },
+        );
 
         const half_width = @max(1, @divTrunc(width, 2));
         const half_height = @max(1, @divTrunc(height, 2));
         const region = [_]vk.ImageBlit2{.{
-            .src_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = @intCast(mip), .base_array_layer = layer, .layer_count = 1 },
+            .src_subresource = .{
+                .aspect_mask = .{ .color_bit = true },
+                .mip_level = @intCast(mip),
+                .base_array_layer = layer,
+                .layer_count = 1,
+            },
             .src_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = width, .y = height, .z = 1 } },
-            .dst_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = @intCast(mip + 1), .base_array_layer = layer, .layer_count = 1 },
-            .dst_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = half_width, .y = half_height, .z = 1 } },
+            .dst_subresource = .{
+                .aspect_mask = .{ .color_bit = true },
+                .mip_level = @intCast(mip + 1),
+                .base_array_layer = layer,
+                .layer_count = 1,
+            },
+            .dst_offsets = .{
+                .{ .x = 0, .y = 0, .z = 0 },
+                .{ .x = half_width, .y = half_height, .z = 1 },
+            },
         }};
         device.proxy.cmdBlitImage2(cmd, &.{
             .src_image = self.vk_image,
@@ -135,7 +181,11 @@ fn generateMipmaps(self: *Image, device: Device, cmd: vk.CommandBuffer, layer: u
             .p_regions = &region,
             .filter = .linear,
         });
-        source.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
+        source.transition(
+            .shader_read_only_optimal,
+            .{ .fragment_shader_bit = true, .vertex_shader_bit = true },
+            .{ .shader_read_bit = true },
+        );
         width = half_width;
         height = half_height;
     }
@@ -145,15 +195,41 @@ fn generateMipmaps(self: *Image, device: Device, cmd: vk.CommandBuffer, layer: u
     last.old_layout = .transfer_dst_optimal;
     last.src_stage = .{ .all_transfer_bit = true };
     last.src_access = .{ .transfer_write_bit = true };
-    last.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true, .vertex_shader_bit = true }, .{ .shader_read_bit = true });
+    last.transition(
+        .shader_read_only_optimal,
+        .{ .fragment_shader_bit = true, .vertex_shader_bit = true },
+        .{ .shader_read_bit = true },
+    );
 }
 
-pub fn copyOntoImage(self: Image, device: Device, cmd: vk.CommandBuffer, dest_image: vk.Image, dest_extent: vk.Extent3D) void {
+pub fn copyOntoImage(
+    self: Image,
+    device: Device,
+    cmd: vk.CommandBuffer,
+    dest_image: vk.Image,
+    dest_extent: vk.Extent3D,
+) void {
     const region = [_]vk.ImageBlit2{.{
-        .src_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
-        .src_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = @intCast(self.extent.width), .y = @intCast(self.extent.height), .z = 1 } },
-        .dst_subresource = .{ .aspect_mask = .{ .color_bit = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
-        .dst_offsets = .{ .{ .x = 0, .y = 0, .z = 0 }, .{ .x = @intCast(dest_extent.width), .y = @intCast(dest_extent.height), .z = 1 } },
+        .src_subresource = .{
+            .aspect_mask = .{ .color_bit = true },
+            .mip_level = 0,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        },
+        .src_offsets = .{
+            .{ .x = 0, .y = 0, .z = 0 },
+            .{ .x = @intCast(self.extent.width), .y = @intCast(self.extent.height), .z = 1 },
+        },
+        .dst_subresource = .{
+            .aspect_mask = .{ .color_bit = true },
+            .mip_level = 0,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        },
+        .dst_offsets = .{
+            .{ .x = 0, .y = 0, .z = 0 },
+            .{ .x = @intCast(dest_extent.width), .y = @intCast(dest_extent.height), .z = 1 },
+        },
     }};
     device.proxy.cmdBlitImage2(cmd, &.{
         .src_image = self.vk_image,
@@ -178,7 +254,12 @@ pub const Barrier = struct {
     base_mip_level: u32,
     level_count: u32,
 
-    pub fn init(device: Device, cmd: vk.CommandBuffer, image: vk.Image, aspect_mask: vk.ImageAspectFlags) Barrier {
+    pub fn init(
+        device: Device,
+        cmd: vk.CommandBuffer,
+        image: vk.Image,
+        aspect_mask: vk.ImageAspectFlags,
+    ) Barrier {
         return .{
             .device = device,
             .cmd = cmd,
@@ -193,7 +274,12 @@ pub const Barrier = struct {
         };
     }
 
-    pub fn transition(self: *Barrier, layout: vk.ImageLayout, stage: vk.PipelineStageFlags2, access: vk.AccessFlags2) void {
+    pub fn transition(
+        self: *Barrier,
+        layout: vk.ImageLayout,
+        stage: vk.PipelineStageFlags2,
+        access: vk.AccessFlags2,
+    ) void {
         const barrier = [_]vk.ImageMemoryBarrier2{.{
             .src_stage_mask = self.src_stage,
             .src_access_mask = self.src_access,

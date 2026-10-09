@@ -11,14 +11,24 @@ const ServerArtifacts = struct {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
-    if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
+    if (b.release_mode == .any) std.log.warn(
+        "--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)",
+        .{},
+    );
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const viewer_enable = b.option(bool, "viewer", "Build the server with its own render window (default ON for dev; ship passes -Dviewer=false)") orelse true;
+    const viewer_enable = b.option(
+        bool,
+        "viewer",
+        "Build the server with its own render window (default ON for dev; ship passes -Dviewer=false)",
+    ) orelse true;
 
     const artifacts = addServerArtifacts(b, target, optimize, tracy_enable, viewer_enable);
     installServerArtifacts(b, b.getInstallStep(), artifacts, target, tracy_enable);
 
-    const windows_step = b.step("windows", "Build Windows server artifacts used by the hosted client");
+    const windows_step = b.step(
+        "windows",
+        "Build Windows server artifacts used by the hosted client",
+    );
     const windows_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows });
     const windows_artifacts = addServerArtifacts(b, windows_target, optimize, tracy_enable, false);
     installServerArtifacts(b, windows_step, windows_artifacts, windows_target, tracy_enable);
@@ -40,10 +50,16 @@ fn addServerArtifacts(
     const build_options = b.addOptions();
     build_options.addOption(bool, "viewer", viewer_enable);
     const build_options_module = build_options.createModule();
-    const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
+    const ztracy_dep = b.dependency(
+        "ztracy",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    );
     const ztracy = ztracy_dep.module("ztracy");
 
-    const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    const shared = b.dependency(
+        "shared",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    ).module("shared");
     const render_dep: ?*std.Build.Dependency = if (viewer_enable)
         b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable })
     else
@@ -58,7 +74,9 @@ fn addServerArtifacts(
         // 4-byte aligned (fine on x86_64, UB per C standard). Zig's C UBSan aborts on
         // it; box3d's own CMake never runs UBSan. sanitize_c=.off is the real switch —
         // the -fno-sanitize cflag does NOT disable Zig's instrumentation.
-        .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true, .sanitize_c = .off }),
+        .root_module = b.createModule(
+            .{ .target = target, .optimize = optimize, .link_libc = true, .sanitize_c = .off },
+        ),
     });
     box3d_lib.root_module.addIncludePath(b.path("vendor/box3d/include"));
     box3d_lib.root_module.addIncludePath(b.path("vendor/box3d/src"));
@@ -189,7 +207,9 @@ fn installServerArtifacts(
             "steam_api64.dll",
         ).step);
         step.dependOn(&b.addInstallBinFile(
-            artifacts.steam_dep.path("steamworks/public/steam/lib/win64/sdkencryptedappticket64.dll"),
+            artifacts.steam_dep.path(
+                "steamworks/public/steam/lib/win64/sdkencryptedappticket64.dll",
+            ),
             "sdkencryptedappticket64.dll",
         ).step);
     }

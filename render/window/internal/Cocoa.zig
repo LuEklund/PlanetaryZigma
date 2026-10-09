@@ -64,7 +64,11 @@ pub fn setPointerVisible(self: *Cocoa, window: *Window, visible: bool) !void {
     _ = visible;
 }
 
-pub fn setPointerConstraint(self: *Cocoa, window: *Window, constraint: Window.Pointer.Constraint) !void {
+pub fn setPointerConstraint(
+    self: *Cocoa,
+    window: *Window,
+    constraint: Window.Pointer.Constraint,
+) !void {
     _ = self;
     _ = window;
     _ = constraint;

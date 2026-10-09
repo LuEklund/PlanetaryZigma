@@ -5,7 +5,12 @@ const Device = @import("device.zig").Logical;
 
 handle: vk.DescriptorSetLayout,
 
-pub fn init(device: Device, bindings: []const vk.DescriptorSetLayoutBinding, flags: vk.DescriptorSetLayoutCreateFlags, binding_flags: ?[]const vk.DescriptorBindingFlags) !DescriptorLayout {
+pub fn init(
+    device: Device,
+    bindings: []const vk.DescriptorSetLayoutBinding,
+    flags: vk.DescriptorSetLayoutCreateFlags,
+    binding_flags: ?[]const vk.DescriptorBindingFlags,
+) !DescriptorLayout {
     const binding_flags_info: vk.DescriptorSetLayoutBindingFlagsCreateInfo = .{
         .binding_count = if (binding_flags) |all| @intCast(all.len) else 0,
         .p_binding_flags = if (binding_flags) |all| all.ptr else null,

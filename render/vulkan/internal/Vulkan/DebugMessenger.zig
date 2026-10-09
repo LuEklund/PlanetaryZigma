@@ -13,7 +13,11 @@ pub const Config = struct {
 pub fn init(instance: Instance, config: Config) !DebugMessenger {
     const handle = try instance.proxy.createDebugUtilsMessengerEXT(&.{
         .message_severity = config.severities,
-        .message_type = .{ .general_bit_ext = true, .validation_bit_ext = true, .performance_bit_ext = true },
+        .message_type = .{
+            .general_bit_ext = true,
+            .validation_bit_ext = true,
+            .performance_bit_ext = true,
+        },
         .pfn_user_callback = callback,
     }, null);
     return .{ .handle = handle };

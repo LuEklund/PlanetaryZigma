@@ -20,7 +20,12 @@ channels: []Channel,
 start: f32,
 end: f32,
 
-pub fn init(gpa: std.mem.Allocator, name: []const u8, sampler_count: usize, channel_count: usize) !AnimationClip {
+pub fn init(
+    gpa: std.mem.Allocator,
+    name: []const u8,
+    sampler_count: usize,
+    channel_count: usize,
+) !AnimationClip {
     return .{
         .name = try gpa.dupe(u8, name),
         .samplers = try gpa.alloc(Sampler, sampler_count),

@@ -57,7 +57,13 @@ pub fn contentScale(self: *Backend) f32 {
     return self.scale;
 }
 
-pub fn drawClippedTriangles(self: *Backend, texture: ?dvui.Texture, vtx: []const dvui.Vertex, idx: []const dvui.Vertex.Index, clipr: ?dvui.Rect.Physical) GenericError!void {
+pub fn drawClippedTriangles(
+    self: *Backend,
+    texture: ?dvui.Texture,
+    vtx: []const dvui.Vertex,
+    idx: []const dvui.Vertex.Index,
+    clipr: ?dvui.Rect.Physical,
+) GenericError!void {
     const layer = &self.frame.?.draw_list.dvui;
     if (layer.vertices.items.len + vtx.len > layer.vertices.capacity or
         layer.indices.items.len + idx.len > layer.indices.capacity or
@@ -86,7 +92,11 @@ pub fn drawClippedTriangles(self: *Backend, texture: ?dvui.Texture, vtx: []const
     for (idx) |index| layer.indices.appendAssumeCapacity(base + index);
 }
 
-pub fn textureCreate(self: *Backend, pixels: [*]const u8, options: dvui.Texture.CreateOptions) TextureError!dvui.Texture {
+pub fn textureCreate(
+    self: *Backend,
+    pixels: [*]const u8,
+    options: dvui.Texture.CreateOptions,
+) TextureError!dvui.Texture {
     const frame = self.frame orelse return error.TextureCreate;
     const linear = options.interpolation == .linear;
     const handle = frame.render_api.uploadImage(frame.render_handle, &.{
@@ -131,7 +141,10 @@ fn handleOf(ptr: *anyopaque) contract.TextureHandle {
     return @enumFromInt(@intFromPtr(ptr) - 1);
 }
 
-pub fn textureCreateTarget(_: *Backend, _: dvui.Texture.CreateOptions) TextureError!dvui.TextureTarget {
+pub fn textureCreateTarget(
+    _: *Backend,
+    _: dvui.Texture.CreateOptions,
+) TextureError!dvui.TextureTarget {
     return error.NotImplemented;
 }
 

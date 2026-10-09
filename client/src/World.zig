@@ -78,7 +78,11 @@ pub const Entity = struct {
     };
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, shared.entity.baseStats(self.kind, self.survivor), self.inventory);
+        return shared.Item.Stat.value(
+            stat_kind,
+            shared.entity.baseStats(self.kind, self.survivor),
+            self.inventory,
+        );
     }
 };
 
@@ -117,7 +121,11 @@ pub fn clear(self: *World) void {
     self.difficulty = .{ .run_seconds = 0, .coefficient = 1, .level = 1 };
 }
 
-pub fn update(self: *World, gpa: std.mem.Allocator, packets: []const shared.net.ServerPacket) !void {
+pub fn update(
+    self: *World,
+    gpa: std.mem.Allocator,
+    packets: []const shared.net.ServerPacket,
+) !void {
     for (packets) |packet| switch (packet) {
         .acknowledge => |acknowledge| {
             self.player_id = acknowledge.id;
@@ -134,7 +142,11 @@ pub fn update(self: *World, gpa: std.mem.Allocator, packets: []const shared.net.
         },
         .despawn_entity => |despawn_entity| {
             const entity = self.getPtr(despawn_entity.id) orelse continue;
-            if (std.mem.indexOfScalar(shared.entity.Id, self.teleporter_bosses.items, despawn_entity.id)) |index_of_boss| {
+            if (std.mem.indexOfScalar(
+                shared.entity.Id,
+                self.teleporter_bosses.items,
+                despawn_entity.id,
+            )) |index_of_boss| {
                 _ = self.teleporter_bosses.swapRemove(index_of_boss);
             }
             if (despawn_entity.id == self.player_id) self.controller.free_camera = true;
@@ -262,7 +274,10 @@ pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHeal
 
 pub fn spawn(self: *World, id: shared.entity.Id) !*Entity {
     std.debug.assert(self.entities.count() < shared.max_entities or self.entities.contains(id));
-    self.entities.putAssumeCapacity(id, .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time });
+    self.entities.putAssumeCapacity(
+        id,
+        .{ .id = id, .kind = .unknown, .spawned_at = self.elapsed_time },
+    );
     return self.entities.getPtr(id).?;
 }
 

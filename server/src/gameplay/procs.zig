@@ -34,14 +34,27 @@ fn runProcs(world: *World, owner: *Entity, trigger: shared.Item.Trigger, hit: Hi
     }
 }
 
-fn resolve(world: *World, owner: *Entity, effect: shared.Item.ProcEffect, stacks: f32, hit: Hit) void {
+fn resolve(
+    world: *World,
+    owner: *Entity,
+    effect: shared.Item.ProcEffect,
+    stacks: f32,
+    hit: Hit,
+) void {
     switch (effect) {
         .heal => |amount| _ = combat.addHealth(world, owner, amount * stacks, null),
-        .leech => |fraction| _ = combat.addHealth(world, owner, hit.damage * fraction * stacks, null),
+        .leech => |fraction| _ = combat.addHealth(
+            world,
+            owner,
+            hit.damage * fraction * stacks,
+            null,
+        ),
         .gold => |amount| {
             if (owner.kind != .player) return;
             owner.currency += amount * @as(u32, @intFromFloat(stacks));
-            world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = owner.id, .amount = owner.currency } });
+            world.client_updates.appendAssumeCapacity(
+                .{ .set_currency = .{ .id = owner.id, .amount = owner.currency } },
+            );
         },
         .blast => |blast| {
             const radius = blast.radius + blast.radius_per_stack * (stacks - 1);
@@ -49,15 +62,26 @@ fn resolve(world: *World, owner: *Entity, effect: shared.Item.ProcEffect, stacks
             for (world.entities.values()) |*candidate| {
                 if (candidate.max_health <= 0 or candidate.flags.is_dead) continue;
                 if (candidate.id == owner.id or candidate.kind.eql(owner.kind)) continue;
-                if (nz.vec.distance(candidate.transform.position, hit.victim_position) > radius) continue;
+                if (nz.vec.distance(
+                    candidate.transform.position,
+                    hit.victim_position,
+                ) > radius) continue;
                 _ = combat.dealDamage(world, candidate, damage, owner, false);
             }
-            world.client_updates.appendAssumeCapacity(.{ .event = .{ .effect = .{ .rocket_impact = hit.victim_position } } });
+            world.client_updates.appendAssumeCapacity(
+                .{ .event = .{ .effect = .{ .rocket_impact = hit.victim_position } } },
+            );
         },
         .healthy_bonus => |bonus| {
             if (hit.killed or hit.victim_health_fraction_before < bonus.threshold) return;
             const victim = world.getPtr(hit.victim_id) orelse return;
-            _ = combat.dealDamage(world, victim, hit.damage * bonus.damage_fraction * stacks, owner, false);
+            _ = combat.dealDamage(
+                world,
+                victim,
+                hit.damage * bonus.damage_fraction * stacks,
+                owner,
+                false,
+            );
         },
         .thorns => |fraction| {
             if (owner.id != hit.victim_id) return;

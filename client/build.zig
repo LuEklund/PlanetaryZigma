@@ -4,15 +4,27 @@ const render_build = @import("render");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
-    if (b.release_mode == .any) std.log.warn("--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)", .{});
+    if (b.release_mode == .any) std.log.warn(
+        "--release is forced to ReleaseSafe: bugs crash with a trace instead of silent corruption/UB (pass -Doptimize=... to override)",
+        .{},
+    );
 
     const tracy_enable = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const ztracy_dep = b.dependency("ztracy", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
+    const ztracy_dep = b.dependency(
+        "ztracy",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    );
     const ztracy = ztracy_dep.module("ztracy");
 
-    const shared = b.dependency("shared", .{ .target = target, .optimize = optimize, .tracy = tracy_enable }).module("shared");
+    const shared = b.dependency(
+        "shared",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    ).module("shared");
 
-    const render_dep = b.dependency("render", .{ .target = target, .optimize = optimize, .tracy = tracy_enable });
+    const render_dep = b.dependency(
+        "render",
+        .{ .target = target, .optimize = optimize, .tracy = tracy_enable },
+    );
     const renderer_contract = render_dep.module("renderer_contract");
     const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
@@ -107,7 +119,10 @@ pub fn build(b: *std.Build) void {
     if (tracy_enable) b.installArtifact(ztracy_dep.artifact("tracy"));
 
     if (target.result.os.tag == .windows) {
-        const install_steam_dll = b.addInstallBinFile(steam_dep.path("steamworks/redistributable_bin/win64/steam_api64.dll"), "steam_api64.dll");
+        const install_steam_dll = b.addInstallBinFile(
+            steam_dep.path("steamworks/redistributable_bin/win64/steam_api64.dll"),
+            "steam_api64.dll",
+        );
         b.getInstallStep().dependOn(&install_steam_dll.step);
     }
 
@@ -130,7 +145,11 @@ pub fn build(b: *std.Build) void {
 
 fn compileShaders(b: *std.Build) *std.Build.Step {
     const io = b.graph.io;
-    var dir = b.build_root.handle.openDir(io, "../assets/shaders", .{ .iterate = true }) catch @panic("../assets/shaders not found");
+    var dir = b.build_root.handle.openDir(
+        io,
+        "../assets/shaders",
+        .{ .iterate = true },
+    ) catch @panic("../assets/shaders not found");
     defer dir.close(io);
     const usf = b.addUpdateSourceFiles();
     var walker = dir.walk(b.allocator) catch @panic("walk ../assets/shaders");
@@ -144,8 +163,13 @@ fn compileShaders(b: *std.Build) *std.Build.Step {
         cmd.addArgs(&.{ "-target", "spirv" });
         cmd.addPrefixedDirectoryArg("-I", b.path("../assets/shaders"));
         cmd.addArg("-o");
-        const spv = cmd.addOutputFileArg(b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}));
-        usf.addCopyFileToSource(spv, b.fmt("../assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}));
+        const spv = cmd.addOutputFileArg(
+            b.fmt("{s}.spv", .{entry.basename[0 .. entry.basename.len - ".slang".len]}),
+        );
+        usf.addCopyFileToSource(
+            spv,
+            b.fmt("../assets/shaders/{s}.spv", .{entry.path[0 .. entry.path.len - ".slang".len]}),
+        );
     }
     b.getInstallStep().dependOn(&usf.step);
     return &usf.step;
@@ -159,7 +183,11 @@ fn exportModels(b: *std.Build) void {
         "blender",
         b.pathJoin(&.{ home, ".steam", "steam", "steamapps", "common", "Blender", "blender" }),
     };
-    var dir = b.build_root.handle.openDir(io, "../assets/objects/", .{ .iterate = true }) catch @panic("../assets/objects not found");
+    var dir = b.build_root.handle.openDir(
+        io,
+        "../assets/objects/",
+        .{ .iterate = true },
+    ) catch @panic("../assets/objects not found");
     defer dir.close(io);
     var it = dir.iterate();
     var candidate_index: usize = 0;
@@ -175,7 +203,18 @@ fn exportModels(b: *std.Build) void {
         var exported = false;
         while (candidate_index < candidates.len) {
             const result = std.process.run(b.allocator, io, .{
-                .argv = &.{ candidates[candidate_index], "--background", "--factory-startup", "--python-exit-code", "1", entry.name, "--python", "export_glb.py", "--", glb_name },
+                .argv = &.{
+                    candidates[candidate_index],
+                    "--background",
+                    "--factory-startup",
+                    "--python-exit-code",
+                    "1",
+                    entry.name,
+                    "--python",
+                    "export_glb.py",
+                    "--",
+                    glb_name,
+                },
                 .cwd = .{ .dir = dir },
                 .environ_map = &b.graph.environ_map,
             }) catch {

@@ -156,12 +156,18 @@ pub fn animationLoop(velocity: nz.Vec3(f32), stun_time: f32, override: ?Loop) Lo
     return if (nz.vec.length(velocity) > 0.5) .walk else .idle;
 }
 
-pub fn projectileRotation(kind: ProjectileKind, direction: nz.Vec3(f32), up_hint: nz.Vec3(f32)) nz.quat.Hamiltonian(f32) {
+pub fn projectileRotation(
+    kind: ProjectileKind,
+    direction: nz.Vec3(f32),
+    up_hint: nz.Vec3(f32),
+) nz.quat.Hamiltonian(f32) {
     if (nz.vec.length(direction) < 0.001) return .identity;
     const base = nz.quat.Hamiltonian(f32).lookAt(direction, up_hint).normalize();
     return switch (kind) {
         .cube => base,
-        .rocket => base.mul(nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 })).normalize(),
+        .rocket => base.mul(
+            nz.quat.Hamiltonian(f32).angleAxis(-std.math.pi / 2.0, .{ 1, 0, 0 }),
+        ).normalize(),
     };
 }
 
@@ -216,11 +222,17 @@ pub const placeholder_model_offset: nz.Transform3D(f32) = .{ .scale = .{ 0.5, 0.
 pub const no_clip: ?[]const u8 = null;
 pub const no_skill: ?AssignedSkill = null;
 pub const face_camera = nz.Quat(f32).angleAxis(std.math.pi, .{ 0, 1, 0 });
-pub const enemy_model_offset: nz.Transform3D(f32) = .{ .position = .{ 0, -0.8, 0 }, .rotation = face_camera };
+pub const enemy_model_offset: nz.Transform3D(f32) = .{
+    .position = .{ 0, -0.8, 0 },
+    .rotation = face_camera,
+};
 
 const enemy_specs: [enemy_kind_count]Spec = blk: {
     var table: [enemy_kind_count]Spec = undefined;
-    for (@typeInfo(enemies).@"struct".decls, &table) |decl, *slot| slot.* = @field(enemies, decl.name);
+    for (@typeInfo(enemies).@"struct".decls, &table) |decl, *slot| slot.* = @field(
+        enemies,
+        decl.name,
+    );
     break :blk table;
 };
 

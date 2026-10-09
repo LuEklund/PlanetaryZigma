@@ -25,12 +25,21 @@ pub const Api = struct {
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,
     layoutHash: *const fn () callconv(.c) u64,
 
-    uploadMesh: *const fn (*anyopaque, old: MeshHandle, upload: *const MeshUpload) callconv(.c) MeshHandle,
+    uploadMesh: *const fn (
+        *anyopaque,
+        old: MeshHandle,
+        upload: *const MeshUpload,
+    ) callconv(.c) MeshHandle,
     freeMesh: *const fn (*anyopaque, handle: MeshHandle) callconv(.c) void,
 
     uploadImage: *const fn (*anyopaque, upload: *const ImageUpload) callconv(.c) TextureHandle,
     uploadSkybox: *const fn (*anyopaque, upload: *const SkyboxUpload) callconv(.c) void,
-    uploadShader: *const fn (*anyopaque, kind: u32, spirv: [*]align(4) const u8, len: usize) callconv(.c) void,
+    uploadShader: *const fn (
+        *anyopaque,
+        kind: u32,
+        spirv: [*]align(4) const u8,
+        len: usize,
+    ) callconv(.c) void,
     freeImage: *const fn (*anyopaque, texture: TextureHandle) callconv(.c) void,
 };
 

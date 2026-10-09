@@ -115,13 +115,21 @@ pub fn init(self: *System, data: Init) !void {
     self.hud = .init;
     self.dvui_backend = .{
         .io = data.io,
-        .size = .{ .w = @floatFromInt(data.window.size.width), .h = @floatFromInt(data.window.size.height) },
+        .size = .{
+            .w = @floatFromInt(data.window.size.width),
+            .h = @floatFromInt(data.window.size.height),
+        },
         .scale = 1,
         .text_input_wanted = false,
         .frame = null,
     };
     self.dvui_input = .{ .buttons = .{}, .position = .{ .x = 0, .y = 0 } };
-    self.dvui_window = try .init(@src(), data.gpa, self.dvui_backend.backend(), .{ .color_scheme = .dark, .keybinds = .none });
+    self.dvui_window = try .init(
+        @src(),
+        data.gpa,
+        self.dvui_backend.backend(),
+        .{ .color_scheme = .dark, .keybinds = .none },
+    );
     errdefer self.dvui_window.deinit();
     try self.network.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network.deinit();
@@ -131,7 +139,10 @@ pub fn init(self: *System, data: Init) !void {
             self.network.requestHost(.singleplayer, false);
         } else if (std.mem.eql(u8, autostart, "dev")) {
             self.network.requestHost(.singleplayer, true);
-        } else std.log.err("PZ_AUTOSTART: unknown \"{s}\", expected singleplayer or dev", .{autostart});
+        } else std.log.err(
+            "PZ_AUTOSTART: unknown \"{s}\", expected singleplayer or dev",
+            .{autostart},
+        );
     }
     self.request_exit = false;
 }
@@ -168,7 +179,10 @@ pub fn update(self: *System) !void {
     world.delta_time = shared.tick_seconds;
     self.fps_window_steps += 1;
     const now: std.Io.Timestamp = .now(self.io, .awake);
-    const fps_window_seconds = @as(f32, @floatFromInt(self.fps_window_start.durationTo(now).nanoseconds)) / std.time.ns_per_s;
+    const fps_window_seconds = @as(
+        f32,
+        @floatFromInt(self.fps_window_start.durationTo(now).nanoseconds),
+    ) / std.time.ns_per_s;
     if (fps_window_seconds >= 0.5) {
         world.fps = @as(f32, @floatFromInt(self.fps_window_steps)) / fps_window_seconds;
         self.fps_window_steps = 0;
@@ -186,47 +200,88 @@ fn step(self: *System, world: *World) !void {
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
-    self.dvui_backend.size = .{ .w = @floatFromInt(self.window.size.width), .h = @floatFromInt(self.window.size.height) };
+    self.dvui_backend.size = .{
+        .w = @floatFromInt(self.window.size.width),
+        .h = @floatFromInt(self.window.size.height),
+    };
     self.dvui_backend.scale = std.math.clamp(self.dvui_backend.size.h / 1080, 0.5, 3);
-    self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
+    self.dvui_backend.frame = .{
+        .draw_list = &self.draw_list,
+        .render_api = &self.render.api,
+        .render_handle = self.render.handle,
+    };
     self.dvui_window.backend = self.dvui_backend.backend();
     try self.dvui_input.push(&self.dvui_window, self.window, "", &.{});
     try self.dvui_window.begin(self.dvui_backend.nanoTime());
-    const hud_request = try self.hud.update(world, self.scene, &self.network, &world.options, &self.assets);
+    const hud_request = try self.hud.update(
+        world,
+        self.scene,
+        &self.network,
+        &world.options,
+        &self.assets,
+    );
     _ = try self.dvui_window.end(.{});
     switch (hud_request) {
         .none => {},
         .main_menu => try self.network.returnToMainMenu(),
-        .lobby => |lobby_command| try self.network.sendCommand(.{ .lobby = lobby_command }, .reliable),
+        .lobby => |lobby_command| try self.network.sendCommand(
+            .{ .lobby = lobby_command },
+            .reliable,
+        ),
         .quit => self.request_exit = true,
     }
 
-    const player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
+    const player_input: shared.net.Input = try self.handleInput(
+        world,
+        text_buffer[0..text_writer.end],
+    );
     const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
-    try self.network.update(wire_input, world.options.survivor, world.elapsed_time, world.delta_time);
+    try self.network.update(
+        wire_input,
+        world.options.survivor,
+        world.elapsed_time,
+        world.delta_time,
+    );
     if (world.go_again_pending) {
         try self.network.sendCommand(.go_again, .reliable);
         world.go_again_pending = false;
     }
     if (world.chat.pending) {
         const chat_text = world.chat.text();
-        try self.network.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
+        try self.network.sendCommand(
+            .{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } },
+            .reliable,
+        );
         world.chat.pending = false;
         world.chat.input_len = 0;
     }
 
     const next_scene: Scene = if (self.network.connected()) .game else .menu;
     if (next_scene != self.scene) try self.enterScene(world, next_scene);
-    if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
+    if (self.discord) |*discord| discord.update(
+        self.io,
+        .{ .scene = self.scene },
+        world.elapsed_time,
+    );
     try world.update(self.gpa, self.network.packets.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
-    events.apply(world, self.network.packets.items, &self.audio, &self.skill_sounds, &self.particles);
+    events.apply(
+        world,
+        self.network.packets.items,
+        &self.audio,
+        &self.skill_sounds,
+        &self.particles,
+    );
 
     try world.planet.update(
         self.gpa,
-        &.{if (world.getPtr(world.player_id)) |player| player.transform.position else world.camera.transform.position},
+        &.{
+            if (world.getPtr(
+                world.player_id,
+            )) |player| player.transform.position else world.camera.transform.position,
+        },
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
@@ -235,7 +290,11 @@ fn step(self: *System, world: *World) !void {
 
     try extract.frame(self, world, true);
     self.render.trySwap(self.io);
-    self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
+    self.assets.update(
+        self.gpa,
+        self.io,
+        &self.render,
+    ) catch |err| std.log.err("assets: {t}", .{err});
 
     const server_time = self.network.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
@@ -245,7 +304,13 @@ fn step(self: *System, world: *World) !void {
         .relative => |relative| if (world.chat.open) .{ 0, 0 } else .{ relative.dx, relative.dy },
         .position => .{ 0, 0 },
     };
-    if (self.hud.overlay == .none) world.camera.update(world, &world.options, look_delta, wire_input, self.window.pointer.axis.vertical);
+    if (self.hud.overlay == .none) world.camera.update(
+        world,
+        &world.options,
+        look_delta,
+        wire_input,
+        self.window.pointer.axis.vertical,
+    );
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {

@@ -116,10 +116,18 @@ pub const Entity = struct {
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        const value = shared.Item.Stat.value(stat_kind, shared.entity.baseStats(self.kind, self.survivor), self.inventory);
+        const value = shared.Item.Stat.value(
+            stat_kind,
+            shared.entity.baseStats(self.kind, self.survivor),
+            self.inventory,
+        );
         return switch (stat_kind) {
-            .health => value * shared.difficulty.healthMultiplier(self.level) * shared.Elite.get(self.elite).health_multiplier,
-            .damage => value * shared.difficulty.damageMultiplier(self.level) * shared.Elite.get(self.elite).damage_multiplier,
+            .health => value * shared.difficulty.healthMultiplier(
+                self.level,
+            ) * shared.Elite.get(self.elite).health_multiplier,
+            .damage => value * shared.difficulty.damageMultiplier(
+                self.level,
+            ) * shared.Elite.get(self.elite).damage_multiplier,
             else => value,
         };
     }
@@ -223,10 +231,16 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
         .enemy => {
             entity.level = shared.difficulty.level(difficulty_coefficient, self.players.items.len);
             const elite = shared.Elite.get(entity.elite);
-            entity.currency = shared.difficulty.killReward(base_currency, difficulty_coefficient * elite.cost_multiplier);
+            entity.currency = shared.difficulty.killReward(
+                base_currency,
+                difficulty_coefficient * elite.cost_multiplier,
+            );
             for (elite.granted_items) |grant| _ = entity.inventory.add(grant.item, grant.count);
         },
-        .lootbox => entity.currency = shared.difficulty.chestCost(base_currency, difficulty_coefficient),
+        .lootbox => entity.currency = shared.difficulty.chestCost(
+            base_currency,
+            difficulty_coefficient,
+        ),
         else => entity.currency = base_currency,
     }
     entity.max_health = entity.stat(.health);
@@ -236,7 +250,12 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
 }
 
 pub fn difficultyCoefficient(self: *const World) f32 {
-    return shared.difficulty.coefficient(self.difficulty_setting, self.run_seconds, self.players.items.len, self.stage -| 1);
+    return shared.difficulty.coefficient(
+        self.difficulty_setting,
+        self.run_seconds,
+        self.players.items.len,
+        self.stage -| 1,
+    );
 }
 
 pub fn enemyCount(self: *const World) usize {
@@ -314,11 +333,19 @@ pub fn flush(self: *World, physics: *Physics) !void {
             entity.replicated_velocity = .{ 0, 0, 0 };
             continue;
         } else {
-            if (std.mem.indexOfScalar(shared.entity.Id, self.players.items, despawn.id)) |player_index| {
+            if (std.mem.indexOfScalar(
+                shared.entity.Id,
+                self.players.items,
+                despawn.id,
+            )) |player_index| {
                 _ = self.players.swapRemove(player_index);
             }
             if (entity.kind == .enemy) currency_reward += entity.currency;
-            if (std.mem.indexOfScalar(shared.entity.Id, self.teleport_bosses.items, despawn.id)) |boss_index| {
+            if (std.mem.indexOfScalar(
+                shared.entity.Id,
+                self.teleport_bosses.items,
+                despawn.id,
+            )) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
                 if (self.teleport_bosses.items.len == 0) self.dropTeleporterReward(.lightning);
             }
@@ -329,7 +356,9 @@ pub fn flush(self: *World, physics: *Physics) !void {
     if (currency_reward > 0) for (self.players.items) |player_id| {
         const player = self.getPtrRaw(player_id) orelse continue;
         player.currency += currency_reward;
-        self.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .amount = player.currency, .id = player_id } });
+        self.client_updates.appendAssumeCapacity(
+            .{ .set_currency = .{ .amount = player.currency, .id = player_id } },
+        );
     };
 
     self.pending_despawns.clearRetainingCapacity();

@@ -34,11 +34,23 @@ pub fn init(
     surfaces: []Surface,
     opaque_count: u32,
 ) !Mesh {
-    var vertex_buffer: Buffer = try .init(device, heap, VertexType, vertices.len, .{ .storage_buffer_bit = true, .shader_device_address_bit = true });
+    var vertex_buffer: Buffer = try .init(
+        device,
+        heap,
+        VertexType,
+        vertices.len,
+        .{ .storage_buffer_bit = true, .shader_device_address_bit = true },
+    );
     errdefer vertex_buffer.deinit(heap);
     vertex_buffer.copy(VertexType, vertices);
 
-    var index_buffer: Buffer = try .init(device, heap, u32, indices.len, .{ .index_buffer_bit = true, .shader_device_address_bit = true });
+    var index_buffer: Buffer = try .init(
+        device,
+        heap,
+        u32,
+        indices.len,
+        .{ .index_buffer_bit = true, .shader_device_address_bit = true },
+    );
     errdefer index_buffer.deinit(heap);
     index_buffer.copy(u32, indices);
 

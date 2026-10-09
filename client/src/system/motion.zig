@@ -22,6 +22,9 @@ pub fn evaluate(world: *World, server_time: f32) void {
 
         const target_rotation = nz.Quat(f32).fromVec(motion.rotation);
         const rotation_decay = std.math.pow(f32, 1e-5, world.delta_time);
-        entity.transform.rotation = entity.transform.rotation.slerp(target_rotation, 1.0 - rotation_decay);
+        entity.transform.rotation = entity.transform.rotation.slerp(
+            target_rotation,
+            1.0 - rotation_decay,
+        );
     }
 }

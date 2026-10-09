@@ -177,7 +177,9 @@ pub fn parseScene(
             mesh_list.deinit(gpa);
         }
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
-            var surfaces: std.ArrayList(UploadData(VertexType).Surface) = try .initCapacity(gpa, mesh.primitives.len);
+            var surfaces: std.ArrayList(
+                UploadData(VertexType).Surface,
+            ) = try .initCapacity(gpa, mesh.primitives.len);
             errdefer surfaces.deinit(gpa);
             var vertices: std.ArrayList(VertexType) = .empty;
             errdefer vertices.deinit(gpa);
@@ -214,11 +216,15 @@ pub fn parseScene(
                     indices_count = @intCast(acc.count);
                 }
 
-                const pos_accessor_idx = primitive.attributes.map.get("POSITION") orelse return error.NoPosition;
+                const pos_accessor_idx = primitive.attributes.map.get(
+                    "POSITION",
+                ) orelse return error.NoPosition;
                 const pos_accessor = gltf.accessors.?[pos_accessor_idx];
                 const pos_buffer_view = gltf.bufferViews.?[pos_accessor.bufferView.?];
                 const pos_offset = (pos_accessor.byteOffset + pos_buffer_view.byteOffset);
-                std.debug.assert(pos_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
+                std.debug.assert(
+                    pos_accessor.componentType == @intFromEnum(zgltf.ComponentType.float),
+                );
                 const positions = std.mem.bytesAsSlice(
                     [3]f32,
                     bin[pos_offset .. pos_offset + pos_accessor.count * @sizeOf([3]f32)],
@@ -244,9 +250,13 @@ pub fn parseScene(
                         false,
                 });
 
-                const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get("TEXCOORD_0")) |uv_accessor_idx| blk: {
+                const uvs: ?[]align(1) const [2]f32 = if (primitive.attributes.map.get(
+                    "TEXCOORD_0",
+                )) |uv_accessor_idx| blk: {
                     const uv_accessor = gltf.accessors.?[uv_accessor_idx];
-                    std.debug.assert(uv_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
+                    std.debug.assert(
+                        uv_accessor.componentType == @intFromEnum(zgltf.ComponentType.float),
+                    );
                     const uv_buffer_view = gltf.bufferViews.?[uv_accessor.bufferView.?];
                     const uv_offset = (uv_accessor.byteOffset + uv_buffer_view.byteOffset);
                     break :blk std.mem.bytesAsSlice(
@@ -255,9 +265,13 @@ pub fn parseScene(
                     );
                 } else null;
 
-                const normal_accessor_idx = primitive.attributes.map.get("NORMAL") orelse return error.NoNormal;
+                const normal_accessor_idx = primitive.attributes.map.get(
+                    "NORMAL",
+                ) orelse return error.NoNormal;
                 const normal_accessor = gltf.accessors.?[normal_accessor_idx];
-                std.debug.assert(normal_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
+                std.debug.assert(
+                    normal_accessor.componentType == @intFromEnum(zgltf.ComponentType.float),
+                );
                 const normal_buffer_view = gltf.bufferViews.?[normal_accessor.bufferView.?];
                 const normal_offset = (normal_accessor.byteOffset + normal_buffer_view.byteOffset);
                 const normals = std.mem.bytesAsSlice(
@@ -269,25 +283,37 @@ pub fn parseScene(
                     var joints: ?[]const [4]u8 = null;
                     if (primitive.attributes.map.get("JOINTS_0")) |joint_accessor_idx| {
                         const joint_accessor = gltf.accessors.?[joint_accessor_idx];
-                        std.debug.assert(joint_accessor.componentType == @intFromEnum(zgltf.ComponentType.unsigned_byte));
+                        std.debug.assert(
+                            joint_accessor.componentType == @intFromEnum(
+                                zgltf.ComponentType.unsigned_byte,
+                            ),
+                        );
                         const joint_buffer_view = gltf.bufferViews.?[joint_accessor.bufferView.?];
                         const joint_offset = (joint_accessor.byteOffset + joint_buffer_view.byteOffset);
                         joints = std.mem.bytesAsSlice(
                             [4]u8,
-                            bin[joint_offset .. joint_offset + joint_accessor.count * @sizeOf([4]u8)],
+                            bin[joint_offset .. joint_offset + joint_accessor.count * @sizeOf(
+                                [4]u8,
+                            )],
                         );
                     }
 
                     var weights: ?[]const [4]f32 = null;
                     if (primitive.attributes.map.get("WEIGHTS_0")) |weights_accessor_idx| {
                         const weights_accessor = gltf.accessors.?[weights_accessor_idx];
-                        std.debug.assert(weights_accessor.componentType == @intFromEnum(zgltf.ComponentType.float));
+                        std.debug.assert(
+                            weights_accessor.componentType == @intFromEnum(
+                                zgltf.ComponentType.float,
+                            ),
+                        );
                         std.debug.assert(weights_accessor.type == .VEC4);
                         const weights_buffer_view = gltf.bufferViews.?[weights_accessor.bufferView.?];
                         const weights_offset = (weights_accessor.byteOffset + weights_buffer_view.byteOffset);
                         weights = @alignCast(std.mem.bytesAsSlice(
                             [4]f32,
-                            bin[weights_offset .. weights_offset + weights_accessor.count * @sizeOf([4]f32)],
+                            bin[weights_offset .. weights_offset + weights_accessor.count * @sizeOf(
+                                [4]f32,
+                            )],
                         ));
                     }
 
@@ -379,7 +405,9 @@ pub fn parseScene(
             scene_node.translation = local_matrix.vecPosition();
             scene_node.scale = local_matrix.vecScale();
         } else {
-            scene_node.translation = if (gltf_node.translation) |translation| translation else @splat(0);
+            scene_node.translation = if (gltf_node.translation) |translation| translation else @splat(
+                0,
+            );
             scene_node.rotation = if (gltf_node.rotation) |rotation| .{
                 .w = rotation[3],
                 .x = rotation[0],
@@ -431,7 +459,12 @@ pub fn parseScene(
         if (gltf.animations) |animations| {
             const model_animations = try gpa.alloc(AnimationClip, animations.len);
             for (animations, model_animations) |gltf_animation, *model_animation| {
-                model_animation.* = try .init(gpa, gltf_animation.name orelse "animation", gltf_animation.samplers.len, gltf_animation.channels.len);
+                model_animation.* = try .init(
+                    gpa,
+                    gltf_animation.name orelse "animation",
+                    gltf_animation.samplers.len,
+                    gltf_animation.channels.len,
+                );
                 for (gltf_animation.samplers, model_animation.samplers) |sampler, *model_sampler| {
                     const in_sampler_accessor = gltf.accessors.?[sampler.input];
                     const out_sampler_accessor = gltf.accessors.?[sampler.output];
@@ -441,7 +474,11 @@ pub fn parseScene(
                         .outputs = try gpa.alloc(nz.Vec4(f32), out_sampler_accessor.count),
                     };
 
-                    const in_sampler_buffer_view = gltf.bufferViews.?[@intCast(in_sampler_accessor.bufferView.?)];
+                    const in_sampler_buffer_view = gltf.bufferViews.?[
+                        @intCast(
+                            in_sampler_accessor.bufferView.?,
+                        )
+                    ];
                     const in_sampler_offset = in_sampler_accessor.byteOffset + in_sampler_buffer_view.byteOffset;
                     const in_sampler_data = bin[in_sampler_offset .. in_sampler_offset + in_sampler_buffer_view.byteLength];
                     for (model_sampler.inputs, 0..) |*input, i| {
@@ -452,19 +489,27 @@ pub fn parseScene(
                         if (input > model_animation.end) model_animation.end = input;
                     }
 
-                    const out_sampler_buffer_view = gltf.bufferViews.?[@intCast(out_sampler_accessor.bufferView.?)];
+                    const out_sampler_buffer_view = gltf.bufferViews.?[
+                        @intCast(
+                            out_sampler_accessor.bufferView.?,
+                        )
+                    ];
                     const offset = out_sampler_accessor.byteOffset + out_sampler_buffer_view.byteOffset;
                     const out_sampler_data = bin[offset .. offset + out_sampler_buffer_view.byteLength];
                     switch (out_sampler_accessor.type) {
                         .VEC3 => {
                             for (model_sampler.outputs, 0..) |*output, i| {
-                                const value: [3]f32 = @bitCast(out_sampler_data[i * 12 ..][0..12].*);
+                                const value: [3]f32 = @bitCast(
+                                    out_sampler_data[i * 12 ..][0..12].*,
+                                );
                                 output.* = .{ value[0], value[1], value[2], 0 };
                             }
                         },
                         .VEC4 => {
                             for (model_sampler.outputs, 0..) |*output, i| {
-                                const value: [4]f32 = @bitCast(out_sampler_data[i * 16 ..][0..16].*);
+                                const value: [4]f32 = @bitCast(
+                                    out_sampler_data[i * 16 ..][0..16].*,
+                                );
                                 output.* = value;
                             }
                         },
@@ -490,5 +535,3 @@ pub fn parseScene(
 
     return upload;
 }
-
-

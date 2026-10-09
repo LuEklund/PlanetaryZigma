@@ -4,8 +4,14 @@ const DynLib = @import("DynLib.zig").DynLib;
 
 const is_windows = builtin.os.tag == .windows;
 
-extern "kernel32" fn CopyFileW(existing: [*:0]const u16, new: [*:0]const u16, fail_if_exists: std.os.windows.BOOL) callconv(.winapi) std.os.windows.BOOL;
-extern "kernel32" fn GetFileAttributesW(path: [*:0]const u16) callconv(.winapi) std.os.windows.DWORD;
+extern "kernel32" fn CopyFileW(
+    existing: [*:0]const u16,
+    new: [*:0]const u16,
+    fail_if_exists: std.os.windows.BOOL,
+) callconv(.winapi) std.os.windows.BOOL;
+extern "kernel32" fn GetFileAttributesW(
+    path: [*:0]const u16,
+) callconv(.winapi) std.os.windows.DWORD;
 
 pub fn HotLib(comptime Api: type, comptime Handle: type) type {
     return struct {
@@ -35,7 +41,11 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
             };
             const found_path: []const u8 = for (search_paths) |path| {
                 var buf: [std.fs.max_path_bytes]u8 = undefined;
-                const full_path = std.fmt.bufPrint(&buf, "{s}{s}", .{ path, source_name }) catch continue;
+                const full_path = std.fmt.bufPrint(
+                    &buf,
+                    "{s}{s}",
+                    .{ path, source_name },
+                ) catch continue;
                 if (fileExists(full_path)) break path;
             } else return error.NoLibraryPathFound;
 
@@ -66,7 +76,11 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
 
         pub fn changed(self: *const Self, io: std.Io) bool {
             var buf: [std.fs.max_path_bytes]u8 = undefined;
-            const source_path = std.fmt.bufPrint(&buf, "{s}{s}", .{ self.dir_path, self.source_name }) catch return false;
+            const source_path = std.fmt.bufPrint(
+                &buf,
+                "{s}{s}",
+                .{ self.dir_path, self.source_name },
+            ) catch return false;
             const stat = std.Io.Dir.cwd().statFile(io, source_path, .{}) catch return false;
             return stat.mtime.nanoseconds > self.mtime.nanoseconds;
         }
@@ -75,14 +89,20 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
             if (!self.changed(io)) return;
 
             const next_dynlib, const next_api, const next_mtime = self.open(io) catch |err| {
-                std.log.err("{s}: reload failed, keeping the running build: {t}", .{ self.source_name, err });
+                std.log.err(
+                    "{s}: reload failed, keeping the running build: {t}",
+                    .{ self.source_name, err },
+                );
                 return;
             };
 
             if (has_layout_guard) {
                 const next_layout_hash = next_api.layoutHash();
                 if (next_layout_hash != self.layout_hash) {
-                    std.log.err("{s}: persistent memory layout changed ({x} -> {x}), restart needed; keeping the running build", .{ self.source_name, self.layout_hash, next_layout_hash });
+                    std.log.err(
+                        "{s}: persistent memory layout changed ({x} -> {x}), restart needed; keeping the running build",
+                        .{ self.source_name, self.layout_hash, next_layout_hash },
+                    );
                     var rejected = next_dynlib;
                     rejected.close();
                     self.mtime = next_mtime;
@@ -101,16 +121,30 @@ pub fn HotLib(comptime Api: type, comptime Handle: type) type {
 
         fn open(self: *Self, io: std.Io) !struct { DynLib, Api, std.Io.Timestamp } {
             var source_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const source_path = try std.fmt.bufPrint(&source_buf, "{s}{s}", .{ self.dir_path, self.source_name });
+            const source_path = try std.fmt.bufPrint(
+                &source_buf,
+                "{s}{s}",
+                .{ self.dir_path, self.source_name },
+            );
             const stat = try std.Io.Dir.cwd().statFile(io, source_path, .{});
 
-            if (self.copy_id == 0) self.copy_id = @intCast(@mod(std.Io.Timestamp.zero.durationTo(.now(io, .real)).nanoseconds, 1_000_000_000));
+            if (self.copy_id == 0) self.copy_id = @intCast(
+                @mod(std.Io.Timestamp.zero.durationTo(.now(io, .real)).nanoseconds, 1_000_000_000),
+            );
             self.copy_id += 1;
             var copy_buf: [std.fs.max_path_bytes]u8 = undefined;
             const copy_path = if (is_windows)
-                try std.fmt.bufPrint(&copy_buf, "{s}{s}.{d}.{d}", .{ self.dir_path, self.source_name, self.process_id, self.copy_id })
+                try std.fmt.bufPrint(
+                    &copy_buf,
+                    "{s}{s}.{d}.{d}",
+                    .{ self.dir_path, self.source_name, self.process_id, self.copy_id },
+                )
             else
-                try std.fmt.bufPrint(&copy_buf, "/tmp/{s}.{d}", .{ self.source_name, self.copy_id });
+                try std.fmt.bufPrint(
+                    &copy_buf,
+                    "/tmp/{s}.{d}",
+                    .{ self.source_name, self.copy_id },
+                );
 
             try copyFile(source_path, copy_path, io);
 

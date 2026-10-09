@@ -15,7 +15,10 @@ const Biome = @import("../Biome.zig");
 pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32) !Mesh {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
-    const owned: Chunk.CellRegion = .{ .min = Chunk.min(chunk.coord), .max = Chunk.max(chunk.coord) };
+    const owned: Chunk.CellRegion = .{
+        .min = Chunk.min(chunk.coord),
+        .max = Chunk.max(chunk.coord),
+    };
     const radius_float: f32 = @floatFromInt(planet_radius);
 
     var chunk_mesh: Mesh = .{ .vertices = .empty, .indices = .empty };
@@ -43,10 +46,34 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
             const index_anchor = chunk.surface_cells.getIndex(anchor).?;
             const centroids = chunk.surface_cells.values();
             const base_vertex_index: u32 = @intCast(chunk_mesh.vertices.items.len);
-            try chunk_mesh.appendVertex(gpa, centroids[index_anchor], normals[index_anchor], .{ 0, 0 }, radius_float);
-            try chunk_mesh.appendVertex(gpa, centroids[index_b], normals[index_b], .{ 1, 0 }, radius_float);
-            try chunk_mesh.appendVertex(gpa, centroids[index_c], normals[index_c], .{ 0, 1 }, radius_float);
-            try chunk_mesh.appendVertex(gpa, centroids[index_bc], normals[index_bc], .{ 1, 1 }, radius_float);
+            try chunk_mesh.appendVertex(
+                gpa,
+                centroids[index_anchor],
+                normals[index_anchor],
+                .{ 0, 0 },
+                radius_float,
+            );
+            try chunk_mesh.appendVertex(
+                gpa,
+                centroids[index_b],
+                normals[index_b],
+                .{ 1, 0 },
+                radius_float,
+            );
+            try chunk_mesh.appendVertex(
+                gpa,
+                centroids[index_c],
+                normals[index_c],
+                .{ 0, 1 },
+                radius_float,
+            );
+            try chunk_mesh.appendVertex(
+                gpa,
+                centroids[index_bc],
+                normals[index_bc],
+                .{ 1, 1 },
+                radius_float,
+            );
             try chunk_mesh.appendQuadIndices(gpa, base_vertex_index, edge_start_solid);
         }
     }
@@ -59,7 +86,14 @@ pub fn deinit(self: *Mesh, gpa: std.mem.Allocator) void {
     self.indices.deinit(gpa);
 }
 
-fn appendVertex(self: *Mesh, gpa: std.mem.Allocator, position: nz.Vec3(f32), normal: nz.Vec3(f32), uv: [2]f32, planet_radius: f32) !void {
+fn appendVertex(
+    self: *Mesh,
+    gpa: std.mem.Allocator,
+    position: nz.Vec3(f32),
+    normal: nz.Vec3(f32),
+    uv: [2]f32,
+    planet_radius: f32,
+) !void {
     const biome = Biome.forRadius(@intFromFloat(planet_radius));
     const height = nz.vec.length(position);
     const height_fraction = std.math.clamp((height - planet_radius) / 30, 0, 1);
@@ -68,7 +102,10 @@ fn appendVertex(self: *Mesh, gpa: std.mem.Allocator, position: nz.Vec3(f32), nor
     const low_color: nz.Vec3(f32) = biome.low_color;
     const high_color: nz.Vec3(f32) = biome.high_color;
     const steep_color: nz.Vec3(f32) = biome.steep_color;
-    const height_color = nz.vec.scale(low_color, 1 - height_fraction) + nz.vec.scale(high_color, height_fraction);
+    const height_color = nz.vec.scale(
+        low_color,
+        1 - height_fraction,
+    ) + nz.vec.scale(high_color, height_fraction);
     const color = nz.vec.scale(height_color, 1 - steepness) + nz.vec.scale(steep_color, steepness);
     try self.vertices.append(gpa, .{
         .position = position,
@@ -79,10 +116,35 @@ fn appendVertex(self: *Mesh, gpa: std.mem.Allocator, position: nz.Vec3(f32), nor
     });
 }
 
-fn appendQuadIndices(self: *Mesh, gpa: std.mem.Allocator, base_vertex_index: u32, edge_start_solid: bool) !void {
+fn appendQuadIndices(
+    self: *Mesh,
+    gpa: std.mem.Allocator,
+    base_vertex_index: u32,
+    edge_start_solid: bool,
+) !void {
     if (edge_start_solid) {
-        try self.indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 1, base_vertex_index + 3, base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 2 });
+        try self.indices.appendSlice(
+            gpa,
+            &.{
+                base_vertex_index + 0,
+                base_vertex_index + 1,
+                base_vertex_index + 3,
+                base_vertex_index + 0,
+                base_vertex_index + 3,
+                base_vertex_index + 2,
+            },
+        );
     } else {
-        try self.indices.appendSlice(gpa, &.{ base_vertex_index + 0, base_vertex_index + 3, base_vertex_index + 1, base_vertex_index + 0, base_vertex_index + 2, base_vertex_index + 3 });
+        try self.indices.appendSlice(
+            gpa,
+            &.{
+                base_vertex_index + 0,
+                base_vertex_index + 3,
+                base_vertex_index + 1,
+                base_vertex_index + 0,
+                base_vertex_index + 2,
+                base_vertex_index + 3,
+            },
+        );
     }
 }

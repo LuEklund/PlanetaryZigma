@@ -21,7 +21,10 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Shaders {
     var self: Shaders = .{ .dir = try root.openDir(io, "shaders", .{}), .entries = .empty };
     errdefer self.deinit(gpa, io);
 
-    for (std.enums.values(contract.Shader.Kind)) |kind| _ = try self.add(gpa, contract.Shader.get(kind).path);
+    for (std.enums.values(contract.Shader.Kind)) |kind| _ = try self.add(
+        gpa,
+        contract.Shader.get(kind).path,
+    );
     return self;
 }
 
@@ -36,7 +39,12 @@ pub fn add(self: *Shaders, gpa: std.mem.Allocator, path: []const u8) !u32 {
     return kind;
 }
 
-pub fn update(self: *Shaders, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
+pub fn update(
+    self: *Shaders,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    renderer: *const RenderLib,
+) !void {
     for (self.entries.items, 0..) |*entry, kind| {
         if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
         const spirv = try assets.read(gpa, io, self.dir, entry.path);

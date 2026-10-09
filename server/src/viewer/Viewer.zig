@@ -32,7 +32,13 @@ border_lines: std.ArrayList(DrawList.Line),
 arrow_lines_field: ?u1,
 border_lines_field: ?u1,
 
-pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, planet_radius: f32) !void {
+pub fn init(
+    self: *Viewer,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    window: *Window,
+    planet_radius: f32,
+) !void {
     self.animator = try .init(gpa);
     errdefer self.animator.deinit();
     self.animations = .empty;
@@ -56,7 +62,6 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
 
     try self.assets.update(gpa, io, &self.render);
 
-
     self.dvui_backend = .{
         .io = io,
         .size = .{ .w = @floatFromInt(window.size.width), .h = @floatFromInt(window.size.height) },
@@ -65,7 +70,12 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
         .frame = null,
     };
     self.dvui_input = .{ .buttons = .{}, .position = .{ .x = 0, .y = 0 } };
-    self.dvui_window = try .init(@src(), gpa, self.dvui_backend.backend(), .{ .color_scheme = .dark, .keybinds = .none });
+    self.dvui_window = try .init(
+        @src(),
+        gpa,
+        self.dvui_backend.backend(),
+        .{ .color_scheme = .dark, .keybinds = .none },
+    );
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
     self.menu_open = true;
     self.arrow_lines = .empty;
@@ -73,8 +83,6 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     self.arrow_lines_field = null;
     self.border_lines_field = null;
 }
-
-
 
 pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.arrow_lines.deinit(gpa);
@@ -104,16 +112,29 @@ pub fn draw(self: *Viewer, world: *World, gpa: std.mem.Allocator, io: std.Io) !b
         self.camera.update(window, world.delta_time, world.players.items);
     }
 
-    self.dvui_backend.size = .{ .w = @floatFromInt(window.size.width), .h = @floatFromInt(window.size.height) };
+    self.dvui_backend.size = .{
+        .w = @floatFromInt(window.size.width),
+        .h = @floatFromInt(window.size.height),
+    };
     self.dvui_backend.scale = std.math.clamp(self.dvui_backend.size.h / 1080, 0.5, 3);
-    self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
+    self.dvui_backend.frame = .{
+        .draw_list = &self.draw_list,
+        .render_api = &self.render.api,
+        .render_handle = self.render.handle,
+    };
     self.dvui_window.backend = self.dvui_backend.backend();
     try self.dvui_input.push(&self.dvui_window, window, "", &.{});
     try self.dvui_window.begin(self.dvui_backend.nanoTime());
     var quit = window.should_close;
-    if (self.menu_open and menu.update(world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
+    if (self.menu_open and menu.update(
+        world,
+        std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow),
+    ))
         quit = true;
-    dvui.label(@src(), "debug vertices {d}/{d}", .{ (self.arrow_lines.items.len + self.border_lines.items.len) * 2, DrawList.max_lines * 2 }, .{
+    dvui.label(@src(), "debug vertices {d}/{d}", .{
+        (self.arrow_lines.items.len + self.border_lines.items.len) * 2,
+        DrawList.max_lines * 2,
+    }, .{
         .rect = .{ .x = 8, .y = 8, .w = 400, .h = 20 },
         .font = dvui.Font.theme(.body).withSize(16),
     });

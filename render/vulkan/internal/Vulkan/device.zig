@@ -18,16 +18,29 @@ pub const Physical = struct {
             const device_name = std.mem.sliceTo(&properties.device_name, 0);
             const version: vk.Version = @bitCast(properties.api_version);
             if (version.major == 1 and version.minor < 3) {
-                std.log.info("skipping {s}: Vulkan {d}.{d} < 1.3", .{ device_name, version.major, version.minor });
+                std.log.info(
+                    "skipping {s}: Vulkan {d}.{d} < 1.3",
+                    .{ device_name, version.major, version.minor },
+                );
                 continue;
             }
 
-            const families = try instance.proxy.getPhysicalDeviceQueueFamilyPropertiesAlloc(device, gpa);
+            const families = try instance.proxy.getPhysicalDeviceQueueFamilyPropertiesAlloc(
+                device,
+                gpa,
+            );
             defer gpa.free(families);
             for (families, 0..) |family, family_index| {
-                const present_supported = try instance.proxy.getPhysicalDeviceSurfaceSupportKHR(device, @intCast(family_index), surface);
+                const present_supported = try instance.proxy.getPhysicalDeviceSurfaceSupportKHR(
+                    device,
+                    @intCast(family_index),
+                    surface,
+                );
                 if (!family.queue_flags.graphics_bit or present_supported != .true) continue;
-                std.log.info("found physical device: {s}, queue family: {d}", .{ device_name, family_index });
+                std.log.info(
+                    "found physical device: {s}, queue family: {d}",
+                    .{ device_name, family_index },
+                );
                 return .{
                     .handle = device,
                     .max_anisotropy = properties.limits.max_sampler_anisotropy,
@@ -49,12 +62,23 @@ pub const Logical = struct {
 
     pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: Physical) !Logical {
         const extensions = [_][*:0]const u8{vk.extensions.khr_swapchain.name};
-        const available = try instance.proxy.enumerateDeviceExtensionPropertiesAlloc(physical_device.handle, null, gpa);
+        const available = try instance.proxy.enumerateDeviceExtensionPropertiesAlloc(
+            physical_device.handle,
+            null,
+            gpa,
+        );
         defer gpa.free(available);
         check_ext: for (extensions) |extension| {
             for (available) |candidate|
-                if (std.mem.eql(u8, std.mem.span(extension), std.mem.sliceTo(&candidate.extension_name, 0))) continue :check_ext;
-            std.log.err("your GPU/driver does not support the required Vulkan feature {s} — please update your graphics drivers; if that does not help, your GPU may be too old for this game", .{extension});
+                if (std.mem.eql(
+                    u8,
+                    std.mem.span(extension),
+                    std.mem.sliceTo(&candidate.extension_name, 0),
+                )) continue :check_ext;
+            std.log.err(
+                "your GPU/driver does not support the required Vulkan feature {s} — please update your graphics drivers; if that does not help, your GPU may be too old for this game",
+                .{extension},
+            );
             return error.MissingDeviceExtension;
         }
 
@@ -103,7 +127,10 @@ pub const Logical = struct {
             .flags = .{ .reset_command_buffer_bit = true },
             .queue_family_index = physical_device.graphics_queue_family_index,
         }, null);
-        const immediate_fence = try proxy.createFence(&.{ .flags = .{ .signaled_bit = true } }, null);
+        const immediate_fence = try proxy.createFence(
+            &.{ .flags = .{ .signaled_bit = true } },
+            null,
+        );
         return .{
             .handle = handle,
             .proxy = proxy,
@@ -128,7 +155,10 @@ pub const Logical = struct {
             .command_buffer_count = 1,
         }, @ptrCast(&command_buffer));
         try self.proxy.resetFences(&.{self.immediate_fence});
-        try self.proxy.beginCommandBuffer(command_buffer, &.{ .flags = .{ .one_time_submit_bit = true } });
+        try self.proxy.beginCommandBuffer(
+            command_buffer,
+            &.{ .flags = .{ .one_time_submit_bit = true } },
+        );
         return command_buffer;
     }
 

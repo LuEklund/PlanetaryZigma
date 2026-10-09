@@ -32,7 +32,12 @@ pub const Skin = struct {
     inverse_bind_matrices: ?[]nz.Mat4x4(f32),
     joints: []usize,
 
-    pub fn init(gpa: std.mem.Allocator, skin_name: []const u8, inverse_bind_matrices: ?[]nz.Mat4x4(f32), joints: []usize) !Skin {
+    pub fn init(
+        gpa: std.mem.Allocator,
+        skin_name: []const u8,
+        inverse_bind_matrices: ?[]nz.Mat4x4(f32),
+        joints: []usize,
+    ) !Skin {
         return .{
             .name = try gpa.dupe(u8, skin_name),
             .inverse_bind_matrices = inverse_bind_matrices,
@@ -70,14 +75,26 @@ pub fn parseGlb(
 ) !gltf.UploadData(VertexType) {
     self.clear(gpa);
 
-    const upload_data = try gltf.parseScene(VertexType, gpa, glb.gltf, glb.bin, &self.nodes, &self.node_names, &self.skins, &self.clips);
+    const upload_data = try gltf.parseScene(
+        VertexType,
+        gpa,
+        glb.gltf,
+        glb.bin,
+        &self.nodes,
+        &self.node_names,
+        &self.skins,
+        &self.clips,
+    );
 
     computeMatrices(self.nodes.items);
 
     if (!self.isSkinned()) {
         for (self.nodes.items) |node| {
             const mesh_id = node.mesh_id orelse continue;
-            try self.surfaces.append(gpa, .{ .mesh_id = mesh_id, .model_matrix = node.model_matrix });
+            try self.surfaces.append(
+                gpa,
+                .{ .mesh_id = mesh_id, .model_matrix = node.model_matrix },
+            );
         }
         self.nodes.clearAndFree(gpa);
     }

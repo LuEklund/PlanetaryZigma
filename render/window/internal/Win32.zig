@@ -22,8 +22,15 @@ fullscreen_data: struct {
     rect: win32.RECT = std.mem.zeroes(win32.RECT),
 } = .{},
 
-pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Window.OpenOptions) anyerror!void {
-    const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
+pub fn open(
+    self: *Win32,
+    window: *Window,
+    gpa: std.mem.Allocator,
+    options: Window.OpenOptions,
+) anyerror!void {
+    const hinstance: std.os.windows.HINSTANCE = @ptrCast(
+        win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle,
+    );
 
     const class_name = try std.unicode.utf8ToUtf16LeAllocZ(gpa, options.app_id orelse "Class");
     errdefer gpa.free(class_name);
@@ -45,8 +52,20 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
         class.lpszClassName,
         @ptrCast(title),
         win32.WS_OVERLAPPEDWINDOW,
-        if (options.position) |position| position.x else @max(0, @divTrunc(win32.GetSystemMetrics(.CXSCREEN) - @as(i32, @intCast(options.size.width)), 2)),
-        if (options.position) |position| position.y else @max(0, @divTrunc(win32.GetSystemMetrics(.CYSCREEN) - @as(i32, @intCast(options.size.height)), 2)),
+        if (options.position) |position| position.x else @max(
+            0,
+            @divTrunc(
+                win32.GetSystemMetrics(.CXSCREEN) - @as(i32, @intCast(options.size.width)),
+                2,
+            ),
+        ),
+        if (options.position) |position| position.y else @max(
+            0,
+            @divTrunc(
+                win32.GetSystemMetrics(.CYSCREEN) - @as(i32, @intCast(options.size.height)),
+                2,
+            ),
+        ),
         @intCast(options.size.width),
         @intCast(options.size.height),
         null,
@@ -69,7 +88,13 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
         .hwndTarget = hwnd,
     };
 
-    check(win32.RegisterRawInputDevices(@ptrCast(&raw_input_device), 1, @sizeOf(win32.RAWINPUTDEVICE))) catch return error.RegisterRawInputDevices;
+    check(
+        win32.RegisterRawInputDevices(
+            @ptrCast(&raw_input_device),
+            1,
+            @sizeOf(win32.RAWINPUTDEVICE),
+        ),
+    ) catch return error.RegisterRawInputDevices;
 
     self.* = .{
         .gpa = gpa,
@@ -97,8 +122,12 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
         switch (msg.message) {
             win32.WM_USER + win32.WM_CLOSE => window.should_close = true,
             win32.WM_USER + win32.WM_SIZE => window.size = .{
-                .width = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam) orelse continue))),
-                .height = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
+                .width = @intCast(
+                    @as(u16, @truncate(std.math.cast(u32, msg.lParam) orelse continue)),
+                ),
+                .height = @intCast(
+                    @as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue)),
+                ),
             },
             win32.WM_USER + win32.WM_GETMINMAXINFO => {
                 const info: *win32.MINMAXINFO = @ptrFromInt(@as(usize, @bitCast(msg.lParam)));
@@ -115,7 +144,9 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
             },
             win32.WM_USER + win32.WM_MOVE => window.position = .{
                 .x = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam) orelse continue))),
-                .y = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
+                .y = @intCast(
+                    @as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue)),
+                ),
             },
             win32.WM_USER + win32.WM_SETFOCUS => {
                 window.focused = true;
@@ -130,7 +161,9 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
 
             win32.WM_MOUSEMOVE => if (!pointer.is_relative) {
                 const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @bitCast(msg.lParam)))));
-                const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @bitCast(msg.lParam)) >> 16)));
+                const y: f64 = @floatFromInt(
+                    @as(u16, @truncate(@as(usize, @bitCast(msg.lParam)) >> 16)),
+                );
 
                 pointer.movement = .{ .position = .{ .x = x, .y = y } };
             },
@@ -184,8 +217,13 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 }
             },
             win32.WM_MOUSEWHEEL, win32.WM_MOUSEHWHEEL => {
-                const delta: isize = @as(i16, @bitCast(@as(u16, @truncate(msg.wParam >> 16)))); // signed high word: up/right > 0, down/left < 0
-                const lines: f64 = @floatFromInt(@divTrunc(delta, @as(isize, @intCast(win32.WHEEL_DELTA))));
+                const delta: isize = @as(
+                    i16,
+                    @bitCast(@as(u16, @truncate(msg.wParam >> 16))),
+                ); // signed high word: up/right > 0, down/left < 0
+                const lines: f64 = @floatFromInt(
+                    @divTrunc(delta, @as(isize, @intCast(win32.WHEEL_DELTA))),
+                );
 
                 switch (msg.message) {
                     win32.WM_MOUSEWHEEL => pointer.axis.vertical += lines,
@@ -219,7 +257,10 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 if (codepoint < 0x20 or codepoint == 0x7F) continue;
 
                 var buffer: [4]u8 = undefined;
-                const decoded = buffer[0 .. std.unicode.utf8Encode(codepoint, &buffer) catch return error.InvalidCodepoint];
+                const decoded = buffer[0 .. std.unicode.utf8Encode(
+                    codepoint,
+                    &buffer,
+                ) catch return error.InvalidCodepoint];
                 try writer.writeAll(decoded);
             },
             else => continue,
@@ -254,9 +295,15 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
         return;
 
     if (enabled) {
-        self.fullscreen_data.style = win32.getWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_STYLE));
+        self.fullscreen_data.style = win32.getWindowLongPtrW(
+            @ptrCast(self.hwnd),
+            @intFromEnum(win32.GWL_STYLE),
+        );
 
-        self.fullscreen_data.ex_style = win32.getWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE));
+        self.fullscreen_data.ex_style = win32.getWindowLongPtrW(
+            @ptrCast(self.hwnd),
+            @intFromEnum(win32.GWL_EXSTYLE),
+        );
 
         _ = win32.GetWindowRect(@ptrCast(self.hwnd), &self.fullscreen_data.rect);
 
@@ -264,14 +311,20 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
             .cbSize = @sizeOf(win32.MONITORINFO),
         });
 
-        const monitor = win32.MonitorFromWindow(@ptrCast(self.hwnd), win32.MONITOR_DEFAULTTONEAREST);
+        const monitor = win32.MonitorFromWindow(
+            @ptrCast(self.hwnd),
+            win32.MONITOR_DEFAULTTONEAREST,
+        );
 
         _ = win32.GetMonitorInfoW(monitor, &monitor_info);
 
         _ = win32.setWindowLongPtrW(
             @ptrCast(self.hwnd),
             @intFromEnum(win32.GWL_STYLE),
-            self.fullscreen_data.style & ~@as(usize, @intCast(@as(u32, @bitCast(win32.WS_OVERLAPPEDWINDOW)))),
+            self.fullscreen_data.style & ~@as(
+                usize,
+                @intCast(@as(u32, @bitCast(win32.WS_OVERLAPPEDWINDOW))),
+            ),
         );
 
         _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE), 0);
@@ -288,9 +341,17 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
 
         self.fullscreen_data.enabled = true;
     } else {
-        _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_STYLE), self.fullscreen_data.style);
+        _ = win32.setWindowLongPtrW(
+            @ptrCast(self.hwnd),
+            @intFromEnum(win32.GWL_STYLE),
+            self.fullscreen_data.style,
+        );
 
-        _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE), self.fullscreen_data.ex_style);
+        _ = win32.setWindowLongPtrW(
+            @ptrCast(self.hwnd),
+            @intFromEnum(win32.GWL_EXSTYLE),
+            self.fullscreen_data.ex_style,
+        );
 
         _ = win32.SetWindowPos(
             @ptrCast(self.hwnd),
@@ -323,14 +384,18 @@ pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer
         .confined, .locked => {
             var rect: win32.RECT = undefined;
 
-            check(win32.GetClientRect(@ptrCast(self.hwnd), &rect)) catch return error.GetClientRectangle;
+            check(
+                win32.GetClientRect(@ptrCast(self.hwnd), &rect),
+            ) catch return error.GetClientRectangle;
 
             var top_left = win32.POINT{
                 .x = rect.left,
                 .y = rect.top,
             };
 
-            check(win32.ClientToScreen(@ptrCast(self.hwnd), &top_left)) catch return error.ClientToScreen;
+            check(
+                win32.ClientToScreen(@ptrCast(self.hwnd), &top_left),
+            ) catch return error.ClientToScreen;
 
             rect.left = top_left.x;
             rect.top = top_left.y;
@@ -345,7 +410,12 @@ pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer
 
 pub fn setPointerRelative(_: *Win32, _: *Window, _: bool) !void {}
 
-fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {
+fn wndProc(
+    hwnd: win32.HWND,
+    msg: u32,
+    w_param: win32.WPARAM,
+    l_param: win32.LPARAM,
+) callconv(.winapi) win32.LRESULT {
     return switch (msg) {
         win32.WM_KILLFOCUS, win32.WM_CLOSE, win32.WM_SIZE, win32.WM_GETMINMAXINFO, win32.WM_MOVE, win32.WM_SETFOCUS => |wm| {
             check(win32.PostMessageW(hwnd, win32.WM_USER + wm, w_param, l_param)) catch {};

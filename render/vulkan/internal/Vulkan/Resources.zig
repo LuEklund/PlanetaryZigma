@@ -76,19 +76,48 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
     const fragment: vk.ShaderStageFlags = .{ .fragment_bit = true };
     const descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout) = .init(.{
         .scene = try .init(device, &.{
-            .{ .binding = 0, .descriptor_count = 1, .descriptor_type = .uniform_buffer, .stage_flags = vertex_fragment },
+            .{
+                .binding = 0,
+                .descriptor_count = 1,
+                .descriptor_type = .uniform_buffer,
+                .stage_flags = vertex_fragment,
+            },
         }, .{}, null),
         .material = try .init(device, &.{
-            .{ .binding = 0, .descriptor_count = 1, .descriptor_type = .combined_image_sampler, .stage_flags = vertex_fragment },
+            .{
+                .binding = 0,
+                .descriptor_count = 1,
+                .descriptor_type = .combined_image_sampler,
+                .stage_flags = vertex_fragment,
+            },
         }, .{}, null),
         .shadow = try .init(device, &.{
-            .{ .binding = 0, .descriptor_count = 1, .descriptor_type = .combined_image_sampler, .stage_flags = fragment },
-            .{ .binding = 1, .descriptor_count = 1, .descriptor_type = .uniform_buffer, .stage_flags = fragment },
+            .{
+                .binding = 0,
+                .descriptor_count = 1,
+                .descriptor_type = .combined_image_sampler,
+                .stage_flags = fragment,
+            },
+            .{
+                .binding = 1,
+                .descriptor_count = 1,
+                .descriptor_type = .uniform_buffer,
+                .stage_flags = fragment,
+            },
         }, .{}, null),
         .textures = try .init(device, &.{
-            .{ .binding = 0, .descriptor_count = max_textures, .descriptor_type = .combined_image_sampler, .stage_flags = vertex_fragment },
+            .{
+                .binding = 0,
+                .descriptor_count = max_textures,
+                .descriptor_type = .combined_image_sampler,
+                .stage_flags = vertex_fragment,
+            },
         }, .{ .update_after_bind_pool_bit = true }, &.{
-            .{ .update_after_bind_bit = true, .update_unused_while_pending_bit = true, .partially_bound_bit = true },
+            .{
+                .update_after_bind_bit = true,
+                .update_unused_while_pending_bit = true,
+                .partially_bound_bit = true,
+            },
         }),
     });
 
@@ -112,10 +141,26 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
         }),
     });
 
-    var identity_joint_buffer: Buffer = try .init(device, &heaps.host, nz.Mat4x4(f32), 1, .{ .uniform_buffer_bit = true, .storage_buffer_bit = true, .shader_device_address_bit = true });
+    var identity_joint_buffer: Buffer = try .init(
+        device,
+        &heaps.host,
+        nz.Mat4x4(f32),
+        1,
+        .{
+            .uniform_buffer_bit = true,
+            .storage_buffer_bit = true,
+            .shader_device_address_bit = true,
+        },
+    );
     identity_joint_buffer.copy(nz.Mat4x4(f32), &.{.identity});
 
-    var effect_params_buffer: Buffer = try .init(device, &heaps.host, contract.Effect.GPU, contract.ParticleEffect.count, .{ .storage_buffer_bit = true, .shader_device_address_bit = true });
+    var effect_params_buffer: Buffer = try .init(
+        device,
+        &heaps.host,
+        contract.Effect.GPU,
+        contract.ParticleEffect.count,
+        .{ .storage_buffer_bit = true, .shader_device_address_bit = true },
+    );
     var effect_params_rows: [contract.ParticleEffect.count]contract.Effect.GPU = undefined;
     for (std.enums.values(contract.ParticleEffect)) |effect| {
         effect_params_rows[@intFromEnum(effect)] = contract.effects.get(effect).toGPU();
@@ -151,7 +196,13 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
     }, null);
 
     var cascade_buffers: [frame_count]Buffer = undefined;
-    for (&cascade_buffers) |*cascade_buffer| cascade_buffer.* = try .init(device, &heaps.host, GPUCascades, 1, .{ .uniform_buffer_bit = true });
+    for (&cascade_buffers) |*cascade_buffer| cascade_buffer.* = try .init(
+        device,
+        &heaps.host,
+        GPUCascades,
+        1,
+        .{ .uniform_buffer_bit = true },
+    );
 
     const pool_sizes = [_]vk.DescriptorPoolSize{
         .{ .type = .uniform_buffer, .descriptor_count = frame_count * 2 },
@@ -166,12 +217,37 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
 
     var scene_sets: [frame_count]vk.DescriptorSet = undefined;
     var shadow_sets: [frame_count]vk.DescriptorSet = undefined;
-    const scene_layouts: [frame_count]vk.DescriptorSetLayout = @splat(descriptor_layouts.get(.scene).handle);
-    const shadow_layouts: [frame_count]vk.DescriptorSetLayout = @splat(descriptor_layouts.get(.shadow).handle);
-    try device.proxy.allocateDescriptorSets(&.{ .descriptor_pool = descriptor_pool, .descriptor_set_count = frame_count, .p_set_layouts = &scene_layouts }, &scene_sets);
-    try device.proxy.allocateDescriptorSets(&.{ .descriptor_pool = descriptor_pool, .descriptor_set_count = frame_count, .p_set_layouts = &shadow_layouts }, &shadow_sets);
+    const scene_layouts: [frame_count]vk.DescriptorSetLayout = @splat(
+        descriptor_layouts.get(.scene).handle,
+    );
+    const shadow_layouts: [frame_count]vk.DescriptorSetLayout = @splat(
+        descriptor_layouts.get(.shadow).handle,
+    );
+    try device.proxy.allocateDescriptorSets(
+        &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = frame_count,
+            .p_set_layouts = &scene_layouts,
+        },
+        &scene_sets,
+    );
+    try device.proxy.allocateDescriptorSets(
+        &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = frame_count,
+            .p_set_layouts = &shadow_layouts,
+        },
+        &shadow_sets,
+    );
     for (shadow_sets, cascade_buffers) |shadow_set, cascade_buffer| {
-        TextureTable.writeCombinedSampler(device, shadow_set, 0, 0, shadow_image.vk_imageview, shadow_sampler);
+        TextureTable.writeCombinedSampler(
+            device,
+            shadow_set,
+            0,
+            0,
+            shadow_image.vk_imageview,
+            shadow_sampler,
+        );
         TextureTable.writeUniformBuffer(device, shadow_set, 1, cascade_buffer.buffer);
     }
 
@@ -179,7 +255,12 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
     self.* = .{
         .gpa = gpa,
         .device = device,
-        .texture_table = try .init(device, descriptor_pool, descriptor_layouts.get(.textures).handle, descriptor_layouts.get(.material).handle),
+        .texture_table = try .init(
+            device,
+            descriptor_pool,
+            descriptor_layouts.get(.textures).handle,
+            descriptor_layouts.get(.material).handle,
+        ),
         .meshes = .empty,
         .retired_meshes = .empty,
         .retired_images = .empty,
@@ -212,12 +293,34 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
     var checkerboard: [8 * 8 * 4]u8 = undefined;
     for (0..8) |y| for (0..8) |x| {
         const magenta: bool = (x + y) % 2 == 0;
-        checkerboard[(y * 8 + x) * 4 ..][0..4].* = if (magenta) .{ 255, 0, 255, 255 } else .{ 0, 0, 0, 255 };
+        checkerboard[(y * 8 + x) * 4 ..][0..4].* = if (magenta) .{
+            255,
+            0,
+            255,
+            255,
+        } else .{ 0, 0, 0, 255 };
     };
-    self.missing_texture = try self.buildImage(heaps, &.{&checkerboard}, 8, 8, false, false, .@"2d");
+    self.missing_texture = try self.buildImage(
+        heaps,
+        &.{&checkerboard},
+        8,
+        8,
+        false,
+        false,
+        .@"2d",
+    );
 
-    self.texture_table.registerEmpty(device, self.blank_texture.vk_imageview, self.texture_table.defaultSampler());
-    self.texture_table.write(device, .missing, self.missing_texture.vk_imageview, self.texture_table.defaultSampler());
+    self.texture_table.registerEmpty(
+        device,
+        self.blank_texture.vk_imageview,
+        self.texture_table.defaultSampler(),
+    );
+    self.texture_table.write(
+        device,
+        .missing,
+        self.missing_texture.vk_imageview,
+        self.texture_table.defaultSampler(),
+    );
 
     const box_surfaces = [_]contract.SurfaceUpload{.{
         .index_start = 0,
@@ -268,7 +371,12 @@ pub fn writeCascades(self: *Resources, frame_index: usize, cascades: *const GPUC
 }
 
 pub fn writeSceneSet(self: *Resources, frame_index: usize, scene_buffer: Buffer) void {
-    TextureTable.writeUniformBuffer(self.device, self.scene_sets[frame_index], 0, scene_buffer.buffer);
+    TextureTable.writeUniformBuffer(
+        self.device,
+        self.scene_sets[frame_index],
+        0,
+        scene_buffer.buffer,
+    );
 }
 
 pub fn writeTexture(self: *Resources, texture: contract.TextureHandle, view: vk.ImageView) void {
@@ -286,7 +394,12 @@ fn meshFor(self: *Resources, handle: contract.MeshHandle) ?*Mesh {
     return null;
 }
 
-pub fn freeMesh(self: *Resources, heaps: *GpuMemory.Heaps, handle: contract.MeshHandle, frame: u32) void {
+pub fn freeMesh(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    handle: contract.MeshHandle,
+    frame: u32,
+) void {
     const raw = @intFromEnum(handle);
     if (raw == 0 or raw > self.meshes.items.len) return;
     const slot = &self.meshes.items[raw - 1];
@@ -322,28 +435,62 @@ pub fn drainRetired(self: *Resources, heaps: *GpuMemory.Heaps, frame: u32) void 
     }
 }
 
-pub fn uploadMesh(self: *Resources, heaps: *GpuMemory.Heaps, old: contract.MeshHandle, frame: u32, command: *const contract.MeshUpload) !contract.MeshHandle {
+pub fn uploadMesh(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    old: contract.MeshHandle,
+    frame: u32,
+    command: *const contract.MeshUpload,
+) !contract.MeshHandle {
     const gpa = self.gpa;
     const surfaces = try gpa.alloc(Mesh.Surface, command.surfaces.len);
     errdefer gpa.free(surfaces);
     var write: usize = 0;
     for (command.surfaces) |src| {
         if (src.transparent) continue;
-        surfaces[write] = .{ .index_start = src.index_start, .index_count = src.index_count, .texture = src.texture };
+        surfaces[write] = .{
+            .index_start = src.index_start,
+            .index_count = src.index_count,
+            .texture = src.texture,
+        };
         write += 1;
     }
     const opaque_count: u32 = @intCast(write);
     for (command.surfaces) |src| {
         if (!src.transparent) continue;
-        surfaces[write] = .{ .index_start = src.index_start, .index_count = src.index_count, .texture = src.texture };
+        surfaces[write] = .{
+            .index_start = src.index_start,
+            .index_count = src.index_count,
+            .texture = src.texture,
+        };
         write += 1;
     }
     std.debug.assert(write == surfaces.len);
 
     const mesh: Mesh = if (command.skinned)
-        try .init(gpa, &heaps.host, command.name, self.device, Mesh.SkinnedVertex, verticesAs(Mesh.SkinnedVertex, command.vertices), command.indices, surfaces, opaque_count)
+        try .init(
+            gpa,
+            &heaps.host,
+            command.name,
+            self.device,
+            Mesh.SkinnedVertex,
+            verticesAs(Mesh.SkinnedVertex, command.vertices),
+            command.indices,
+            surfaces,
+            opaque_count,
+        )
     else
-        try .init(gpa, &heaps.host, command.name, self.device, Mesh.StaticVertex, verticesAs(Mesh.StaticVertex, command.vertices), command.indices, surfaces, opaque_count);
+        try .init(
+            gpa,
+            &heaps.host,
+            command.name,
+            self.device,
+            Mesh.StaticVertex,
+            verticesAs(Mesh.StaticVertex, command.vertices),
+            command.indices,
+            surfaces,
+            opaque_count,
+        );
 
     const raw = @intFromEnum(old);
     if (raw != 0 and raw <= self.meshes.items.len) {
@@ -355,13 +502,27 @@ pub fn uploadMesh(self: *Resources, heaps: *GpuMemory.Heaps, old: contract.MeshH
     return @enumFromInt(self.meshes.items.len);
 }
 
-pub fn freeTexture(self: *Resources, heaps: *GpuMemory.Heaps, texture: contract.TextureHandle, frame: u32) void {
+pub fn freeTexture(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    texture: contract.TextureHandle,
+    frame: u32,
+) void {
     const entry = self.textures.fetchSwapRemove(texture) orelse return;
     self.retire(heaps, entry.value, texture, frame);
 }
 
-fn retire(self: *Resources, heaps: *GpuMemory.Heaps, image: Image, texture: ?contract.TextureHandle, frame: u32) void {
-    self.retired_images.append(self.gpa, .{ .image = image, .texture = texture, .frame = frame }) catch {
+fn retire(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    image: Image,
+    texture: ?contract.TextureHandle,
+    frame: u32,
+) void {
+    self.retired_images.append(
+        self.gpa,
+        .{ .image = image, .texture = texture, .frame = frame },
+    ) catch {
         var doomed = image;
         self.device.proxy.deviceWaitIdle() catch {};
         doomed.deinit(&heaps.device, self.device);
@@ -369,8 +530,20 @@ fn retire(self: *Resources, heaps: *GpuMemory.Heaps, image: Image, texture: ?con
     };
 }
 
-pub fn uploadImage(self: *Resources, heaps: *GpuMemory.Heaps, upload: *const contract.ImageUpload) !contract.TextureHandle {
-    var image = try self.buildImage(heaps, &.{upload.pixels}, upload.width, upload.height, upload.r8, upload.mips, .@"2d");
+pub fn uploadImage(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    upload: *const contract.ImageUpload,
+) !contract.TextureHandle {
+    var image = try self.buildImage(
+        heaps,
+        &.{upload.pixels},
+        upload.width,
+        upload.height,
+        upload.r8,
+        upload.mips,
+        .@"2d",
+    );
     errdefer image.deinit(&heaps.device, self.device);
     const sampler = try self.samplerFor(upload.mag_linear, upload.min_linear);
 
@@ -380,12 +553,29 @@ pub fn uploadImage(self: *Resources, heaps: *GpuMemory.Heaps, upload: *const con
     return texture;
 }
 
-pub fn uploadSkybox(self: *Resources, heaps: *GpuMemory.Heaps, upload: *const contract.SkyboxUpload, frame: u32) !void {
-    var image = try self.buildImage(heaps, &upload.faces, upload.size, upload.size, false, false, .cube_map);
+pub fn uploadSkybox(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    upload: *const contract.SkyboxUpload,
+    frame: u32,
+) !void {
+    var image = try self.buildImage(
+        heaps,
+        &upload.faces,
+        upload.size,
+        upload.size,
+        false,
+        false,
+        .cube_map,
+    );
     errdefer image.deinit(&heaps.device, self.device);
     if (self.skybox_image) |old| self.retire(heaps, old, null, frame);
     self.skybox_image = image;
-    self.texture_table.writeSkybox(self.device, image.vk_imageview, self.texture_table.defaultSampler());
+    self.texture_table.writeSkybox(
+        self.device,
+        image.vk_imageview,
+        self.texture_table.defaultSampler(),
+    );
 }
 
 fn samplerFor(self: *Resources, mag_linear: bool, min_linear: bool) !vk.Sampler {
@@ -393,14 +583,42 @@ fn samplerFor(self: *Resources, mag_linear: bool, min_linear: bool) !vk.Sampler 
     return self.texture_table.addFilterSampler(self.device, mag_linear, min_linear);
 }
 
-fn buildImage(self: *Resources, heaps: *GpuMemory.Heaps, faces: []const []const u8, width: u32, height: u32, r8: bool, mips: bool, kind: Image.Kind) !Image {
-    const usage: vk.ImageUsageFlags = .{ .sampled_bit = true, .transfer_dst_bit = true, .transfer_src_bit = mips };
+fn buildImage(
+    self: *Resources,
+    heaps: *GpuMemory.Heaps,
+    faces: []const []const u8,
+    width: u32,
+    height: u32,
+    r8: bool,
+    mips: bool,
+    kind: Image.Kind,
+) !Image {
+    const usage: vk.ImageUsageFlags = .{
+        .sampled_bit = true,
+        .transfer_dst_bit = true,
+        .transfer_src_bit = mips,
+    };
     const bytes_per_pixel: u32 = if (r8) 1 else 4;
-    var image: Image = try .init(&heaps.device, self.device, if (r8) .r8_unorm else .r8g8b8a8_unorm, .{ .width = width, .height = height, .depth = 1 }, kind, usage, .{ .color_bit = true }, mips);
+    var image: Image = try .init(
+        &heaps.device,
+        self.device,
+        if (r8) .r8_unorm else .r8g8b8a8_unorm,
+        .{ .width = width, .height = height, .depth = 1 },
+        kind,
+        usage,
+        .{ .color_bit = true },
+        mips,
+    );
     errdefer image.deinit(&heaps.device, self.device);
 
     const face_size: usize = width * height * bytes_per_pixel;
-    var staging: Buffer = try .init(self.device, &heaps.host, u8, face_size * faces.len, .{ .transfer_src_bit = true });
+    var staging: Buffer = try .init(
+        self.device,
+        &heaps.host,
+        u8,
+        face_size * faces.len,
+        .{ .transfer_src_bit = true },
+    );
     defer staging.deinit(&heaps.host);
 
     const cmd = try self.device.beginImmediateCommand();

@@ -107,7 +107,12 @@ pub fn update(
                 .{ 1, 0, 0 }
             else
                 .{ 1, 1, 1 };
-            hud.damage_popups.spawn(hud.popup_prng.random(), damage_event.position, damage_event.delta, color);
+            hud.damage_popups.spawn(
+                hud.popup_prng.random(),
+                damage_event.position,
+                damage_event.delta,
+                color,
+            );
         }
     }
     world.damage_events.clearRetainingCapacity();
@@ -128,7 +133,12 @@ pub fn update(
             if (entity.kind != .player) continue;
             if (entity.health > 0) all_players_dead = false;
         }
-        hud.wipe_delay = approach(hud.wipe_delay, if (all_players_dead) 1 else 0, world.delta_time, 1.0);
+        hud.wipe_delay = approach(
+            hud.wipe_delay,
+            if (all_players_dead) 1 else 0,
+            world.delta_time,
+            1.0,
+        );
         if (all_players_dead and hud.overlay == .none and hud.wipe_delay > 0.85) {
             hud.overlay = .wipe;
         } else if (!all_players_dead and hud.overlay == .wipe) {
@@ -141,7 +151,11 @@ pub fn update(
             .options => options_menu.update(hud, options, controller),
         }
     }
-    hud.addTransition(network.phase(), network.elapsed_time - network.host_state_time, world.delta_time);
+    hud.addTransition(
+        network.phase(),
+        network.elapsed_time - network.host_state_time,
+        world.delta_time,
+    );
     return request;
 }
 

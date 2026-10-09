@@ -90,7 +90,11 @@ pub fn update(self: *Navmesh, world: *World, gpa: std.mem.Allocator) !void {
     }
     for (planet.chunks.keys(), planet.chunks.values()) |coord, *chunk_entry| {
         if (self.internal.chunks.contains(coord)) continue;
-        try self.internal.chunks.put(gpa, coord, try NavChunk.init(gpa, try chunk_entry.nav.clone(gpa)));
+        try self.internal.chunks.put(
+            gpa,
+            coord,
+            try NavChunk.init(gpa, try chunk_entry.nav.clone(gpa)),
+        );
     }
 
     self.player_seed_count = 0;
@@ -132,7 +136,10 @@ fn floodWorker(self: *Navmesh, gpa: std.mem.Allocator) void {
 
     while (queue.popFront()) |current| {
         const current_cost = current.chunk.cost[generating][current.index];
-        const slot_base = @as(usize, current.index) * shared.Planet.Chunk.NavGraph.max_neighbor_count;
+        const slot_base = @as(
+            usize,
+            current.index,
+        ) * shared.Planet.Chunk.NavGraph.max_neighbor_count;
 
         for (0..shared.Planet.Chunk.NavGraph.max_neighbor_count) |slot| {
             const neighbor = self.neighborNode(current, slot) orelse continue;
@@ -153,14 +160,21 @@ const NodeRef = struct {
 };
 
 fn nodeAt(self: *const Navmesh, cell: nz.Vec3(i32)) ?NodeRef {
-    const coord: shared.Planet.Chunk.Coord = .{ .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))) };
+    const coord: shared.Planet.Chunk.Coord = .{
+        .position = @divFloor(cell, @as(nz.Vec3(i32), @splat(shared.Planet.Chunk.dim))),
+    };
     const chunk = self.internal.chunks.getPtr(coord) orelse return null;
     const index = chunk.graph.cells.getIndex(cell) orelse return null;
     return .{ .chunk = chunk, .coord = coord, .index = @intCast(index) };
 }
 
 fn neighborNode(self: *const Navmesh, node: NodeRef, slot: usize) ?NodeRef {
-    const neighbor = node.chunk.graph.neighbors[@as(usize, node.index) * shared.Planet.Chunk.NavGraph.max_neighbor_count + slot];
+    const neighbor = node.chunk.graph.neighbors[
+        @as(
+            usize,
+            node.index,
+        ) * shared.Planet.Chunk.NavGraph.max_neighbor_count + slot
+    ];
     return switch (neighbor) {
         .none => null,
         .boundary_edge => self.nodeAt(node.chunk.graph.neighborCell(node.index, slot)),
@@ -174,7 +188,11 @@ fn nextCell(self: *const Navmesh, node: NodeRef) ?nz.Vec3(i32) {
     return node.chunk.graph.neighborCell(node.index, slot);
 }
 
-pub fn direction(self: *const Navmesh, planet: *const shared.Planet, position: nz.Vec3(f32)) ?nz.Vec3(f32) {
+pub fn direction(
+    self: *const Navmesh,
+    planet: *const shared.Planet,
+    position: nz.Vec3(f32),
+) ?nz.Vec3(f32) {
     const node = self.nodeNear(planet, position) orelse return null;
     const next_cell = self.nextCell(node) orelse return null;
     const next_node = self.nodeAt(next_cell) orelse return null;
@@ -188,7 +206,9 @@ fn nodeNear(self: *const Navmesh, planet: *const shared.Planet, position: nz.Vec
 
 fn nodeNearCell(self: *const Navmesh, cell: nz.Vec3(i32), position: nz.Vec3(f32)) ?NodeRef {
     const down_step: nz.Vec3(i32) = @intFromFloat(@round(-nz.vec.normalize(position)));
-    const candidates = [4]nz.Vec3(i32){ cell, cell + down_step, cell - down_step, cell + down_step + down_step };
+    const candidates = [4]nz.Vec3(
+        i32,
+    ){ cell, cell + down_step, cell - down_step, cell + down_step + down_step };
     for (candidates) |candidate| {
         if (self.nodeAt(candidate)) |ref| return ref;
     }
@@ -199,7 +219,10 @@ fn collectSeeds(self: *const Navmesh, out: *[shared.max_players]NodeRef) usize {
     var count: usize = 0;
     for (self.player_seeds[0..self.player_seed_count]) |seed| {
         const node = self.nodeNearCell(seed.cell, seed.position) orelse {
-            std.log.err("navmesh: no start node for player {d} at {d:.1} {d:.1} {d:.1}", .{ @intFromEnum(seed.id), seed.position[0], seed.position[1], seed.position[2] });
+            std.log.err(
+                "navmesh: no start node for player {d} at {d:.1} {d:.1} {d:.1}",
+                .{ @intFromEnum(seed.id), seed.position[0], seed.position[1], seed.position[2] },
+            );
             continue;
         };
         out[count] = node;

@@ -162,7 +162,11 @@ pub fn requestHost(self: *Network, intent: HostIntent, dev_mode: bool) void {
     }
 }
 
-fn findHostServer(self: *Network, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+fn findHostServer(
+    self: *Network,
+    dir_buf: *[std.Io.Dir.max_path_bytes]u8,
+    exe_path_buf: *[std.Io.Dir.max_path_bytes]u8,
+) ?HostServer {
     for (server_dir_candidates) |candidate| {
         var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
         defer server_dir.close(self.io);
@@ -171,7 +175,11 @@ fn findHostServer(self: *Network, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_p
             server_dir.access(self.io, exe_rel, .{}) catch continue;
 
             const dir_len = server_dir.realPath(self.io, dir_buf) catch continue;
-            const exe_path_len = server_dir.realPathFile(self.io, exe_rel, exe_path_buf) catch continue;
+            const exe_path_len = server_dir.realPathFile(
+                self.io,
+                exe_rel,
+                exe_path_buf,
+            ) catch continue;
             return .{
                 .dir = dir_buf[0..dir_len],
                 .exe_path = exe_path_buf[0..exe_path_len],
@@ -191,18 +199,33 @@ fn spawnHostServer(self: *Network) void {
     };
 
     var server_id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const server_id_path = std.fmt.bufPrint(&server_id_path_buf, "{s}/{s}", .{ host_server.dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
+    const server_id_path = std.fmt.bufPrint(
+        &server_id_path_buf,
+        "{s}/{s}",
+        .{ host_server.dir, shared.SteamNet.Server.server_file_name },
+    ) catch unreachable;
     std.Io.Dir.deleteFileAbsolute(self.io, server_id_path) catch {};
 
     var host_steam_id_buf: [20]u8 = undefined;
-    const host_steam_id_text = std.fmt.bufPrint(&host_steam_id_buf, "{d}", .{self.steam_client.user_steam_id}) catch unreachable;
+    const host_steam_id_text = std.fmt.bufPrint(
+        &host_steam_id_buf,
+        "{d}",
+        .{self.steam_client.user_steam_id},
+    ) catch unreachable;
     const argv: []const []const u8 = if (self.host_intent == .singleplayer)
-        if (self.dev_mode) &.{ host_server.exe_path, "--dev", "--local-singleplayer" } else &.{ host_server.exe_path, "--local-singleplayer" }
+        if (self.dev_mode) &.{
+            host_server.exe_path,
+            "--dev",
+            "--local-singleplayer",
+        } else &.{ host_server.exe_path, "--local-singleplayer" }
     else if (self.dev_mode)
         &.{ host_server.exe_path, "--dev", host_steam_id_text }
     else
         &.{ host_server.exe_path, host_steam_id_text };
-    std.log.info("host: spawning {s} (cwd={s}, id_file={s})", .{ host_server.exe_path, host_server.dir, server_id_path });
+    std.log.info(
+        "host: spawning {s} (cwd={s}, id_file={s})",
+        .{ host_server.exe_path, host_server.dir, server_id_path },
+    );
     for (argv, 0..) |arg, index| std.log.info("host: argv[{d}]=\"{s}\"", .{ index, arg });
     self.server_process = std.process.spawn(self.io, .{
         .argv = argv,
@@ -221,7 +244,13 @@ fn spawnHostServer(self: *Network) void {
 
 fn sendConnect(self: *Network, survivor: shared.Survivor.Kind) !void {
     const name = self.playerDisplayName();
-    const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .player_name = .copy(name), .survivor = survivor } };
+    const cmd: shared.net.ClientPacket = .{
+        .connect = .{
+            .protocol_version = shared.net.protocol_version,
+            .player_name = .copy(name),
+            .survivor = survivor,
+        },
+    };
     try self.sendCommand(cmd, .reliable);
 }
 
@@ -233,7 +262,11 @@ fn playerDisplayName(self: *const Network) []const u8 {
         steam_name[0..@min(steam_name.len, shared.max_player_name_len)];
 }
 
-pub fn sendCommand(self: *Network, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
+pub fn sendCommand(
+    self: *Network,
+    command: shared.net.ClientPacket,
+    flags: shared.SteamNet.SendFlags,
+) !void {
     if (self.server_conn == 0) return;
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -241,7 +274,13 @@ pub fn sendCommand(self: *Network, command: shared.net.ClientPacket, flags: shar
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.Survivor.Kind, elapsed_time: f32, delta_time: f32) !void {
+pub fn update(
+    self: *Network,
+    player_input: shared.net.Input,
+    survivor: shared.Survivor.Kind,
+    elapsed_time: f32,
+    delta_time: f32,
+) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     self.packets.clearRetainingCapacity();
@@ -269,7 +308,11 @@ pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.S
     if (self.host_state == .waiting) {
         for (server_dir_candidates) |dir| {
             var id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-            const id_path = std.fmt.bufPrint(&id_path_buf, "{s}/{s}", .{ dir, shared.SteamNet.Server.server_file_name }) catch unreachable;
+            const id_path = std.fmt.bufPrint(
+                &id_path_buf,
+                "{s}/{s}",
+                .{ dir, shared.SteamNet.Server.server_file_name },
+            ) catch unreachable;
             var id_buf: [20]u8 = undefined;
             if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
                 std.log.info("host: read {s} = \"{s}\"", .{ id_path, id_text });
@@ -310,21 +353,38 @@ pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.S
         for (0..self.steam_client.browser.list.count) |i| {
             self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
             @memset(&self.server_list.servers[i].id_str, 0);
-            _ = try std.fmt.bufPrint(&self.server_list.servers[i].id_str, "{d}", .{self.server_list.servers[i].steam_id});
-            std.log.info("browser server[{d}] my_ver={d} tags=\"{s}\"", .{ i, shared.net.protocol_version, std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0) });
+            _ = try std.fmt.bufPrint(
+                &self.server_list.servers[i].id_str,
+                "{d}",
+                .{self.server_list.servers[i].steam_id},
+            );
+            std.log.info(
+                "browser server[{d}] my_ver={d} tags=\"{s}\"",
+                .{
+                    i,
+                    shared.net.protocol_version,
+                    std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0),
+                },
+            );
         }
         self.server_list.count = self.steam_client.browser.list.count;
     }
 
     for (self.steam_client.packets.events.items) |ev| switch (ev) {
         .connected => |conn| {
-            std.log.info("host: connected (conn={d}) {d:.2}s after {t}", .{ conn, self.elapsed_time - self.host_state_time, self.host_state });
+            std.log.info(
+                "host: connected (conn={d}) {d:.2}s after {t}",
+                .{ conn, self.elapsed_time - self.host_state_time, self.host_state },
+            );
             self.server_conn = conn;
             self.sent_connect = false;
         },
         .disconnected => |conn| {
             const reached_game = self.server_conn == conn;
-            std.log.warn("host: disconnected (conn={d}) while phase={t}, reached_game={}", .{ conn, self.phase(), reached_game });
+            std.log.warn(
+                "host: disconnected (conn={d}) while phase={t}, reached_game={}",
+                .{ conn, self.phase(), reached_game },
+            );
             if (reached_game) {
                 self.server_conn = 0;
                 self.sent_connect = false;
@@ -347,7 +407,10 @@ pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.S
 
     for (self.steam_client.packets.incoming.items) |*msg| {
         if (self.packets.items.len == self.packets.capacity) {
-            std.log.warn("packet inbox full at {d}, dropping the rest of this frame", .{self.packets.capacity});
+            std.log.warn(
+                "packet inbox full at {d}, dropping the rest of this frame",
+                .{self.packets.capacity},
+            );
             break;
         }
         var msg_reader: std.Io.Reader = .fixed(msg.slice());
@@ -358,7 +421,10 @@ pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.S
         };
         switch (parsed) {
             .acknowledge => |acknowledge| {
-                self.server_tick_estimate = @as(f32, @floatFromInt(acknowledge.tick)) - self.render_delay_ticks;
+                self.server_tick_estimate = @as(
+                    f32,
+                    @floatFromInt(acknowledge.tick),
+                ) - self.render_delay_ticks;
                 self.server_tick_latest = acknowledge.tick;
             },
             .server_tick => |tick| {
