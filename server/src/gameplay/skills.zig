@@ -28,7 +28,7 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
 }
 
 pub const aim_range: f32 = 300;
-const freeze_seconds: f32 = 10;
+const freeze_seconds: f32 = 3;
 const melee_cone_cosine: f32 = 0.3;
 const grenade_speed: f32 = 40;
 const railgun_speed: f32 = 200;

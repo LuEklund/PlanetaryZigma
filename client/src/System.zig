@@ -20,7 +20,6 @@ const renderer_contract = @import("renderer_contract");
 const DrawList = renderer_contract.DrawList;
 
 const menu_world = @import("system/menu.zig");
-const particle_lab = @import("system/particle_lab.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
@@ -30,7 +29,6 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 pub const Scene = enum {
     menu,
     game,
-    particle_lab,
 };
 
 pub const World = @import("World.zig");
@@ -148,7 +146,6 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     switch (next) {
         .menu => try menu_world.populate(world, self.gpa),
         .game => {},
-        .particle_lab => try particle_lab.populate(world, self.gpa),
     }
     self.scene = next;
 }
@@ -178,7 +175,6 @@ fn step(self: *System, world: *World) !void {
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
-    if (self.scene == .particle_lab) particle_lab.update(&self.particles, world.elapsed_time);
     switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
@@ -206,7 +202,7 @@ fn step(self: *System, world: *World) !void {
         .none => {},
     }
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
-    if (self.scene != .particle_lab and next_scene != self.scene) try self.enterScene(world, next_scene);
+    if (next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
     try world.update(self.gpa, self.network_manager.packets.items);
     for (world.entities.values()) |*entity| {
@@ -223,7 +219,7 @@ fn step(self: *System, world: *World) !void {
     try animate.update(world, &self.animator, &self.assets.models, self.network_manager.packets.items);
     self.audio.update();
 
-    try extract.frame(self, world, self.scene != .particle_lab);
+    try extract.frame(self, world, true);
     self.render.trySwap(self.io);
     self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
 
@@ -274,7 +270,6 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
                 self.request_exit = true;
             }
         },
-        .particle_lab => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
     }
     player_input.camera_position = world.camera.transform.position;
     player_input.camera_rotation = world.camera.transform.rotation.toVec();

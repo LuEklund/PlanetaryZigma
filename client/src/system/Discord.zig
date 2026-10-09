@@ -27,7 +27,6 @@ pub fn update(self: *Discord, io: std.Io, state: State, elapsed_time: f32) void 
     const details: []const u8 = switch (state.scene) {
         .menu => "In Menu",
         .game => "On a Planet",
-        .particle_lab => "In THE Secret lab",
     };
     self.nonce += 1;
     var nonce_buffer: [12]u8 = undefined;

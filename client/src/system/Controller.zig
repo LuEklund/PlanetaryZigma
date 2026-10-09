@@ -27,7 +27,7 @@ pub const actions: []const Action = &.{
     .{ .id = .move_right, .default = .{ .key = .d }, .bindable = "Move Right" },
     .{ .id = .jump, .default = .{ .key = .space }, .bindable = "Jump" },
     .{ .id = .move_down, .default = .{ .key = .left_shift }, .bindable = "Move Down" },
-    .{ .id = .reload, .default = .{ .key = .backspace }, .bindable = "Reset Position" },
+    .{ .id = .reload, .default = .{ .key = .f10 }, .bindable = "Reset Position" },
     .{ .id = .special, .default = .{ .key = .r }, .bindable = "Special" },
     .{ .id = .interact, .default = .{ .key = .e }, .bindable = "Interact" },
     .{ .id = .attack, .default = .{ .mouse = .{ .left = true } }, .bindable = "Attack" },
@@ -46,7 +46,7 @@ pub const actions: []const Action = &.{
     .{ .id = .dev_f7, .default = .{ .key = .f7 }, .behavior = .pressed },
     .{ .id = .dev_f8, .default = .{ .key = .f8 }, .behavior = .pressed },
     .{ .id = .dev_f9, .default = .{ .key = .f9 }, .behavior = .pressed },
-    .{ .id = .dev_f10, .default = .{ .key = .f10 }, .behavior = .pressed },
+    .{ .id = .dev_f10, .default = .none, .behavior = .pressed },
     .{ .id = .dev_f11, .default = .{ .key = .f11 }, .behavior = .pressed },
     .{ .id = .dev_f12, .default = .{ .key = .f12 }, .behavior = .pressed },
 };

@@ -236,8 +236,8 @@ pub const items = struct {
 
     pub const freezer: Item = .{
         .tier = .equipment,
-        .flat = .initDefault(0, .{ .equipment_cooldown = 20 }),
-        .description = "freeze nearby enemies for 10s",
+        .flat = .initDefault(0, .{ .equipment_cooldown = 95 }),
+        .description = "freeze every enemy for 3s",
         .is_equipment = true,
         .on_use = .freeze_world,
     };

@@ -41,11 +41,14 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: decision 0010. 14 pipelines from a comptime table (blend baked, rest core dynamic state), descriptor sets (texture array update-after-bind), only VK_KHR_swapchain. Ran locally on RX 9060 XT: renders, 0 validation errors. Shader hot reload rebuilds affected pipelines (not yet exercised). Untested on NVIDIA/older GPUs.
 - [x] V2 — Port the renderer from the C header (`@import("vulkan")` translate-c) to Snektron/vulkan-zig, pinned to the same commit dvui/gifer use (b496a6a5…) so U1 shares one `vk` module.
   - Result: decision 0011. vulkan-zig everywhere, VMA removed (own 2-heap first-fit allocator). Runs on RX 9060 XT, 0 validation errors. Untested: NVIDIA, heap overflow on big planets (watch for "gpu memory: out of space").
-- [ ] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
-- [ ] D2 — Delete `Scene.particle_lab` and everything only it uses.
+- [x] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
+  - Result: freeze_seconds 3, all enemies (distance check gone), cooldown 5+95 = 100 s. Built, needs playtest.
+- [x] D2 — Delete `Scene.particle_lab` and everything only it uses.
+  - Result: particle_lab.zig and the Scene arm deleted.
 - [x] T0 — Local dev loop (run on Lucas's PC, not cloud): screenshot hotkey/CLI flag writing PNG from the swapchain + a state-snapshot dump (scene, UI tree rects, entity counts) to a file Claude can read; usable with hot reload to check UI.
   - Result: `PZ_AUTOSTART=singleplayer|dev` skips the menu; screenshots via `grim -g "$(hyprctl clients -j ...planetary_zigma geometry)"`, no game code needed. State dump skipped until a screenshot isn't enough.
-- [ ] D3 — C4: Special stays on R; dev reset moves from Backspace to an F key.
+- [x] D3 — C4: Special stays on R; dev reset moves from Backspace to an F key.
+  - Result: Reset Position defaults to F10 (dev_f10 was unused, now unbound). Built.
 - [ ] U1 — Replace own `render/ui` with dvui (game + debug UI). Reuse the dvui Vulkan backend from `~/Projects/gifer` / Marionette. Fixes current UI overlap as part of it. After V1.
 - [ ] L1 — RoR2-style character select screen (not in the main menu): survivor list, ability panel with readable descriptions, difficulty pick (host), ready. Built on dvui.
 - [ ] Z1 — Zoo scene: every enemy, elite, survivor, item and particle effect laid out to inspect quickly (replaces the deleted particle lab).

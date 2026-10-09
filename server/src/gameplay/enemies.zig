@@ -52,7 +52,7 @@ pub fn updateEnemies(world: *World, physics: *system.Physics) !void {
             closest_distance = player_distance;
             closest_player = current_player;
         }
-        if (world.world_unstun_at > world.elapsed_time and closest_distance < 10) {
+        if (world.world_unstun_at > world.elapsed_time) {
             continue;
         }
 
