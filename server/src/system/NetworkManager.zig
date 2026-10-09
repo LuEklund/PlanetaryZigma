@@ -173,10 +173,15 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         if (client.name.len != 0) self.gpa.free(client.name);
                         client.name = try self.gpa.dupe(u8, display_name);
                         self.session_metadata_dirty = true;
-                        sync_all_clients = true;
+                        if (client.entity_id != .none) sync_all_clients = true;
                     }
 
                     if (client.entity_id == .none) {
+                        if (world.players.items.len >= shared.max_players) {
+                            std.log.warn("rejecting client conn={d}: server full ({d} players)", .{ client.conn, world.players.items.len });
+                            _ = self.steam_server.socket.CloseConnection(client.conn, 0, "server full", false);
+                            continue;
+                        }
                         const new_player_entity = world.spawn(.{
                             .kind = .player,
                             .transform = .{ .position = stage.playerSpawnPosition(world) },
@@ -186,7 +191,6 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         client.entity_id = new_player_entity.id;
                         world.players.appendAssumeCapacity(client.entity_id);
                         self.session_metadata_dirty = true;
-                        sync_all_clients = true;
 
                         try outbox.send(client, .{ .acknowledge = .{ .id = client.entity_id, .tick = world.tick } },
                             .reliable,
@@ -280,7 +284,8 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
         try outbox.send(client, .{ .server_tick = world.tick }, .unreliable_no_delay);
 
         if (world.getPtrRaw(client.entity_id)) |player_entity| {
-            client.needs_full_sync = client.needs_full_sync or player_entity.controller.input.keys.reload;
+            client.needs_full_sync = client.needs_full_sync or player_entity.controller.resync_requested;
+            player_entity.controller.resync_requested = false;
         }
 
         const did_full_sync = client.needs_full_sync;

@@ -75,6 +75,8 @@ pub const Camera = struct {
 
 pub const Controller = struct {
     input: shared.net.Input = .{},
+    reload_held: bool = false,
+    resync_requested: bool = false,
 };
 
 pub const Entity = struct {
@@ -176,7 +178,7 @@ pub fn deinit(self: *World, gpa: std.mem.Allocator) void {
     self.navmesh.deinit(gpa);
 }
 
-pub const SpawnError = error{ SpawnMaxSize, MaxEnemies, MaxPlayers };
+pub const SpawnError = error{ SpawnMaxSize, MaxEnemies };
 
 pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     if (self.entities.entries.len >= shared.max_entities) {
@@ -185,9 +187,6 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     }
     if (entity_info.kind == .enemy and !entity_info.flags.is_teleporter_boss and self.enemyCount() >= shared.max_enemies) {
         return error.MaxEnemies;
-    }
-    if (builtin.mode != .Debug and entity_info.kind == .player and self.players.items.len >= shared.max_players) {
-        return error.MaxPlayers;
     }
     const id: shared.entity.Id = @enumFromInt(self.next_entity_id);
     self.next_entity_id += 1;

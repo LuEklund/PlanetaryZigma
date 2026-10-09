@@ -178,7 +178,10 @@ pub fn update(world: *World, physics: *system.Physics) !void {
         world.act(.{ .id = player_id, .verb = .{ .set_rotation = camera.yaw_rotation } });
         transform.rotation = camera.yaw_rotation;
 
-        if (input.keys.reload) {
+        const reload_pressed = input.keys.reload and !controller.reload_held;
+        controller.reload_held = input.keys.reload;
+        if (reload_pressed) {
+            controller.resync_requested = true;
             camera.* = .{};
             transform.* = .{};
             world.act(.{ .id = player_id, .verb = .{ .set_velocity = .{ 0, 0, 0 } } });
