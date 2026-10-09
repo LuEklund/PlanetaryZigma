@@ -78,3 +78,6 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - R9: bullets pass through entities of the shooter's own kind (ally graze). Kept as pass-through. Say if allies should block bullets instead.
 - A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
 - A0: `Scene.particle_lab` is unreachable since its F4 entry was commented out (now deleted). Keep the scene (dev tool) or delete it? Kept.
+
+## Cloud notes
+- ziglang.org and gitlab.freedesktop.org are blocked from the cloud box. Zig 0.16.0 came from the PyPI `ziglang` wheel (official binary); git deps were fetched with `git` and fed to `zig fetch <dir>` (hashes match). `ztracy` (HTRMC fork, unreachable) is a local no-op stub and `wayland_protocols` comes from Ubuntu's package — both only in gitignored `zig-pkg/`, so `-Dtracy=true` was never built here. `slangc` 2025.18 from the shader-slang GitHub release.
