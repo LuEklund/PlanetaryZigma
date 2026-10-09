@@ -4,6 +4,7 @@ const std = @import("std");
 const shared = @import("shared");
 const system = @import("../System.zig");
 const stage = @import("../gameplay/stage.zig");
+const lobby = @import("../gameplay/lobby.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const nz = shared.numz;
@@ -84,6 +85,7 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
         .connect => |connect| .{ .connect = connect },
         .disconnect => .disconnect,
         .go_again => .go_again,
+        .lobby => |lobby_command| .{ .lobby = lobby_command },
         .input => |input| .{ .input = input },
         .chat => |chat| chat: {
             const text = try gpa.dupe(u8, chat.text);
@@ -98,7 +100,7 @@ fn cloneClientPacket(gpa: std.mem.Allocator, packet: shared.net.ClientPacket) !s
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
         .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
-        .connect, .disconnect, .input, .go_again => {},
+        .connect, .disconnect, .input, .go_again, .lobby => {},
     }
 }
 
@@ -217,6 +219,14 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
                         entity.controller.input = command.input;
                     }
                 },
+                .lobby => |lobby_command| {
+                    const player = world.getPtrRaw(client.entity_id) orelse continue;
+                    switch (lobby_command) {
+                        .survivor => |survivor| lobby.setSurvivor(world, player, survivor),
+                        .ready => |ready| lobby.setReady(world, player, ready),
+                        .difficulty => |setting| if (client.conn == self.steam_server.host_conn) lobby.setDifficulty(world, setting),
+                    }
+                },
                 .go_again => {
                     if (client.conn != self.steam_server.host_conn) continue;
                     world.go_again_requested = true;
@@ -294,11 +304,13 @@ pub fn update(self: *NetworkManager, world: *World) !WireStatus {
             std.log.debug("FULL SYNC", .{});
             const full_sync_planet_radius: u32 = world.planet.planet_radius;
             try outbox.send(client, .{ .spawn_planet = full_sync_planet_radius }, .reliable);
+            try outbox.send(client, .{ .lobby_difficulty = world.difficulty_setting }, .reliable);
             for (world.entities.values()) |*entity| {
                 std.log.debug("sent id {d}", .{entity.id});
                 try outbox.send(client, .{ .spawn_entity = spawnPacket(world, entity, self.nameForEntity(entity.id)) }, .reliable);
                 try sendHealth(outbox, client, entity);
                 try sendInventory(outbox, client, entity);
+                if (entity.kind == .player) try outbox.send(client, .{ .lobby_player = .{ .id = entity.id, .survivor = entity.survivor, .ready = entity.ready } }, .reliable);
                 if (tracksMotion(entity)) {
                     try outbox.send(client, .{ .motion = motionPacket(world, entity) }, .reliable);
                 }

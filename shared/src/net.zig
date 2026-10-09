@@ -22,6 +22,19 @@ pub const ClientPacket = union(enum) {
     input: Input,
     chat: ChatSend,
     go_again: void,
+    lobby: LobbyCommand,
+};
+
+pub const LobbyCommand = union(enum) {
+    survivor: root.Survivor.Kind,
+    ready: bool,
+    difficulty: root.difficulty.Setting,
+};
+
+pub const LobbyPlayer = struct {
+    id: entity.Id,
+    survivor: root.Survivor.Kind,
+    ready: bool,
 };
 
 pub const ServerPacket = union(enum) {
@@ -36,6 +49,8 @@ pub const ServerPacket = union(enum) {
     inventory: UpdateInventory,
     set_currency: SetCurrency,
     chat_message: ChatMessage,
+    lobby_player: LobbyPlayer,
+    lobby_difficulty: root.difficulty.Setting,
 };
 
 pub const Connect = struct {

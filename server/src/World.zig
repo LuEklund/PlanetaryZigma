@@ -34,6 +34,7 @@ elapsed_time: f32,
 delta_time: f32,
 tick: u32,
 run_seconds: f32,
+difficulty_setting: shared.difficulty.Setting,
 
 world_unstun_at: f32 = 0,
 
@@ -105,6 +106,7 @@ pub const Entity = struct {
     level: f32 = 1,
     elite: shared.Elite.Kind = .none,
     survivor: shared.Survivor.Kind = .commando,
+    ready: bool = false,
     ai: Ai = .{},
 
     un_stun_at: f32 = 0,
@@ -175,6 +177,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .place = .ship,
         .director = .{ .credits = 0, .salary_per_second = 10, .last_salary = 0, .spawning = false },
         .run_seconds = 0,
+        .difficulty_setting = .rainstorm,
         .next_entity_id = 1,
         .stage = 0,
         .prng = .init(0xACE1),
@@ -233,7 +236,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
 }
 
 pub fn difficultyCoefficient(self: *const World) f32 {
-    return shared.difficulty.coefficient(self.run_seconds, self.players.items.len, self.stage -| 1);
+    return shared.difficulty.coefficient(self.difficulty_setting, self.run_seconds, self.players.items.len, self.stage -| 1);
 }
 
 pub fn enemyCount(self: *const World) usize {

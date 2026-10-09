@@ -175,6 +175,7 @@ fn step(self: *System, world: *World) !void {
     switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
+        .lobby => |lobby_command| try self.network_manager.sendCommand(.{ .lobby = lobby_command }, .reliable),
         .quit => self.request_exit = true,
     }
 

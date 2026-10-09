@@ -10,6 +10,7 @@ const players = @import("gameplay/players.zig");
 const projectiles = @import("gameplay/projectiles.zig");
 const stage = @import("gameplay/stage.zig");
 const teleporter = @import("gameplay/teleporter.zig");
+const lobby = @import("gameplay/lobby.zig");
 const tracy = @import("ztracy");
 const nz = shared.numz;
 pub const Physics = @import("system/Physics.zig");
@@ -104,6 +105,7 @@ fn step(self: *System, world: *World) !void {
     }
 
     try PlayerController.update(world, &self.physics);
+    lobby.updateLobby(world);
     if (world.place == .planet) try enemies.updateEnemies(world, &self.physics);
     if (world.place == .planet) director.updateRunTimer(world);
     if (world.place == .planet) try director.updateDirector(world);

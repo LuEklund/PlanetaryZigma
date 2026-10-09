@@ -1,6 +1,27 @@
 const std = @import("std");
 
-pub const difficulty_value: f32 = 2;
+pub const Setting = enum(u8) {
+    drizzle,
+    rainstorm,
+    monsoon,
+
+    pub fn value(setting: Setting) f32 {
+        return switch (setting) {
+            .drizzle => 1,
+            .rainstorm => 2,
+            .monsoon => 3,
+        };
+    }
+
+    pub fn label(setting: Setting) []const u8 {
+        return switch (setting) {
+            .drizzle => "Drizzle",
+            .rainstorm => "Rainstorm",
+            .monsoon => "Monsoon",
+        };
+    }
+};
+
 pub const per_player_factor: f32 = 0.3;
 pub const time_factor_per_minute: f32 = 0.0506;
 pub const stage_growth: f32 = 1.15;
@@ -15,9 +36,9 @@ pub fn playerFactor(players: usize) f32 {
     return 1 + per_player_factor * (count - 1);
 }
 
-pub fn coefficient(run_seconds: f32, players: usize, stages_completed: u32) f32 {
+pub fn coefficient(setting: Setting, run_seconds: f32, players: usize, stages_completed: u32) f32 {
     const count: f32 = @floatFromInt(@max(players, 1));
-    const time_factor = time_factor_per_minute * difficulty_value * std.math.pow(f32, count, 0.2);
+    const time_factor = time_factor_per_minute * setting.value() * std.math.pow(f32, count, 0.2);
     const stage_factor = std.math.pow(f32, stage_growth, @floatFromInt(stages_completed));
     return (playerFactor(players) + run_seconds / 60 * time_factor) * stage_factor;
 }

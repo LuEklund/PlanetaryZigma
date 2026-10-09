@@ -48,6 +48,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         });
     }
 
+    if (world.stage == 0) addLobbyPanel(world, ui);
     addChat(world, ui);
 
     if (world.getPtr(world.player_id)) |player| {
@@ -456,7 +457,14 @@ fn addObjectivePanel(world: *World, ui: *Ui) void {
         const teleporter = teleporter_entity.teleporter;
         const boss_alive = world.teleporter_bosses.items.len > 0;
         if (world.stage == 0) {
-            lines[line_count] = "Press E on the teleporter to start";
+            var ready_count: usize = 0;
+            var player_count: usize = 0;
+            for (world.entities.values()) |*entity| {
+                if (entity.kind != .player) continue;
+                player_count += 1;
+                if (entity.ready) ready_count += 1;
+            }
+            lines[line_count] = ui.print("E on the teleporter: ready ({d}/{d})", .{ ready_count, player_count });
             line_count += 1;
         } else if (teleporter.state == .idle) {
             lines[line_count] = "Find the teleporter";
@@ -730,4 +738,37 @@ fn tierColor(tier: shared.Item.Tier) shared.numz.color.Rgba(f32) {
         .equipment => .new(1, 0.6, 0.15, 1),
         .lunar => .new(0.45, 0.65, 1, 1),
     };
+}
+
+fn addLobbyPanel(world: *World, ui: *Ui) void {
+    const line_size: f32 = 20;
+    const padding: f32 = 10;
+    const panel_width: f32 = 360;
+    var player_count: f32 = 0;
+    for (world.entities.values()) |*entity| {
+        if (entity.kind == .player) player_count += 1;
+    }
+    ui.add(null, .{
+        .name = "lobby_panel",
+        .size = .{ .fixed = .{ .width = panel_width, .height = padding * 2 + (line_size + 6) * (player_count + 2) } },
+        .offset = .{ .left = ui.screen_width - panel_width - 12, .top = 80 },
+        .color = .new(0, 0, 0, 0.45),
+        .axis_align = .vertical,
+        .padding = padding,
+        .gap = 6,
+    });
+    const title = ui.print("Lobby - {s} (Esc to change)", .{world.difficulty_setting.label()});
+    ui.add("lobby_panel", .{
+        .size = .{ .fixed = ui.textSize(title, line_size) },
+        .text = .{ .data = title, .size = line_size, .color = .new(0.94, 0.96, 0.9, 1) },
+    });
+    for (world.entities.values()) |*entity| {
+        if (entity.kind != .player) continue;
+        const name = if (entity.player_name.slice().len != 0) entity.player_name.slice() else shared.default_player_name;
+        const line = ui.print("{s} - {s} - {s}", .{ name, shared.Survivor.get(entity.survivor).name, if (entity.ready) "READY" else "not ready" });
+        ui.add("lobby_panel", .{
+            .size = .{ .fixed = ui.textSize(line, line_size) },
+            .text = .{ .data = line, .size = line_size, .color = if (entity.ready) .new(0.4, 0.95, 0.4, 1) else .new(0.9, 0.9, 0.85, 1) },
+        });
+    }
 }

@@ -1,6 +1,7 @@
 const Hud = @This();
 
 const std = @import("std");
+const shared = @import("shared");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
@@ -39,6 +40,7 @@ pub const Request = union(enum) {
     none,
     main_menu,
     quit,
+    lobby: shared.net.LobbyCommand,
 };
 
 screen: Screen = .main,
@@ -133,7 +135,7 @@ pub fn update(
         }
         switch (hud.overlay) {
             .none => {},
-            .pause => request = try pause_menu.update(ui, hud),
+            .pause => request = try pause_menu.update(ui, hud, world, options, network_manager.host_state == .hosting),
             .wipe => request = game_hud.wipeMenu(world, network_manager, ui),
             .options => options_menu.update(ui, hud, options, controller),
         }

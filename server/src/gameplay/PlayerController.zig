@@ -5,6 +5,7 @@ const tracy = @import("ztracy");
 const combat = @import("combat.zig");
 const items = @import("items.zig");
 const skills = @import("skills.zig");
+const lobby = @import("lobby.zig");
 const nz = shared.numz;
 
 const interact_cooldown: f32 = 0.3;
@@ -148,10 +149,10 @@ pub fn update(world: *World, physics: *system.Physics) !void {
                             .flags = .{ .is_teleporter_boss = true },
                             .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
                         });
-                    } else {
-                        if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
-                            world.next_stage_requested = true;
-                        }
+                    } else if (world.place == .ship) {
+                        lobby.setReady(world, player, !player.ready);
+                    } else if (teleporter.charged == teleporter.max_charge and world.teleport_bosses.items.len == 0) {
+                        world.next_stage_requested = true;
                     }
                 },
                 .item_pickup => {

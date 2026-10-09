@@ -29,7 +29,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: decision 0005. 26 items (15 new) across common/uncommon/legendary/boss/lunar/equipment; procs on_hit/on_kill/on_hurt as data rows resolved in `gameplay/procs.zig` from one door (`combat.dealDamage`, no proc chains); 2 new equipment; equipment swaps on pickup. Built, needs playtest. Not done: timed buffs / DoTs (no status system yet).
 - [x] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
   - Result: decision 0006. Commando / Brawler / Marksman rows with 4 abilities each + 7 new skill kinds resolved in `executeSkill`; `special` action on R (dev reset moved to Backspace); survivor picked on the main menu, sent in `Connect`, replicated in spawns. Built, needs playtest.
-- [ ] C5 — Lobby: nicer Steam lobby (class pick, ready-up, player list, host settings). The lobby arc already shipped once — read the existing code before redesigning.
+- [x] C5 — Lobby: nicer Steam lobby (class pick, ready-up, player list, host settings). The lobby arc already shipped once — read the existing code before redesigning.
+  - Result: decision 0007. Lobby = the ship: player list with survivor + ready, ready-up via teleporter or pause menu, survivor change in the lobby, host picks Drizzle/Rainstorm/Monsoon; run starts when everyone is ready. Steam lobby browser untouched. Built, needs multi-client playtest.
 - [ ] C6 — Day/night cycle. Prior ruling: stylized color ramps, not physical scattering (no Preetham/Hosek/Bruneton). Procedural gradient sky: `up = normalize(cameraPos)`, `day = smoothstep(-0.10, 0.25, dot(sunDir, up))`, zenith/horizon colors for day and night, sun disc via `dot(V, sunDir)`; rotate `sunDir` over time for a cycle. Sun direction must also drive the directional light so they can't desync. Optional cheap planet rim: inverted sphere, `pow(1 - dot(N, V), k)`, additive.
 - [ ] C7 — Particles: the system is already GPU-analytic (`pos = f(emitter, index, age)` in the vertex shader, no compute). Keep that. Known gaps: alpha never fades with age (`color.a * life`, one line), one blend equation for every effect (add additive for sparks/lightning), lightning is beads not a capsule SDF. Research better effects online, propose, then build.
 
@@ -67,6 +68,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
+- C5: starting a run now needs every player ready (teleporter E toggles ready). Before, any player pressing E started it. Solo play is unchanged (one ready = start).
 - C4: R was the dev "reload" (teleport to planet centre + full resync). RoR2 puts Special on R, so Special took R and the dev reset moved to Backspace (rebindable). Swap back if you prefer.
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.

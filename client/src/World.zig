@@ -33,6 +33,7 @@ delta_time: f32 = 0,
 fps: f32 = 0,
 go_again_pending: bool = false,
 stage: u32 = 0,
+difficulty_setting: shared.difficulty.Setting = .rainstorm,
 difficulty: shared.net.Event.Difficulty = .{ .run_seconds = 0, .coefficient = 1, .level = 1 },
 prng: std.Random.DefaultPrng,
 
@@ -59,6 +60,7 @@ pub const Entity = struct {
     item: ?shared.Item.Kind = null,
     elite: shared.Elite.Kind = .none,
     survivor: shared.Survivor.Kind = .commando,
+    ready: bool = false,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
     spawned_at: f32 = 0,
@@ -156,6 +158,12 @@ pub fn update(self: *World, gpa: std.mem.Allocator, packets: []const shared.net.
             const entity = self.getPtr(inventory.id) orelse continue;
             applyInventory(entity, inventory);
         },
+        .lobby_player => |lobby_player| {
+            const entity = self.getPtr(lobby_player.id) orelse continue;
+            entity.survivor = lobby_player.survivor;
+            entity.ready = lobby_player.ready;
+        },
+        .lobby_difficulty => |setting| self.difficulty_setting = setting,
         .set_currency => |set_currency| {
             const entity = self.getPtr(set_currency.id) orelse continue;
             entity.currency = set_currency.amount;
