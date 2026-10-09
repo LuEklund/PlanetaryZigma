@@ -40,6 +40,13 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] V1 — Drop `VK_EXT_shader_object` and `VK_EXT_descriptor_buffer`. Target = Vulkan 1.3 core only, per `~/Obsidian/Projects/Zeta/zeta-design.md` "Feature set": BDA, dynamic rendering, synchronization2, extended dynamic state, descriptor indexing, one persistent descriptor set, pipeline cache. Zero optional extensions in the critical path. Remove the `VK_LAYER_KHRONOS_shader_object` emulation layer. Decision note first.
 - [ ] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
 - [ ] D2 — Delete `Scene.particle_lab` and everything only it uses.
+- [ ] T0 — Local dev loop (run on Lucas's PC, not cloud): screenshot hotkey/CLI flag writing PNG from the swapchain + a state-snapshot dump (scene, UI tree rects, entity counts) to a file Claude can read; usable with hot reload to check UI.
+- [ ] D3 — C4: Special stays on R; dev reset moves from Backspace to an F key.
+- [ ] U1 — Replace own `render/ui` with dvui (game + debug UI). Reuse the dvui Vulkan backend from `~/Projects/gifer` / Marionette. Fixes current UI overlap as part of it. After V1.
+- [ ] L1 — RoR2-style character select screen (not in the main menu): survivor list, ability panel with readable descriptions, difficulty pick (host), ready. Built on dvui.
+- [ ] Z1 — Zoo scene: every enemy, elite, survivor, item and particle effect laid out to inspect quickly (replaces the deleted particle lab).
+- [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
+- [ ] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
 
 ### Bugs (from the 2026-08-14 review — verify each still exists; fold into Phase 1 when it touches the same code)
 - [x] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.
@@ -75,16 +82,16 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
-- C4: R was the dev "reload" (teleport to planet centre + full resync). RoR2 puts Special on R, so Special took R and the dev reset moved to Backspace (rebindable). Swap back if you prefer.
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
-- A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
 
 ## Answered (2026-10-09)
 - C5: everyone must ready up — keep.
 - R9: bullets pass through allies — keep.
 - R52: freeze all 3 s / 100 s cooldown → D1.
 - A0 particle lab: delete → D2.
+- C4: Special on R, reset on an F key → D3.
+- A0 step 10: keep render HotLib nested in the client .so (faster reload) unless it causes problems.
 
 ## Cloud notes
 - ziglang.org and gitlab.freedesktop.org are blocked from the cloud box. Zig 0.16.0 came from the PyPI `ziglang` wheel (official binary); git deps were fetched with `git` and fed to `zig fetch <dir>` (hashes match). `ztracy` (HTRMC fork, unreachable) is a local no-op stub and `wayland_protocols` comes from Ubuntu's package — both only in gitignored `zig-pkg/`, so `-Dtracy=true` was never built here. `slangc` 2025.18 from the shader-slang GitHub release.
