@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pz build | run [menu|dev|singleplayer] | shot [out.png] [scale] | log [pattern] | kill
+# pz build | run [menu|dev|singleplayer|run] | shot [out.png] [scale] | log [pattern] | kill
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 logfile="${PZ_LOG:-/tmp/pz-client.log}"

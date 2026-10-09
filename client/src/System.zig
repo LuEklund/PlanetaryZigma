@@ -54,6 +54,7 @@ dvui_backend: DvuiBackend,
 dvui_window: dvui.Window,
 dvui_input: DvuiInput,
 request_exit: bool,
+auto_ready: bool,
 world: World,
 clock: shared.Clock,
 fps_window_start: std.Io.Timestamp,
@@ -134,13 +135,17 @@ pub fn init(self: *System, data: Init) !void {
     try self.network.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network.deinit();
     try self.enterScene(&self.world, .menu);
+    self.auto_ready = false;
     if (data.autostart) |autostart| {
-        if (std.mem.eql(u8, autostart, "singleplayer")) {
+        if (std.mem.eql(u8, autostart, "run")) {
+            self.network.requestHost(.singleplayer, true);
+            self.auto_ready = true;
+        } else if (std.mem.eql(u8, autostart, "singleplayer")) {
             self.network.requestHost(.singleplayer, false);
         } else if (std.mem.eql(u8, autostart, "dev")) {
             self.network.requestHost(.singleplayer, true);
         } else std.log.err(
-            "PZ_AUTOSTART: unknown \"{s}\", expected singleplayer or dev",
+            "PZ_AUTOSTART: unknown \"{s}\", expected singleplayer, dev or run",
             .{autostart},
         );
     }
@@ -221,6 +226,10 @@ fn step(self: *System, world: *World) !void {
         &self.assets,
     );
     _ = try self.dvui_window.end(.{});
+    if (self.auto_ready and world.stage == 0) if (world.getPtr(world.player_id)) |player| {
+        if (!player.ready) try self.network.sendCommand(.{ .lobby = .{ .ready = true } }, .reliable);
+        self.auto_ready = false;
+    };
     switch (hud_request) {
         .none => {},
         .main_menu => try self.network.returnToMainMenu(),
