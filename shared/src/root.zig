@@ -14,6 +14,7 @@ pub const difficulty = @import("difficulty.zig");
 pub const Biome = @import("Biome.zig");
 pub const Elite = @import("Elite.zig");
 pub const Survivor = @import("Survivor.zig");
+pub const skill_info = @import("skill_info.zig");
 pub const daynight = @import("daynight.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");

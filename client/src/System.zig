@@ -187,6 +187,7 @@ fn step(self: *System, world: *World) !void {
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
     self.dvui_backend.size = .{ .w = @floatFromInt(self.window.size.width), .h = @floatFromInt(self.window.size.height) };
+    self.dvui_backend.scale = std.math.clamp(self.dvui_backend.size.h / 1080, 0.5, 3);
     self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
     self.dvui_window.backend = self.dvui_backend.backend();
     try self.dvui_input.push(&self.dvui_window, self.window, "", &.{});
@@ -258,7 +259,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
                 } else {
                     if (self.window.keyboard.get(Chat.open_key) == .press) world.chat.open = true;
                     if (self.window.keyboard.get(.escape) == .press) self.hud.overlay = .pause;
-                    player_input = world.controller.update(self.window);
+                    if (world.stage != 0) player_input = world.controller.update(self.window);
                 }
             },
             .pause => if (self.window.keyboard.get(.escape) == .press) {
@@ -291,7 +292,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
 
 fn applyOptions(self: *System, world: *World) !void {
     try self.window.setFullscreen(world.options.fullscreen);
-    const wants_cursor_lock = self.scene == .game and self.hud.overlay == .none and self.window.focused;
+    const wants_cursor_lock = self.scene == .game and world.stage != 0 and self.hud.overlay == .none and self.window.focused;
     if (wants_cursor_lock) {
         try self.window.setPointerVisible(false);
         try self.window.setPointerConstraint(.locked);

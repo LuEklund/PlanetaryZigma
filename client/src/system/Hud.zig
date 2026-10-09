@@ -16,6 +16,7 @@ const main_menu = @import("hud/main_menu.zig");
 const options_menu = @import("hud/options.zig");
 const pause_menu = @import("hud/pause.zig");
 const game_hud = @import("hud/game.zig");
+const lobby_screen = @import("hud/lobby.zig");
 
 pub const Screen = enum {
     main,
@@ -116,7 +117,12 @@ pub fn update(
         request = try main_menu.update(network_manager, hud, options);
         if (hud.overlay == .options) options_menu.update(hud, options, controller);
     } else {
-        game_hud.update(hud, world, network_manager, options, game_assets);
+        const is_host = network_manager.host_state == .hosting;
+        if (world.stage == 0) {
+            if (hud.overlay == .none) request = lobby_screen.update(world, options, is_host);
+        } else {
+            game_hud.update(hud, world, network_manager, options, game_assets);
+        }
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;
@@ -130,7 +136,7 @@ pub fn update(
         }
         switch (hud.overlay) {
             .none => {},
-            .pause => request = pause_menu.update(hud, world, options, network_manager.host_state == .hosting),
+            .pause => request = pause_menu.update(hud),
             .wipe => request = game_hud.wipeMenu(world, network_manager),
             .options => options_menu.update(hud, options, controller),
         }

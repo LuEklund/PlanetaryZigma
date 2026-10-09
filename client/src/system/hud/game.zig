@@ -92,7 +92,6 @@ fn addRightColumn(world: *World, network_manager: *NetworkManager, area: dvui.Re
         });
     }
     addObjective(world);
-    if (world.stage == 0) addLobby(world);
 }
 
 fn sidePanel(src: std.builtin.SourceLocation) *dvui.BoxWidget {
@@ -128,23 +127,6 @@ fn addObjective(world: *World) void {
         if (teleporter.charged < teleporter.max_charge) dvui.label(@src(), "Charge the teleporter {d:.0}%", .{100 * teleporter.charged / teleporter.max_charge}, objective_options);
         if (boss_alive) dvui.labelNoFmt(@src(), "Defeat the boss", .{}, objective_options);
         if (!boss_alive and teleporter.charged >= teleporter.max_charge) dvui.labelNoFmt(@src(), "Enter the teleporter", .{}, objective_options);
-    }
-}
-
-fn addLobby(world: *World) void {
-    var panel = sidePanel(@src());
-    defer panel.deinit();
-    dvui.label(@src(), "Lobby - {s}", .{world.difficulty_setting.label()}, .{ .font = style.font(20), .color_text = .fromColor(style.text) });
-    var index: usize = 0;
-    for (world.entities.values()) |*entity| {
-        if (entity.kind != .player) continue;
-        const name = if (entity.player_name.slice().len != 0) entity.player_name.slice() else shared.default_player_name;
-        dvui.label(@src(), "{s} - {s} - {s}", .{ name, shared.Survivor.get(entity.survivor).name, if (entity.ready) "READY" else "not ready" }, .{
-            .id_extra = index,
-            .font = style.font(16),
-            .color_text = .fromColor(if (entity.ready) style.good else style.text_dim),
-        });
-        index += 1;
     }
 }
 

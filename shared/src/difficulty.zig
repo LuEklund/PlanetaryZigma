@@ -13,6 +13,14 @@ pub const Setting = enum(u8) {
         };
     }
 
+    pub fn description(setting: Setting) []const u8 {
+        return switch (setting) {
+            .drizzle => "For new players. Difficulty rises slowly.",
+            .rainstorm => "The way the game is meant to be played.",
+            .monsoon => "For veterans. Difficulty rises fast.",
+        };
+    }
+
     pub fn label(setting: Setting) []const u8 {
         return switch (setting) {
             .drizzle => "Drizzle",

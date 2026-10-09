@@ -105,6 +105,7 @@ pub fn draw(self: *Viewer, world: *World, gpa: std.mem.Allocator, io: std.Io) !b
     }
 
     self.dvui_backend.size = .{ .w = @floatFromInt(window.size.width), .h = @floatFromInt(window.size.height) };
+    self.dvui_backend.scale = std.math.clamp(self.dvui_backend.size.h / 1080, 0.5, 3);
     self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
     self.dvui_window.backend = self.dvui_backend.backend();
     try self.dvui_input.push(&self.dvui_window, window, "", &.{});
