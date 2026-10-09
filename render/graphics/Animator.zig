@@ -245,52 +245,41 @@ fn playAnimation(delta_time: f32, instance: *Instance, model: *const Model, rig:
 
 fn sampleClip(nodes: []Node, animation: AnimationClip, time: f32, mask: ?[]const bool) void {
     for (animation.channels) |*channel| {
-        if (mask) |masked| {
-            if (!masked[channel.node]) continue;
-        }
+        if (mask) |masked| if (!masked[channel.node]) continue;
         const sampler = animation.samplers[channel.sampler_index];
-        for (0..sampler.inputs.len - 1) |i| {
-            const sampler_in = sampler.inputs[i];
-            const sampler_in_next = sampler.inputs[i + 1];
-            if (time >= sampler_in and time <= sampler_in_next) {
-                const interpolate_value: f32 = (time - sampler_in) / (sampler_in_next - sampler_in);
-                const node = &nodes[channel.node];
-                const sampler_out = sampler.outputs[i];
-                const sampler_out_next = sampler.outputs[i + 1];
-                switch (channel.path) {
-                    .translation => {
-                        const translation = std.math.lerp(
-                            sampler_out,
-                            sampler_out_next,
-                            @as(nz.Vec4(f32), @splat(interpolate_value)),
-                        );
-                        node.translation = .{ translation[0], translation[1], translation[2] };
-                    },
-                    .rotation => node.rotation = nz.Quat(f32).slerp(
-                        .{
-                            .w = sampler_out[3],
-                            .x = sampler_out[0],
-                            .y = sampler_out[1],
-                            .z = sampler_out[2],
-                        },
-                        .{
-                            .w = sampler_out_next[3],
-                            .x = sampler_out_next[0],
-                            .y = sampler_out_next[1],
-                            .z = sampler_out_next[2],
-                        },
-                        interpolate_value,
-                    ),
-                    .scale => {
-                        const scale = std.math.lerp(
-                            sampler_out,
-                            sampler_out_next,
-                            @as(nz.Vec4(f32), @splat(interpolate_value)),
-                        );
-                        node.scale = .{ scale[0], scale[1], scale[2] };
-                    },
-                }
-            }
-        }
+        const key = findKey(sampler.inputs, time) orelse continue;
+        const from = sampler.outputs[key.index];
+        const to = sampler.outputs[key.index + 1];
+        applyKey(&nodes[channel.node], channel.path, from, to, key.blend);
     }
+}
+
+const Key = struct { index: usize, blend: f32 };
+
+/// The keyframe interval containing `time`, and how far into it `time` is.
+fn findKey(inputs: []const f32, time: f32) ?Key {
+    if (inputs.len < 2) return null;
+    for (inputs[0 .. inputs.len - 1], inputs[1..], 0..) |start, end, index| {
+        if (time < start or time > end) continue;
+        return .{ .index = index, .blend = (time - start) / (end - start) };
+    }
+    return null;
+}
+
+fn applyKey(node: *Node, path: AnimationClip.Path, from: nz.Vec4(f32), to: nz.Vec4(f32), blend: f32) void {
+    switch (path) {
+        .translation => {
+            const value = std.math.lerp(from, to, @as(nz.Vec4(f32), @splat(blend)));
+            node.translation = .{ value[0], value[1], value[2] };
+        },
+        .scale => {
+            const value = std.math.lerp(from, to, @as(nz.Vec4(f32), @splat(blend)));
+            node.scale = .{ value[0], value[1], value[2] };
+        },
+        .rotation => node.rotation = nz.Quat(f32).slerp(quaternion(from), quaternion(to), blend),
+    }
+}
+
+fn quaternion(value: nz.Vec4(f32)) nz.Quat(f32) {
+    return .{ .w = value[3], .x = value[0], .y = value[1], .z = value[2] };
 }

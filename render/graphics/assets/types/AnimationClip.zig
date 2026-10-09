@@ -8,8 +8,10 @@ const Sampler = struct {
     outputs: []nz.Vec4(f32),
 };
 
+pub const Path = enum { translation, rotation, scale };
+
 const Channel = struct {
-    path: enum { translation, rotation, scale },
+    path: Path,
     node: usize,
     sampler_index: u32,
 };
