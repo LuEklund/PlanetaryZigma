@@ -29,21 +29,35 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] C7 — Particles: the system is already GPU-analytic (`pos = f(emitter, index, age)` in the vertex shader, no compute). Keep that. Known gaps: alpha never fades with age (`color.a * life`, one line), one blend equation for every effect (add additive for sparks/lightning), lightning is beads not a capsule SDF. Research better effects online, propose, then build.
 
 ### Bugs (from the 2026-08-14 review — verify each still exists; fold into Phase 1 when it touches the same code)
-- [ ] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.
-- [ ] R181 — Wayland key-repeat armed inside the chat-text guard but only disarmed inside it → closing chat with a key held overflows the 1024 B writer, permanent hang.
-- [ ] R194 — `net.Input.keys` is a level bitfield rebuilt from edges; dropped/unmapped events stick bits forever. Write keys from per-frame `isDown()`, keep edges only for toggles. Should also close R186/R187.
-- [ ] R39/R53 — holding R re-syncs the whole world every tick. Make it edge-triggered.
-- [ ] R74 — one player joining full-resyncs every client. Sync only the joiner.
-- [ ] R73 — failed reliable sends are dropped, never retried.
-- [ ] R102 — failed submit after `vkResetFences` poisons that frame slot forever.
-- [ ] R103 — `OUT_OF_DATE` with no size change never recreates the swapchain → permanent black window.
-- [ ] R143 — the 5th player crashes a Debug server (`anchor_buffer[4]`). Add a lobby cap at the join door.
-- [ ] R52 — freezer re-arms every tick: enemies within 10 u of a player never think.
-- [ ] R9 — ally-graze / owner-gone bullets `continue` before teardown → immortal projectiles.
-- [ ] R12 — UI 2048-quad cap uses `appendAssumeCapacity`; ~2100 quads in a fight panics ReleaseSafe.
+- [x] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.
+  - Result: already fixed — `Wayland.zig:375` binds `@min(global.version, GlobalType.interface.version)`.
+- [x] R181 — Wayland key-repeat armed inside the chat-text guard but only disarmed inside it → closing chat with a key held overflows the 1024 B writer, permanent hang.
+  - Result: disarm-on-close was already in place (`poll` clears `repeat_key` when `text == null`). Remaining hole fixed: after a long stall the repeat count could exceed the 1024 B writer, `poll` errored every frame and never advanced `next_time_ms`. Now clamps to free space and always advances. Needs a Wayland check.
+- [x] R194 — `net.Input.keys` is a level bitfield rebuilt from edges; dropped/unmapped events stick bits forever. Write keys from per-frame `isDown()`, keep edges only for toggles. Should also close R186/R187.
+  - Result: already fixed — `Controller.update` writes `keys` every frame from `window.keyboard.get(key).isDown()` (held) / `== .press` (pressed). R186/R187 not re-checked (no description in tree).
+- [x] R39/R53 — holding R re-syncs the whole world every tick. Make it edge-triggered.
+  - Result: server-side edge: `Controller.reload_held` + `resync_requested`; NetworkManager full-syncs only the pressing client once. Built, needs playtest.
+- [x] R74 — one player joining full-resyncs every client. Sync only the joiner.
+  - Result: joining no longer sets `sync_all_clients`; others get the new player via `world.spawned` (spawn packet carries the name). A rename of an already-spawned player still resyncs all. Built, needs 2-player playtest.
+- [x] R73 — failed reliable sends are dropped, never retried.
+  - Result: `SteamNet.sendOutgoing` keeps reliable messages that hit `k_EResultLimitExceeded` (and every later reliable message to that connection, to keep order) for the next flush. Built, needs a congested-link test.
+- [x] R102 — failed submit after `vkResetFences` poisons that frame slot forever.
+  - Result: fence reset moved to right before `vkQueueSubmit2`; a failed submit issues an empty submit to re-signal the fence. Built, untested (no GPU here).
+- [x] R103 — `OUT_OF_DATE` with no size change never recreates the swapchain → permanent black window.
+  - Result: `Vulkan.swapchain_stale` set on acquire OUT_OF_DATE and present OUT_OF_DATE/SUBOPTIMAL; next update recreates even at the same size. Built, untested (no GPU).
+- [x] R143 — the 5th player crashes a Debug server (`anchor_buffer[4]`). Add a lobby cap at the join door.
+  - Result: cap enforced at the join door (`NetworkManager` connect handler closes the connection with "server full"); Debug-only exception in `World.spawn` removed. Built, needs a 5-client test.
+- [x] R52 — freezer re-arms every tick: enemies within 10 u of a player never think.
+  - Result: freeze (10 s) could be re-armed every 5 s cooldown by holding Q → near-permanent. Active freeze no longer re-arms; freezer row adds +20 s equipment cooldown (25 s total); description fixed to 10 s. Built, needs playtest.
+- [x] R9 — ally-graze / owner-gone bullets `continue` before teardown → immortal projectiles.
+  - Result: projectiles already expire by `lifetime`, so not immortal; fixed owner-gone hits to despawn the projectile. Ally graze still passes through (looks intentional). Built, needs playtest.
+- [x] R12 — UI 2048-quad cap uses `appendAssumeCapacity`; ~2100 quads in a fight panics ReleaseSafe.
+  - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
 ## Needs asset from Lucas
 
 ## Questions for Lucas
+- R52: the freezer row said "20s" but code froze for 10 s, and only enemies within 10 u of a player. Kept 10 s / near-player and gave it a 25 s cooldown. Alternative: freeze every enemy for 20 s with a longer cooldown.
+- R9: bullets pass through entities of the shooter's own kind (ally graze). Kept as pass-through. Say if allies should block bullets instead.
 - A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
 - A0: `Scene.particle_lab` is unreachable since its F4 entry was commented out (now deleted). Keep the scene (dev tool) or delete it? Kept.
