@@ -10,6 +10,7 @@ pub const SkinnedVertex = @import("vertex.zig").SkinnedVertex;
 pub const HotLib = @import("HotLib.zig").HotLib;
 pub const layout = @import("layout.zig");
 pub const Clock = @import("Clock.zig");
+pub const difficulty = @import("difficulty.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
 

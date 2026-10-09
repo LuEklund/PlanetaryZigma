@@ -33,6 +33,7 @@ delta_time: f32 = 0,
 fps: f32 = 0,
 go_again_pending: bool = false,
 stage: u32 = 0,
+difficulty: shared.net.Event.Difficulty = .{ .run_seconds = 0, .coefficient = 1, .level = 1 },
 prng: std.Random.DefaultPrng,
 
 pub const Dying = struct {
@@ -109,6 +110,7 @@ pub fn clear(self: *World) void {
     self.teleporter_id = .none;
     self.player_id = .none;
     self.stage = 0;
+    self.difficulty = .{ .run_seconds = 0, .coefficient = 1, .level = 1 };
 }
 
 pub fn update(self: *World, gpa: std.mem.Allocator, packets: []const shared.net.ServerPacket) !void {

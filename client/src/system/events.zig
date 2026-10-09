@@ -33,6 +33,7 @@ pub fn apply(
             .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
                 entity.teleporter.charged = charged;
             },
+            .difficulty => |difficulty| world.difficulty = difficulty,
             .new_stage => |new_stage| {
                 world.teleporter_id = .none;
                 world.stage = new_stage;

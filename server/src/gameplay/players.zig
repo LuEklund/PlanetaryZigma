@@ -11,6 +11,7 @@ pub fn updateWipe(world: *World, gpa: std.mem.Allocator, physics: *system.Physic
     }
     std.log.info("wipe: go again -> ship", .{});
     world.stage = 0;
+    world.run_seconds = 0;
     world.director.spawning = false;
     try stage.loadPlace(world, gpa, physics, .ship);
 }

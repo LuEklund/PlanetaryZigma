@@ -214,6 +214,12 @@ pub const Event = union(enum) {
         duration: f32,
     };
 
+    pub const Difficulty = struct {
+        run_seconds: f32,
+        coefficient: f32,
+        level: f32,
+    };
+
     pub const Effect = union(enum) {
         pub const Lightning = struct {
             pub const max_targets = 4;
@@ -233,6 +239,7 @@ pub const Event = union(enum) {
     stun: Stun,
     interact: Interact,
     effect: Effect,
+    difficulty: Difficulty,
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {

@@ -6,6 +6,18 @@ const World = @import("../World.zig");
 
 const enemy_max_spawn_distance: f32 = 85;
 const enemy_min_spawn_distance: f32 = enemy_max_spawn_distance * 0.8;
+pub fn updateRunTimer(world: *World) void {
+    const previous_second = @floor(world.run_seconds);
+    world.run_seconds += world.delta_time;
+    if (@floor(world.run_seconds) == previous_second) return;
+    const difficulty_coefficient = world.difficultyCoefficient();
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .difficulty = .{
+        .run_seconds = world.run_seconds,
+        .coefficient = difficulty_coefficient,
+        .level = shared.difficulty.level(difficulty_coefficient, world.players.items.len),
+    } } });
+}
+
 pub fn updateDirector(world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
@@ -22,7 +34,7 @@ pub fn updateDirector(world: *World) !void {
     if (director.spawning) {
         if (world.elapsed_time - director.last_salary >= 1.0) {
             director.last_salary = world.elapsed_time;
-            director.credits += director.salary_per_second * 5;
+            director.credits += director.salary_per_second * shared.difficulty.directorCreditScale(world.difficultyCoefficient(), world.players.items.len);
         }
         const random = world.prng.random();
         const enemy_kind: shared.entity.EnemyKind = switch (random.uintLessThan(u32, 100)) {
@@ -33,7 +45,7 @@ pub fn updateDirector(world: *World) !void {
             76...90 => .healer,
             else => .bloorp_lord,
         };
-        const cost = shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency;
+        const cost: f32 = @floatFromInt(shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency);
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {

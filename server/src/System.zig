@@ -105,6 +105,7 @@ fn step(self: *System, world: *World) !void {
 
     try PlayerController.update(world, &self.physics);
     if (world.place == .planet) try enemies.updateEnemies(world, &self.physics);
+    if (world.place == .planet) director.updateRunTimer(world);
     if (world.place == .planet) try director.updateDirector(world);
     try self.physics.update(world);
     projectiles.updateProjectiles(world);

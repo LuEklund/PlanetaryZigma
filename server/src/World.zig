@@ -33,6 +33,7 @@ prng: std.Random.DefaultPrng,
 elapsed_time: f32,
 delta_time: f32,
 tick: u32,
+run_seconds: f32,
 
 world_unstun_at: f32 = 0,
 
@@ -57,8 +58,8 @@ pub const Options = struct {
 };
 
 pub const Director = struct {
-    credits: u32,
-    salary_per_second: u32,
+    credits: f32,
+    salary_per_second: f32,
     last_salary: f32,
     spawning: bool,
 };
@@ -101,6 +102,7 @@ pub const Entity = struct {
     max_health: f32 = 0,
     damage: f32 = 0,
     regen_carry: f32 = 0,
+    level: f32 = 1,
 
     un_stun_at: f32 = 0,
 
@@ -109,7 +111,12 @@ pub const Entity = struct {
     mode: Mode = .falling,
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
-        return shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
+        const value = shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
+        return switch (stat_kind) {
+            .health => value * shared.difficulty.healthMultiplier(self.level),
+            .damage => value * shared.difficulty.damageMultiplier(self.level),
+            else => value,
+        };
     }
 
     pub const Mode = enum {
@@ -154,7 +161,8 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .navmesh = .empty,
         .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
-        .director = .{ .credits = 0, .salary_per_second = 2, .last_salary = 0, .spawning = false },
+        .director = .{ .credits = 0, .salary_per_second = 10, .last_salary = 0, .spawning = false },
+        .run_seconds = 0,
         .next_entity_id = 1,
         .stage = 0,
         .prng = .init(0xACE1),
@@ -194,14 +202,24 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     const entity = self.entities.getPtr(id).?;
     entity.id = id;
     if (entity.flags.is_teleporter_boss) self.teleport_bosses.appendAssumeCapacity(id);
-    entity.max_health = entity.stat(.health);
-    if (entity.kind == .enemy) {
-        entity.max_health *= @as(f32, @floatFromInt(self.stage));
+    const difficulty_coefficient = self.difficultyCoefficient();
+    const base_currency = entity.kind.spec().currency;
+    switch (entity.kind) {
+        .enemy => {
+            entity.level = shared.difficulty.level(difficulty_coefficient, self.players.items.len);
+            entity.currency = shared.difficulty.killReward(base_currency, difficulty_coefficient);
+        },
+        .lootbox => entity.currency = shared.difficulty.chestCost(base_currency, difficulty_coefficient),
+        else => entity.currency = base_currency,
     }
+    entity.max_health = entity.stat(.health);
     entity.health = entity.max_health;
-    entity.currency = entity.kind.spec().currency;
     self.new_spawns.appendAssumeCapacity(id);
     return entity;
+}
+
+pub fn difficultyCoefficient(self: *const World) f32 {
+    return shared.difficulty.coefficient(self.run_seconds, self.players.items.len, self.stage -| 1);
 }
 
 pub fn enemyCount(self: *const World) usize {

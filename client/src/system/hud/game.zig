@@ -36,6 +36,18 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         .text = .{ .data = fps_text, .size = 24, .color = .new(0.68, 0.72, 0.66, 1) },
     });
 
+    if (world.stage > 0) {
+        const run_minutes: u32 = @intFromFloat(world.difficulty.run_seconds / 60);
+        const run_seconds: u32 = @intFromFloat(@mod(world.difficulty.run_seconds, 60));
+        const difficulty_text = ui.print("Stage {d}  {d:0>2}:{d:0>2}  Lv {d:.0}", .{ world.stage, run_minutes, run_seconds, world.difficulty.level });
+        const difficulty_size = ui.textSize(difficulty_text, 24);
+        ui.add(null, .{
+            .size = .{ .fixed = difficulty_size },
+            .offset = .{ .left = ui.screen_width - difficulty_size.width - 12, .top = 40 },
+            .text = .{ .data = difficulty_text, .size = 24, .color = difficultyColor(world.difficulty.coefficient) },
+        });
+    }
+
     addChat(world, ui);
 
     if (world.getPtr(world.player_id)) |player| {
@@ -674,4 +686,9 @@ fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32),
         travelled += @max(value * step_safety, surface_epsilon);
     }
     return false;
+}
+
+fn difficultyColor(coefficient: f32) shared.numz.color.Rgba(f32) {
+    const heat = std.math.clamp((coefficient - 1) / 6, 0, 1);
+    return .new(0.75 + 0.25 * heat, 0.8 - 0.6 * heat, 0.6 - 0.5 * heat, 1);
 }
