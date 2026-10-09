@@ -14,8 +14,10 @@ age: f32,
 pub const max_popups = 128;
 
 pub const List = struct {
-    popups: [max_popups]DamagePopup = undefined,
-    count: usize = 0,
+    popups: [max_popups]DamagePopup,
+    count: usize,
+
+    pub const empty: List = .{ .popups = undefined, .count = 0 };
 
     pub fn items(self: *const List) []const DamagePopup {
         return self.popups[0..self.count];

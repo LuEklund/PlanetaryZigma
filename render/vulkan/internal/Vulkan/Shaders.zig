@@ -21,10 +21,10 @@ pub const Pipeline = enum {
     particles_additive,
     outline,
     debug,
-    ui,
+    dvui,
 };
 
-const Blend = enum { none, alpha, additive };
+const Blend = enum { none, alpha, additive, premultiplied };
 const Target = enum { main, shadow, mask };
 
 const Row = struct {
@@ -50,7 +50,7 @@ const rows: std.EnumArray(Pipeline, Row) = .init(.{
     .particles_additive = .{ .vert = .particles, .frag = .particles, .layout = .particle, .target = .main, .blend = .additive, .lines = false },
     .outline = .{ .vert = .highlight_outline, .frag = .highlight_outline, .layout = .world, .target = .main, .blend = .none, .lines = false },
     .debug = .{ .vert = .debug, .frag = .debug, .layout = .world, .target = .main, .blend = .none, .lines = true },
-    .ui = .{ .vert = .ui, .frag = .ui, .layout = .ui, .target = .main, .blend = .alpha, .lines = false },
+    .dvui = .{ .vert = .dvui, .frag = .dvui, .layout = .dvui, .target = .main, .blend = .premultiplied, .lines = false },
 });
 
 const dynamic_states = [_]vk.DynamicState{
@@ -144,6 +144,16 @@ fn build(self: *Shaders, row: Row) !vk.Pipeline {
         .alpha => .{
             .blend_enable = .true,
             .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .one_minus_src_alpha,
+            .alpha_blend_op = .add,
+            .color_write_mask = all_components,
+        },
+        .premultiplied => .{
+            .blend_enable = .true,
+            .src_color_blend_factor = .one,
             .dst_color_blend_factor = .one_minus_src_alpha,
             .color_blend_op = .add,
             .src_alpha_blend_factor = .one,

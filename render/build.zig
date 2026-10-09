@@ -77,13 +77,6 @@ pub fn build(b: *std.Build) void {
     }
 
     const stb_dep = b.dependency("stb", .{});
-    const stb_truetype = b.addTranslateC(.{
-        .root_source_file = stb_dep.path("stb_truetype.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    stb_truetype.addIncludePath(stb_dep.path("."));
-
     const stb_image = b.addTranslateC(.{
         .root_source_file = stb_dep.path("stb_image.h"),
         .target = target,
@@ -91,21 +84,36 @@ pub fn build(b: *std.Build) void {
     });
     stb_image.addIncludePath(stb_dep.path("."));
 
-    const stb_truetype_module = stb_truetype.addModule("stb_truetype");
     const stb_image_module = stb_image.addModule("stb_image");
 
     const vulkandeps = b.dependency("vulkan_headers", .{});
 
     const vk = b.dependency("vulkan_zig", .{ .registry = vulkandeps.path("registry/vk.xml") }).module("vulkan-zig");
 
-    _ = b.addModule("ui", .{
-        .root_source_file = b.path("ui/root.zig"),
+    const dvui_dep = b.dependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .backend = .custom,
+        .libc = true,
+        .@"stb-image" = false,
+        .@"tree-sitter" = false,
+    });
+    const dvui = dvui_dep.module("dvui");
+    const dvui_backend = b.addModule("dvui_backend", .{
+        .root_source_file = b.path("dvui/Backend.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "renderer_contract", .module = renderer_contract }},
+    });
+    @import("dvui").linkBackend(dvui, dvui_backend);
+    b.modules.put(b.graph.arena, b.dupe("dvui"), dvui) catch @panic("OOM");
+    _ = b.addModule("dvui_input", .{
+        .root_source_file = b.path("dvui/Input.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "shared", .module = shared },
-            .{ .name = "numz", .module = numz },
-            .{ .name = "renderer_contract", .module = renderer_contract },
+            .{ .name = "dvui", .module = dvui },
+            .{ .name = "Window", .module = window },
         },
     });
 
@@ -119,7 +127,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "renderer_contract", .module = renderer_contract },
             .{ .name = "zgltf", .module = b.dependency("zgltf", .{ .target = target, .optimize = optimize }).module("zgltf") },
             .{ .name = "stb_image", .module = stb_image_module },
-            .{ .name = "stb_truetype", .module = stb_truetype_module },
             .{ .name = "Window", .module = window },
             .{ .name = "ztracy", .module = ztracy },
         },
@@ -130,8 +137,6 @@ pub fn build(b: *std.Build) void {
         .file = b.addWriteFiles().add("stbi_impl.c",
             \\#define STB_IMAGE_IMPLEMENTATION
             \\#include "stb_image.h"
-            \\#define STB_TRUETYPE_IMPLEMENTATION
-            \\#include "stb_truetype.h"
         ),
         .flags = &.{"-fvisibility=hidden"},
     });
@@ -146,7 +151,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "shared", .module = shared },
                 .{ .name = "numz", .module = numz },
                 .{ .name = "Window", .module = window },
-                .{ .name = "stb_truetype", .module = stb_truetype_module },
                 .{ .name = "ztracy", .module = ztracy },
                 .{ .name = "vulkan", .module = vk },
                 .{ .name = "renderer_contract", .module = renderer_contract },

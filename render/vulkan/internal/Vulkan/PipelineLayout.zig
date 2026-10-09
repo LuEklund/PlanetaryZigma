@@ -3,7 +3,7 @@ const PipelineLayout = @This();
 const vk = @import("vulkan");
 const Device = @import("device.zig").Logical;
 
-pub const Kind = enum { world, particle, sky, ui };
+pub const Kind = enum { world, particle, sky, dvui };
 pub const push_stages: vk.ShaderStageFlags = .{ .vertex_bit = true, .fragment_bit = true };
 
 handle: vk.PipelineLayout,

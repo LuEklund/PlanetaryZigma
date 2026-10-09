@@ -14,7 +14,6 @@ const elite_scale: f32 = 1.25;
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
     const models = &system.assets.models;
-    const ui = &system.hud.ui;
     const list = &system.draw_list;
 
     list.clear();
@@ -136,9 +135,6 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         }
     }
 
-    list.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
-    list.ui.screen_width = ui.screen_width;
-    list.ui.screen_height = ui.screen_height;
 
     for (system.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;

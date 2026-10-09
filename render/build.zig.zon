@@ -54,6 +54,10 @@
             .url = "git+https://github.com/Snektron/vulkan-zig#b496a6a561ffbbeb530b0f9ed4e059f88c0723a5",
             .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",
         },
+        .dvui = .{
+            .url = "git+https://github.com/david-vanderson/dvui#e5718eb8ecf5babc5311d7494f1cb2de1457ac2f",
+            .hash = "dvui-0.5.0-dev-AQFJmXOKAwHIwYXUv3KNj6Q3hqJUb3v5gLfdhQDXriru",
+        },
     },
     .paths = .{
         "build.zig",

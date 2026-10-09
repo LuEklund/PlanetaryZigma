@@ -21,7 +21,6 @@ pub const SteamNet = @import("SteamNet.zig");
 pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;
 
-pub const Font = @import("Font.zig");
 
 pub const entity = @import("entity.zig");
 

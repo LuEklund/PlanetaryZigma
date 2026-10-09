@@ -10,10 +10,11 @@ swapchain_semaphore: vk.Semaphore,
 render_fence: vk.Fence,
 command_buffer: vk.CommandBuffer,
 gpu_scene: Buffer,
-ui_vertex_buffer: Buffer,
 debug_vertex_buffer: Buffer,
 emitter_buffer: Buffer,
 joint_buffer: Buffer,
+dvui_vertex_buffer: Buffer,
+dvui_index_buffer: Buffer,
 
 pub const max_frames_inflight: usize = 3;
 
@@ -55,10 +56,11 @@ pub fn init(heap: *GpuMemory, device: Device) !FrameData {
         .swapchain_semaphore = try device.proxy.createSemaphore(&.{}, null),
         .render_fence = try device.proxy.createFence(&.{ .flags = .{ .signaled_bit = true } }, null),
         .gpu_scene = try .init(device, heap, GPUScene, 1, uniform),
-        .ui_vertex_buffer = try .init(device, heap, DrawList.UiVertex, DrawList.max_ui_quads * 4, storage),
         .debug_vertex_buffer = try .init(device, heap, DebugVertex, DrawList.max_lines * 2, storage),
         .emitter_buffer = try .init(device, heap, GPUEmitter, DrawList.max_emitters, storage),
         .joint_buffer = try .init(device, heap, [16]f32, DrawList.max_joint_matrices, uniform),
+        .dvui_vertex_buffer = try .init(device, heap, DrawList.DvuiVertex, DrawList.max_dvui_vertices, storage),
+        .dvui_index_buffer = try .init(device, heap, u32, DrawList.max_dvui_indices, .{ .index_buffer_bit = true }),
     };
 }
 
@@ -67,8 +69,9 @@ pub fn deinit(self: *FrameData, heap: *GpuMemory, device: Device) void {
     device.proxy.destroyFence(self.render_fence, null);
     device.proxy.freeCommandBuffers(device.command_pool, &.{self.command_buffer});
     self.gpu_scene.deinit(heap);
-    self.ui_vertex_buffer.deinit(heap);
     self.debug_vertex_buffer.deinit(heap);
     self.emitter_buffer.deinit(heap);
     self.joint_buffer.deinit(heap);
+    self.dvui_vertex_buffer.deinit(heap);
+    self.dvui_index_buffer.deinit(heap);
 }

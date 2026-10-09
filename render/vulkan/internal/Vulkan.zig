@@ -103,7 +103,10 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     const current_frame = &self.frames[self.frameIndex()];
     const cmd = current_frame.command_buffer;
 
-    _ = try self.device.proxy.waitForFences(&.{current_frame.render_fence}, .true, frame_timeout_ns);
+    if (try self.device.proxy.waitForFences(&.{current_frame.render_fence}, .true, frame_timeout_ns) == .timeout) {
+        std.log.warn("render: frame fence timed out, skipping frame", .{});
+        return;
+    }
     const image_index = self.acquireNextImage(current_frame) orelse return;
     const render_semaphore = self.swapchain.render_semaphores[image_index];
 
@@ -192,7 +195,7 @@ fn render(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list:
     self.renderParticlePass(cmd, current_frame, list, particle_batches);
     self.renderOutlinePass(cmd);
     if (list.draw_lines.items.len != 0) self.renderDebugPass(cmd, current_frame, list);
-    self.renderUiPass(cmd, current_frame, list);
+    self.renderDvuiPass(cmd, current_frame, list);
     self.device.proxy.cmdEndRendering(cmd);
 
     draw_image_barrier.transition(.transfer_src_optimal, .{ .all_transfer_bit = true }, .{ .transfer_read_bit = true });
@@ -588,23 +591,38 @@ fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const F
     proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
 }
 
-fn renderUiPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+fn renderDvuiPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+    if (list.dvui.commands.items.len == 0 or !self.bindPipeline(cmd, .dvui)) return;
     const proxy = self.device.proxy;
-    current_frame.ui_vertex_buffer.copy(DrawList.UiQuad, list.ui.quads.items);
+    current_frame.dvui_vertex_buffer.copy(DrawList.DvuiVertex, list.dvui.vertices.items);
+    current_frame.dvui_index_buffer.copy(u32, list.dvui.indices.items);
     proxy.cmdSetCullMode(cmd, .{});
-    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
     proxy.cmdSetDepthTestEnable(cmd, .false);
     proxy.cmdSetDepthWriteEnable(cmd, .false);
-    if (!self.bindPipeline(cmd, .ui)) return;
-    const layout = self.resources.pipeline_layouts.get(.ui).handle;
+    const layout = self.resources.pipeline_layouts.get(.dvui).handle;
     proxy.cmdBindDescriptorSets(cmd, .graphics, layout, 0, &.{self.resources.texture_table.set}, null);
-    const push: Shader.UiPushConstant = .{
-        .vertex_buffer_address = current_frame.ui_vertex_buffer.getGPUAddress(),
-        .screen_size = .{ list.ui.screen_width, list.ui.screen_height },
+    proxy.cmdBindIndexBuffer(cmd, current_frame.dvui_index_buffer.buffer, 0, .uint32);
+    var push: Shader.DvuiPushConstant = .{
+        .vertex_buffer_address = current_frame.dvui_vertex_buffer.getGPUAddress(),
+        .screen_size = .{ @floatFromInt(self.swapchain.draw_image.extent.width), @floatFromInt(self.swapchain.draw_image.extent.height) },
+        .texture_index = 0,
     };
-    proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.UiPushConstant), &push);
-    proxy.cmdBindIndexBuffer(cmd, self.resources.ui_index_buffer.buffer, 0, .uint32);
-    proxy.cmdDrawIndexed(cmd, @intCast(list.ui.quads.items.len * 6), 1, 0, 0, 0);
+    const full = self.fullScissor();
+    for (list.dvui.commands.items) |command| {
+        push.texture_index = @intFromEnum(command.texture);
+        proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.DvuiPushConstant), &push);
+        const scissor: vk.Rect2D = if (command.clip) |clip| clipped: {
+            const x0 = std.math.clamp(clip.x, 0, @as(i32, @intCast(full.extent.width)));
+            const y0 = std.math.clamp(clip.y, 0, @as(i32, @intCast(full.extent.height)));
+            const x1 = std.math.clamp(clip.x + @as(i32, @intCast(clip.width)), x0, @as(i32, @intCast(full.extent.width)));
+            const y1 = std.math.clamp(clip.y + @as(i32, @intCast(clip.height)), y0, @as(i32, @intCast(full.extent.height)));
+            break :clipped .{ .offset = .{ .x = x0, .y = y0 }, .extent = .{ .width = @intCast(x1 - x0), .height = @intCast(y1 - y0) } };
+        } else full;
+        if (scissor.extent.width == 0 or scissor.extent.height == 0) continue;
+        proxy.cmdSetScissorWithCount(cmd, &.{scissor});
+        proxy.cmdDrawIndexed(cmd, command.index_count, 1, command.index_start, 0, 0);
+    }
+    proxy.cmdSetScissorWithCount(cmd, &.{full});
 }
 
 fn bindWorldDescriptors(self: *Vulkan, cmd: vk.CommandBuffer, pipeline_layout: vk.PipelineLayout) void {

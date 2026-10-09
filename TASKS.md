@@ -49,7 +49,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: `PZ_AUTOSTART=singleplayer|dev` skips the menu; screenshots via `grim -g "$(hyprctl clients -j ...planetary_zigma geometry)"`, no game code needed. State dump skipped until a screenshot isn't enough.
 - [x] D3 — C4: Special stays on R; dev reset moves from Backspace to an F key.
   - Result: Reset Position defaults to F10 (dev_f10 was unused, now unbound). Built.
-- [ ] U1 — Replace own `render/ui` with dvui (game + debug UI). Reuse the dvui Vulkan backend from `~/Projects/gifer` / Marionette. Fixes current UI overlap as part of it. After V1.
+- [x] U1 — Replace own `render/ui` with dvui (game + debug UI). Reuse the dvui Vulkan backend from `~/Projects/gifer` / Marionette. Fixes current UI overlap as part of it. After V1.
+  - Result: own Ui/Fonts deleted. dvui (custom backend in `render/dvui/`) writes triangles into `DrawList.dvui`; renderer draws them in one premultiplied pass. HUD, menus, options, pause, wipe and the server viewer ported. Right column stacks ping/difficulty/objective/lobby (no overlap). Built and screenshotted; button hover sounds dropped. Note: Slang `SV_VertexID` excludes base vertex, so dvui indices are rebased on CPU.
 - [ ] L1 — RoR2-style character select screen (not in the main menu): survivor list, ability panel with readable descriptions, difficulty pick (host), ready. Built on dvui.
 - [ ] Z1 — Zoo scene: every enemy, elite, survivor, item and particle effect laid out to inspect quickly (replaces the deleted particle lab).
 - [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.

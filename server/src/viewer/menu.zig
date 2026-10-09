@@ -1,71 +1,52 @@
 const std = @import("std");
-const Ui = @import("ui");
+const dvui = @import("dvui");
 const World = @import("../World.zig");
 
-pub fn update(ui: *Ui, world: *World, following: ?usize) bool {
+const text: dvui.Color = .{ .r = 240, .g = 245, .b = 230 };
+const dim: dvui.Color = .{ .r = 168, .g = 178, .b = 173 };
+const control: dvui.Color = .{ .r = 15, .g = 17, .b = 14, .a = 245 };
+const accent: dvui.Color = .{ .r = 224, .g = 140, .b = 20 };
+const danger: dvui.Color = .{ .r = 217, .g = 31, .b = 20 };
+
+pub fn update(world: *World, following: ?usize) bool {
     const options = &world.options;
-    const player_count = world.players.items.len;
-    const panel_width = std.math.clamp(ui.screen_width * 0.34, @as(f32, 320), @as(f32, 460));
-    const button_height = std.math.clamp(ui.screen_height * 0.058, @as(f32, 40), @as(f32, 52));
-    const row_height: f32 = 44;
-    const row_gap: f32 = 10;
-    const title_height: f32 = 56;
-    const status_height: f32 = 28;
-    const panel_padding = std.math.clamp(ui.screen_height * 0.018, @as(f32, 14), @as(f32, 22));
-    const quit_spacer: f32 = 60;
-    const panel_height = title_height + status_height + row_height * 2 + quit_spacer + button_height + row_gap * 5 + panel_padding * 2;
-    const left = (ui.screen_width - panel_width) * 0.5;
-    const top = (ui.screen_height - panel_height) * 0.5;
-    const row_width = panel_width * 0.82;
+    const area = dvui.windowRect();
+    dvui.windowRectPixels().fill(.all(0), .{ .color = .fromColor(.{ .r = 0, .g = 0, .b = 0, .a = 133 }) });
+    const width: f32 = 400;
+    const height: f32 = 380;
+    var panel = dvui.box(@src(), .{ .dir = .vertical }, .{
+        .rect = .{ .x = (area.w - width) / 2, .y = (area.h - height) / 2, .w = width, .h = height },
+        .background = true,
+        .color_fill = .fromColor(.{ .r = 5, .g = 6, .b = 6, .a = 235 }),
+        .padding = .all(18),
+    });
+    defer panel.deinit();
+    dvui.labelNoFmt(@src(), "Server View", .{}, .{ .font = font(34), .color_text = .fromColor(text), .gravity_x = 0.5 });
+    if (following) |index| {
+        dvui.label(@src(), "following player {d}/{d}", .{ index + 1, world.players.items.len }, .{ .font = font(18), .color_text = .fromColor(dim), .gravity_x = 0.5 });
+    } else {
+        dvui.label(@src(), "free camera - {d} connected", .{world.players.items.len}, .{ .font = font(18), .color_text = .fromColor(dim), .gravity_x = 0.5 });
+    }
+    if (button(@src(), if (options.draw_flow_field) "Draw Flow Field: On" else "Draw Flow Field: Off", control)) options.draw_flow_field = !options.draw_flow_field;
+    if (button(@src(), if (options.draw_chunk_borders) "Draw Chunk Borders: On" else "Draw Chunk Borders: Off", control)) options.draw_chunk_borders = !options.draw_chunk_borders;
+    _ = dvui.spacer(@src(), .{ .min_size_content = .{ .w = 0, .h = 40 } });
+    return button(@src(), "Close Server", danger.lerp(.black, 0.6));
+}
 
-    ui.add(null, .{
-        .size = .{ .percent = .{ .width = 1, .height = 1 } },
-        .color = .new(0, 0, 0, 0.52),
-    });
-    ui.add(null, .{
-        .name = "server_menu_panel",
-        .size = .{ .fixed = .{ .width = panel_width, .height = panel_height } },
-        .offset = .{ .left = left, .top = top },
-        .color = .new(0.02, 0.025, 0.025, 0.92),
-        .axis_align = .vertical,
-        .child_anchor = .{ .x = .center, .y = .center },
-        .gap = row_gap,
-    });
-    ui.add("server_menu_panel", .{
-        .size = .{ .fixed = .{ .width = panel_width, .height = title_height } },
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{ .data = "Server View", .size = 34, .color = .new(0.94, 0.96, 0.9, 1) },
-    });
-    ui.add("server_menu_panel", .{
-        .size = .{ .fixed = .{ .width = panel_width, .height = status_height } },
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{
-            .data = if (following) |index|
-                ui.print("following player {d}/{d}", .{ index + 1, player_count })
-            else
-                ui.print("free camera — {d} connected", .{player_count}),
-            .size = 18,
-            .color = .new(0.66, 0.7, 0.68, 1),
-        },
-    });
+fn font(size: f32) dvui.Font {
+    return dvui.Font.theme(.body).withSize(size);
+}
 
-    if (ui.addToggle("server_menu_panel", "server_menu_draw_flow_field", "Draw Flow Field", options.draw_flow_field, 0, 0, row_width, row_height))
-        options.draw_flow_field = !options.draw_flow_field;
-    if (ui.addToggle("server_menu_panel", "server_menu_draw_chunk_borders", "Draw Chunk Borders", options.draw_chunk_borders, 0, 0, row_width, row_height))
-        options.draw_chunk_borders = !options.draw_chunk_borders;
-    ui.add("server_menu_panel", .{ .size = .{ .fixed = .{ .width = row_width, .height = quit_spacer } } });
-    const quit_hovered = ui.isHovered("server_menu_quit");
-    ui.add("server_menu_panel", .{
-        .name = "server_menu_quit",
-        .size = .{ .fixed = .{ .width = row_width, .height = button_height } },
-        .color = if (quit_hovered) .new(0.85, 0.12, 0.08, 0.96) else .new(0.3, 0.04, 0.03, 0.96),
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{
-            .data = "Close Server",
-            .size = std.math.clamp(button_height * 0.52, @as(f32, 21), @as(f32, 27)),
-            .color = if (quit_hovered) .new(0.02, 0.02, 0.015, 1) else .new(0.94, 0.9, 0.88, 1),
-        },
+fn button(src: std.builtin.SourceLocation, label: []const u8, fill: dvui.Color) bool {
+    return dvui.button(src, label, .{ .draw_focus = false }, .{
+        .expand = .horizontal,
+        .min_size_content = .{ .w = 0, .h = 40 },
+        .font = font(22),
+        .color_fill = .fromColor(fill),
+        .color_fill_hover = .fromColor(accent),
+        .color_text = .fromColor(text),
+        .color_text_hover = .fromColor(.black),
+        .corners = .all(0),
+        .margin = .{ .y = 4, .h = 4 },
     });
-
-    return ui.isClicked("server_menu_quit");
 }

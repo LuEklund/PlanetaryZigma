@@ -20,7 +20,7 @@ draw_meshes: std.ArrayList(DrawMesh),
 joint_matrices: std.ArrayList(nz.Mat4x4(f32)),
 draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
-ui: UiLayer,
+dvui: DvuiLayer,
 planet_radius: f32,
 surface_width: u32,
 surface_height: u32,
@@ -53,26 +53,36 @@ pub const DrawEmitter = struct {
     spawn_time: f32,
 };
 
-pub const max_ui_quads: usize = 8192;
+pub const max_dvui_vertices: u32 = 1 << 17;
+pub const max_dvui_indices: u32 = 3 << 17;
+pub const max_dvui_commands: u32 = 8192;
 
-pub const UiVertex = extern struct {
+pub const DvuiVertex = extern struct {
     position: [2]f32,
     uv: [2]f32,
-    color: [4]f32,
-    texture_index: u32 = 0,
-    is_sdf: u32 = 0,
-    _: [2]u32 = .{ 0, 0 },
+    color: u32,
 };
 
-pub const UiQuad = struct {
-    vertices: [4]UiVertex,
+pub const DvuiClip = struct {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 };
 
-pub const UiLayer = struct {
-    quads: std.ArrayList(UiQuad),
-    screen_width: f32,
-    screen_height: f32,
+pub const DvuiCommand = struct {
+    texture: contract.TextureHandle,
+    clip: ?DvuiClip,
+    index_start: u32,
+    index_count: u32,
 };
+
+pub const DvuiLayer = struct {
+    vertices: std.ArrayList(DvuiVertex),
+    indices: std.ArrayList(u32),
+    commands: std.ArrayList(DvuiCommand),
+};
+
 
 pub fn init(gpa: std.mem.Allocator) !DrawList {
     return .{
@@ -89,7 +99,11 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .emitters = try .initCapacity(gpa, max_emitters),
         .surface_width = 0,
         .surface_height = 0,
-        .ui = .{ .quads = try .initCapacity(gpa, max_ui_quads), .screen_width = 0, .screen_height = 0 },
+        .dvui = .{
+            .vertices = try .initCapacity(gpa, max_dvui_vertices),
+            .indices = try .initCapacity(gpa, max_dvui_indices),
+            .commands = try .initCapacity(gpa, max_dvui_commands),
+        },
         .planet_radius = 1,
     };
 }
@@ -99,7 +113,9 @@ pub fn deinit(self: *DrawList, gpa: std.mem.Allocator) void {
     self.joint_matrices.deinit(gpa);
     self.draw_lines.deinit(gpa);
     self.emitters.deinit(gpa);
-    self.ui.quads.deinit(gpa);
+    self.dvui.vertices.deinit(gpa);
+    self.dvui.indices.deinit(gpa);
+    self.dvui.commands.deinit(gpa);
 }
 
 pub fn clear(self: *DrawList) void {
@@ -107,5 +123,4 @@ pub fn clear(self: *DrawList) void {
     self.joint_matrices.clearRetainingCapacity();
     self.draw_lines.clearRetainingCapacity();
     self.emitters.clearRetainingCapacity();
-    self.ui.quads.clearRetainingCapacity();
 }

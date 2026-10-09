@@ -11,7 +11,6 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     const list = &viewer.draw_list;
     const models = &viewer.assets.models;
     const camera = viewer.camera;
-    const ui = &viewer.ui;
     const followed = if (camera.follow != .none) world.getPtr(camera.follow) else null;
     var camera_position: nz.Vec3(f32) = camera.position;
     var camera_rotation: nz.quat.Hamiltonian(f32) = camera.rotation();
@@ -129,9 +128,6 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     if (world.options.draw_flow_field) list.draw_lines.appendSliceAssumeCapacity(viewer.arrow_lines.items);
     if (world.options.draw_chunk_borders) list.draw_lines.appendSliceAssumeCapacity(viewer.border_lines.items);
 
-    list.ui.quads.appendSliceAssumeCapacity(ui.quads.items);
-    list.ui.screen_width = ui.screen_width;
-    list.ui.screen_height = ui.screen_height;
 
     for (viewer.particles.emitters) |emitter| {
         if (!emitter.alive(world.elapsed_time)) continue;

@@ -2,14 +2,14 @@ const Hud = @This();
 
 const std = @import("std");
 const shared = @import("shared");
+const dvui = @import("dvui");
 const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
-const Ui = @import("ui");
 const Assets = @import("graphics").Assets;
-const Window = @import("Window");
 const NetworkManager = @import("NetworkManager.zig");
 const Options = @import("../Options.zig");
+const style = @import("hud/style.zig");
 
 const DamagePopup = @import("hud/DamagePopup.zig");
 const main_menu = @import("hud/main_menu.zig");
@@ -43,27 +43,33 @@ pub const Request = union(enum) {
     lobby: shared.net.LobbyCommand,
 };
 
-screen: Screen = .main,
-overlay: Overlay = .none,
-options_tab: OptionsTab = .gameplay,
-damage_popups: DamagePopup.List = .{},
-popup_prng: std.Random.DefaultPrng = .init(0xD0B0),
+screen: Screen,
+overlay: Overlay,
+options_tab: OptionsTab,
+damage_popups: DamagePopup.List,
+popup_prng: std.Random.DefaultPrng,
+veil: f32,
+wipe_delay: f32,
+death_fade: f32,
 
-ui: Ui,
-
-pub fn init(hud: *Hud, gpa: std.mem.Allocator, size: Window.Size) !void {
-    hud.* = .{ .ui = try .init(gpa, size.width, size.height) };
-}
-
-pub fn deinit(hud: *Hud, gpa: std.mem.Allocator) void {
-    hud.ui.deinit(gpa);
-}
+pub const init: Hud = .{
+    .screen = .main,
+    .overlay = .none,
+    .options_tab = .gameplay,
+    .damage_popups = .empty,
+    .popup_prng = .init(0xD0B0),
+    .veil = 0,
+    .wipe_delay = 0,
+    .death_fade = 0,
+};
 
 pub fn resetScreen(hud: *Hud) void {
     hud.screen = .main;
     hud.overlay = .none;
     hud.options_tab = .gameplay;
-    hud.damage_popups = .{};
+    hud.damage_popups = .empty;
+    hud.wipe_delay = 0;
+    hud.death_fade = 0;
 }
 
 pub const transition_seconds: f32 = 0.12;
@@ -71,34 +77,23 @@ pub const transition_seconds: f32 = 0.12;
 pub const crosshair_texture = "textures/crosshair.png";
 pub const texture_paths = [_][]const u8{crosshair_texture};
 
+pub fn approach(value: f32, target: f32, delta_time: f32, seconds: f32) f32 {
+    const step = delta_time / @max(seconds, 0.0001);
+    return if (value < target) @min(target, value + step) else @max(target, value - step);
+}
+
 pub fn update(
     hud: *Hud,
     world: *World,
     scene: system.Scene,
-    window: *Window,
     network_manager: *NetworkManager,
     options: *Options,
     game_assets: *const Assets,
 ) !Request {
-    const ui = &hud.ui;
     const controller = &world.controller;
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    ui.screen_width = @floatFromInt(window.size.width);
-    ui.screen_height = @floatFromInt(window.size.height);
-    const mouse_position: [2]f32 = switch (window.pointer.movement) {
-        .position => |position| .{ @floatCast(position.x), @floatCast(position.y) },
-        .relative => .{ -1, -1 },
-    };
-    ui.start(.{
-        .position = .{
-            .left = mouse_position[0],
-            .top = mouse_position[1],
-        },
-        .left_click = window.pointer.buttons.left,
-        .right_click = window.pointer.buttons.right,
-    }, game_assets.fonts.default(), world.delta_time);
     hud.damage_popups.update(world.delta_time);
     if (world.getPtr(world.player_id)) |player| {
         for (world.damage_events.items) |damage_event| {
@@ -118,57 +113,51 @@ pub fn update(
 
     var request: Request = .none;
     if (scene == .menu) {
-        request = try main_menu.update(network_manager, ui, hud, options);
-        if (hud.overlay == .options) options_menu.update(ui, hud, options, controller);
+        request = try main_menu.update(network_manager, hud, options);
+        if (hud.overlay == .options) options_menu.update(hud, options, controller);
     } else {
-        try game_hud.update(world, network_manager, ui, options, &hud.damage_popups, false, game_assets);
+        game_hud.update(hud, world, network_manager, options, game_assets);
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
             if (entity.kind != .player) continue;
             if (entity.health > 0) all_players_dead = false;
         }
-        const wipe_delay = ui.animate("wipe_menu_delay", if (all_players_dead) 1 else 0, 1.0);
-        if (all_players_dead and hud.overlay == .none and wipe_delay > 0.85) {
+        hud.wipe_delay = approach(hud.wipe_delay, if (all_players_dead) 1 else 0, world.delta_time, 1.0);
+        if (all_players_dead and hud.overlay == .none and hud.wipe_delay > 0.85) {
             hud.overlay = .wipe;
         } else if (!all_players_dead and hud.overlay == .wipe) {
             hud.overlay = .none;
         }
         switch (hud.overlay) {
             .none => {},
-            .pause => request = try pause_menu.update(ui, hud, world, options, network_manager.host_state == .hosting),
-            .wipe => request = game_hud.wipeMenu(world, network_manager, ui),
-            .options => options_menu.update(ui, hud, options, controller),
+            .pause => request = pause_menu.update(hud, world, options, network_manager.host_state == .hosting),
+            .wipe => request = game_hud.wipeMenu(world, network_manager),
+            .options => options_menu.update(hud, options, controller),
         }
     }
-    addTransition(ui, network_manager.phase(), network_manager.elapsed_time - network_manager.host_state_time);
-
-    ui.end();
+    hud.addTransition(network_manager.phase(), network_manager.elapsed_time - network_manager.host_state_time, world.delta_time);
     return request;
 }
 
-fn addTransition(ui: *Ui, phase: NetworkManager.Phase, phase_seconds: f32) void {
+fn addTransition(hud: *Hud, phase: NetworkManager.Phase, phase_seconds: f32, delta_time: f32) void {
     const covering = switch (phase) {
         .starting_server, .waiting_for_server, .connecting => true,
         .idle, .connected => false,
     };
-    const transition = ui.animate("transition_veil", if (covering) 1 else 0, transition_seconds);
-    if (transition <= 0) return;
+    hud.veil = approach(hud.veil, if (covering) 1 else 0, delta_time, transition_seconds);
+    if (hud.veil <= 0) return;
 
-    const status_text: []const u8 = if (covering)
-        ui.print("{s} {d:.0}s", .{ phase.text(), phase_seconds })
-    else
-        phase.text();
-
-    ui.add(null, .{
-        .name = if (covering) "transition_veil" else null,
-        .size = .{ .fixed = .{ .height = ui.screen_height, .width = ui.screen_width } },
-        .offset = .{ .left = 0, .top = 0 },
-        .color = .new(0, 0, 0, transition),
-        .child_anchor = .{ .x = .center, .y = .center },
-        .text = .{
-            .data = status_text,
-            .size = 30,
-            .color = .new(0.94, 0.96, 0.9, transition),
-        },
-    });
+    style.fillScreen(style.rgba(.{ 0, 0, 0, hud.veil }));
+    const label_options: dvui.Options = .{
+        .font = style.font(30),
+        .color_text = .fromColor(style.text.opacity(hud.veil)),
+        .gravity_x = 0.5,
+        .gravity_y = 0.5,
+        .rect = style.screen(),
+    };
+    if (covering) {
+        dvui.label(@src(), "{s} {d:.0}s", .{ phase.text(), phase_seconds }, label_options);
+    } else {
+        dvui.labelNoFmt(@src(), phase.text(), .{}, label_options);
+    }
 }

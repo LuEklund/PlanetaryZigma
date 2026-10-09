@@ -6,7 +6,9 @@ const Window = @import("Window");
 const renderer_contract = @import("renderer_contract");
 const graphics = @import("graphics");
 const Particle = @import("graphics").Particle;
-const Ui = @import("ui");
+const dvui = @import("dvui");
+const DvuiBackend = @import("dvui_backend");
+const DvuiInput = @import("dvui_input");
 const DrawList = renderer_contract.DrawList;
 const World = @import("../World.zig");
 const extract = @import("extract.zig");
@@ -21,7 +23,9 @@ animator: graphics.Animator,
 animations: std.AutoHashMapUnmanaged(shared.entity.Id, graphics.Animator.Handle),
 particles: Particle,
 camera: Camera,
-ui: Ui,
+dvui_backend: DvuiBackend,
+dvui_window: dvui.Window,
+dvui_input: DvuiInput,
 menu_open: bool,
 arrow_lines: std.ArrayList(DrawList.Line),
 border_lines: std.ArrayList(DrawList.Line),
@@ -53,7 +57,15 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
     try self.assets.update(gpa, io, &self.render);
 
 
-    self.ui = try .init(gpa, window.size.width, window.size.height);
+    self.dvui_backend = .{
+        .io = io,
+        .size = .{ .w = @floatFromInt(window.size.width), .h = @floatFromInt(window.size.height) },
+        .scale = 1,
+        .text_input_wanted = false,
+        .frame = null,
+    };
+    self.dvui_input = .{ .buttons = .{}, .position = .{ .x = 0, .y = 0 } };
+    self.dvui_window = try .init(@src(), gpa, self.dvui_backend.backend(), .{ .color_scheme = .dark, .keybinds = .none });
     self.camera = .init(.{ 0, planet_radius * World.ship_room_altitude_factor, 30 });
     self.menu_open = true;
     self.arrow_lines = .empty;
@@ -67,7 +79,7 @@ pub fn init(self: *Viewer, gpa: std.mem.Allocator, io: std.Io, window: *Window, 
 pub fn deinit(self: *Viewer, gpa: std.mem.Allocator, io: std.Io) void {
     self.arrow_lines.deinit(gpa);
     self.border_lines.deinit(gpa);
-    self.ui.deinit(gpa);
+    self.dvui_window.deinit();
     self.draw_list.deinit(gpa);
     self.animations.deinit(gpa);
     self.animator.deinit();
@@ -92,25 +104,19 @@ pub fn draw(self: *Viewer, world: *World, gpa: std.mem.Allocator, io: std.Io) !b
         self.camera.update(window, world.delta_time, world.players.items);
     }
 
-    self.ui.screen_width = @floatFromInt(window.size.width);
-    self.ui.screen_height = @floatFromInt(window.size.height);
-    const pointer_position = switch (window.pointer.movement) {
-        .position => |position| [2]f32{ @floatCast(position.x), @floatCast(position.y) },
-        .relative => [2]f32{ 0, 0 },
-    };
-    self.ui.start(.{
-        .position = .{ .left = pointer_position[0], .top = pointer_position[1] },
-        .left_click = window.pointer.buttons.left,
-        .right_click = window.pointer.buttons.right,
-    }, self.assets.fonts.default(), world.delta_time);
+    self.dvui_backend.size = .{ .w = @floatFromInt(window.size.width), .h = @floatFromInt(window.size.height) };
+    self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
+    self.dvui_window.backend = self.dvui_backend.backend();
+    try self.dvui_input.push(&self.dvui_window, window, "", &.{});
+    try self.dvui_window.begin(self.dvui_backend.nanoTime());
     var quit = window.should_close;
-    if (self.menu_open and menu.update(&self.ui, world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
+    if (self.menu_open and menu.update(world, std.mem.indexOfScalar(shared.entity.Id, world.players.items, self.camera.follow)))
         quit = true;
-    self.ui.addText(null, self.ui.print("debug vertices {d}/{d}", .{
-        (self.arrow_lines.items.len + self.border_lines.items.len) * 2,
-        DrawList.max_lines * 2,
-    }), 16, 8, 8);
-    self.ui.end();
+    dvui.label(@src(), "debug vertices {d}/{d}", .{ (self.arrow_lines.items.len + self.border_lines.items.len) * 2, DrawList.max_lines * 2 }, .{
+        .rect = .{ .x = 8, .y = 8, .w = 400, .h = 20 },
+        .font = dvui.Font.theme(.body).withSize(16),
+    });
+    _ = try self.dvui_window.end(.{});
 
     if (world.options.draw_flow_field and self.arrow_lines_field != world.navmesh.internal.active) {
         try extract.collectNavmeshArrows(world, gpa, &self.arrow_lines);

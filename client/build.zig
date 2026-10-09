@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
     const renderer_contract = render_dep.module("renderer_contract");
     const graphics = render_dep.module("graphics");
     const window = render_dep.module("Window");
-    const ui = render_dep.module("ui");
 
     const steam_dep = b.dependency("zig_steamworks", .{ .target = target, .optimize = optimize });
     const steam_module = steam_dep.module("steamworks");
@@ -29,6 +28,10 @@ pub fn build(b: *std.Build) void {
     });
     const miniaudio = miniaudio_translate_c.createModule();
     miniaudio.addCSourceFile(.{ .file = miniaudio_dep.path("miniaudio.c") });
+
+    const dvui = render_dep.module("dvui");
+    const dvui_backend = render_dep.module("dvui_backend");
+    const dvui_input = render_dep.module("dvui_input");
 
     const system = b.addLibrary(.{
         .name = "system_client",
@@ -43,8 +46,10 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "miniaudio", .module = miniaudio },
                 .{ .name = "graphics", .module = graphics },
                 .{ .name = "Window", .module = window },
-                .{ .name = "ui", .module = ui },
                 .{ .name = "ztracy", .module = ztracy },
+                .{ .name = "dvui", .module = dvui },
+                .{ .name = "dvui_backend", .module = dvui_backend },
+                .{ .name = "dvui_input", .module = dvui_input },
             },
             .link_libc = true,
         }),
@@ -62,7 +67,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "renderer_contract", .module = renderer_contract },
             .{ .name = "graphics", .module = graphics },
             .{ .name = "Window", .module = window },
-            .{ .name = "ui", .module = ui },
             .{ .name = "ztracy", .module = ztracy },
         },
     });
@@ -78,7 +82,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "system", .module = system_contract },
 
                 .{ .name = "Window", .module = window },
-                .{ .name = "ui", .module = ui },
                 .{ .name = "steamworks", .module = steam_module },
                 .{ .name = "ztracy", .module = ztracy },
             },

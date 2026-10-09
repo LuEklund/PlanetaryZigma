@@ -61,7 +61,6 @@ descriptor_layouts: std.EnumArray(Shader.Descriptor, DescriptorLayout),
 pipeline_layouts: std.EnumArray(PipelineLayout.Kind, PipelineLayout),
 
 identity_joint_buffer: Buffer,
-ui_index_buffer: Buffer,
 effect_params_buffer: Buffer,
 
 shadow_image: Image,
@@ -108,20 +107,13 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
             descriptor_layouts.get(.scene).handle,
             descriptor_layouts.get(.material).handle,
         }),
-        .ui = try .init(device, @sizeOf(Shader.UiPushConstant), &.{
+        .dvui = try .init(device, @sizeOf(Shader.DvuiPushConstant), &.{
             descriptor_layouts.get(.textures).handle,
         }),
     });
 
     var identity_joint_buffer: Buffer = try .init(device, &heaps.host, nz.Mat4x4(f32), 1, .{ .uniform_buffer_bit = true, .storage_buffer_bit = true, .shader_device_address_bit = true });
     identity_joint_buffer.copy(nz.Mat4x4(f32), &.{.identity});
-
-    const ui_index_buffer: Buffer = try .init(device, &heaps.host, u32, DrawList.max_ui_quads * 6, .{ .index_buffer_bit = true });
-    const index_data: [*]u32 = @ptrCast(@alignCast(ui_index_buffer.mapped));
-    for (0..DrawList.max_ui_quads) |quad_index| {
-        const base: u32 = @as(u32, @intCast(quad_index)) * 4;
-        index_data[quad_index * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 3, base };
-    }
 
     var effect_params_buffer: Buffer = try .init(device, &heaps.host, contract.Effect.GPU, contract.ParticleEffect.count, .{ .storage_buffer_bit = true, .shader_device_address_bit = true });
     var effect_params_rows: [contract.ParticleEffect.count]contract.Effect.GPU = undefined;
@@ -200,12 +192,11 @@ pub fn init(gpa: std.mem.Allocator, heaps: *GpuMemory.Heaps, device: Device) !*R
             .world = pipeline_layouts.get(.world).handle,
             .particle = pipeline_layouts.get(.particle).handle,
             .sky = pipeline_layouts.get(.sky).handle,
-            .ui = pipeline_layouts.get(.ui).handle,
+            .dvui = pipeline_layouts.get(.dvui).handle,
         })),
         .descriptor_layouts = descriptor_layouts,
         .pipeline_layouts = pipeline_layouts,
         .identity_joint_buffer = identity_joint_buffer,
-        .ui_index_buffer = ui_index_buffer,
         .effect_params_buffer = effect_params_buffer,
         .shadow_image = shadow_image,
         .shadow_sampler = shadow_sampler,
@@ -264,7 +255,6 @@ pub fn deinit(self: *Resources, heaps: *GpuMemory.Heaps) void {
     for (self.descriptor_layouts.values) |layout| layout.deinit(device);
     for (self.pipeline_layouts.values) |layout| layout.deinit(device);
     self.identity_joint_buffer.deinit(&heaps.host);
-    self.ui_index_buffer.deinit(&heaps.host);
     self.effect_params_buffer.deinit(&heaps.host);
     self.shadow_image.deinit(&heaps.device, device);
     device.proxy.destroySampler(self.shadow_sampler, null);

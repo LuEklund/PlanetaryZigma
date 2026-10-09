@@ -112,7 +112,9 @@ fn addServerArtifacts(
         system.root_module.addImport("renderer_contract", dep.module("renderer_contract"));
         system.root_module.addImport("graphics", dep.module("graphics"));
         system.root_module.addImport("Window", dep.module("Window"));
-        system.root_module.addImport("ui", dep.module("ui"));
+        system.root_module.addImport("dvui", dep.module("dvui"));
+        system.root_module.addImport("dvui_backend", dep.module("dvui_backend"));
+        system.root_module.addImport("dvui_input", dep.module("dvui_input"));
     }
 
     system.root_module.linkLibrary(box3d_lib);
@@ -149,7 +151,6 @@ fn addServerArtifacts(
 
     if (render_dep) |dep| {
         exe.root_module.addImport("Window", dep.module("Window"));
-        exe.root_module.addImport("ui", dep.module("ui"));
     }
 
     if (target.result.os.tag != .windows) {

@@ -23,6 +23,9 @@ const menu_world = @import("system/menu.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
+const dvui = @import("dvui");
+const DvuiBackend = @import("dvui_backend");
+const DvuiInput = @import("dvui_input");
 
 pub const std_options: std.Options = .{ .logFn = shared.logFn };
 
@@ -47,6 +50,9 @@ particles: Particle,
 network_manager: NetworkManager,
 scene: Scene,
 hud: Hud,
+dvui_backend: DvuiBackend,
+dvui_window: dvui.Window,
+dvui_input: DvuiInput,
 request_exit: bool,
 world: World,
 clock: shared.Clock,
@@ -54,8 +60,6 @@ fps_window_start: std.Io.Timestamp,
 fps_window_steps: u32,
 
 teleport_sphere_model: u32,
-button_hover_sound: Audio.Sound,
-button_click_sound: Audio.Sound,
 skill_sounds: std.EnumArray(shared.entity.Skill, Audio.Sound),
 
 pub const Data = @import("system_contract.zig").Data;
@@ -97,8 +101,6 @@ pub fn init(self: *System, data: Data) !void {
     errdefer self.assets.deinit(data.gpa, data.io);
 
     try self.audio.init(self.assets.root);
-    self.button_hover_sound = try self.audio.load("button-hover.mp3", .{});
-    self.button_click_sound = try self.audio.load("button-click.mp3", .{});
     const laser_sound: Audio.Sound = try self.audio.load("laser-gun.mp3", .{});
     self.skill_sounds = .initFill(.none);
     self.skill_sounds.set(.melee, try self.audio.load("punch.mp3", .{}));
@@ -110,8 +112,17 @@ pub fn init(self: *System, data: Data) !void {
 
     try self.assets.update(data.gpa, data.io, &self.render);
 
-    try self.hud.init(data.gpa, data.window.size);
-    errdefer self.hud.deinit(data.gpa);
+    self.hud = .init;
+    self.dvui_backend = .{
+        .io = data.io,
+        .size = .{ .w = @floatFromInt(data.window.size.width), .h = @floatFromInt(data.window.size.height) },
+        .scale = 1,
+        .text_input_wanted = false,
+        .frame = null,
+    };
+    self.dvui_input = .{ .buttons = .{}, .position = .{ .x = 0, .y = 0 } };
+    self.dvui_window = try .init(@src(), data.gpa, self.dvui_backend.backend(), .{ .color_scheme = .dark, .keybinds = .none });
+    errdefer self.dvui_window.deinit();
     try self.network_manager.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network_manager.deinit();
     try self.enterScene(&self.world, .menu);
@@ -129,7 +140,7 @@ pub fn deinit(self: *System) void {
     self.network_manager.deinit();
     self.audio.deinit();
     if (self.discord) |*discord| if (discord.socket) |socket| socket.close(self.io);
-    self.hud.deinit(self.gpa);
+    self.dvui_window.deinit();
     self.draw_list.deinit(self.gpa);
     self.animator.deinit();
     self.assets.deinit(self.gpa, self.io);
@@ -175,7 +186,14 @@ fn step(self: *System, world: *World) !void {
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     if (self.scene == .menu) menu_world.update(world);
-    switch (try self.hud.update(world, self.scene, self.window, &self.network_manager, &world.options, &self.assets)) {
+    self.dvui_backend.size = .{ .w = @floatFromInt(self.window.size.width), .h = @floatFromInt(self.window.size.height) };
+    self.dvui_backend.frame = .{ .draw_list = &self.draw_list, .render_api = &self.render.api, .render_handle = self.render.handle };
+    self.dvui_window.backend = self.dvui_backend.backend();
+    try self.dvui_input.push(&self.dvui_window, self.window, "", &.{});
+    try self.dvui_window.begin(self.dvui_backend.nanoTime());
+    const hud_request = try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets);
+    _ = try self.dvui_window.end(.{});
+    switch (hud_request) {
         .none => {},
         .main_menu => try self.network_manager.returnToMainMenu(),
         .lobby => |lobby_command| try self.network_manager.sendCommand(.{ .lobby = lobby_command }, .reliable),
@@ -196,11 +214,6 @@ fn step(self: *System, world: *World) !void {
         world.chat.input_len = 0;
     }
 
-    switch (self.hud.ui.play_sound) {
-        .hover => self.audio.play(self.button_hover_sound),
-        .clicked => self.audio.play(self.button_click_sound),
-        .none => {},
-    }
     const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
     if (next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
