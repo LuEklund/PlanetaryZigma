@@ -36,6 +36,11 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] C7 — Particles: the system is already GPU-analytic (`pos = f(emitter, index, age)` in the vertex shader, no compute). Keep that. Known gaps: alpha never fades with age (`color.a * life`, one line), one blend equation for every effect (add additive for sparks/lightning), lightning is beads not a capsule SDF. Research better effects online, propose, then build.
   - Result: decision 0009. Per-effect blend (additive sparks/lightning/tracer), alpha × remaining life, capsule-SDF segments for lightning/orbit paths. Shaders compile; visuals untested (no GPU) — check in the particle lab. Soft particles proposed, not built.
 
+### Phase 4 — Lucas decisions (2026-10-09)
+- [ ] V1 — Drop `VK_EXT_shader_object` and `VK_EXT_descriptor_buffer`. Target = Vulkan 1.3 core only, per `~/Obsidian/Projects/Zeta/zeta-design.md` "Feature set": BDA, dynamic rendering, synchronization2, extended dynamic state, descriptor indexing, one persistent descriptor set, pipeline cache. Zero optional extensions in the critical path. Remove the `VK_LAYER_KHRONOS_shader_object` emulation layer. Decision note first.
+- [ ] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
+- [ ] D2 — Delete `Scene.particle_lab` and everything only it uses.
+
 ### Bugs (from the 2026-08-14 review — verify each still exists; fold into Phase 1 when it touches the same code)
 - [x] R182 — Wayland registry binds globals at their XML max version; compositors other than Hyprland kill the connection. Fix: bind `@min(global.version, ceiling)`.
   - Result: already fixed — `Wayland.zig:375` binds `@min(global.version, GlobalType.interface.version)`.
@@ -70,14 +75,16 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
-- C5: starting a run now needs every player ready (teleporter E toggles ready). Before, any player pressing E started it. Solo play is unchanged (one ready = start).
 - C4: R was the dev "reload" (teleport to planet centre + full resync). RoR2 puts Special on R, so Special took R and the dev reset moved to Backspace (rebindable). Swap back if you prefer.
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
-- R52: the freezer row said "20s" but code froze for 10 s, and only enemies within 10 u of a player. Kept 10 s / near-player and gave it a 25 s cooldown. Alternative: freeze every enemy for 20 s with a longer cooldown.
-- R9: bullets pass through entities of the shooter's own kind (ally graze). Kept as pass-through. Say if allies should block bullets instead.
 - A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
-- A0: `Scene.particle_lab` is unreachable since its F4 entry was commented out (now deleted). Keep the scene (dev tool) or delete it? Kept.
+
+## Answered (2026-10-09)
+- C5: everyone must ready up — keep.
+- R9: bullets pass through allies — keep.
+- R52: freeze all 3 s / 100 s cooldown → D1.
+- A0 particle lab: delete → D2.
 
 ## Cloud notes
 - ziglang.org and gitlab.freedesktop.org are blocked from the cloud box. Zig 0.16.0 came from the PyPI `ziglang` wheel (official binary); git deps were fetched with `git` and fed to `zig fetch <dir>` (hashes match). `ztracy` (HTRMC fork, unreachable) is a local no-op stub and `wayland_protocols` comes from Ubuntu's package — both only in gitignored `zig-pkg/`, so `-Dtracy=true` was never built here. `slangc` 2025.18 from the shader-slang GitHub release.
