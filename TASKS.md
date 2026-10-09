@@ -21,7 +21,8 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
 
 ### Phase 3 — content and features
 Each one: write a short proposal in `docs/decisions/` first (what, how it fits the data layout, cost), then build it. New monsters/items/classes use placeholder primitives + an entry under "Needs asset from Lucas". Web search for design references (RoR2 wiki, GDC talks) is encouraged.
-- [ ] C1 — Biomes: per-planet/per-stage terrain params, palette and enemy pool as data rows. Terrain is code-generated, so this is fair game.
+- [x] C1 — Biomes: per-planet/per-stage terrain params, palette and enemy pool as data rows. Terrain is code-generated, so this is fair game.
+  - Result: decision 0003; `shared/src/Biome.zig` rows (coral = old look/pool, verdant, frost, dust): per-field amplitude ≤ 1 + frequency scale in `sdf`, low/high/steep vertex colors in `planet/Mesh.zig`, enemy weights used by the director. Picked by `Biome.forRadius` (radius is already on the wire), name shown on the HUD. Built, needs playtest (colors/shape untested visually). Sky tint per biome left for C6.
 - [ ] C2 — Monster ideas: 5+ enemy designs with distinct behaviors (ranged, charger, flyer, swarm, elite modifiers), each as a spec row + behavior function.
 - [ ] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
 - [ ] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
