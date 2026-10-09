@@ -16,7 +16,8 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
   - Result: plan step 6 (server `World.zig` + `gameplay.zig` split into `server/src/gameplay/`, mechanical commit), step 7 (`client/src/system/events.zig`), step 8 (no `World.gpa` on either side; client entity map fixed-capacity with assert). Skipped step 9 (NetworkManager hash maps → arrays: low value, touches Steam client/server code I can't run) and step 10 (asked below). All builds pass; nothing playtested.
 
 ### Phase 2 — Risk of Rain 2 loop
-- [ ] G0 — Audit only: compare what exists (items, skills, teleporter, lootbox, currency, stages, enemies) against the RoR2 core loop: difficulty timer, director spawn credits, teleporter boss event + charge zone, item rarity tiers, chest cost scaling, stage-to-stage carry-over, respawn between stages, survivors. Write the gap list ranked by fun/cost in `docs/ror2-gaps.md`, then build the top items one per commit.
+- [x] G0 — Audit only: compare what exists (items, skills, teleporter, lootbox, currency, stages, enemies) against the RoR2 core loop: difficulty timer, director spawn credits, teleporter boss event + charge zone, item rarity tiers, chest cost scaling, stage-to-stage carry-over, respawn between stages, survivors. Write the gap list ranked by fun/cost in `docs/ror2-gaps.md`, then build the top items one per commit.
+  - Result: `docs/ror2-gaps.md` (formulas from memory — wiki unreachable from the cloud box; tune by playtest). Built #1-#5: `shared/src/difficulty.zig` coefficient (time on planet + stage + players) → enemy level (+30 % hp / +20 % dmg per level, replaces hp × stage), kill gold × coefficient, chest cost × coefficient^1.25, director credits scale; teleporter charge rate = share of living players in zone (was additive per player); HUD shows `Stage N mm:ss Lv L`; item tiers + weighted chest roll. New wire event `difficulty` (protocol bump). Built, needs playtest — balance is a guess.
 
 ### Phase 3 — content and features
 Each one: write a short proposal in `docs/decisions/` first (what, how it fits the data layout, cost), then build it. New monsters/items/classes use placeholder primitives + an entry under "Needs asset from Lucas". Web search for design references (RoR2 wiki, GDC talks) is encouraged.
@@ -57,6 +58,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 ## Needs asset from Lucas
 
 ## Questions for Lucas
+- G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
+- G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
 - R52: the freezer row said "20s" but code froze for 10 s, and only enemies within 10 u of a player. Kept 10 s / near-player and gave it a 25 s cooldown. Alternative: freeze every enemy for 20 s with a longer cooldown.
 - R9: bullets pass through entities of the shooter's own kind (ally graze). Kept as pass-through. Say if allies should block bullets instead.
 - A0/plan step 10: the render HotLib is owned by the client `.so` (nested hot lib). Options: (a) leave it, (b) host exe owns both hot libs and passes the render Api into `systemUpdate`. Picked (a) for now — (b) changes reload ownership and needs a local reload test.
