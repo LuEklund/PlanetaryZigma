@@ -15,6 +15,7 @@ const motion = @import("system/motion.zig");
 const extract = @import("system/extract.zig");
 const animate = @import("system/animate.zig");
 const chunks = @import("system/chunks.zig");
+const events = @import("system/events.zig");
 const renderer_contract = @import("renderer_contract");
 const DrawList = renderer_contract.DrawList;
 
@@ -203,41 +204,7 @@ fn step(self: *System, world: *World) !void {
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
-    for (self.network_manager.packets.items) |packet| switch (packet) {
-        .event => |event| switch (event) {
-            .action => |action| {
-                self.audio.play(self.skill_sounds.get(action.skill));
-                if (action.id == world.player_id) world.controller.cooldown.set(action.action, world.elapsed_time);
-            },
-            .effect => |effect| switch (effect) {
-                .rocket_impact => |position| {
-                    self.particles.spawn(.{ .effect = .explosion_puffs, .origin = position, .target = position }, world.elapsed_time);
-                    self.particles.spawn(.{ .effect = .explosion_sparks, .origin = position, .target = position }, world.elapsed_time);
-                },
-                .lightning => |bolt| for (bolt.targets) |id| {
-                    const target = world.getPtr(id) orelse continue;
-                    self.particles.spawn(.{ .effect = .lightning, .origin = bolt.start_position, .target = target.transform.position }, world.elapsed_time);
-                },
-            },
-            .teleport_start => if (world.getPtr(world.teleporter_id)) |entity| {
-                entity.teleporter.state = .active;
-            },
-            .teleporter_charge => |charged| if (world.getPtr(world.teleporter_id)) |entity| {
-                entity.teleporter.charged = charged;
-            },
-            .new_stage => |new_stage| {
-                world.teleporter_id = .none;
-                world.stage = new_stage;
-            },
-            .stun => |stun| if (world.getPtr(stun.id)) |entity| {
-                entity.stun_time = stun.duration;
-            },
-            .interact => |interact| if (world.getPtr(interact.interactor)) |entity| {
-                entity.interacting = interact.interacted;
-            },
-        },
-        else => {},
-    };
+    events.apply(world, self.network_manager.packets.items, &self.audio, &self.skill_sounds, &self.particles);
 
     try world.planet.update(
         world.gpa,
