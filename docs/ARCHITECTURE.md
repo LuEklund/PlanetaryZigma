@@ -9,8 +9,8 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 | Package | Builds | Role |
 |---|---|---|
 | `shared/` | module `shared` | The contract both sides compile: wire format (`net.zig`), entity spec rows (`entity.zig`, `entity/`), items (`Item.zig`), planet SDF + chunking + nav graph (`planet/`), Steam transport (`SteamNet.zig`, `steamNet/`), hot reload (`HotLib.zig`, `DynLib.zig`), log fn, tick constants. |
-| `server/` | `server` exe, `libsystem_server.so` | Authoritative simulation. Host exe owns `World` + `System` memory and the tick loop; the `.so` runs network → gameplay → physics → flush → replication. Optional `viewer/` (build option) draws the server world through the renderer. |
-| `client/` | `client` exe, `libsystem_client.so` | Replicates server state, runs input/camera/HUD/audio/animation, extracts a `DrawList` for the renderer. Spawns the server process for hosting. |
+| `server/` | `server` exe, `libsystem_server.so` | Authoritative simulation. Host exe is a thin loop; the `.so` owns `System` + `World` and runs network → gameplay → physics → flush → replication. Optional `viewer/` (build option) draws the server world through the renderer. |
+| `client/` | `client` exe, `libsystem_client.so` | Thin host exe; the `.so` replicates server state, runs input/camera/HUD/audio/animation, extracts a `DrawList` for the renderer. Spawns the server process for hosting. |
 | `render/` | `librender.so` + modules `renderer_contract`, `graphics`, `ui`, `Window` | Vulkan renderer (shader objects, descriptor buffers, BDA) behind a C-ABI `Api` table; asset loading (`graphics/`), immediate-mode UI (`ui/`), native windowing (`window/`: Wayland, Xlib, Win32, Cocoa). |
 
 ## Modules
