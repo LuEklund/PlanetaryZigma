@@ -9,6 +9,8 @@ const graphics = @import("graphics");
 const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
+const elite_scale: f32 = 1.25;
+
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
     const models = &system.assets.models;
@@ -74,6 +76,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         const pose = animator.pose(entity.animation) orelse continue;
         const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{ .path = "", .loop_clips = null };
         var transform = entity.transform;
+        if (entity.elite != .none) transform.scale = @splat(elite_scale);
         if (entity.kind == .item_pickup) {
             const spawn_duration = shared.entity.Kind.spec(.item_pickup).spawn_duration;
             const alive_time = world.elapsed_time - entity.spawned_at;

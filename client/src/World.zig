@@ -57,6 +57,7 @@ pub const Entity = struct {
     override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
     item: ?shared.Item.Kind = null,
+    elite: shared.Elite.Kind = .none,
     flags: Flags = .{},
     animation: Animator.Handle = .none,
     spawned_at: f32 = 0,
@@ -177,6 +178,7 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
         .id = entity_info.id,
         .kind = entity_info.kind,
         .currency = entity_info.currency,
+        .elite = entity_info.elite,
         .transform = .{
             .position = entity_info.position,
             .rotation = .fromVec(entity_info.rotation),

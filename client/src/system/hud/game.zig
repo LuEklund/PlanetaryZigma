@@ -577,7 +577,7 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
         if (entity.id == world.player_id) continue;
         const health_current = entity.health;
         const health_max = entity.max_health;
-        if (!entity.flags.is_teleporter_boss) {
+        if (!entity.flags.is_teleporter_boss and entity.elite == .none) {
             if ((health_max <= 0 or health_current <= 0 or health_current >= health_max)) continue;
         } else {
             bar_min_scale = 2.5;
@@ -601,6 +601,16 @@ fn addWorldHealthBars(world: *World, ui: *Ui) void {
             .fraction = health_current / health_max,
             .fill_color = .new(0.9, 0.2, 0.15, 0.9),
         });
+        if (entity.elite != .none) {
+            const elite = shared.Elite.get(entity.elite);
+            const label_size = 14 * scale;
+            const label_dimensions = ui.textSize(elite.name, label_size);
+            ui.add(null, .{
+                .size = .{ .fixed = label_dimensions },
+                .offset = .{ .left = screen[0] - label_dimensions.width / 2, .top = screen[1] - scaled_height - label_dimensions.height },
+                .text = .{ .data = elite.name, .size = label_size, .color = .new(elite.tint[0], elite.tint[1], elite.tint[2], 1) },
+            });
+        }
     }
 }
 

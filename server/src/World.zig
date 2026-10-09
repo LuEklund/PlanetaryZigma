@@ -103,6 +103,8 @@ pub const Entity = struct {
     damage: f32 = 0,
     regen_carry: f32 = 0,
     level: f32 = 1,
+    elite: shared.Elite.Kind = .none,
+    ai: Ai = .{},
 
     un_stun_at: f32 = 0,
 
@@ -113,8 +115,8 @@ pub const Entity = struct {
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
         const value = shared.Item.Stat.value(stat_kind, &self.kind.spec().base_stats, self.inventory);
         return switch (stat_kind) {
-            .health => value * shared.difficulty.healthMultiplier(self.level),
-            .damage => value * shared.difficulty.damageMultiplier(self.level),
+            .health => value * shared.difficulty.healthMultiplier(self.level) * shared.Elite.get(self.elite).health_multiplier,
+            .damage => value * shared.difficulty.damageMultiplier(self.level) * shared.Elite.get(self.elite).damage_multiplier,
             else => value,
         };
     }
@@ -122,6 +124,15 @@ pub const Entity = struct {
     pub const Mode = enum {
         walking,
         falling,
+    };
+
+    pub const Ai = struct {
+        phase: Phase = .approach,
+        phase_until: f32 = 0,
+        direction: nz.Vec3(f32) = .{ 0, 0, 0 },
+        struck: bool = false,
+
+        pub const Phase = enum { approach, windup, dash, fuse };
     };
 
     pub const Flags = packed struct {
@@ -207,7 +218,9 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
     switch (entity.kind) {
         .enemy => {
             entity.level = shared.difficulty.level(difficulty_coefficient, self.players.items.len);
-            entity.currency = shared.difficulty.killReward(base_currency, difficulty_coefficient);
+            const elite = shared.Elite.get(entity.elite);
+            entity.currency = shared.difficulty.killReward(base_currency, difficulty_coefficient * elite.cost_multiplier);
+            for (elite.granted_items) |grant| _ = entity.inventory.add(grant.item, grant.count);
         },
         .lootbox => entity.currency = shared.difficulty.chestCost(base_currency, difficulty_coefficient),
         else => entity.currency = base_currency,

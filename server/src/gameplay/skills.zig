@@ -171,7 +171,7 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
             const target_entity = target orelse return;
             world.act(.{ .id = caster.id, .verb = .{ .arc_jump = target_entity.transform.position } });
         },
-        .plant => {},
+        .plant, .charge, .explode => {},
     }
 }
 

@@ -29,7 +29,8 @@ pub fn update(world: *World, physics: *system.Physics) !void {
             nz.vec.normalize(fwd_proj)
         else
             nz.vec.normalize(camera_rotation.rotateVec(.{ 1, 0, 0 }));
-        const speed = player.stat(.speed);
+        const stun_slow: f32 = if (player.un_stun_at > world.elapsed_time) 0.3 else 1;
+        const speed = player.stat(.speed) * stun_slow;
 
         if (input.keys.dev_f1) {
             input.keys.dev_f1 = false;

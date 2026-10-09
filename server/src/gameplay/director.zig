@@ -38,19 +38,32 @@ pub fn updateDirector(world: *World) !void {
         }
         const random = world.prng.random();
         const enemy_kind = shared.Biome.forRadius(world.planet.planet_radius).pickEnemy(random) orelse return;
-        const cost: f32 = @floatFromInt(shared.entity.Kind.spec(.{ .enemy = enemy_kind }).currency);
+        const enemy_spec = shared.entity.Kind.spec(.{ .enemy = enemy_kind });
+        const difficulty_coefficient = world.difficultyCoefficient();
+        const pack_size: f32 = @floatFromInt(enemy_spec.pack_size);
+        const base_cost: f32 = @as(f32, @floatFromInt(enemy_spec.currency)) * pack_size;
+        const wants_elite = difficulty_coefficient >= shared.Elite.min_coefficient and random.float(f32) < shared.Elite.chance;
+        const elite: shared.Elite.Kind = if (wants_elite) shared.Elite.roll(random) else .none;
+        const cost = base_cost * shared.Elite.get(elite).cost_multiplier;
         if (director.credits >= cost) {
             const player_index = random.uintLessThan(usize, world.players.items.len);
             if (world.getPtr(world.players.items[player_index])) |player| {
                 const surface = world.planet.surfacePointNear(player.transform.position, enemy_min_spawn_distance, enemy_max_spawn_distance + 30, random);
-                const spawn_position = surface + nz.vec.scale(nz.vec.normalize(surface), 2);
-                if (world.spawn(.{
-                    .kind = .{ .enemy = enemy_kind },
-                    .transform = .{ .position = spawn_position },
-                    .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
-                })) |_| {
-                    director.credits -= cost;
-                } else |_| {}
+                const spawn_up = nz.vec.normalize(surface);
+                var spawned_any = false;
+                for (0..enemy_spec.pack_size) |pack_index| {
+                    const pack_offset: nz.Vec3(f32) = if (pack_index == 0) .{ 0, 0, 0 } else nz.vec.scale(nz.vec.randomUnitVector(nz.Vec3(f32), random), 2.5);
+                    const position = surface + nz.vec.scale(spawn_up, 2) + pack_offset - nz.vec.scale(spawn_up, nz.vec.dot(pack_offset, spawn_up));
+                    if (world.spawn(.{
+                        .kind = .{ .enemy = enemy_kind },
+                        .elite = elite,
+                        .transform = .{ .position = position },
+                        .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
+                    })) |_| {
+                        spawned_any = true;
+                    } else |_| break;
+                }
+                if (spawned_any) director.credits -= cost;
             }
         }
     }

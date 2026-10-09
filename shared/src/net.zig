@@ -111,6 +111,7 @@ pub const SpawnEntity = struct {
     velocity: @Vector(3, f32) = @splat(0),
     tick: u32 = 0,
     currency: u32 = 0,
+    elite: root.Elite.Kind = .none,
     data: SpawnEntityData,
 };
 

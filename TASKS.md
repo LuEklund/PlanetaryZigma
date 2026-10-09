@@ -23,7 +23,8 @@ Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will
 Each one: write a short proposal in `docs/decisions/` first (what, how it fits the data layout, cost), then build it. New monsters/items/classes use placeholder primitives + an entry under "Needs asset from Lucas". Web search for design references (RoR2 wiki, GDC talks) is encouraged.
 - [x] C1 — Biomes: per-planet/per-stage terrain params, palette and enemy pool as data rows. Terrain is code-generated, so this is fair game.
   - Result: decision 0003; `shared/src/Biome.zig` rows (coral = old look/pool, verdant, frost, dust): per-field amplitude ≤ 1 + frequency scale in `sdf`, low/high/steep vertex colors in `planet/Mesh.zig`, enemy weights used by the director. Picked by `Biome.forRadius` (radius is already on the wire), name shown on the HUD. Built, needs playtest (colors/shape untested visually). Sky tint per biome left for C6.
-- [ ] C2 — Monster ideas: 5+ enemy designs with distinct behaviors (ranged, charger, flyer, swarm, elite modifiers), each as a spec row + behavior function.
+- [x] C2 — Monster ideas: 5+ enemy designs with distinct behaviors (ranged, charger, flyer, swarm, elite modifiers), each as a spec row + behavior function.
+  - Result: decision 0004. Behavior union on the spec row + one function per behavior; new charger (grass_tank), spitter (kite), wisp (orbit flyer), mite (pack of 5), bomber (fuse/explode); elites blazing/glacial/overloading as data rows granting items; biome pools updated. Built, needs playtest (tuning numbers are guesses).
 - [ ] C3 — Items: 20+ RoR2-style items across rarity tiers (common/uncommon/legendary/lunar/equipment), on-hit/on-kill/passive procs as data-driven effects.
 - [ ] C4 — Player classes (survivors): 3 classes with 4 abilities each (primary/secondary/utility/special). Abilities are data rows + one resolve function per ability kind, server-authoritative.
 - [ ] C5 — Lobby: nicer Steam lobby (class pick, ready-up, player list, host settings). The lobby arc already shipped once — read the existing code before redesigning.
@@ -57,6 +58,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
 ## Needs asset from Lucas
+- C2: `spitter` (ranged kiter), `wisp` (small orbiting flyer), `mite` (tiny swarm bug), `bomber` (walking bomb) — currently scaled placeholder cubes (`model.path = ""` in `shared/src/entity/enemies.zig`). Each wants idle/walk/death + attack clip.
+- C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).

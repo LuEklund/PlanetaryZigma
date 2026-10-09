@@ -99,6 +99,21 @@ pub const Skill = enum(u16) {
     arc_jump,
     plant,
     heal,
+    charge,
+    explode,
+};
+
+pub const Behavior = union(enum) {
+    idle,
+    chase,
+    hover: f32,
+    leap,
+    plant,
+    heal: f32,
+    kite: struct { min_distance: f32, max_distance: f32 },
+    orbit: struct { radius: f32, height: f32 },
+    charge: struct { trigger_distance: f32, windup_seconds: f32, dash_seconds: f32, speed_multiplier: f32 },
+    fuse: struct { fuse_seconds: f32, blast_radius: f32 },
 };
 
 pub const AssignedSkill = struct {
@@ -171,7 +186,11 @@ pub const Spec = struct {
     death_duration: f32 = 0,
     currency: u32 = 0,
     skills: std.EnumArray(Action, ?AssignedSkill) = .initFill(null),
+    behavior: Behavior = .idle,
+    pack_size: u8 = 1,
 };
+
+pub const placeholder_model_offset: nz.Transform3D(f32) = .{ .scale = .{ 0.5, 0.5, 0.5 } };
 
 pub const no_clip: ?[]const u8 = null;
 pub const no_skill: ?AssignedSkill = null;

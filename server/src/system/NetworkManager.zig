@@ -372,6 +372,7 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
         .velocity = entity.replicated_velocity,
         .tick = world.tick,
         .currency = entity.currency,
+        .elite = entity.elite,
         .data = switch (entity.kind) {
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
