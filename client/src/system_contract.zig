@@ -7,6 +7,7 @@ pub const Data = struct {
     window: *Window,
     log_connection_status: bool,
     discord_dir: ?[]const u8,
+    autostart: ?[]const u8,
 };
 
 pub const Api = struct {

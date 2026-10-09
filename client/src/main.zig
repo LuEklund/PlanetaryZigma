@@ -43,6 +43,7 @@ pub fn main(init: std.process.Init) !void {
         .io = io,
         .log_connection_status = init.environ_map.contains("NET"),
         .discord_dir = init.environ_map.get("XDG_RUNTIME_DIR"),
+        .autostart = init.environ_map.get("PZ_AUTOSTART"),
     }) orelse return error.SystemInit;
     ctx_zone.end();
     defer system_lib.api.systemDeinit(system_lib.handle);

@@ -117,6 +117,13 @@ pub fn init(self: *System, data: Data) !void {
     try self.network_manager.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network_manager.deinit();
     try self.enterScene(&self.world, .menu);
+    if (data.autostart) |autostart| {
+        if (std.mem.eql(u8, autostart, "singleplayer")) {
+            self.network_manager.requestHost(.singleplayer, false);
+        } else if (std.mem.eql(u8, autostart, "dev")) {
+            self.network_manager.requestHost(.singleplayer, true);
+        } else std.log.err("PZ_AUTOSTART: unknown \"{s}\", expected singleplayer or dev", .{autostart});
+    }
     self.request_exit = false;
 }
 

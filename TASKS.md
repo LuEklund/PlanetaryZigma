@@ -40,7 +40,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] V1 — Drop `VK_EXT_shader_object` and `VK_EXT_descriptor_buffer`. Target = Vulkan 1.3 core only, per `~/Obsidian/Projects/Zeta/zeta-design.md` "Feature set": BDA, dynamic rendering, synchronization2, extended dynamic state, descriptor indexing, one persistent descriptor set, pipeline cache. Zero optional extensions in the critical path. Remove the `VK_LAYER_KHRONOS_shader_object` emulation layer. Decision note first.
 - [ ] D1 — R52 freezer: freeze ALL enemies for 3 s, 100 s cooldown.
 - [ ] D2 — Delete `Scene.particle_lab` and everything only it uses.
-- [ ] T0 — Local dev loop (run on Lucas's PC, not cloud): screenshot hotkey/CLI flag writing PNG from the swapchain + a state-snapshot dump (scene, UI tree rects, entity counts) to a file Claude can read; usable with hot reload to check UI.
+- [x] T0 — Local dev loop (run on Lucas's PC, not cloud): screenshot hotkey/CLI flag writing PNG from the swapchain + a state-snapshot dump (scene, UI tree rects, entity counts) to a file Claude can read; usable with hot reload to check UI.
+  - Result: `PZ_AUTOSTART=singleplayer|dev` skips the menu; screenshots via `grim -g "$(hyprctl clients -j ...planetary_zigma geometry)"`, no game code needed. State dump skipped until a screenshot isn't enough.
 - [ ] D3 — C4: Special stays on R; dev reset moves from Backspace to an F key.
 - [ ] U1 — Replace own `render/ui` with dvui (game + debug UI). Reuse the dvui Vulkan backend from `~/Projects/gifer` / Marionette. Fixes current UI overlap as part of it. After V1.
 - [ ] L1 — RoR2-style character select screen (not in the main menu): survivor list, ability panel with readable descriptions, difficulty pick (host), ready. Built on dvui.
