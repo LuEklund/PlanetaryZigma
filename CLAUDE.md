@@ -78,6 +78,10 @@ Reference projects Marionette and gifer are NOT in this repo; their Window and H
 - Use only assets already in `assets/`. If a feature needs a model that doesn't exist, build a placeholder from primitive shapes (box/sphere/capsule) in code and list it in TASKS.md under "Needs asset from Lucas".
 - Procedural-by-code is allowed: terrain, particles, shader effects, sky, UI geometry.
 
+## Player-facing text — Lucas approves
+- Any name, description or label a player can see that Claude wrote (survivors, abilities, items, monsters,
+  elites, biomes, UI strings) gets a checkbox line in `docs/lucas-approval.md`. Lucas ticks or rewrites it.
+
 ## Git
 - No Claude credit anywhere: no Co-Authored-By trailers, no "Claude"/"AI" in commit messages or PR bodies.
 - Work only on the `ai` branch. One task = one commit, plain short message.
