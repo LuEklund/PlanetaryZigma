@@ -28,7 +28,10 @@ pub fn updateProjectiles(world: *World) void {
                 }
             },
             .entity => |hit_id| {
-                const owner_entity = world.getPtrRaw(projectile.owner_id) orelse continue;
+                const owner_entity = world.getPtrRaw(projectile.owner_id) orelse {
+                    if (!projectile.flags.invincible) world.queueDespawn(projectile.id);
+                    continue;
+                };
                 const hit_entity = world.getPtr(hit_id) orelse continue;
                 if (owner_entity.kind.eql(hit_entity.kind)) continue;
 
