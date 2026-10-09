@@ -22,7 +22,7 @@ pub fn update(world: *World, options: *Options, is_host: bool) Request {
         request = .{ .lobby = .{ .survivor = survivor } };
     }
     const right: dvui.Rect = .{ .x = area.w - column_width - margin, .y = margin, .w = column_width, .h = column_height };
-    if (infoColumn(world, options.survivor, is_host, right)) |setting| request = .{ .lobby = .{ .difficulty = setting } };
+    if (infoColumn(world, is_host, right)) |setting| request = .{ .lobby = .{ .difficulty = setting } };
     playerList(world, .{ .x = margin, .y = area.h - bottom_height - margin, .w = column_width, .h = bottom_height });
 
     const ready = if (world.getPtr(world.player_id)) |player| player.ready else false;
@@ -64,35 +64,45 @@ fn survivorColumn(options: *Options, rect: dvui.Rect) ?shared.Survivor.Kind {
             picked = kind;
         }
     }
+    overview(shared.Survivor.get(options.survivor));
     heading(@src(), "ABILITIES");
-    abilityList(box.data().id, shared.Survivor.get(options.survivor));
+    abilityList(shared.Survivor.get(options.survivor));
     return picked;
 }
 
-fn abilityList(state_id: dvui.Id, survivor: *const shared.Survivor) void {
-    var open_slot = dvui.dataGet(null, state_id, "open_ability", usize) orelse 0;
+fn overview(survivor: *const shared.Survivor) void {
+    dvui.labelNoFmt(@src(), survivor.name, .{}, .{ .font = style.font(36), .color_text = .fromColor(style.text), .padding = .{ .y = 10 } });
+    style.wrapped(@src(), survivor.description, 17, style.text_dim);
+    var stats_buffer: [96]u8 = undefined;
+    const stats = std.fmt.bufPrint(&stats_buffer, "Health {d:.0}   Base Damage {d:.1}   Speed {d:.0}", .{
+        survivor.base_stats.get(.health),
+        survivor.base_stats.get(.damage),
+        survivor.base_stats.get(.speed),
+    }) catch "";
+    style.wrapped(@src(), stats, 16, style.accent);
+}
+
+fn abilityList(survivor: *const shared.Survivor) void {
+    var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
+    defer scroll.deinit();
     for (skill_slots, slot_labels, 0..) |slot, slot_label, index| {
         const assigned = survivor.abilities.get(slot) orelse continue;
         const info = shared.skill_info.get(assigned.skill);
-        const open = open_slot == index;
         var row = dvui.box(@src(), .{ .dir = .vertical }, .{
             .id_extra = index,
             .expand = .horizontal,
             .background = true,
-            .color_fill = .fromColor(if (open) style.accent.opacity(0.25) else style.control),
+            .color_fill = .fromColor(style.control),
             .margin = .{ .y = 3, .h = 3 },
             .padding = .all(10),
         });
         defer row.deinit();
-        if (dvui.clicked(row.data(), .{})) open_slot = index;
         dvui.labelNoFmt(@src(), info.name, .{}, .{ .font = style.font(22), .color_text = .fromColor(style.text) });
         var line_buffer: [96]u8 = undefined;
         const line = abilityLine(&line_buffer, slot_label, survivor.base_stats.get(cooldownStat(slot)), assigned, info);
         dvui.labelNoFmt(@src(), line, .{}, .{ .font = style.font(15), .color_text = .fromColor(style.accent) });
-        if (!open) continue;
         style.wrapped(@src(), info.description, 16, style.text_dim);
     }
-    dvui.dataSet(null, state_id, "open_ability", open_slot);
 }
 
 fn abilityLine(buffer: []u8, slot_label: []const u8, cooldown: f32, assigned: shared.entity.AssignedSkill, info: shared.skill_info.Info) []const u8 {
@@ -116,19 +126,9 @@ fn cooldownStat(slot: shared.entity.Action) shared.Item.Stat {
     };
 }
 
-fn infoColumn(world: *World, kind: shared.Survivor.Kind, is_host: bool, rect: dvui.Rect) ?shared.difficulty.Setting {
-    const survivor = shared.Survivor.get(kind);
+fn infoColumn(world: *World, is_host: bool, rect: dvui.Rect) ?shared.difficulty.Setting {
     var box = panel(@src(), rect);
     defer box.deinit();
-    dvui.labelNoFmt(@src(), survivor.name, .{}, .{ .font = style.font(40), .color_text = .fromColor(style.text) });
-    style.wrapped(@src(), survivor.description, 18, style.text_dim);
-    var stats_buffer: [96]u8 = undefined;
-    const stats = std.fmt.bufPrint(&stats_buffer, "Health {d:.0}   Base Damage {d:.1}   Speed {d:.0}", .{
-        survivor.base_stats.get(.health),
-        survivor.base_stats.get(.damage),
-        survivor.base_stats.get(.speed),
-    }) catch "";
-    style.wrapped(@src(), stats, 16, style.accent);
     return difficultyPicker(world, is_host);
 }
 
