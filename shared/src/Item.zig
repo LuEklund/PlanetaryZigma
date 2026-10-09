@@ -5,8 +5,59 @@ const std = @import("std");
 flat: std.EnumArray(Stat, f32) = .initFill(0),
 percent: std.EnumArray(Stat, f32) = .initFill(0),
 description: []const u8,
+tier: Tier = .common,
 is_equipment: bool = false,
 on_use: ?Effect = null,
+
+pub const Tier = enum {
+    common,
+    uncommon,
+    legendary,
+    boss,
+    equipment,
+    lunar,
+};
+
+pub const ChestOdds = struct { tier: Tier, weight: f32 };
+
+pub const small_chest_odds = [_]ChestOdds{
+    .{ .tier = .common, .weight = 0.75 },
+    .{ .tier = .uncommon, .weight = 0.19 },
+    .{ .tier = .legendary, .weight = 0.01 },
+    .{ .tier = .equipment, .weight = 0.05 },
+};
+
+pub fn rollTier(odds: []const ChestOdds, random: std.Random) Tier {
+    var total: f32 = 0;
+    for (odds) |entry| total += entry.weight;
+    var pick = random.float(f32) * total;
+    for (odds) |entry| {
+        if (pick < entry.weight) return entry.tier;
+        pick -= entry.weight;
+    }
+    return odds[odds.len - 1].tier;
+}
+
+pub fn rollFromTier(tier: Tier, random: std.Random) ?Kind {
+    var count: usize = 0;
+    for (std.enums.values(Kind)) |kind| {
+        if (get(kind).tier == tier) count += 1;
+    }
+    if (count == 0) return null;
+    var pick = random.uintLessThan(usize, count);
+    for (std.enums.values(Kind)) |kind| {
+        if (get(kind).tier != tier) continue;
+        if (pick == 0) return kind;
+        pick -= 1;
+    }
+    unreachable;
+}
+
+pub fn rollChest(odds: []const ChestOdds, random: std.Random) Kind {
+    const tier = rollTier(odds, random);
+    if (rollFromTier(tier, random)) |kind| return kind;
+    return rollFromTier(.common, random).?;
+}
 
 pub const Effect = enum {
     freeze_world,
@@ -34,26 +85,31 @@ pub const items = struct {
     };
 
     pub const rocket: Item = .{
+        .tier = .uncommon,
         .flat = .initDefault(0, .{ .rocket_chance = 0.05 }),
         .description = "5% chance to fire a rocket, stacks grow the blast",
     };
 
     pub const lightning: Item = .{
+        .tier = .boss,
         .flat = .initDefault(0, .{ .lightning_chance = 0.05 }),
         .description = "5% chance to chain lightning, stacks add jumps",
     };
 
     pub const scope: Item = .{
+        .tier = .uncommon,
         .flat = .initDefault(0, .{ .critical_chance = 0.1 }),
         .description = "10% chance to deal double damage",
     };
 
     pub const rabbitsfoot: Item = .{
+        .tier = .uncommon,
         .flat = .initDefault(0, .{ .block_chance = 0.15 }),
         .description = "15% chance to block damage, diminishing",
     };
 
     pub const icicle: Item = .{
+        .tier = .uncommon,
         .flat = .initDefault(0, .{ .stun_chance = 0.05 }),
         .description = "5% chance to stun on hit",
     };
@@ -64,6 +120,7 @@ pub const items = struct {
     };
 
     pub const freezer: Item = .{
+        .tier = .equipment,
         .flat = .initDefault(0, .{ .equipment_cooldown = 20 }),
         .description = "freeze nearby enemies for 10s",
         .is_equipment = true,

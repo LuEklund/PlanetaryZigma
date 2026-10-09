@@ -120,8 +120,7 @@ pub fn update(world: *World, physics: *system.Physics) !void {
                     world.queueDespawn(entity.id);
 
                     const random = world.prng.random();
-                    var item_kind = random.enumValue(shared.Item.Kind);
-                    if (item_kind == .lightning) item_kind = .oxygen;
+                    const item_kind = shared.Item.rollChest(&shared.Item.small_chest_odds, random);
                     const chest_up = shared.Planet.up(entity.transform.position) orelse nz.Vec3(f32){ 0, 1, 0 };
                     _ = try world.spawn(.{
                         .kind = .item_pickup,

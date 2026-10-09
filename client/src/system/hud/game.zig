@@ -241,7 +241,8 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
         for (std.enums.values(shared.Item.Kind)) |item_kind| {
             const amount = player.inventory.get(item_kind);
             if (amount > 0 and ui.isHovered(ui.print("{t}", .{item_kind}))) {
-                const description = shared.Item.get(item_kind).description;
+                const item = shared.Item.get(item_kind);
+                const description = ui.print("{t}: {s}", .{ item.tier, item.description });
                 const line_size: f32 = 18;
                 const text_size = ui.textSize(description, line_size);
                 ui.add(null, .{
@@ -252,7 +253,7 @@ pub fn update(world: *World, network_manager: *NetworkManager, ui: *Ui, options:
                     .child_anchor = .{ .x = .center, .y = .center },
                     .children = &.{.{
                         .size = .{ .fixed = text_size },
-                        .text = .{ .data = description, .size = line_size },
+                        .text = .{ .data = description, .size = line_size, .color = tierColor(item.tier) },
                     }},
                 });
             }
@@ -691,4 +692,15 @@ fn isOccludedByPlanet(camera_position: nz.Vec3(f32), tag_position: nz.Vec3(f32),
 fn difficultyColor(coefficient: f32) shared.numz.color.Rgba(f32) {
     const heat = std.math.clamp((coefficient - 1) / 6, 0, 1);
     return .new(0.75 + 0.25 * heat, 0.8 - 0.6 * heat, 0.6 - 0.5 * heat, 1);
+}
+
+fn tierColor(tier: shared.Item.Tier) shared.numz.color.Rgba(f32) {
+    return switch (tier) {
+        .common => .new(0.95, 0.95, 0.95, 1),
+        .uncommon => .new(0.45, 0.9, 0.35, 1),
+        .legendary => .new(0.95, 0.3, 0.25, 1),
+        .boss => .new(0.95, 0.85, 0.2, 1),
+        .equipment => .new(1, 0.6, 0.15, 1),
+        .lunar => .new(0.45, 0.65, 1, 1),
+    };
 }
