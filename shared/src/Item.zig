@@ -64,7 +64,8 @@ pub const items = struct {
     };
 
     pub const freezer: Item = .{
-        .description = "freeze time for 20s",
+        .flat = .initDefault(0, .{ .equipment_cooldown = 20 }),
+        .description = "freeze nearby enemies for 10s",
         .is_equipment = true,
         .on_use = .freeze_world,
     };

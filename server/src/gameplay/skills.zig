@@ -28,6 +28,7 @@ pub fn useAction(world: *World, attacker: *Entity, potential_target: ?*const Ent
 }
 
 pub const aim_range: f32 = 300;
+const freeze_seconds: f32 = 10;
 const rocket_speed: f32 = 65;
 const bullet_speed: f32 = 100;
 const rocket_lifetime: f32 = 2.5;
@@ -125,7 +126,9 @@ pub fn executeSkill(world: *World, physics: *Physics, caster: *Entity, target: ?
         .use_equipment => {
             const effect = shared.Item.equippedEffect(caster.inventory) orelse return;
             switch (effect) {
-                .freeze_world => world.world_unstun_at = world.elapsed_time + 10,
+                .freeze_world => if (world.world_unstun_at <= world.elapsed_time) {
+                    world.world_unstun_at = world.elapsed_time + freeze_seconds;
+                },
             }
         },
         .shoot_cube => {
