@@ -10,7 +10,7 @@ const PipelineLayout = @import("PipelineLayout.zig");
 const Image = @import("Image.zig");
 const Buffer = @import("Buffer.zig");
 const Shader = @import("renderer_contract").Shader;
-const FrameData = @import("FrameData.zig");
+const Frame = @import("Frame.zig");
 const TextureTable = @import("TextureTable.zig");
 const contract = @import("renderer_contract");
 const Shaders = @import("Shaders.zig");
@@ -40,7 +40,7 @@ pub const GPUCascades = extern struct {
     splits: [4]f32,
 };
 
-const frame_count = FrameData.max_frames_inflight;
+const frame_count = Frame.max_frames_inflight;
 
 gpa: std.mem.Allocator,
 device: Device,

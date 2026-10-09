@@ -1,7 +1,7 @@
 const std = @import("std");
 const Window = @import("Window");
 
-pub const Data = struct {
+pub const Init = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     window: *Window,
@@ -11,7 +11,7 @@ pub const Data = struct {
 };
 
 pub const Api = struct {
-    systemInit: *const fn (data: *const Data) callconv(.c) ?*anyopaque,
+    systemInit: *const fn (init: *const Init) callconv(.c) ?*anyopaque,
     systemDeinit: *const fn (*anyopaque) callconv(.c) void,
     systemUpdate: *const fn (*anyopaque) callconv(.c) bool,
     reload: *const fn (*anyopaque, pre_reload: bool) callconv(.c) void,

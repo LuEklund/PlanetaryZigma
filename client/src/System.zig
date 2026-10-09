@@ -7,7 +7,7 @@ const nz = shared.numz;
 const Window = @import("Window");
 const Audio = @import("system/Audio.zig");
 const Discord = @import("system/Discord.zig");
-const NetworkManager = @import("system/NetworkManager.zig");
+const Network = @import("system/Network.zig");
 const Assets = @import("graphics").Assets;
 const Animator = @import("graphics").Animator;
 const Particle = @import("graphics").Particle;
@@ -47,7 +47,7 @@ discord: ?Discord,
 assets: Assets,
 animator: Animator,
 particles: Particle,
-network_manager: NetworkManager,
+network: Network,
 scene: Scene,
 hud: Hud,
 dvui_backend: DvuiBackend,
@@ -62,9 +62,9 @@ fps_window_steps: u32,
 teleport_sphere_model: u32,
 skill_sounds: std.EnumArray(shared.entity.Skill, Audio.Sound),
 
-pub const Data = @import("system_contract.zig").Data;
+pub const Init = @import("system_contract.zig").Init;
 
-pub fn init(self: *System, data: Data) !void {
+pub fn init(self: *System, data: Init) !void {
     shared.log_io = data.io;
     self.gpa = data.gpa;
     self.io = data.io;
@@ -123,21 +123,21 @@ pub fn init(self: *System, data: Data) !void {
     self.dvui_input = .{ .buttons = .{}, .position = .{ .x = 0, .y = 0 } };
     self.dvui_window = try .init(@src(), data.gpa, self.dvui_backend.backend(), .{ .color_scheme = .dark, .keybinds = .none });
     errdefer self.dvui_window.deinit();
-    try self.network_manager.init(data.gpa, data.io, data.log_connection_status);
-    errdefer self.network_manager.deinit();
+    try self.network.init(data.gpa, data.io, data.log_connection_status);
+    errdefer self.network.deinit();
     try self.enterScene(&self.world, .menu);
     if (data.autostart) |autostart| {
         if (std.mem.eql(u8, autostart, "singleplayer")) {
-            self.network_manager.requestHost(.singleplayer, false);
+            self.network.requestHost(.singleplayer, false);
         } else if (std.mem.eql(u8, autostart, "dev")) {
-            self.network_manager.requestHost(.singleplayer, true);
+            self.network.requestHost(.singleplayer, true);
         } else std.log.err("PZ_AUTOSTART: unknown \"{s}\", expected singleplayer or dev", .{autostart});
     }
     self.request_exit = false;
 }
 
 pub fn deinit(self: *System) void {
-    self.network_manager.deinit();
+    self.network.deinit();
     self.audio.deinit();
     if (self.discord) |*discord| if (discord.socket) |socket| socket.close(self.io);
     self.dvui_window.deinit();
@@ -192,37 +192,37 @@ fn step(self: *System, world: *World) !void {
     self.dvui_window.backend = self.dvui_backend.backend();
     try self.dvui_input.push(&self.dvui_window, self.window, "", &.{});
     try self.dvui_window.begin(self.dvui_backend.nanoTime());
-    const hud_request = try self.hud.update(world, self.scene, &self.network_manager, &world.options, &self.assets);
+    const hud_request = try self.hud.update(world, self.scene, &self.network, &world.options, &self.assets);
     _ = try self.dvui_window.end(.{});
     switch (hud_request) {
         .none => {},
-        .main_menu => try self.network_manager.returnToMainMenu(),
-        .lobby => |lobby_command| try self.network_manager.sendCommand(.{ .lobby = lobby_command }, .reliable),
+        .main_menu => try self.network.returnToMainMenu(),
+        .lobby => |lobby_command| try self.network.sendCommand(.{ .lobby = lobby_command }, .reliable),
         .quit => self.request_exit = true,
     }
 
     const player_input: shared.net.Input = try self.handleInput(world, text_buffer[0..text_writer.end]);
     const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
-    try self.network_manager.update(wire_input, world.options.survivor, world.elapsed_time, world.delta_time);
+    try self.network.update(wire_input, world.options.survivor, world.elapsed_time, world.delta_time);
     if (world.go_again_pending) {
-        try self.network_manager.sendCommand(.go_again, .reliable);
+        try self.network.sendCommand(.go_again, .reliable);
         world.go_again_pending = false;
     }
     if (world.chat.pending) {
         const chat_text = world.chat.text();
-        try self.network_manager.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
+        try self.network.sendCommand(.{ .chat = .{ .text_len = @intCast(chat_text.len), .text = chat_text } }, .reliable);
         world.chat.pending = false;
         world.chat.input_len = 0;
     }
 
-    const next_scene: Scene = if (self.network_manager.connected()) .game else .menu;
+    const next_scene: Scene = if (self.network.connected()) .game else .menu;
     if (next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(self.io, .{ .scene = self.scene }, world.elapsed_time);
-    try world.update(self.gpa, self.network_manager.packets.items);
+    try world.update(self.gpa, self.network.packets.items);
     for (world.entities.values()) |*entity| {
         entity.stun_time = @max(0, entity.stun_time - world.delta_time);
     }
-    events.apply(world, self.network_manager.packets.items, &self.audio, &self.skill_sounds, &self.particles);
+    events.apply(world, self.network.packets.items, &self.audio, &self.skill_sounds, &self.particles);
 
     try world.planet.update(
         self.gpa,
@@ -230,14 +230,14 @@ fn step(self: *System, world: *World) !void {
         @intFromFloat(@max(1.0, @round(world.options.chunk_view_distance))),
     );
     chunks.update(&world.planet, &self.render.api, self.render.handle);
-    try animate.update(world, &self.animator, &self.assets.models, self.network_manager.packets.items);
+    try animate.update(world, &self.animator, &self.assets.models, self.network.packets.items);
     self.audio.update();
 
     try extract.frame(self, world, true);
     self.render.trySwap(self.io);
     self.assets.update(self.gpa, self.io, &self.render) catch |err| std.log.err("assets: {t}", .{err});
 
-    const server_time = self.network_manager.server_tick_estimate * shared.tick_seconds;
+    const server_time = self.network.server_tick_estimate * shared.tick_seconds;
     motion.evaluate(world, server_time);
 
     try self.applyOptions(world);
@@ -321,7 +321,7 @@ pub const ffi = struct {
         return layout_hash;
     }
 
-    pub export fn systemInit(data: *const Data) ?*anyopaque {
+    pub export fn systemInit(data: *const Init) ?*anyopaque {
         std.log.info("system init", .{});
         const context = data.gpa.create(System) catch return null;
         context.init(data.*) catch |err| {

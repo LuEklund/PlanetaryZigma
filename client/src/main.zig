@@ -37,7 +37,7 @@ pub fn main(init: std.process.Init) !void {
     defer window.close();
 
     const ctx_zone = tracy.zoneNamed(@src(), "SystemInit");
-    system_lib.handle = system_lib.api.systemInit(&System.Data{
+    system_lib.handle = system_lib.api.systemInit(&System.Init{
         .gpa = gpa,
         .window = &window,
         .io = io,

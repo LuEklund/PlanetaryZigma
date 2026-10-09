@@ -7,7 +7,7 @@ const system = @import("../System.zig");
 const tracy = @import("ztracy");
 const World = system.World;
 const Assets = @import("graphics").Assets;
-const NetworkManager = @import("NetworkManager.zig");
+const Network = @import("Network.zig");
 const Options = @import("../Options.zig");
 const style = @import("hud/style.zig");
 
@@ -87,7 +87,7 @@ pub fn update(
     hud: *Hud,
     world: *World,
     scene: system.Scene,
-    network_manager: *NetworkManager,
+    network: *Network,
     options: *Options,
     game_assets: *const Assets,
 ) !Request {
@@ -114,14 +114,14 @@ pub fn update(
 
     var request: Request = .none;
     if (scene == .menu) {
-        request = try main_menu.update(network_manager, hud, options);
+        request = try main_menu.update(network, hud, options);
         if (hud.overlay == .options) options_menu.update(hud, options, controller);
     } else {
-        const is_host = network_manager.host_state == .hosting;
+        const is_host = network.host_state == .hosting;
         if (world.stage == 0) {
             if (hud.overlay == .none) request = lobby_screen.update(world, options, is_host);
         } else {
-            game_hud.update(hud, world, network_manager, options, game_assets);
+            game_hud.update(hud, world, network, options, game_assets);
         }
         var all_players_dead = world.getPtr(world.player_id) != null;
         for (world.entities.values()) |*entity| {
@@ -137,15 +137,15 @@ pub fn update(
         switch (hud.overlay) {
             .none => {},
             .pause => request = pause_menu.update(hud),
-            .wipe => request = game_hud.wipeMenu(world, network_manager),
+            .wipe => request = game_hud.wipeMenu(world, network),
             .options => options_menu.update(hud, options, controller),
         }
     }
-    hud.addTransition(network_manager.phase(), network_manager.elapsed_time - network_manager.host_state_time, world.delta_time);
+    hud.addTransition(network.phase(), network.elapsed_time - network.host_state_time, world.delta_time);
     return request;
 }
 
-fn addTransition(hud: *Hud, phase: NetworkManager.Phase, phase_seconds: f32, delta_time: f32) void {
+fn addTransition(hud: *Hud, phase: Network.Phase, phase_seconds: f32, delta_time: f32) void {
     const covering = switch (phase) {
         .starting_server, .waiting_for_server, .connecting => true,
         .idle, .connected => false,

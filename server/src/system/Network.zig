@@ -1,4 +1,4 @@
-const NetworkManager = @This();
+const Network = @This();
 
 const std = @import("std");
 const shared = @import("shared");
@@ -50,7 +50,7 @@ const Outbox = struct {
 };
 
 pub fn init(
-    self: *NetworkManager,
+    self: *Network,
     gpa: std.mem.Allocator,
     io: std.Io,
     mode: shared.SteamNet.Server.Mode,
@@ -71,7 +71,7 @@ pub fn init(
     });
 }
 
-pub fn deinit(self: *NetworkManager) !void {
+pub fn deinit(self: *Network) !void {
     var it = self.clients.iterator();
     while (it.next()) |pair| try pair.value_ptr.deinit(self.gpa, self.io);
     self.clients.deinit();
@@ -111,7 +111,7 @@ fn clearClientCommands(gpa: std.mem.Allocator, client: *Client) void {
     client.command_queue.commands.clearRetainingCapacity();
 }
 
-pub fn update(self: *NetworkManager, world: *World) !WireStatus {
+pub fn update(self: *Network, world: *World) !WireStatus {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
@@ -396,7 +396,7 @@ fn spawnPacket(world: *World, entity: *const system.Entity, player_name: []const
     };
 }
 
-fn nameForEntity(self: *NetworkManager, entity_id: shared.entity.Id) []const u8 {
+fn nameForEntity(self: *Network, entity_id: shared.entity.Id) []const u8 {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == entity_id and client.name.len != 0) return client.name;
@@ -404,14 +404,14 @@ fn nameForEntity(self: *NetworkManager, entity_id: shared.entity.Id) []const u8 
     return shared.default_player_name;
 }
 
-fn markAllClientsForFullSync(self: *NetworkManager) void {
+fn markAllClientsForFullSync(self: *Network) void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         client.needs_full_sync = true;
     }
 }
 
-fn broadcastChat(self: *NetworkManager, outbox: Outbox, sender_id: shared.entity.Id, text: []const u8) !void {
+fn broadcastChat(self: *Network, outbox: Outbox, sender_id: shared.entity.Id, text: []const u8) !void {
     var it = self.clients.valueIterator();
     while (it.next()) |client| {
         if (client.entity_id == .none) continue;
@@ -423,7 +423,7 @@ fn broadcastChat(self: *NetworkManager, outbox: Outbox, sender_id: shared.entity
     }
 }
 
-fn updateAdvertisedSession(self: *NetworkManager) void {
+fn updateAdvertisedSession(self: *Network) void {
     var player_names: [shared.max_players][]const u8 = undefined;
     var player_count: usize = 0;
     var host_name: []const u8 = "";

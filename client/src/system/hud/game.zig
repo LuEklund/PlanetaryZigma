@@ -5,7 +5,7 @@ const dvui = @import("dvui");
 const system = @import("../../System.zig");
 const World = system.World;
 const Assets = @import("graphics").Assets;
-const NetworkManager = @import("../NetworkManager.zig");
+const Network = @import("../Network.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const DamagePopup = @import("DamagePopup.zig");
@@ -18,7 +18,7 @@ fn sideWidth(area: dvui.Rect) f32 {
     return std.math.clamp(area.w * 0.28, 180, 340);
 }
 
-pub fn update(hud: *Hud, world: *World, network_manager: *NetworkManager, options: *Options, game_assets: *const Assets) void {
+pub fn update(hud: *Hud, world: *World, network: *Network, options: *Options, game_assets: *const Assets) void {
     const area = style.screen();
     const view_proj = world.camera.viewProj(world.options.fov_rad, area.w / area.h);
 
@@ -51,7 +51,7 @@ pub fn update(hud: *Hud, world: *World, network_manager: *NetworkManager, option
     }
 
     addTopLeft(world, area);
-    addRightColumn(world, network_manager, area);
+    addRightColumn(world, network, area);
     addChat(world, area);
 }
 
@@ -70,11 +70,11 @@ fn addTopLeft(world: *World, area: dvui.Rect) void {
     }
 }
 
-fn addRightColumn(world: *World, network_manager: *NetworkManager, area: dvui.Rect) void {
+fn addRightColumn(world: *World, network: *Network, area: dvui.Rect) void {
     var column = dvui.box(@src(), .{ .dir = .vertical }, .{ .rect = .{ .x = area.w - sideWidth(area) - margin, .y = margin, .w = sideWidth(area), .h = area.h * 0.6 } });
     defer column.deinit();
 
-    const ping = network_manager.ping_milliseconds;
+    const ping = network.ping_milliseconds;
     const ping_color: [4]f32 = if (ping < 0) .{ 0.68, 0.72, 0.66, 1 } else if (ping < 60) .{ 0.25, 0.85, 0.3, 1 } else if (ping < 120) .{ 0.9, 0.78, 0.12, 1 } else .{ 0.9, 0.2, 0.15, 1 };
     if (ping < 0) {
         dvui.labelNoFmt(@src(), "-- ms", .{}, .{ .font = style.font(22), .color_text = .fromColor(style.rgba(ping_color)), .gravity_x = 1 });
@@ -328,8 +328,8 @@ fn tierColor(tier: shared.Item.Tier) dvui.Color {
     };
 }
 
-pub fn wipeMenu(world: *World, network_manager: *NetworkManager) Request {
-    const is_host = network_manager.host_state == .hosting;
+pub fn wipeMenu(world: *World, network: *Network) Request {
+    const is_host = network.host_state == .hosting;
     const button_size: dvui.Size = .{ .w = 260, .h = 44 };
     var panel = style.centeredPanel(@src(), 340, if (is_host) 280 else 228);
     defer panel.deinit();

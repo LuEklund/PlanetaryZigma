@@ -59,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
         window.close();
     };
 
-    system_lib.handle = system_lib.api.systemInit(&System.Data{
+    system_lib.handle = system_lib.api.systemInit(&System.Init{
         .io = io,
         .gpa = gpa,
         .mode = server_mode,

@@ -40,7 +40,7 @@ pub fn UploadData(comptime VertexType: type) type {
     return struct {
         const Self = @This();
 
-        pub const SurfaceData = struct {
+        pub const Surface = struct {
             index_start: u32,
             index_count: u32,
             image_index: ?usize,
@@ -48,17 +48,17 @@ pub fn UploadData(comptime VertexType: type) type {
             transparent: bool,
         };
 
-        pub const MeshData = struct {
+        pub const Mesh = struct {
             name: []const u8,
             vertices: []VertexType,
             indices: []u32,
-            surfaces: []SurfaceData,
+            surfaces: []Surface,
         };
 
         samplers: []SamplerDesc = &.{},
         images: []Bitmap = &.{},
         image_sampler: []?usize = &.{},
-        meshes: []MeshData = &.{},
+        meshes: []Mesh = &.{},
 
         pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
             gpa.free(self.samplers);
@@ -166,7 +166,7 @@ pub fn parseScene(
     }
 
     {
-        var mesh_list: std.ArrayList(UploadData(VertexType).MeshData) = .empty;
+        var mesh_list: std.ArrayList(UploadData(VertexType).Mesh) = .empty;
         errdefer {
             for (mesh_list.items) |mesh| {
                 gpa.free(mesh.name);
@@ -177,7 +177,7 @@ pub fn parseScene(
             mesh_list.deinit(gpa);
         }
         if (gltf.meshes) |meshes| for (meshes) |mesh| {
-            var surfaces: std.ArrayList(UploadData(VertexType).SurfaceData) = try .initCapacity(gpa, mesh.primitives.len);
+            var surfaces: std.ArrayList(UploadData(VertexType).Surface) = try .initCapacity(gpa, mesh.primitives.len);
             errdefer surfaces.deinit(gpa);
             var vertices: std.ArrayList(VertexType) = .empty;
             errdefer vertices.deinit(gpa);

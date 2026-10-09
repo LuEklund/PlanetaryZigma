@@ -9,7 +9,7 @@ connections: [max_connections]steam.HSteamNetConnection = @splat(0),
 
 host_steam_id: u64,
 host_conn: steam.HSteamNetConnection,
-host_state: HostState,
+host_state: Hosting,
 mode: Mode,
 
 handle_packets_future: std.Io.Future(@typeInfo(@TypeOf(handlePackets)).@"fn".return_type.?),
@@ -42,7 +42,7 @@ pub const InitOptions = struct {
     log_connection_status: bool,
 };
 
-pub const HostState = enum(u8) {
+pub const Hosting = enum(u8) {
     none,
     waiting,
     connected,

@@ -2,7 +2,7 @@ const System = @This();
 
 const std = @import("std");
 const shared = @import("shared");
-const NetworkManager = @import("system/NetworkManager.zig");
+const Network = @import("system/Network.zig");
 const director = @import("gameplay/director.zig");
 const enemies = @import("gameplay/enemies.zig");
 const items = @import("gameplay/items.zig");
@@ -33,14 +33,14 @@ gpa: std.mem.Allocator,
 io: std.Io,
 world: World,
 clock: shared.Clock,
-network_manager: NetworkManager,
+network: Network,
 physics: Physics,
 request_exit: bool,
 viewer: Viewer,
 
-pub const Data = @import("system_contract.zig").Data;
+pub const Init = @import("system_contract.zig").Init;
 
-pub fn init(self: *System, data: *const Data) !void {
+pub fn init(self: *System, data: *const Init) !void {
     shared.log_io = data.io;
     self.gpa = data.gpa;
     self.io = data.io;
@@ -48,8 +48,8 @@ pub fn init(self: *System, data: *const Data) !void {
     errdefer self.world.deinit(data.gpa);
     self.clock = .init(data.io);
     self.request_exit = false;
-    try self.network_manager.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
-    errdefer self.network_manager.deinit() catch {};
+    try self.network.init(data.gpa, data.io, data.mode, data.host_steam_id, data.log_connection_status);
+    errdefer self.network.deinit() catch {};
     self.physics = .init();
     errdefer self.physics.deinit();
     self.viewer = undefined;
@@ -62,7 +62,7 @@ pub fn init(self: *System, data: *const Data) !void {
 pub fn deinit(self: *System) !void {
     if (build_options.viewer) self.viewer.deinit(self.gpa, self.io);
     self.physics.deinit();
-    try self.network_manager.deinit();
+    try self.network.deinit();
     self.world.deinit(self.gpa);
 }
 
@@ -80,7 +80,7 @@ fn step(self: *System, world: *World) !void {
     defer tracy_scope.end();
     world.planet.clearOutboxes();
 
-    switch (try self.network_manager.update(world)) {
+    switch (try self.network.update(world)) {
         .running => {},
         .host_left => {
             std.log.info("host disconnected, shutting down", .{});
@@ -152,7 +152,7 @@ pub const ffi = struct {
         return layout_hash;
     }
 
-    pub export fn systemInit(data: *const Data) ?*anyopaque {
+    pub export fn systemInit(data: *const Init) ?*anyopaque {
         std.log.info("system init", .{});
         const system = data.gpa.create(System) catch return null;
         system.init(data) catch |err| {

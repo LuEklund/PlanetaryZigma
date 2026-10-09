@@ -1,4 +1,4 @@
-const NetworkManager = @This();
+const Network = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -16,7 +16,7 @@ render_delay_ticks: f32 = 1,
 sent_connect: bool = false,
 ping_milliseconds: i32 = -1,
 server_list: ServerList = .{},
-host_state: HostState = .none,
+host_state: Hosting = .none,
 host_intent: HostIntent = .none,
 host_state_time: f32 = 0,
 elapsed_time: f32 = 0,
@@ -29,7 +29,7 @@ chat_text: std.ArrayList(u8) = .empty,
 pub const host_wait_timeout_seconds: f32 = 15;
 pub const max_chat_text_bytes: usize = shared.max_chat_len * 32;
 
-pub const HostState = enum(u8) {
+pub const Hosting = enum(u8) {
     none,
     requested,
     waiting,
@@ -62,7 +62,7 @@ pub const Phase = enum(u8) {
     }
 };
 
-pub fn phase(self: *const NetworkManager) Phase {
+pub fn phase(self: *const Network) Phase {
     if (self.server_conn != 0) return .connected;
     if (self.steam_client.server_conn != 0) return .connecting;
     return switch (self.host_state) {
@@ -73,7 +73,7 @@ pub fn phase(self: *const NetworkManager) Phase {
     };
 }
 
-fn setHostState(self: *NetworkManager, next: HostState) void {
+fn setHostState(self: *Network, next: Hosting) void {
     if (self.host_state == next) return;
     std.log.info("host: {t} -> {t} after {d:.2}s (intent={t})", .{
         self.host_state,
@@ -101,7 +101,7 @@ const HostServer = struct {
 };
 
 pub fn init(
-    self: *NetworkManager,
+    self: *Network,
     gpa: std.mem.Allocator,
     io: std.Io,
     log_connection_status: bool,
@@ -117,23 +117,23 @@ pub fn init(
     self.steam_logged_on = self.steam_client.isLoggedOn();
 }
 
-pub fn deinit(self: *NetworkManager) void {
+pub fn deinit(self: *Network) void {
     if (self.server_process) |*child| child.kill(self.io);
     self.packets.deinit(self.gpa);
     self.chat_text.deinit(self.gpa);
     self.steam_client.deinit();
 }
 
-fn stopHostServer(self: *NetworkManager) void {
+fn stopHostServer(self: *Network) void {
     if (self.server_process) |*child| child.kill(self.io);
     self.server_process = null;
 }
 
-pub fn connected(self: *const NetworkManager) bool {
+pub fn connected(self: *const Network) bool {
     return self.server_conn != 0;
 }
 
-pub fn returnToMainMenu(self: *NetworkManager) !void {
+pub fn returnToMainMenu(self: *Network) !void {
     try self.steam_client.packet_mutex.lock(self.io);
     defer self.steam_client.packet_mutex.unlock(self.io);
     self.steam_client.disconnect();
@@ -149,7 +149,7 @@ pub fn returnToMainMenu(self: *NetworkManager) !void {
     self.host_intent = .none;
 }
 
-pub fn requestHost(self: *NetworkManager, intent: HostIntent, dev_mode: bool) void {
+pub fn requestHost(self: *Network, intent: HostIntent, dev_mode: bool) void {
     self.dev_mode = dev_mode;
     if (intent == .multiplayer and !self.steam_logged_on) {
         self.host_intent = intent;
@@ -162,7 +162,7 @@ pub fn requestHost(self: *NetworkManager, intent: HostIntent, dev_mode: bool) vo
     }
 }
 
-fn findHostServer(self: *NetworkManager, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
+fn findHostServer(self: *Network, dir_buf: *[std.Io.Dir.max_path_bytes]u8, exe_path_buf: *[std.Io.Dir.max_path_bytes]u8) ?HostServer {
     for (server_dir_candidates) |candidate| {
         var server_dir = std.Io.Dir.cwd().openDir(self.io, candidate, .{}) catch continue;
         defer server_dir.close(self.io);
@@ -181,7 +181,7 @@ fn findHostServer(self: *NetworkManager, dir_buf: *[std.Io.Dir.max_path_bytes]u8
     return null;
 }
 
-fn spawnHostServer(self: *NetworkManager) void {
+fn spawnHostServer(self: *Network) void {
     var server_dir_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var server_exe_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const host_server = self.findHostServer(&server_dir_buf, &server_exe_path_buf) orelse {
@@ -219,13 +219,13 @@ fn spawnHostServer(self: *NetworkManager) void {
     self.setHostState(.waiting);
 }
 
-fn sendConnect(self: *NetworkManager, survivor: shared.Survivor.Kind) !void {
+fn sendConnect(self: *Network, survivor: shared.Survivor.Kind) !void {
     const name = self.playerDisplayName();
     const cmd: shared.net.ClientPacket = .{ .connect = .{ .protocol_version = shared.net.protocol_version, .player_name = .copy(name), .survivor = survivor } };
     try self.sendCommand(cmd, .reliable);
 }
 
-fn playerDisplayName(self: *const NetworkManager) []const u8 {
+fn playerDisplayName(self: *const Network) []const u8 {
     const steam_name = std.mem.trim(u8, self.steam_client.personaName(), " \t\r\n");
     return if (steam_name.len == 0)
         shared.default_player_name
@@ -233,7 +233,7 @@ fn playerDisplayName(self: *const NetworkManager) []const u8 {
         steam_name[0..@min(steam_name.len, shared.max_player_name_len)];
 }
 
-pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
+pub fn sendCommand(self: *Network, command: shared.net.ClientPacket, flags: shared.SteamNet.SendFlags) !void {
     if (self.server_conn == 0) return;
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
@@ -241,7 +241,7 @@ pub fn sendCommand(self: *NetworkManager, command: shared.net.ClientPacket, flag
     try self.steam_client.packets.pushOutgoing(self.gpa, self.server_conn, w.buffered(), flags);
 }
 
-pub fn update(self: *NetworkManager, player_input: shared.net.Input, survivor: shared.Survivor.Kind, elapsed_time: f32, delta_time: f32) !void {
+pub fn update(self: *Network, player_input: shared.net.Input, survivor: shared.Survivor.Kind, elapsed_time: f32, delta_time: f32) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     self.packets.clearRetainingCapacity();
@@ -380,7 +380,7 @@ pub fn update(self: *NetworkManager, player_input: shared.net.Input, survivor: s
     self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
 }
 
-fn keepChatText(self: *NetworkManager, text: []const u8) ?[]const u8 {
+fn keepChatText(self: *Network, text: []const u8) ?[]const u8 {
     if (self.chat_text.items.len + text.len > self.chat_text.capacity) {
         std.log.warn("chat text scratch full, dropping message of {d} bytes", .{text.len});
         return null;

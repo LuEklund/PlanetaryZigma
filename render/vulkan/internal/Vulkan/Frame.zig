@@ -1,4 +1,4 @@
-const FrameData = @This();
+const Frame = @This();
 
 const vk = @import("vulkan");
 const GpuMemory = @import("GpuMemory.zig");
@@ -42,7 +42,7 @@ pub const GPUScene = extern struct {
     sky_horizon: [4]f32,
 };
 
-pub fn init(heap: *GpuMemory, device: Device) !FrameData {
+pub fn init(heap: *GpuMemory, device: Device) !Frame {
     var command_buffer: vk.CommandBuffer = undefined;
     try device.proxy.allocateCommandBuffers(&.{
         .command_pool = device.command_pool,
@@ -64,7 +64,7 @@ pub fn init(heap: *GpuMemory, device: Device) !FrameData {
     };
 }
 
-pub fn deinit(self: *FrameData, heap: *GpuMemory, device: Device) void {
+pub fn deinit(self: *Frame, heap: *GpuMemory, device: Device) void {
     device.proxy.destroySemaphore(self.swapchain_semaphore, null);
     device.proxy.destroyFence(self.render_fence, null);
     device.proxy.freeCommandBuffers(device.command_pool, &.{self.command_buffer});

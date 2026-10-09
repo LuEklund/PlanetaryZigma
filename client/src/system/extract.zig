@@ -23,7 +23,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         .fov_rad = world.options.fov_rad,
     };
     list.time = world.elapsed_time;
-    const server_seconds = system.network_manager.server_tick_estimate * shared.tick_seconds;
+    const server_seconds = system.network.server_tick_estimate * shared.tick_seconds;
     list.sun_direction = shared.daynight.sunDirection(if (server_seconds > 0) server_seconds else world.elapsed_time);
     const day = shared.daynight.daylight(list.sun_direction, world.camera.transform.position);
     const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{ 1, 0.5, 0.5, 1 };

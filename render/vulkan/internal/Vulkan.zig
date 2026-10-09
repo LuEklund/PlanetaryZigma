@@ -12,7 +12,7 @@ const Device = @import("Vulkan/device.zig").Logical;
 const GpuMemory = @import("Vulkan/GpuMemory.zig");
 const Mesh = @import("Vulkan/Mesh.zig");
 const Swapchain = @import("Vulkan/Swapchain.zig");
-const FrameData = @import("Vulkan/FrameData.zig");
+const Frame = @import("Vulkan/Frame.zig");
 const Surface = @import("Vulkan/Surface.zig");
 const Image = @import("Vulkan/Image.zig");
 const Resources = @import("Vulkan/Resources.zig");
@@ -39,7 +39,7 @@ resources: *Resources,
 highlight_mask: contract.TextureHandle,
 current_frame_inflight: u32,
 swapchain_stale: bool,
-frames: [FrameData.max_frames_inflight]FrameData,
+frames: [Frame.max_frames_inflight]Frame,
 sorted_draws: std.ArrayList(u32),
 
 pub fn init(data: *const contract.InitOptions) !*Vulkan {
@@ -138,7 +138,7 @@ pub fn update(self: *Vulkan, list: *const DrawList) !void {
     self.current_frame_inflight += 1;
 }
 
-fn acquireNextImage(self: *Vulkan, current_frame: *const FrameData) ?u32 {
+fn acquireNextImage(self: *Vulkan, current_frame: *const Frame) ?u32 {
     const acquired = self.device.proxy.acquireNextImageKHR(self.swapchain.swapchain, frame_timeout_ns, current_frame.swapchain_semaphore, .null_handle) catch |err| {
         if (err == error.OutOfDateKHR) self.swapchain_stale = true;
         return null;
@@ -156,7 +156,7 @@ fn blitOntoSwapchain(self: *Vulkan, cmd: vk.CommandBuffer, image_index: u32) voi
     swapchain_image_barrier.transition(.present_src_khr, .{ .bottom_of_pipe_bit = true }, .{});
 }
 
-fn submitFrame(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, render_semaphore: vk.Semaphore) !void {
+fn submitFrame(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, render_semaphore: vk.Semaphore) !void {
     const wait = [_]vk.SemaphoreSubmitInfo{.{ .semaphore = current_frame.swapchain_semaphore, .value = 0, .stage_mask = .{ .color_attachment_output_bit = true }, .device_index = 0 }};
     const signal = [_]vk.SemaphoreSubmitInfo{.{ .semaphore = render_semaphore, .value = 0, .stage_mask = .{ .all_graphics_bit = true }, .device_index = 0 }};
     const command_buffers = [_]vk.CommandBufferSubmitInfo{.{ .command_buffer = cmd, .device_mask = 0 }};
@@ -175,7 +175,7 @@ fn submitFrame(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame
     };
 }
 
-fn render(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+fn render(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *Frame, list: *const DrawList) void {
     var draw_image_barrier: Image.Barrier = .init(self.device, cmd, self.swapchain.draw_image.vk_image, .{ .color_bit = true });
     draw_image_barrier.transition(.color_attachment_optimal, .{ .color_attachment_output_bit = true }, .{ .color_attachment_write_bit = true });
 
@@ -234,13 +234,13 @@ fn setDefaultRenderState(self: *Vulkan, cmd: vk.CommandBuffer) void {
     proxy.cmdSetLineWidth(cmd, 1);
 }
 
-fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawList) void {
+fn uploadSceneData(self: *Vulkan, current_frame: *Frame, list: *const DrawList) void {
     const camera_transform: nz.Transform3D(f32) = .{ .position = list.camera.position, .rotation = list.camera.rotation };
     const view_matrix = matrix.getViewMatrix(&camera_transform);
     var proj = matrix.perspective(list.camera.fov_rad, self.drawAspect(), 0.01, 1000);
     const proj_view = proj.mul(view_matrix);
     const up = camera_transform.rotation.rotateVec(.{ 0, 1, 0 });
-    const scene_data: FrameData.GPUScene = .{
+    const scene_data: Frame.GPUScene = .{
         .view_proj = proj_view.d,
         .inverse_proj_rotation = camera_transform.rotation.toMat4x4().mul(proj.inverse()).d,
         .to_sun = list.sun_direction,
@@ -252,7 +252,7 @@ fn uploadSceneData(self: *Vulkan, current_frame: *FrameData, list: *const DrawLi
         .sky_horizon = list.sky_horizon,
         .camera_up = .{ up[0], up[1], up[2], 0 },
     };
-    current_frame.gpu_scene.copy(FrameData.GPUScene, (&scene_data)[0..1]);
+    current_frame.gpu_scene.copy(Frame.GPUScene, (&scene_data)[0..1]);
 }
 
 fn uploadCascades(self: *Vulkan, list: *const DrawList) [Resources.shadow_cascade_count]nz.Mat4x4(f32) {
@@ -306,7 +306,7 @@ fn beginRendering(self: *Vulkan, cmd: vk.CommandBuffer) void {
     });
 }
 
-fn renderShadowPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
+fn renderShadowPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList, cascade_vps: [Resources.shadow_cascade_count]nz.Mat4x4(f32)) void {
     const proxy = self.device.proxy;
     var shadow_barrier: Image.Barrier = .init(self.device, cmd, self.resources.shadow_image.vk_image, .{ .depth_bit = true });
     shadow_barrier.src_stage = .{ .fragment_shader_bit = true };
@@ -383,7 +383,7 @@ const Farthest = struct {
     }
 };
 
-fn renderWorldPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+fn renderWorldPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList) void {
     const proxy = self.device.proxy;
     proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
     proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
@@ -413,7 +413,7 @@ fn renderWorldPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const F
     };
 }
 
-fn renderWorldTransparentPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+fn renderWorldTransparentPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList) void {
     const proxy = self.device.proxy;
     proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
     proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
@@ -450,7 +450,7 @@ fn renderSkyPass(self: *Vulkan, cmd: vk.CommandBuffer) void {
     proxy.cmdDraw(cmd, 3, 1, 0, 0);
 }
 
-fn renderHighlightPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+fn renderHighlightPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList) void {
     const proxy = self.device.proxy;
     var mask_barrier: Image.Barrier = .init(self.device, cmd, self.swapchain.mask_image.vk_image, .{ .color_bit = true });
     mask_barrier.transition(.color_attachment_optimal, .{ .color_attachment_output_bit = true }, .{ .color_attachment_write_bit = true });
@@ -501,8 +501,8 @@ fn renderHighlightPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *con
 
 const ParticleBatch = struct { first_emitter: u32, emitter_count: u32 };
 
-fn packEmitters(current_frame: *const FrameData, list: *const DrawList) std.EnumArray(contract.ParticleEffect, ParticleBatch) {
-    const gpu_emitters: [*]FrameData.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.mapped));
+fn packEmitters(current_frame: *const Frame, list: *const DrawList) std.EnumArray(contract.ParticleEffect, ParticleBatch) {
+    const gpu_emitters: [*]Frame.GPUEmitter = @ptrCast(@alignCast(current_frame.emitter_buffer.mapped));
     var batches: std.EnumArray(contract.ParticleEffect, ParticleBatch) = .initFill(.{ .first_emitter = 0, .emitter_count = 0 });
     var first_emitter: u32 = 0;
     for (std.enums.values(contract.ParticleEffect)) |effect| {
@@ -536,7 +536,7 @@ fn renderOutlinePass(self: *Vulkan, cmd: vk.CommandBuffer) void {
     proxy.cmdDraw(cmd, 3, 1, 0, 0);
 }
 
-fn renderParticlePass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList, batches: std.EnumArray(contract.ParticleEffect, ParticleBatch)) void {
+fn renderParticlePass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList, batches: std.EnumArray(contract.ParticleEffect, ParticleBatch)) void {
     const proxy = self.device.proxy;
     proxy.cmdSetCullMode(cmd, .{});
     proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
@@ -556,7 +556,7 @@ fn renderParticlePass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *cons
         };
         if (!self.bindPipeline(cmd, pipeline)) continue;
         const push: Shader.ParticlePushConstant = .{
-            .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() + batch.first_emitter * @sizeOf(FrameData.GPUEmitter),
+            .emitter_buffer_address = current_frame.emitter_buffer.getGPUAddress() + batch.first_emitter * @sizeOf(Frame.GPUEmitter),
             .effect_params_address = self.resources.effect_params_buffer.getGPUAddress() + @intFromEnum(effect) * @sizeOf(contract.Effect.GPU),
             .elapsed_time = list.time,
             .emitter_count = batch.emitter_count,
@@ -566,7 +566,7 @@ fn renderParticlePass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *cons
     }
 }
 
-fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const FrameData, list: *const DrawList) void {
+fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const Frame, list: *const DrawList) void {
     const proxy = self.device.proxy;
     if (!self.bindPipeline(cmd, .debug)) return;
     proxy.cmdSetPrimitiveTopology(cmd, .line_list);
@@ -575,7 +575,7 @@ fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const F
     const layout = self.resources.pipeline_layouts.get(.world).handle;
     self.bindWorldDescriptors(cmd, layout);
 
-    const debug_vertices: [*]FrameData.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.mapped));
+    const debug_vertices: [*]Frame.DebugVertex = @ptrCast(@alignCast(current_frame.debug_vertex_buffer.mapped));
     for (list.draw_lines.items, 0..) |line, line_index| {
         debug_vertices[line_index * 2] = .{ .position = .{ line.a[0], line.a[1], line.a[2], 1 }, .color = line.color };
         debug_vertices[line_index * 2 + 1] = .{ .position = .{ line.b[0], line.b[1], line.b[2], 1 }, .color = line.color };
@@ -591,7 +591,7 @@ fn renderDebugPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *const F
     proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
 }
 
-fn renderDvuiPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *FrameData, list: *const DrawList) void {
+fn renderDvuiPass(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *Frame, list: *const DrawList) void {
     if (list.dvui.commands.items.len == 0 or !self.bindPipeline(cmd, .dvui)) return;
     const proxy = self.device.proxy;
     current_frame.dvui_vertex_buffer.copy(DrawList.DvuiVertex, list.dvui.vertices.items);
@@ -649,7 +649,7 @@ fn bindPipeline(self: *Vulkan, cmd: vk.CommandBuffer, pipeline: Shaders.Pipeline
 fn drawMesh(
     self: *Vulkan,
     cmd: vk.CommandBuffer,
-    current_frame: *const FrameData,
+    current_frame: *const Frame,
     mesh: *const Mesh,
     surfaces: []const Mesh.Surface,
     palette_offset: ?u32,

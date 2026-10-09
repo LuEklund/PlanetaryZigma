@@ -1,23 +1,23 @@
 const std = @import("std");
 const shared = @import("shared");
 const dvui = @import("dvui");
-const NetworkManager = @import("../NetworkManager.zig");
+const Network = @import("../Network.zig");
 const Options = @import("../../Options.zig");
 const Hud = @import("../Hud.zig");
 const style = @import("style.zig");
 const Request = Hud.Request;
 
-pub fn update(network_manager: *NetworkManager, hud: *Hud, options: *Options) !Request {
+pub fn update(network: *Network, hud: *Hud, options: *Options) !Request {
     const area = style.screen();
     const button_width = std.math.clamp(area.w * 0.2, 260, 360);
     const button_height = std.math.clamp(area.h * 0.048, 36, 46);
     const left = std.math.clamp(area.w * 0.07, 48, 132);
     const column_height = (button_height + 16) * 5;
     const top = @max(28, (area.h - column_height) * 0.5);
-    const steam_logged_on = network_manager.steam_logged_on;
-    const singleplayer_hosting = network_manager.host_intent == .singleplayer and
-        (network_manager.host_state == .requested or network_manager.host_state == .waiting or network_manager.host_state == .hosting);
-    const singleplayer_failed = network_manager.host_intent == .singleplayer and network_manager.host_state == .failed;
+    const steam_logged_on = network.steam_logged_on;
+    const singleplayer_hosting = network.host_intent == .singleplayer and
+        (network.host_state == .requested or network.host_state == .waiting or network.host_state == .hosting);
+    const singleplayer_failed = network.host_intent == .singleplayer and network.host_state == .failed;
     const button_size: dvui.Size = .{ .w = button_width, .h = button_height };
 
     var request: Request = .none;
@@ -26,12 +26,12 @@ pub fn update(network_manager: *NetworkManager, hud: *Hud, options: *Options) !R
         defer column.deinit();
         if (style.button(@src(), if (singleplayer_hosting) "Starting..." else if (singleplayer_failed) "Start Failed" else "Singleplayer", 0, button_size, singleplayer_hosting, true)) {
             hud.screen = .main;
-            network_manager.requestHost(.singleplayer, options.dev_planet);
+            network.requestHost(.singleplayer, options.dev_planet);
         }
         if (style.button(@src(), "Multiplayer", 0, button_size, hud.screen == .multiplayer, true)) {
             hud.screen = .multiplayer;
-            if (steam_logged_on and !network_manager.server_list.refresh and network_manager.server_list.count == 0) {
-                network_manager.server_list.refresh = true;
+            if (steam_logged_on and !network.server_list.refresh and network.server_list.count == 0) {
+                network.server_list.refresh = true;
             }
         }
         if (style.button(@src(), "Options", 0, button_size, hud.overlay == .options, true)) {
@@ -52,15 +52,15 @@ pub fn update(network_manager: *NetworkManager, hud: *Hud, options: *Options) !R
 
     if (hud.screen == .multiplayer) {
         const panel_left = left + button_width + 32;
-        try multiplayerPanel(network_manager, options, panel_left, top, @max(280, area.w - panel_left - left));
+        try multiplayerPanel(network, options, panel_left, top, @max(280, area.w - panel_left - left));
     }
     return request;
 }
 
-fn multiplayerPanel(network_manager: *NetworkManager, options: *Options, left: f32, top: f32, width: f32) !void {
-    const hosting = network_manager.host_state == .requested or network_manager.host_state == .waiting or network_manager.host_state == .hosting;
-    const host_failed = network_manager.host_state == .failed;
-    const steam_logged_on = network_manager.steam_logged_on;
+fn multiplayerPanel(network: *Network, options: *Options, left: f32, top: f32, width: f32) !void {
+    const hosting = network.host_state == .requested or network.host_state == .waiting or network.host_state == .hosting;
+    const host_failed = network.host_state == .failed;
+    const steam_logged_on = network.steam_logged_on;
 
     var panel = dvui.box(@src(), .{ .dir = .vertical }, .{
         .rect = .{ .x = left, .y = top, .w = width, .h = style.screen().h - top - 40 },
@@ -72,28 +72,28 @@ fn multiplayerPanel(network_manager: *NetworkManager, options: *Options, left: f
     {
         var row = dvui.box(@src(), .{ .dir = .horizontal, .equal_space = true }, .{ .expand = .horizontal });
         defer row.deinit();
-        if (style.button(@src(), "Refresh Servers", 0, .{ .w = 120, .h = 40 }, false, steam_logged_on) and !network_manager.server_list.refresh) {
-            network_manager.server_list.refresh = true;
+        if (style.button(@src(), "Refresh Servers", 0, .{ .w = 120, .h = 40 }, false, steam_logged_on) and !network.server_list.refresh) {
+            network.server_list.refresh = true;
         }
         const host_label = if (!steam_logged_on) "Steam Offline" else if (hosting) "Hosting..." else if (host_failed) "Host Failed" else "Host";
         if (style.button(@src(), host_label, 0, .{ .w = 120, .h = 40 }, hosting, steam_logged_on) and
-            (network_manager.host_state == .none or network_manager.host_state == .failed or network_manager.host_state == .steam_offline))
+            (network.host_state == .none or network.host_state == .failed or network.host_state == .steam_offline))
         {
-            network_manager.requestHost(.multiplayer, options.dev_planet);
+            network.requestHost(.multiplayer, options.dev_planet);
         }
     }
 
-    if (network_manager.server_list.count == 0) {
-        const status = if (!steam_logged_on) "Steam is offline" else if (hosting) "Hosting..." else if (network_manager.server_list.refresh) "Searching for servers" else "No servers found";
+    if (network.server_list.count == 0) {
+        const status = if (!steam_logged_on) "Steam is offline" else if (hosting) "Hosting..." else if (network.server_list.refresh) "Searching for servers" else "No servers found";
         dvui.labelNoFmt(@src(), status, .{}, .{ .font = style.font(22), .color_text = .fromColor(style.text_dim), .gravity_x = 0.5, .padding = .all(12) });
         return;
     }
 
     var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
     defer scroll.deinit();
-    const max_rows = @min(network_manager.server_list.count, network_manager.server_list.servers.len);
+    const max_rows = @min(network.server_list.count, network.server_list.servers.len);
     for (0..max_rows) |i| {
-        const server = &network_manager.server_list.servers[i];
+        const server = &network.server_list.servers[i];
         const tags = std.mem.sliceTo(server.game_tags[0..], 0);
         const host = tagValue(tags, "host");
         const players = tagValue(tags, "players");
@@ -117,8 +117,8 @@ fn multiplayerPanel(network_manager: *NetworkManager, options: *Options, left: f
         } else {
             dvui.label(@src(), "Players: {s}", .{players}, .{ .font = style.font(14), .color_text = .fromColor(style.text_dim) });
         }
-        if (style.button(@src(), "Join", i, .{ .w = 80, .h = 32 }, false, !bad_version) and network_manager.steam_client.server_conn == 0) {
-            try network_manager.steam_client.connectToServer(server.steam_id);
+        if (style.button(@src(), "Join", i, .{ .w = 80, .h = 32 }, false, !bad_version) and network.steam_client.server_conn == 0) {
+            try network.steam_client.connectToServer(server.steam_id);
             std.log.info("connect to {d}", .{server.steam_id});
         }
     }

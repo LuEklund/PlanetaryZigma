@@ -4,17 +4,17 @@ const std = @import("std");
 const System = @import("../System.zig");
 
 const handshake: []const u8 = "{\"v\":1,\"client_id\":\"1537156190709219378\"}";
-pub const State = struct {
+pub const Presence = struct {
     scene: System.Scene,
 };
 
 socket: ?std.Io.net.Stream,
-last: ?State,
+last: ?Presence,
 next_send_time: f32,
 dir: []const u8,
 nonce: u32,
 
-pub fn update(self: *Discord, io: std.Io, state: State, elapsed_time: f32) void {
+pub fn update(self: *Discord, io: std.Io, state: Presence, elapsed_time: f32) void {
     if (elapsed_time < self.next_send_time) return;
     if (self.socket == null) {
         self.connect(io);
