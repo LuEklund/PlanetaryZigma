@@ -235,16 +235,15 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
         @as(u64, @intCast(@divTrunc(1000, self.repeat_key.info.rate))),
     );
 
-    const count: usize = @intCast((now_ms - self.repeat_key.next_time_ms) / interval_ms + 1);
+    const elapsed_repeats: usize = @intCast((now_ms - self.repeat_key.next_time_ms) / interval_ms + 1);
+    self.repeat_key.next_time_ms += @as(u64, elapsed_repeats) * interval_ms;
 
     const text = self.repeat_key.buffer[0..self.repeat_key.text_len];
-    std.log.debug("len: {d}", .{text.len});
-    std.log.debug("bytes: {any}", .{text});
+    const count = @min(elapsed_repeats, (writer.buffer.len - writer.end) / text.len);
+    if (count == 0) return;
 
     var data = [_][]const u8{text};
     try writer.writeSplatAll(&data, count);
-
-    self.repeat_key.next_time_ms += @as(u64, count) * interval_ms;
 }
 
 pub fn setTitle(self: *Wayland, _: *Window, title: [:0]const u8) !void {
