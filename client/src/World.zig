@@ -66,6 +66,7 @@ pub const Entity = struct {
     motion: Motion = .{},
     override_animation_loop: ?shared.entity.Loop = null,
     stun_time: f32 = 0,
+    last_hit: f32 = -100,
     item: ?shared.Item.Kind = null,
     elite: shared.Elite.Kind = .none,
     survivor: shared.Survivor.Kind = .commando,
@@ -259,6 +260,7 @@ pub fn applyInventory(entity: *Entity, command: shared.net.UpdateInventory) void
 pub fn applyHealth(self: *World, entity: *Entity, command: shared.net.UpdateHealth) void {
     if (command.source != .none and command.amount == .set_current) {
         const delta = entity.health - command.amount.set_current;
+        if (delta > 0) entity.last_hit = self.elapsed_time;
         if (delta != 0 and self.damage_events.items.len < self.damage_events.capacity) {
             self.damage_events.appendAssumeCapacity(.{
                 .target = entity.id,

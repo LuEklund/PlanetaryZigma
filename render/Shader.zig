@@ -171,6 +171,10 @@ pub const WorldPushConstant = extern struct {
     vertex_buffer_address: VkDeviceAddress,
     joint_matrices_address: VkDeviceAddress,
     texture_index: u32,
+    /// std430 puts the float4 below at 96.
+    padding: [3]u32 = @splat(0),
+    /// rgb multiplies albedo (elite tint), a blends toward a white hit flash.
+    tint: [4]f32 = .{ 1, 1, 1, 0 },
 };
 pub const DvuiPushConstant = extern struct {
     vertex_buffer_address: VkDeviceAddress,

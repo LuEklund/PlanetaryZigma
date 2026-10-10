@@ -664,6 +664,7 @@ fn renderShadowPass(
                 mesh.surfaces,
                 null,
                 cascade_vp.mul(row.model_matrix),
+                row.tint,
             );
         };
         if (self.bindPipeline(cmd, .shadow_skinned)) for (list.draw_meshes.items) |row| {
@@ -676,6 +677,7 @@ fn renderShadowPass(
                 mesh.surfaces,
                 row.palette_offset,
                 cascade_vp.mul(row.model_matrix),
+                row.tint,
             );
         };
     }
@@ -739,6 +741,7 @@ fn renderWorldPass(
             mesh.surfaces[0..mesh.opaque_count],
             null,
             row.model_matrix,
+            row.tint,
         );
     };
     near_first = std.mem.reverseIterator(self.sorted_draws.items);
@@ -754,6 +757,7 @@ fn renderWorldPass(
             mesh.surfaces[0..mesh.opaque_count],
             row.palette_offset,
             row.model_matrix,
+            row.tint,
         );
     };
 }
@@ -783,6 +787,7 @@ fn renderWorldTransparentPass(
             mesh.surfaces[mesh.opaque_count..],
             null,
             row.model_matrix,
+            row.tint,
         );
     };
     if (self.bindPipeline(cmd, .transparent_skinned)) for (self.sorted_draws.items) |draw_index| {
@@ -797,6 +802,7 @@ fn renderWorldTransparentPass(
             mesh.surfaces[mesh.opaque_count..],
             row.palette_offset,
             row.model_matrix,
+            row.tint,
         );
     };
 }
@@ -887,7 +893,7 @@ fn renderHighlightPass(
     if (self.bindPipeline(cmd, .highlight_static)) for (list.draw_meshes.items) |draw_mesh| {
         if (!draw_mesh.highlight or draw_mesh.skinned) continue;
         const mesh = self.resources.meshAt(draw_mesh.mesh) orelse continue;
-        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, null, draw_mesh.model_matrix);
+        self.drawMesh(cmd, current_frame, mesh, mesh.surfaces, null, draw_mesh.model_matrix, draw_mesh.tint);
     };
     if (self.bindPipeline(cmd, .highlight_skinned)) for (list.draw_meshes.items) |draw_mesh| {
         if (!draw_mesh.highlight or !draw_mesh.skinned) continue;
@@ -899,6 +905,7 @@ fn renderHighlightPass(
             mesh.surfaces,
             draw_mesh.palette_offset,
             draw_mesh.model_matrix,
+            draw_mesh.tint,
         );
     };
     proxy.cmdEndRendering(cmd);
@@ -1150,6 +1157,8 @@ fn bindPipeline(self: *Vulkan, cmd: vk.CommandBuffer, pipeline: Shaders.Pipeline
     return true;
 }
 
+const no_tint: [4]f32 = .{ 1, 1, 1, 0 };
+
 fn drawMesh(
     self: *Vulkan,
     cmd: vk.CommandBuffer,
@@ -1158,9 +1167,11 @@ fn drawMesh(
     surfaces: []const Mesh.Surface,
     palette_offset: ?u32,
     top_matrix: nz.Mat4x4(f32),
+    tint: [4]f32,
 ) void {
     const proxy = self.device.proxy;
     var push: Shader.WorldPushConstant = .{
+        .tint = tint,
         .vertex_buffer_address = mesh.vertex_buffer.getGPUAddress(),
         .model_matrix = top_matrix.d,
         .joint_matrices_address = if (palette_offset) |offset|

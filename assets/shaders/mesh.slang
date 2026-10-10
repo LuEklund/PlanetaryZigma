@@ -36,6 +36,7 @@ struct PushConstant {
     Vertex *vertex_buffer;
     float4x4 *joint_matrices;
     uint texture_index;
+    float4 tint;
 };
 [[vk::push_constant]]
 PushConstant push_constant;
@@ -141,7 +142,13 @@ float4 mesh_frag(VertexOutput input) : SV_Target {
     float fog = (1 - exp(-dist * 0.005));
 
     float4 texel = textures[push_constant.texture_index].Sample(input.uv);
-    float3 lit = (texel.xyz * input.color.xyz * shading) * scene_data.light_color.xyz;
+    float3 albedo = texel.xyz * input.color.xyz;
+    float3 tint = push_constant.tint.rgb;
+    float recolor = (tint.r + tint.g + tint.b) < 2.99 ? 0.55 : 0.0;
+    float grey = dot(albedo, float3(0.2126, 0.7152, 0.0722));
+    albedo = lerp(albedo, grey * tint * 1.8, recolor);
+    float3 lit = (albedo * shading) * scene_data.light_color.xyz;
+    lit = lerp(lit, float3(1.6, 1.6, 1.6), push_constant.tint.a);
     lit = lerp(lit, fog_color, fog);
     return float4(lit, texel.a * input.color.a);
 }

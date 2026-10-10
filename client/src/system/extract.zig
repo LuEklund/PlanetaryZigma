@@ -94,6 +94,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                 sphere.toMat4x4(),
                 teleporter.transform.position,
                 false,
+                no_tint,
             );
         }
     }
@@ -165,6 +166,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             transform.toMat4x4().mul(model_offset.toMat4x4()),
             entity.transform.position,
             player_interact == entity.id or entity.id == zoo_selected or pinged(world, entity.id),
+            entityTint(entity, world.elapsed_time),
         );
     }
     for (world.dying.items) |corpse| {
@@ -186,6 +188,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             transform.toMat4x4().mul(corpse_offset.toMat4x4()),
             corpse.transform.position,
             false,
+            no_tint,
         );
     }
 
@@ -226,6 +229,16 @@ fn easeOutBack(x: f32) f32 {
     return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
 }
 
+const no_tint: [4]f32 = .{ 1, 1, 1, 0 };
+const hit_flash_seconds: f32 = 0.15;
+
+/// Elite color times albedo, plus a white flash right after a hit.
+fn entityTint(entity: *const World.Entity, now: f32) [4]f32 {
+    const color = shared.Elite.get(entity.elite).tint;
+    const flash = std.math.clamp(1 - (now - entity.last_hit) / hit_flash_seconds, 0, 1) * 0.7;
+    return .{ color[0], color[1], color[2], flash };
+}
+
 fn appendDraws(
     list: *DrawList,
     models: *const graphics.Assets.Models,
@@ -233,6 +246,7 @@ fn appendDraws(
     top_matrix: nz.Mat4x4(f32),
     position: nz.Vec3(f32),
     highlight: bool,
+    tint: [4]f32,
 ) void {
     if (pose.skeleton) |skeleton| {
         var skin_offsets: [graphics.Animator.max_skins]u32 = undefined;
@@ -254,6 +268,7 @@ fn appendDraws(
                 .palette_offset = if (node.skin_id) |skin_index| skin_offsets[skin_index] else null,
                 .skinned = true,
                 .highlight = highlight,
+                .tint = tint,
             });
         }
         return;
@@ -269,6 +284,7 @@ fn appendDraws(
             .palette_offset = null,
             .skinned = false,
             .highlight = highlight,
+            .tint = tint,
         });
         return;
     }
@@ -281,6 +297,7 @@ fn appendDraws(
             .palette_offset = null,
             .skinned = false,
             .highlight = highlight,
+            .tint = tint,
         });
     }
 }

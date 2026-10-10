@@ -48,6 +48,7 @@ pub const DrawMesh = struct {
     palette_offset: ?u32,
     skinned: bool,
     highlight: bool,
+    tint: [4]f32 = .{ 1, 1, 1, 0 },
 };
 
 pub const Line = struct {
