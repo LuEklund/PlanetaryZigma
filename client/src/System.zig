@@ -331,7 +331,7 @@ fn step(self: *System, world: *World) !void {
         world,
         &world.options,
         look_delta,
-        wire_input,
+        player_input,
         self.window.pointer.axis.vertical,
     );
 }
