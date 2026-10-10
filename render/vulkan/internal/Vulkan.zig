@@ -37,6 +37,7 @@ heaps: GpuMemory.Heaps,
 swapchain: Swapchain,
 resources: *Resources,
 highlight_mask: contract.TextureHandle,
+post_textures: PostTextures,
 current_frame_inflight: u32,
 swapchain_stale: bool,
 frames: [Frame.max_frames_inflight]Frame,
@@ -83,6 +84,12 @@ pub fn init(data: *const contract.InitOptions) !*Vulkan {
     );
     self.highlight_mask = self.resources.texture_table.alloc();
     self.resources.writeTexture(self.highlight_mask, self.swapchain.mask_image.vk_imageview);
+    self.post_textures = .{
+        .scene = self.resources.texture_table.alloc(),
+        .post = self.resources.texture_table.alloc(),
+        .bloom = .{ self.resources.texture_table.alloc(), self.resources.texture_table.alloc() },
+    };
+    self.writePostTextures();
 
     self.sorted_draws = try .initCapacity(gpa, DrawList.max_draw_meshes);
     return self;
@@ -114,6 +121,22 @@ pub fn resize(self: *Vulkan, width: u32, height: u32) !void {
         height,
     );
     self.resources.writeTexture(self.highlight_mask, self.swapchain.mask_image.vk_imageview);
+    self.writePostTextures();
+}
+
+const PostTextures = struct {
+    scene: contract.TextureHandle,
+    post: contract.TextureHandle,
+    bloom: [2]contract.TextureHandle,
+};
+
+fn writePostTextures(self: *Vulkan) void {
+    const textures = self.post_textures;
+    self.resources.writeTexture(textures.scene, self.swapchain.draw_image.vk_imageview);
+    self.resources.writeTexture(textures.post, self.swapchain.post_image.vk_imageview);
+    for (textures.bloom, self.swapchain.bloom_images) |texture, image| {
+        self.resources.writeTexture(texture, image.vk_imageview);
+    }
 }
 
 pub fn update(self: *Vulkan, list: *const DrawList) !void {
@@ -279,6 +302,9 @@ fn render(self: *Vulkan, cmd: vk.CommandBuffer, current_frame: *Frame, list: *co
     self.renderParticlePass(cmd, current_frame, list, particle_batches);
     self.renderOutlinePass(cmd);
     if (list.draw_lines.items.len != 0) self.renderDebugPass(cmd, current_frame, list);
+    self.device.proxy.cmdEndRendering(cmd);
+    self.renderPostPasses(cmd, list.post);
+    self.beginOverlayRendering(cmd);
     self.renderDvuiPass(cmd, current_frame, list);
     self.device.proxy.cmdEndRendering(cmd);
 
@@ -411,6 +437,158 @@ fn beginRendering(self: *Vulkan, cmd: vk.CommandBuffer) void {
         .p_color_attachments = &color_attachment,
         .p_depth_attachment = &depth_attachment,
     });
+}
+
+/// UI on top of the finished frame: same attachments as the world pass, but loaded.
+fn beginOverlayRendering(self: *Vulkan, cmd: vk.CommandBuffer) void {
+    const color_attachment = [_]vk.RenderingAttachmentInfo{.{
+        .image_view = self.swapchain.draw_image.vk_imageview,
+        .image_layout = .color_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .load,
+        .store_op = .store,
+        .clear_value = .{ .color = .{ .float_32 = .{ 0, 0, 0, 1 } } },
+    }};
+    const depth_attachment: vk.RenderingAttachmentInfo = .{
+        .image_view = self.swapchain.depth_image.vk_imageview,
+        .image_layout = .depth_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .load,
+        .store_op = .dont_care,
+        .clear_value = .{ .depth_stencil = .{ .depth = 1, .stencil = 0 } },
+    };
+    self.device.proxy.cmdBeginRendering(cmd, &.{
+        .render_area = self.fullScissor(),
+        .layer_count = 1,
+        .view_mask = 0,
+        .color_attachment_count = color_attachment.len,
+        .p_color_attachments = &color_attachment,
+        .p_depth_attachment = &depth_attachment,
+    });
+    self.device.proxy.cmdSetViewportWithCount(cmd, &.{self.fullViewport()});
+    self.device.proxy.cmdSetScissorWithCount(cmd, &.{self.fullScissor()});
+}
+
+/// Bloom (prefilter, blur x, blur y) -> composite (bloom, soft clip, grade) -> FXAA back into the
+/// draw image. Skipped entirely until every post shader is loaded, so the frame is never lost.
+fn renderPostPasses(self: *Vulkan, cmd: vk.CommandBuffer, post: DrawList.Post) void {
+    const shaders = &self.resources.shaders;
+    for ([_]Shaders.Pipeline{ .bloom_prefilter, .bloom_blur, .composite, .fxaa }) |pipeline| {
+        if (shaders.get(pipeline) == .null_handle) return;
+    }
+    const swapchain = &self.swapchain;
+    const textures = self.post_textures;
+    const bloom_extent = swapchain.bloom_images[0].extent;
+    const bloom_texel: [2]f32 = .{
+        1.0 / @as(f32, @floatFromInt(bloom_extent.width)),
+        1.0 / @as(f32, @floatFromInt(bloom_extent.height)),
+    };
+
+    self.toSampled(cmd, swapchain.draw_image.vk_image, .color_attachment_optimal);
+    self.fullscreenPass(cmd, &swapchain.bloom_images[0], .bloom_prefilter, textures.scene, .{ 0, post.bloom_threshold, 0, 0 }, .{ 0, 0, 0, 0 });
+    self.fullscreenPass(cmd, &swapchain.bloom_images[1], .bloom_blur, textures.bloom[0], .{ 0, 0, bloom_texel[0], 0 }, .{ 0, 0, 0, 0 });
+    self.fullscreenPass(cmd, &swapchain.bloom_images[0], .bloom_blur, textures.bloom[1], .{ 0, 0, 0, bloom_texel[1] }, .{ 0, 0, 0, 0 });
+    self.fullscreenPass(
+        cmd,
+        &swapchain.post_image,
+        .composite,
+        textures.scene,
+        .{ @floatFromInt(@intFromEnum(textures.bloom[0])), post.bloom_strength, 0, 0 },
+        .{ post.exposure, post.saturation, post.vignette, 0 },
+    );
+    self.toAttachment(cmd, swapchain.draw_image.vk_image, .shader_read_only_optimal);
+    self.fullscreenPass(cmd, &swapchain.draw_image, .fxaa, textures.post, .{ if (post.fxaa) 1 else 0, 0, 0, 0 }, .{ 0, 0, 0, 0 });
+}
+
+fn toSampled(self: *Vulkan, cmd: vk.CommandBuffer, image: vk.Image, from: vk.ImageLayout) void {
+    var barrier: Image.Barrier = .init(self.device, cmd, image, .{ .color_bit = true });
+    barrier.old_layout = from;
+    barrier.src_stage = .{ .color_attachment_output_bit = true };
+    barrier.src_access = .{ .color_attachment_write_bit = true };
+    barrier.transition(.shader_read_only_optimal, .{ .fragment_shader_bit = true }, .{ .shader_read_bit = true });
+}
+
+fn toAttachment(self: *Vulkan, cmd: vk.CommandBuffer, image: vk.Image, from: vk.ImageLayout) void {
+    var barrier: Image.Barrier = .init(self.device, cmd, image, .{ .color_bit = true });
+    barrier.old_layout = from;
+    barrier.src_stage = .{ .fragment_shader_bit = true };
+    barrier.src_access = .{ .shader_read_bit = true };
+    barrier.transition(
+        .color_attachment_optimal,
+        .{ .color_attachment_output_bit = true },
+        .{ .color_attachment_write_bit = true },
+    );
+}
+
+/// One fullscreen triangle into `target` sampling `source`; leaves `target` readable unless it
+/// is the draw image (that one stays an attachment for the UI pass).
+fn fullscreenPass(
+    self: *Vulkan,
+    cmd: vk.CommandBuffer,
+    target: *const Image,
+    pipeline: Shaders.Pipeline,
+    source: contract.TextureHandle,
+    params: [4]f32,
+    grade: [4]f32,
+) void {
+    const proxy = self.device.proxy;
+    const is_draw_image = target.vk_image == self.swapchain.draw_image.vk_image;
+    if (!is_draw_image) {
+        var barrier: Image.Barrier = .init(self.device, cmd, target.vk_image, .{ .color_bit = true });
+        barrier.transition(.color_attachment_optimal, .{ .color_attachment_output_bit = true }, .{ .color_attachment_write_bit = true });
+    }
+    const extent: vk.Extent2D = .{ .width = target.extent.width, .height = target.extent.height };
+    const color_attachment = [_]vk.RenderingAttachmentInfo{.{
+        .image_view = target.vk_imageview,
+        .image_layout = .color_attachment_optimal,
+        .resolve_mode = .{},
+        .resolve_image_view = .null_handle,
+        .resolve_image_layout = .undefined,
+        .load_op = .dont_care,
+        .store_op = .store,
+        .clear_value = .{ .color = .{ .float_32 = .{ 0, 0, 0, 1 } } },
+    }};
+    proxy.cmdBeginRendering(cmd, &.{
+        .render_area = .{ .offset = .{ .x = 0, .y = 0 }, .extent = extent },
+        .layer_count = 1,
+        .view_mask = 0,
+        .color_attachment_count = color_attachment.len,
+        .p_color_attachments = &color_attachment,
+    });
+    proxy.cmdSetViewportWithCount(cmd, &.{.{
+        .x = 0,
+        .y = 0,
+        .width = @floatFromInt(extent.width),
+        .height = @floatFromInt(extent.height),
+        .min_depth = 0,
+        .max_depth = 1,
+    }});
+    proxy.cmdSetScissorWithCount(cmd, &.{.{ .offset = .{ .x = 0, .y = 0 }, .extent = extent }});
+    proxy.cmdSetCullMode(cmd, .{});
+    proxy.cmdSetPrimitiveTopology(cmd, .triangle_list);
+    proxy.cmdSetDepthTestEnable(cmd, .false);
+    proxy.cmdSetDepthWriteEnable(cmd, .false);
+    proxy.cmdSetDepthBiasEnable(cmd, .false);
+    const layout = self.resources.pipeline_layouts.get(.world).handle;
+    self.bindWorldDescriptors(cmd, layout);
+    _ = self.bindPipeline(cmd, pipeline);
+    var packed_params: [16]f32 = @splat(0);
+    packed_params[0..4].* = params;
+    packed_params[4..8].* = grade;
+    const push: Shader.WorldPushConstant = .{
+        .model_matrix = packed_params,
+        .vertex_buffer_address = 0,
+        .joint_matrices_address = 0,
+        .texture_index = @intFromEnum(source),
+    };
+    proxy.cmdPushConstants(cmd, layout, PipelineLayout.push_stages, 0, @sizeOf(Shader.WorldPushConstant), &push);
+    proxy.cmdDraw(cmd, 3, 1, 0, 0);
+    proxy.cmdEndRendering(cmd);
+    if (!is_draw_image) self.toSampled(cmd, target.vk_image, .color_attachment_optimal);
 }
 
 fn renderShadowPass(

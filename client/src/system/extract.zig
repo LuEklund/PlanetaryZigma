@@ -32,6 +32,8 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         .fov_rad = world.options.fov_rad,
     };
     list.time = world.elapsed_time;
+    list.post.fxaa = world.options.anti_aliasing;
+    list.post.bloom_strength = world.options.bloom;
     const server_seconds = system.network.server_tick_estimate * shared.tick_seconds;
     list.sun_direction = shared.daynight.sunDirection(
         if (server_seconds > 0) server_seconds else world.elapsed_time,

@@ -21,6 +21,10 @@ extent: vk.Extent3D,
 draw_image: Image,
 depth_image: Image,
 mask_image: Image,
+/// Full-resolution tone-mapped frame between composite and FXAA.
+post_image: Image,
+/// Half-resolution bloom ping-pong.
+bloom_images: [2]Image,
 
 pub const draw_format: vk.Format = .r16g16b16a16_sfloat;
 pub const depth_format: vk.Format = .d32_sfloat;
@@ -47,6 +51,8 @@ pub fn init(
         .draw_image = undefined,
         .depth_image = undefined,
         .mask_image = undefined,
+        .post_image = undefined,
+        .bloom_images = undefined,
     };
     try self.build(gpa, heap, instance, physical_device, device, surface, width, height);
     return self;
@@ -76,6 +82,8 @@ fn destroy(self: *Swapchain, heap: *GpuMemory, device: Device) void {
     self.draw_image.deinit(heap, device);
     self.depth_image.deinit(heap, device);
     self.mask_image.deinit(heap, device);
+    self.post_image.deinit(heap, device);
+    for (&self.bloom_images) |*image| image.deinit(heap, device);
     for (self.render_semaphores[0..self.image_count]) |semaphore| device.proxy.destroySemaphore(
         semaphore,
         null,
@@ -133,7 +141,18 @@ fn build(
         .transfer_dst_bit = true,
         .storage_bit = true,
         .color_attachment_bit = true,
+        .sampled_bit = true,
     }, .{ .color_bit = true }, false);
+    const post_usage: vk.ImageUsageFlags = .{ .color_attachment_bit = true, .sampled_bit = true };
+    self.post_image = try .init(heap, device, draw_format, self.extent, .@"2d", post_usage, .{ .color_bit = true }, false);
+    const half_extent: vk.Extent3D = .{
+        .width = @max(1, self.extent.width / 2),
+        .height = @max(1, self.extent.height / 2),
+        .depth = 1,
+    };
+    for (&self.bloom_images) |*image| {
+        image.* = try .init(heap, device, draw_format, half_extent, .@"2d", post_usage, .{ .color_bit = true }, false);
+    }
     self.depth_image = try .init(
         heap,
         device,

@@ -22,10 +22,14 @@ pub const Pipeline = enum {
     outline,
     debug,
     dvui,
+    bloom_prefilter,
+    bloom_blur,
+    composite,
+    fxaa,
 };
 
 const Blend = enum { none, alpha, additive, premultiplied };
-const Target = enum { main, shadow, mask };
+const Target = enum { main, shadow, mask, post };
 
 const Row = struct {
     vert: Shader.Kind,
@@ -140,6 +144,38 @@ const rows: std.EnumArray(Pipeline, Row) = .init(.{
         .target = .main,
         .blend = .none,
         .lines = true,
+    },
+    .bloom_prefilter = .{
+        .vert = .post_fullscreen,
+        .frag = .bloom_prefilter,
+        .layout = .world,
+        .target = .post,
+        .blend = .none,
+        .lines = false,
+    },
+    .bloom_blur = .{
+        .vert = .post_fullscreen,
+        .frag = .bloom_blur,
+        .layout = .world,
+        .target = .post,
+        .blend = .none,
+        .lines = false,
+    },
+    .composite = .{
+        .vert = .post_fullscreen,
+        .frag = .composite,
+        .layout = .world,
+        .target = .post,
+        .blend = .none,
+        .lines = false,
+    },
+    .fxaa = .{
+        .vert = .post_fullscreen,
+        .frag = .fxaa,
+        .layout = .world,
+        .target = .post,
+        .blend = .none,
+        .lines = false,
     },
     .dvui = .{
         .vert = .dvui,
@@ -295,6 +331,7 @@ fn build(self: *Shaders, row: Row) !vk.Pipeline {
     const color_format = [_]vk.Format{switch (row.target) {
         .main => Swapchain.draw_format,
         .mask => Swapchain.mask_format,
+        .post => Swapchain.draw_format,
         .shadow => .undefined,
     }};
     const color_count: u32 = if (row.target == .shadow) 0 else 1;
@@ -303,7 +340,10 @@ fn build(self: *Shaders, row: Row) !vk.Pipeline {
         .view_mask = 0,
         .color_attachment_count = color_count,
         .p_color_attachment_formats = &color_format,
-        .depth_attachment_format = if (row.target == .mask) .undefined else Swapchain.depth_format,
+        .depth_attachment_format = switch (row.target) {
+            .mask, .post => .undefined,
+            .main, .shadow => Swapchain.depth_format,
+        },
         .stencil_attachment_format = .undefined,
     };
     const create_info = [_]vk.GraphicsPipelineCreateInfo{.{

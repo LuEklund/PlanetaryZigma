@@ -21,6 +21,11 @@ pub const Kind = enum {
 
     particles,
     dvui,
+    post_fullscreen,
+    bloom_prefilter,
+    bloom_blur,
+    composite,
+    fxaa,
     pub const count: usize = @typeInfo(Kind).@"enum".fields.len;
 };
 
@@ -110,6 +115,41 @@ const specs: std.EnumArray(Kind, Spec) = .init(.{
         .frag = "fragment",
         .descriptors = &.{.textures},
         .push_constant_size = @sizeOf(DvuiPushConstant),
+    },
+    .post_fullscreen = .{
+        .path = "post.spv",
+        .vert = "fullscreen_vert",
+        .frag = null,
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .bloom_prefilter = .{
+        .path = "post.spv",
+        .vert = null,
+        .frag = "bloom_prefilter_frag",
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .bloom_blur = .{
+        .path = "post.spv",
+        .vert = null,
+        .frag = "bloom_blur_frag",
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .composite = .{
+        .path = "post.spv",
+        .vert = null,
+        .frag = "composite_frag",
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
+    },
+    .fxaa = .{
+        .path = "post.spv",
+        .vert = null,
+        .frag = "fxaa_frag",
+        .descriptors = &.{ .scene, .textures },
+        .push_constant_size = @sizeOf(WorldPushConstant),
     },
     .particles = .{
         .path = "particles.spv",

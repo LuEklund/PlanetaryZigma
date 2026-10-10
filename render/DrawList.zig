@@ -22,8 +22,18 @@ draw_lines: std.ArrayList(Line),
 emitters: std.ArrayList(DrawEmitter),
 dvui: DvuiLayer,
 planet_radius: f32,
+post: Post,
 surface_width: u32,
 surface_height: u32,
+
+pub const Post = struct {
+    bloom_strength: f32 = 0.5,
+    bloom_threshold: f32 = 1.1,
+    exposure: f32 = 1,
+    saturation: f32 = 1.08,
+    vignette: f32 = 0.25,
+    fxaa: bool = true,
+};
 
 pub const Camera = struct {
     position: nz.Vec3(f32),
@@ -97,6 +107,7 @@ pub fn init(gpa: std.mem.Allocator) !DrawList {
         .joint_matrices = try .initCapacity(gpa, max_joint_matrices),
         .draw_lines = try .initCapacity(gpa, max_lines),
         .emitters = try .initCapacity(gpa, max_emitters),
+        .post = .{},
         .surface_width = 0,
         .surface_height = 0,
         .dvui = .{

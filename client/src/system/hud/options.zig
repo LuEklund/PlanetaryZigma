@@ -72,7 +72,11 @@ pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
                 slider(@src(), "Chunk View Distance", &options.chunk_view_distance, 1, 8, "{d:.0}");
                 options.chunk_view_distance = @round(options.chunk_view_distance);
             },
-            .graphics => toggle(@src(), "Debug Colliders", &controller.debug_draw_colliders),
+            .graphics => {
+                toggle(@src(), "Anti-aliasing (FXAA)", &options.anti_aliasing);
+                slider(@src(), "Bloom", &options.bloom, 0, 1.5, "{d:.2}");
+                toggle(@src(), "Debug Colliders", &controller.debug_draw_colliders);
+            },
             .audio => slider(@src(), "Master Volume", &options.master_volume, 0, 1, "{d:.2}"),
         }
     }

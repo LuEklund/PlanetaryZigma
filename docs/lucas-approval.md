@@ -72,3 +72,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Keybind label "Ping"; ping marker text "v <player>: <target>" / "here"
 - [ ] Main menu button "Zoo" (dev tool — keep visible in release?)
 - [ ] Family event announcements (chat, stage start): "Something stirs in the tubes below." (tubloid) / "The grass begins to whisper." (grass) / "The air hums and bubbles." (bloop) / "The ground crawls with tiny legs." (swarm)
+- [ ] Options → Graphics: "Anti-aliasing (FXAA)", "Bloom"
