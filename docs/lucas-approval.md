@@ -68,3 +68,6 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 ## UI text
 - [ ] Lobby: "SELECT SURVIVOR", "ABILITIES", "PLAYERS", "DIFFICULTY (host picks)", "READY (click to cancel)", "Leave", "Base Damage", ability line format "Primary - 0.3s - 100% base damage"
 - [ ] HUD objective lines ("Find the teleporter", "Charge the teleporter N%", "Defeat the boss", "Enter the teleporter")
+- [ ] Options tab "Audio", slider "Master Volume"
+- [ ] Keybind label "Ping"; ping marker text "v <player>: <target>" / "here"
+- [ ] Main menu button "Zoo" (dev tool — keep visible in release?)

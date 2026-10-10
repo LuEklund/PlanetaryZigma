@@ -67,7 +67,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] T1a — Terrain decoration (trees, grass, stones, water).
   - Result: `shared/src/planet/decoration.zig`: per-biome `Props` (chance per flat cell + colors) and `Water` (level, rgba) rows in `Biome.zig`. Props baked into each chunk mesh deterministically per cell (primitives: prism+cone trees, jittered rocks, 3-blade grass); water = terrain quads below the level flattened onto a shell, drawn as a transparent surface of the same mesh. Zero extra draws. No collision on props (walk through trees). Screenshotted all four biomes in the zoo (`pz cmd "radius 124"`). Needs playtest for density/perf.
 - [ ] T1b — Caves. Blocked on Lucas's rulings (see Questions).
-- [ ] P2 — Ping on middle mouse: marks the aimed point/entity for all players (RoR2 ping).
+- [x] P2 — Ping on middle mouse: marks the aimed point/entity for all players (RoR2 ping).
+  - Result: new `ping` client packet + `ping` event (protocol bump). Crosshair ray picks the entity nearest screen center (within ~5°) else the terrain hit; every client shows "v <player>: <target>" for 6 s, following the target. Rebindable ("Ping", default middle mouse); mouse "pressed" actions now edge-triggered. `pz cmd "!ping"` pings from the console. Tested solo; needs a multiplayer check. No ping sound (needs asset from Lucas).
 - [x] F2 — Free camera could not move: camera got the blanked wire input. Now gets local input. Built, needs playtest.
 - [ ] C1 — Steam Deck / gamepad support (Steam Input).
 - [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
@@ -103,6 +104,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
 ## Needs asset from Lucas
+- Ping sound (short blip) for P2.
 - C4: Brawler and Marksman models (rigged like benbozo: Idle/Run/Death + attack clips). Both use `benbozo.glb` today; `captainbozo.glb` has no skin/animations so it can't be used as a player yet.
 - C4: action-bar icons for the new abilities (special slot is a plain purple square; utility is a plain yellow square as before).
 - C3: model (`objects/<name>.glb`) + icon (`textures/<name>.png`) for leech_seed, coin_pouch, crowbar, boots, bandage, gasoline, thorn_vest, vampire_fang, ghor_tome, leech_fang, brilliant_hammer, berserker_core, glass_heart, blood_pact, heal_spray, blast_wave. Paths are derived from the item name; dropping the files in is enough.
