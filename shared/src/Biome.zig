@@ -181,8 +181,42 @@ const all: [row_count]Biome = table: {
     break :table table;
 };
 
+pub const Kind = kind: {
+    const decls = @typeInfo(rows).@"struct".decls;
+    var names: [decls.len][]const u8 = undefined;
+    var values: [decls.len]u8 = undefined;
+    for (decls, &names, &values, 0..) |decl, *name, *value, index| {
+        name.* = decl.name;
+        value.* = index;
+    }
+    break :kind @Enum(u8, .exhaustive, &names, &values);
+};
+
+/// RoR2-style stage slots: each stage draws its biome from a small pool; after the last slot
+/// the run loops back to the first.
+pub const stage_pools = [_][]const Kind{
+    &.{ .verdant, .coral },
+    &.{ .dust, .coral },
+    &.{ .frost, .verdant },
+    &.{ .dust, .frost },
+    &.{ .coral, .frost },
+};
+
+pub fn kindForRadius(planet_radius: u32) Kind {
+    return @enumFromInt(std.hash.int(planet_radius) % row_count);
+}
+
 pub fn forRadius(planet_radius: u32) *const Biome {
-    return &all[std.hash.int(planet_radius) % row_count];
+    return &all[@intFromEnum(kindForRadius(planet_radius))];
+}
+
+/// The biome travels as the planet radius: the first radius from `base` up whose biome is `wanted`.
+pub fn radiusFor(wanted: Kind, base: u32) u32 {
+    var radius = base;
+    while (radius < base + 256) : (radius += 1) {
+        if (kindForRadius(radius) == wanted) return radius;
+    }
+    return base;
 }
 
 pub fn pickEnemy(biome: *const Biome, random: std.Random) ?entity.EnemyKind {
