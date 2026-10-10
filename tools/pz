@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pz build | run [menu|dev|singleplayer|run] | shot [out.png] [scale] | log [pattern] | cmd "/command" | kill
+# pz build | reload | run [menu|dev|singleplayer|run] | shot [out.png] [scale] | log [pattern] | cmd "/command" | kill
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 logfile="${PZ_LOG:-/tmp/pz-client.log}"
@@ -18,6 +18,16 @@ case "${1:-}" in
     build)
         (cd "$root/client" && zig build 2>&1 | grep -E "error|note" || true)
         (cd "$root/server" && zig build 2>&1 | grep -E "error|note" || true) ;;
+    reload)
+        before=$(wc -l <"$logfile")
+        errors="$(cd "$root/client" && zig build lib 2>&1 | grep -E "error|note" || true)"
+        [ -n "$errors" ] && { echo "$errors"; exit 1; }
+        for _ in $(seq 1 40); do
+            result="$(tail -n +"$((before + 1))" "$logfile" | grep -a -E "reloaded|restart needed|reload failed" | tail -1 || true)"
+            [ -n "$result" ] && { echo "$result" | cut -c1-200; case "$result" in *reloaded*) exit 0;; *) exit 2;; esac; }
+            sleep 0.25
+        done
+        echo "no reload seen (game not running, or nothing changed)"; exit 3 ;;
     run)
         pkill -x client || true; pkill -x server || true; sleep 1
         mode="${2:-dev}"
