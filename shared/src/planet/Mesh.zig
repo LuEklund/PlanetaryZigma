@@ -10,6 +10,9 @@ vertices: std.ArrayList(Vertex),
 indices: std.ArrayList(u32),
 opaque_index_count: u32,
 
+/// Cells farther than this from the outer terrain are cave walls: no water, no props.
+pub const outer_surface_band: f32 = 1.5;
+
 pub const Vertex = @import("../vertex.zig").StaticVertex;
 const Biome = @import("../Biome.zig");
 const decoration = @import("decoration.zig");
@@ -32,7 +35,11 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
     const normals = try gpa.alloc(nz.Vec3(f32), chunk.surface_cells.count());
     defer gpa.free(normals);
     for (chunk.surface_cells.values(), normals) |centroid, *normal| {
-        normal.* = nz.vec.normalize(sdf.gradient(centroid, radius_float));
+        const field_gradient = sdf.gradient(centroid, radius_float);
+        normal.* = if (nz.vec.length(field_gradient) > 1e-6)
+            nz.vec.normalize(field_gradient)
+        else
+            nz.vec.normalize(centroid);
     }
 
     for (chunk.surface_cells.keys()) |anchor| {
@@ -59,6 +66,7 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
             };
             for (quad) |corner| {
                 if (nz.vec.length(corner) >= water_level) continue;
+                if (@abs(sdf.terrain(corner, radius_float)) > outer_surface_band) break;
                 try water_quads.append(gpa, quad);
                 break;
             }

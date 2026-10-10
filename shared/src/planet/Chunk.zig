@@ -226,7 +226,7 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
     );
     const surface_reach_squared = surface_reach * surface_reach;
     const solid_depth: f32 = @floatFromInt(
-        planet_radius - @min(planet_radius, sdf.noise_amplitude + planet.cell_margin),
+        planet_radius - @min(planet_radius, sdf.noise_amplitude + sdf.cave_depth + planet.cell_margin),
     );
     const solid_depth_squared = solid_depth * solid_depth;
     var x = span_min[0];
@@ -246,7 +246,6 @@ pub fn coords(gpa: std.mem.Allocator, planet_radius: u32, clamp: ?Box) ![]Coord 
                     chunk_nearest_point_to_planet,
                     chunk_nearest_point_to_planet,
                 ) > surface_reach_squared) continue;
-                // TODO: (CAVES): DELETE THIS SKIP when caves carve the sdf!
                 const chunk_farthest_point_to_planet = @max(@abs(box_min), @abs(box_max));
                 if (nz.vec.dot(
                     chunk_farthest_point_to_planet,
@@ -282,8 +281,12 @@ test "chunk coordinates cover dim cells" {
 }
 
 test "chunk range contains the complete planet density field" {
-    try std.testing.expectEqual(Range{ .min = -1, .max = 0 }, range(18));
-    try std.testing.expectEqual(Range{ .min = -3, .max = 2 }, range(67));
+    for ([_]u32{ 18, 67, 1000 }) |planet_radius| {
+        const span = range(planet_radius);
+        const bound: i32 = @intCast(planet_radius + sdf.noise_amplitude + planet.cell_margin);
+        try std.testing.expect(span.min * dim <= -bound);
+        try std.testing.expect((span.max + 1) * dim > bound);
+    }
 }
 
 test "chunk coords respect the clamp box" {

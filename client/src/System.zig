@@ -386,6 +386,10 @@ fn pollConsole(self: *System, world: *World) !void {
             self.writeStateDump(world, path);
             continue;
         }
+        if (std.mem.eql(u8, line, "!cave")) {
+            flyIntoCave(world);
+            continue;
+        }
         if (std.mem.eql(u8, line, "!ping")) {
             world.controller.ping_requested = true;
             continue;
@@ -403,6 +407,53 @@ fn pollConsole(self: *System, world: *World) !void {
             .reliable,
         );
     }
+}
+
+/// Free camera into the nearest tunnel under the player (dev inspection).
+fn flyIntoCave(world: *World) void {
+    const player = world.getPtr(world.player_id) orelse return;
+    const origin = player.transform.position;
+    const up = nz.vec.normalize(origin);
+    var best: ?nz.Vec3(f32) = null;
+    var best_distance: f32 = std.math.inf(f32);
+    var x: f32 = -60;
+    while (x <= 60) : (x += 3) {
+        var z: f32 = -60;
+        while (z <= 60) : (z += 3) {
+            var depth: f32 = 4;
+            while (depth <= 20) : (depth += 2) {
+                const point = origin + nz.Vec3(f32){ x, 0, z } - nz.vec.scale(up, depth);
+                if (world.planet.sdf(point) < 1.5) continue;
+                if (world.planet.terrain(point) > -3) continue;
+                const distance = nz.vec.length(point - origin);
+                if (distance < best_distance) {
+                    best_distance = distance;
+                    best = point;
+                }
+            }
+        }
+    }
+    const point = best orelse return std.log.info("cave: none within 60 m", .{});
+    const helper: nz.Vec3(f32) = if (@abs(up[1]) < 0.9) .{ 0, 1, 0 } else .{ 1, 0, 0 };
+    const tangent = nz.vec.normalize(nz.vec.cross(up, helper));
+    const bitangent = nz.vec.cross(up, tangent);
+    var view = tangent;
+    var longest: f32 = 0;
+    for (0..16) |sector| {
+        const angle = std.math.tau * @as(f32, @floatFromInt(sector)) / 16;
+        const direction = nz.vec.scale(tangent, @cos(angle)) + nz.vec.scale(bitangent, @sin(angle));
+        var reach: f32 = 0;
+        while (reach < 40 and world.planet.sdf(point + nz.vec.scale(direction, reach)) > 0.5) reach += 0.5;
+        if (reach > longest) {
+            longest = reach;
+            view = direction;
+        }
+    }
+    world.controller.free_camera = true;
+    world.camera.transform.position = point;
+    world.camera.yaw_rotation = .lookAt(view, up);
+    world.camera.pitch = 0;
+    std.log.info("cave: camera at {d:.1} {d:.1} {d:.1}", .{ point[0], point[1], point[2] });
 }
 
 fn writeStateDump(self: *System, world: *World, console_path: []const u8) void {

@@ -3,6 +3,7 @@ const nz = @import("numz");
 const Mesh = @import("Mesh.zig");
 const Chunk = @import("Chunk.zig");
 const Biome = @import("../Biome.zig");
+const sdf = @import("sdf.zig");
 
 const Vec3 = nz.Vec3(f32);
 const Color = [3]f32;
@@ -45,6 +46,7 @@ pub fn appendProps(
         const up = nz.vec.normalize(centroid);
         if (nz.vec.dot(normal, up) < min_flatness) continue;
         if (nz.vec.length(centroid) < water_level) continue;
+        if (@abs(sdf.terrain(centroid, planet_radius)) > Mesh.outer_surface_band) continue;
         if (centroid[1] > 0 and @sqrt(
             centroid[0] * centroid[0] + centroid[2] * centroid[2],
         ) < landing_clear_radius) continue;

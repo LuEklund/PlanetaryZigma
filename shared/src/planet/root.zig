@@ -231,6 +231,11 @@ pub fn sdf(self: *const Planet, position: nz.Vec3(f32)) f32 {
     return sdf_math.sdf(position, self.radiusFloat());
 }
 
+/// Outer surface only, no caves.
+pub fn terrain(self: *const Planet, position: nz.Vec3(f32)) f32 {
+    return sdf_math.terrain(position, self.radiusFloat());
+}
+
 pub fn sample(self: *const Planet, position: nz.Vec3(f32)) f32 {
     return sdf_math.sampled(position, self.radiusFloat());
 }
@@ -246,7 +251,7 @@ pub fn surfacePoint(self: *const Planet, direction: nz.Vec3(f32)) nz.Vec3(f32) {
     var outer: f32 = planet_radius + sdf_math.noise_amplitude + cell_margin;
     for (0..24) |_| {
         const middle = (inner + outer) * 0.5;
-        if (sdf_math.sdf(
+        if (sdf_math.terrain(
             nz.vec.scale(unit_direction, middle),
             planet_radius,
         ) < 0) inner = middle else outer = middle;
@@ -334,9 +339,9 @@ test surfacePoint {
         for (0..50) |_| {
             const direction = nz.vec.randomUnitVector(nz.Vec3(f32), random);
             const point = test_planet.surfacePoint(direction);
-            try std.testing.expect(@abs(sdf_math.sdf(point, radius_float)) < 0.001);
+            try std.testing.expect(@abs(sdf_math.terrain(point, radius_float)) < 0.001);
             const near = test_planet.surfacePointNear(direction, 15, 25, random);
-            try std.testing.expect(@abs(sdf_math.sdf(near, radius_float)) < 0.001);
+            try std.testing.expect(@abs(sdf_math.terrain(near, radius_float)) < 0.001);
         }
     }
 }

@@ -89,3 +89,9 @@ pub const teleporter = struct {
         max_charge: f32 = 100,
     };
 };
+
+test {
+    _ = Planet;
+    _ = @import("planet/sdf.zig");
+    _ = @import("layout.zig");
+}

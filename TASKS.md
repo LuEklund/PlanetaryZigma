@@ -66,7 +66,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] M1 — Mouse sensitivity too fast (friend: slowest = 3×360 per swipe). Now Source/CS scale: 0.022°/count × sens, range 0.1–10, default 2. Built, needs playtest.
 - [x] T1a — Terrain decoration (trees, grass, stones, water).
   - Result: `shared/src/planet/decoration.zig`: per-biome `Props` (chance per flat cell + colors) and `Water` (level, rgba) rows in `Biome.zig`. Props baked into each chunk mesh deterministically per cell (primitives: prism+cone trees, jittered rocks, 3-blade grass); water = terrain quads below the level flattened onto a shell, drawn as a transparent surface of the same mesh. Zero extra draws. No collision on props (walk through trees). Screenshotted all four biomes in the zoo (`pz cmd "radius 124"`). Needs playtest for density/perf.
-- [ ] T1b — Caves. Blocked on Lucas's rulings (see Questions).
+- [x] T1b — Caves.
+  - Result: decision 0013. Gentle tunnels (≤ ~29° floors, tested) in a 24 m band under the surface on r ≥ 100 planets; entrances are ramps where a tunnel surfaces. Spawns/props/water stay on the outer surface; enemies don't path inside yet. `pz cmd "!cave"` puts the camera in the nearest tunnel. Built, needs playtest (walk in/out, enemy behavior, chunk gen cost).
 - [x] P2 — Ping on middle mouse: marks the aimed point/entity for all players (RoR2 ping).
   - Result: new `ping` client packet + `ping` event (protocol bump). Crosshair ray picks the entity nearest screen center (within ~5°) else the terrain hit; every client shows "v <player>: <target>" for 6 s, following the target. Rebindable ("Ping", default middle mouse); mouse "pressed" actions now edge-triggered. `pz cmd "!ping"` pings from the console. Tested solo; needs a multiplayer check. No ping sound (needs asset from Lucas).
 - [x] F2 — Free camera could not move: camera got the blanked wire input. Now gets local input. Built, needs playtest.
@@ -116,7 +117,6 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 
 ## Questions for Lucas
 - C1 Steam Deck: (a) zero code — set a Steam Input default config "Keyboard (WASD) and Mouse" on the Steamworks partner site (gyro/trackpad aim works, UI shows keyboard glyphs); (b) Steam Input API with an action manifest (`game_actions_4891340.vdf`, proper controller glyphs, ~2-3 days, needs partner-site setup); (c) raw gamepad in the Window module (evdev/XInput, your module). Recommend (a) now, (b) before launch. Nothing built; UI already scales to 1280x800.
-- T1b caves: vault `caves-terrain.md` lists 4 rulings needed first: (a) surfacePoint = outer surface forever? (b) band-local vs deep caves? (c) Physics ground-check early-out vs cave gradient? (d) enemies path in caves, or caves are loot/decor? Skipped until you answer.
 - T1a: should trees/rocks get collision? Currently walk-through (cheapest, no server cost). Collision means the server must generate the same props (it doesn't chunk today).
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
