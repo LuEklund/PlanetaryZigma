@@ -291,111 +291,12 @@ pub fn update(
     self.elapsed_time = elapsed_time;
     self.steam_logged_on = self.steam_client.isLoggedOn();
     self.ping_milliseconds = self.steam_client.pingMilliseconds();
-    if (!self.steam_logged_on) {
-        self.server_list.refresh = false;
-        self.server_list.count = 0;
-        if (self.host_intent == .multiplayer and (self.host_state == .requested or self.host_state == .waiting or self.host_state == .hosting)) {
-            std.log.warn("host: steam went offline mid-host, killing server", .{});
-            self.stopHostServer();
-            self.setHostState(.steam_offline);
-        }
-    } else if (self.host_state == .steam_offline) {
-        self.host_intent = .none;
-        self.setHostState(.none);
-    }
+    self.trackSteamOnline();
 
     if (self.host_state == .requested) self.spawnHostServer();
-    if (self.host_state == .waiting) {
-        for (server_dir_candidates) |dir| {
-            var id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-            const id_path = std.fmt.bufPrint(
-                &id_path_buf,
-                "{s}/{s}",
-                .{ dir, shared.SteamNet.Server.server_file_name },
-            ) catch unreachable;
-            var id_buf: [20]u8 = undefined;
-            if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
-                std.log.info("host: read {s} = \"{s}\"", .{ id_path, id_text });
-                self.setHostState(.hosting);
-                std.Io.Dir.cwd().deleteFile(self.io, id_path) catch {};
-                if (std.mem.startsWith(u8, id_text, "local:")) {
-                    const port = std.fmt.parseInt(u16, id_text["local:".len..], 10) catch 0;
-                    if (port == 0) {
-                        std.log.err("host: bad local server file \"{s}\"", .{id_text});
-                    } else if (self.steam_client.server_conn == 0) {
-                        try self.steam_client.connectToLocalServer(port);
-                    }
-                } else if (self.steam_client.server_conn == 0) {
-                    const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
-                    if (server_steam_id == 0) {
-                        std.log.err("host: bad server id file \"{s}\"", .{id_text});
-                    } else {
-                        try self.steam_client.connectToServer(server_steam_id);
-                    }
-                }
-            } else |_| {}
-        }
-        if (self.host_state == .waiting and self.elapsed_time - self.host_state_time > host_wait_timeout_seconds) {
-            std.log.err("host: server never wrote {s} within {d:.0}s; giving up", .{
-                shared.SteamNet.Server.server_file_name,
-                host_wait_timeout_seconds,
-            });
-            self.stopHostServer();
-            self.setHostState(.failed);
-        }
-    }
-
-    if (self.steam_logged_on and self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
-        self.steam_client.browser.list.refresh_state = .request;
-    } else if (self.steam_client.browser.list.refresh_state == .done) {
-        self.server_list.refresh = false;
-        self.steam_client.browser.list.refresh_state = .idle;
-        for (0..self.steam_client.browser.list.count) |i| {
-            self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
-            @memset(&self.server_list.servers[i].id_str, 0);
-            _ = try std.fmt.bufPrint(
-                &self.server_list.servers[i].id_str,
-                "{d}",
-                .{self.server_list.servers[i].steam_id},
-            );
-            std.log.info(
-                "browser server[{d}] my_ver={d} tags=\"{s}\"",
-                .{
-                    i,
-                    shared.net.protocol_version,
-                    std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0),
-                },
-            );
-        }
-        self.server_list.count = self.steam_client.browser.list.count;
-    }
-
-    for (self.steam_client.packets.events.items) |ev| switch (ev) {
-        .connected => |conn| {
-            std.log.info(
-                "host: connected (conn={d}) {d:.2}s after {t}",
-                .{ conn, self.elapsed_time - self.host_state_time, self.host_state },
-            );
-            self.server_conn = conn;
-            self.sent_connect = false;
-        },
-        .disconnected => |conn| {
-            const reached_game = self.server_conn == conn;
-            std.log.warn(
-                "host: disconnected (conn={d}) while phase={t}, reached_game={}",
-                .{ conn, self.phase(), reached_game },
-            );
-            if (reached_game) {
-                self.server_conn = 0;
-                self.sent_connect = false;
-            }
-            if (self.host_state == .waiting or self.host_state == .hosting) {
-                self.stopHostServer();
-                self.setHostState(if (reached_game) .none else .failed);
-            }
-        },
-    };
-    self.steam_client.packets.events.clearRetainingCapacity();
+    if (self.host_state == .waiting) try self.pollHostServer();
+    try self.updateServerList();
+    self.applyConnectionEvents();
 
     if (self.server_conn != 0 and !self.sent_connect) {
         try self.sendConnect(survivor);
@@ -444,6 +345,121 @@ pub fn update(
     self.server_tick_estimate += delta_time / shared.tick_seconds;
     const target = @as(f32, @floatFromInt(self.server_tick_latest)) - self.render_delay_ticks;
     self.server_tick_estimate += (target - self.server_tick_estimate) * 0.1;
+}
+
+fn trackSteamOnline(self: *Network) void {
+    if (!self.steam_logged_on) {
+        self.server_list.refresh = false;
+        self.server_list.count = 0;
+        if (self.host_intent == .multiplayer and (self.host_state == .requested or self.host_state == .waiting or self.host_state == .hosting)) {
+            std.log.warn("host: steam went offline mid-host, killing server", .{});
+            self.stopHostServer();
+            self.setHostState(.steam_offline);
+        }
+    } else if (self.host_state == .steam_offline) {
+        self.host_intent = .none;
+        self.setHostState(.none);
+    }
+}
+
+fn pollHostServer(self: *Network) !void {
+    for (server_dir_candidates) |dir| {
+        var id_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+        const id_path = std.fmt.bufPrint(
+            &id_path_buf,
+            "{s}/{s}",
+            .{ dir, shared.SteamNet.Server.server_file_name },
+        ) catch unreachable;
+        var id_buf: [20]u8 = undefined;
+        if (std.Io.Dir.cwd().readFile(self.io, id_path, &id_buf)) |id_text| {
+            try self.connectFromServerFile(id_path, id_text);
+        } else |_| {}
+    }
+    if (self.host_state == .waiting and self.elapsed_time - self.host_state_time > host_wait_timeout_seconds) {
+        std.log.err("host: server never wrote {s} within {d:.0}s; giving up", .{
+            shared.SteamNet.Server.server_file_name,
+            host_wait_timeout_seconds,
+        });
+        self.stopHostServer();
+        self.setHostState(.failed);
+    }
+}
+
+fn connectFromServerFile(self: *Network, id_path: []const u8, id_text: []const u8) !void {
+    std.log.info("host: read {s} = \"{s}\"", .{ id_path, id_text });
+    self.setHostState(.hosting);
+    std.Io.Dir.cwd().deleteFile(self.io, id_path) catch {};
+    if (std.mem.startsWith(u8, id_text, "local:")) {
+        const port = std.fmt.parseInt(u16, id_text["local:".len..], 10) catch 0;
+        if (port == 0) {
+            std.log.err("host: bad local server file \"{s}\"", .{id_text});
+        } else if (self.steam_client.server_conn == 0) {
+            try self.steam_client.connectToLocalServer(port);
+        }
+    } else if (self.steam_client.server_conn == 0) {
+        const server_steam_id = std.fmt.parseInt(u64, id_text, 10) catch 0;
+        if (server_steam_id == 0) {
+            std.log.err("host: bad server id file \"{s}\"", .{id_text});
+        } else {
+            try self.steam_client.connectToServer(server_steam_id);
+        }
+    }
+}
+
+fn updateServerList(self: *Network) !void {
+    if (self.steam_logged_on and self.server_list.refresh == true and self.steam_client.browser.list.refresh_state == .idle) {
+        self.steam_client.browser.list.refresh_state = .request;
+    } else if (self.steam_client.browser.list.refresh_state == .done) {
+        self.server_list.refresh = false;
+        self.steam_client.browser.list.refresh_state = .idle;
+        for (0..self.steam_client.browser.list.count) |i| {
+            self.server_list.servers[i] = self.steam_client.browser.list.servers[i];
+            @memset(&self.server_list.servers[i].id_str, 0);
+            _ = try std.fmt.bufPrint(
+                &self.server_list.servers[i].id_str,
+                "{d}",
+                .{self.server_list.servers[i].steam_id},
+            );
+            std.log.info(
+                "browser server[{d}] my_ver={d} tags=\"{s}\"",
+                .{
+                    i,
+                    shared.net.protocol_version,
+                    std.mem.sliceTo(self.server_list.servers[i].game_tags[0..], 0),
+                },
+            );
+        }
+        self.server_list.count = self.steam_client.browser.list.count;
+    }
+}
+
+fn applyConnectionEvents(self: *Network) void {
+    for (self.steam_client.packets.events.items) |ev| switch (ev) {
+        .connected => |conn| {
+            std.log.info(
+                "host: connected (conn={d}) {d:.2}s after {t}",
+                .{ conn, self.elapsed_time - self.host_state_time, self.host_state },
+            );
+            self.server_conn = conn;
+            self.sent_connect = false;
+        },
+        .disconnected => |conn| {
+            const reached_game = self.server_conn == conn;
+            std.log.warn(
+                "host: disconnected (conn={d}) while phase={t}, reached_game={}",
+                .{ conn, self.phase(), reached_game },
+            );
+            if (reached_game) {
+                self.server_conn = 0;
+                self.sent_connect = false;
+            }
+            if (self.host_state == .waiting or self.host_state == .hosting) {
+                self.stopHostServer();
+                self.setHostState(if (reached_game) .none else .failed);
+            }
+        },
+    };
+    self.steam_client.packets.events.clearRetainingCapacity();
 }
 
 fn keepChatText(self: *Network, text: []const u8) ?[]const u8 {
