@@ -63,6 +63,16 @@ pub const barrel: Spec = .{
     .currency = 25,
 };
 
+/// RoR2 3D printer: trades one random item of the same tier for its item. Placeholder: pillar.
+pub const printer: Spec = .{
+    .collider = .{
+        .shape = .{ .box = .{ .x = 0.7, .y = 1.2, .z = 0.7 } },
+        .motion = .static,
+        .layer = .moving,
+    },
+    .model = .{ .path = "objects/pillar.glb", .offset = .{ .scale = .{ 0.5, 0.25, 0.5 } }, .loop_clips = null },
+};
+
 /// Placeholder look: the pillar model scaled down (needs a shrine model from Lucas).
 const shrine_model: entity.ModelSpec = .{
     .path = "objects/pillar.glb",

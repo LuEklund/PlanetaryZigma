@@ -1,3 +1,4 @@
+const std = @import("std");
 const shared = @import("shared");
 const system = @import("../System.zig");
 const World = system.World;
@@ -140,7 +141,7 @@ fn updateInteractTarget(
 pub fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
     const entity = world.getPtr(id) orelse return .none;
     return switch (entity.kind) {
-        .lootbox, .barrel, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
+        .lootbox, .barrel, .printer, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
         .teleporter => switch (entity.teleporter.state) {
             .active => .none,
             .completed => if (world.teleport_bosses.items.len > 0) .none else id,
@@ -164,6 +165,7 @@ pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
         .lootbox => try openChest(world, player, target),
         .teleporter => try useTeleporter(world, player, target),
         .item_pickup => pickUp(world, player, target),
+        .printer => printItem(world, player, target),
         .barrel => {
             player.currency += target.currency;
             world.client_updates.appendAssumeCapacity(.{
@@ -184,6 +186,29 @@ pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
         .shrine_chance => try useShrineOfChance(world, player, target),
         else => {},
     }
+}
+
+/// RoR2 3D printer: one random item of the printer's tier (not its own item) becomes its item.
+fn printItem(world: *World, player: *World.Entity, printer: *World.Entity) void {
+    const wanted = printer.item orelse return;
+    const tier = shared.Item.get(wanted).tier;
+    var total: u32 = 0;
+    for (std.enums.values(shared.Item.Kind)) |kind| {
+        if (kind == wanted or shared.Item.get(kind).tier != tier) continue;
+        total += player.inventory.get(kind);
+    }
+    if (total == 0) return announce(world, "You have nothing to trade.");
+    var roll = world.prng.random().uintLessThan(u32, total);
+    const given = for (std.enums.values(shared.Item.Kind)) |kind| {
+        if (kind == wanted or shared.Item.get(kind).tier != tier) continue;
+        const held = player.inventory.get(kind);
+        if (roll < held) break kind;
+        roll -= held;
+    } else unreachable;
+    const left = player.inventory.get(given) - 1;
+    player.inventory.set(given, left);
+    world.client_updates.appendAssumeCapacity(.{ .inventory = .{ .id = player.id, .item_kind = given, .set = left } });
+    _ = items.giveItem(world, player, wanted, 1);
 }
 
 const chance_fail_odds: f32 = 0.45;

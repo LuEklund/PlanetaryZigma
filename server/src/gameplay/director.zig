@@ -27,6 +27,7 @@ const InteractableCard = struct { kind: shared.entity.Kind, cost: f32, weight: u
 const interactable_cards = [_]InteractableCard{
     .{ .kind = .lootbox, .cost = 15, .weight = 24 },
     .{ .kind = .barrel, .cost = 1, .weight = 10 },
+    .{ .kind = .printer, .cost = 25, .weight = 3 },
     .{ .kind = .shrine_chance, .cost = 20, .weight = 4 },
     .{ .kind = .shrine_combat, .cost = 20, .weight = 3 },
     .{ .kind = .shrine_mountain, .cost = 20, .weight = 3 },
@@ -368,7 +369,8 @@ fn populateScene(world: *World) !void {
             nz.vec.normalize(world.planet.surfacePointNear(teleporterPosition(world) orelse .{ 0, 1, 0 }, 5, 12, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        _ = try world.spawn(.{ .kind = card.kind, .transform = world.planet.surfaceTransform(direction, 0.2) });
+        const item: ?shared.Item.Kind = if (card.kind == .printer) shared.Item.rollFromTier(.common, random) else null;
+        _ = try world.spawn(.{ .kind = card.kind, .item = item, .transform = world.planet.surfaceTransform(direction, 0.2) });
     }
 
     const biome = spawnPool(world);

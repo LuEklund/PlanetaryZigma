@@ -14,6 +14,9 @@ Playtest these (built and screenshotted, but not played):
    - Bloorp Lord isn't in the normal spawn pool before stage 3.
    - **Sprint:** Left Ctrl, ×1.45, attacking cancels it.
    - New items: feather (air jump), fungus (heal while standing still).
+   - 3D printers trade a random same-tier item for theirs.
+   - Low-health red screen edges.
+   - Loops (stage 6+) start at night.
    - Enemy bullets have red-violet tracers (unverified in a live fight: enemies never got line of sight during my test).
 4. **Look:**
    - New post chain: bloom + soft tone clip + FXAA. Toggle and slider are in Options → Graphics.
@@ -141,6 +144,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] D4 — Directors like RoR2 (decision 0014): fast/slow wave directors, teleporter director (2× income while charging, 40% handover), teleporter boss director (600·√coeff, champions, Horde of Many fallback), scene director (220 interactable credits → chests at 15, 100·coeff monster credits spread over the planet), "too cheap" reroll, affordable ×6 elites, 40-monster cap, RoR2 card costs + kill gold. Dev: `/boss`, `/directors`. Tested solo: waves arrive, boss spawns. Needs playtest for feel.
 
 ## Needs asset from Lucas
+- Printer model (placeholder: squat pillar). Ideally it shows its item floating on top.
 - Item models + icons: feather, fungus (draw as the default cube / blank icon until then).
 - Shrine model(s) (Combat / Mountain / Chance) — placeholder is the pillar at 0.35 scale.
 - Ping sound (short blip) for P2.

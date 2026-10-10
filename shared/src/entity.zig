@@ -21,6 +21,7 @@ pub const Kind = union(enum) {
     teleporter,
     lootbox,
     barrel,
+    printer,
     shrine_combat,
     shrine_mountain,
     shrine_chance,
