@@ -17,6 +17,8 @@ pub const State = struct {
     slot: Slot = .{ .loop = .idle },
     yaw: f32 = 0,
     spinning: bool = true,
+    /// Thumbnail mode: only the selected subject, no UI, no outline.
+    photo: bool = false,
     planet_radius: u32 = 150,
 };
 
@@ -28,6 +30,8 @@ pub const Command = union(enum) {
     assign_clip: ?u16,
     play_action,
     toggle_spin,
+    focus,
+    toggle_photo,
     set_radius: u32,
 };
 
@@ -70,7 +74,10 @@ fn gridUp(index: usize, planet_radius: u32) nz.Vec3(f32) {
 
 pub fn populate(world: *World, gpa: std.mem.Allocator, state: *const State) !void {
     try world.planet.sync(gpa, state.planet_radius);
-    for (0..kinds.len) |index| try spawn(world, index, gridUp(index, state.planet_radius));
+    for (0..kinds.len) |index| {
+        if (state.photo and index != state.kind_index) continue;
+        try spawn(world, index, gridUp(index, state.planet_radius));
+    }
     const top = surfaceRadius(world, .{ 0, 1, 0 }) + subject_height;
     world.controller.free_camera = true;
     world.camera.free_speed = 12;
@@ -111,6 +118,23 @@ pub fn update(world: *World, state: *State) void {
     }
 }
 
+/// Puts the free camera in front of the selected subject, far enough for its size.
+pub fn focus(world: *World, state: *State) void {
+    state.spinning = false;
+    state.yaw = 0;
+    const subject = world.getPtr(subjectId(state.kind_index)) orelse return;
+    const up = nz.vec.normalize(subject.transform.position);
+    const forward = nz.vec.normalize(shared.math.projectOnPlane(.{ 0, 0, -1 }, up));
+    const size: f32 = switch ((kinds[state.kind_index].collider() orelse return).shape) {
+        .capsule => |capsule| capsule.half_height + capsule.radius,
+        .box => |box| @max(box.x, @max(box.y, box.z)),
+    };
+    const distance = @max(3.5, size * 4.5);
+    world.camera.transform.position = subject.transform.position + nz.vec.scale(forward, distance) + nz.vec.scale(up, distance * 0.35);
+    world.camera.yaw_rotation = .lookAt(nz.vec.scale(forward, -1), up);
+    world.camera.pitch = -0.3;
+}
+
 pub fn selectedId(state: *const State) shared.entity.Id {
     return subjectId(state.kind_index);
 }
@@ -139,7 +163,7 @@ pub const Label = struct { index: u16, name: []const u8, position: nz.Vec3(f32),
 pub const max_labels = kinds.len;
 
 /// Console form of the zoo panel:
-/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `spin`, `radius <n>`, `exit`.
+/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `spin`, `focus`, `photo`, `radius <n>`, `exit`.
 pub fn parseCommand(line: []const u8, models: *const Models, state: *const State) Command {
     var words = std.mem.tokenizeScalar(u8, line, ' ');
     const verb = words.next() orelse return .none;
@@ -147,6 +171,8 @@ pub fn parseCommand(line: []const u8, models: *const Models, state: *const State
     if (std.mem.eql(u8, verb, "exit")) return .exit;
     if (std.mem.eql(u8, verb, "play")) return .play_action;
     if (std.mem.eql(u8, verb, "spin")) return .toggle_spin;
+    if (std.mem.eql(u8, verb, "focus")) return .focus;
+    if (std.mem.eql(u8, verb, "photo")) return .toggle_photo;
     if (std.mem.eql(u8, verb, "radius")) {
         const radius = std.fmt.parseInt(u32, argument, 10) catch return .none;
         return .{ .set_radius = radius };

@@ -105,7 +105,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const player_interact: shared.entity.Id = if (world.getPtr(
         world.player_id,
     )) |player| player.interacting else .none;
-    const zoo_selected: shared.entity.Id = if (system.scene == .zoo) zoo_scene.selectedId(&system.zoo) else .none;
+    const zoo_selected: shared.entity.Id = if (system.scene == .zoo and !system.zoo.photo) zoo_scene.selectedId(&system.zoo) else .none;
     for (world.entities.values()) |*entity| {
         switch (entity.kind) {
             .item_pickup => {

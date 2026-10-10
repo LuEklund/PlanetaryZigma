@@ -26,6 +26,7 @@ const zoo_hud = @import("system/hud/zoo.zig");
 const ping = @import("system/ping.zig");
 const Controller = @import("system/Controller.zig");
 const dump = @import("system/dump.zig");
+const catalog = @import("system/catalog.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
@@ -390,6 +391,10 @@ fn pollConsole(self: *System, world: *World) !void {
     cwd.writeFile(self.io, .{ .sub_path = path, .data = "" }) catch {};
     var lines = std.mem.tokenizeAny(u8, content, "\r\n");
     while (lines.next()) |line| {
+        if (std.mem.eql(u8, line, "!catalog")) {
+            self.writeCatalog(path);
+            continue;
+        }
         if (std.mem.eql(u8, line, "!dump")) {
             self.writeStateDump(world, path);
             continue;
@@ -502,6 +507,17 @@ fn startSteamInput(io: std.Io, gpa: std.mem.Allocator) shared.SteamInput {
     return .start(path);
 }
 
+fn writeCatalog(self: *System, console_path: []const u8) void {
+    var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buffer, "{s}.catalog", .{console_path}) catch return;
+    const buffer = self.gpa.alloc(u8, 256 * 1024) catch return;
+    defer self.gpa.free(buffer);
+    var writer: std.Io.Writer = .fixed(buffer);
+    catalog.write(&writer) catch |err| return std.log.err("catalog: {t}", .{err});
+    std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = writer.buffered() }) catch |err|
+        std.log.err("catalog {s}: {t}", .{ path, err });
+}
+
 fn writeStateDump(self: *System, world: *World, console_path: []const u8) void {
     var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path = std.fmt.bufPrint(&path_buffer, "{s}.state", .{console_path}) catch return;
@@ -566,6 +582,7 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
         .exit => try self.enterScene(world, .menu),
         .select_kind => |index| {
             self.zoo.kind_index = index;
+            if (self.zoo.photo) try self.enterScene(world, .zoo);
         },
         .select_slot => |slot| {
             self.zoo.slot = slot;
@@ -585,6 +602,11 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
             try self.enterScene(world, .zoo);
         },
         .toggle_spin => self.zoo.spinning = !self.zoo.spinning,
+        .focus => zoo_scene.focus(world, &self.zoo),
+        .toggle_photo => {
+            self.zoo.photo = !self.zoo.photo;
+            try self.enterScene(world, .zoo);
+        },
     }
 }
 

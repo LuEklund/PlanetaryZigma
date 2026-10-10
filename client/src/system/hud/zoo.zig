@@ -12,6 +12,7 @@ const row_size: dvui.Size = .{ .w = 220, .h = 30 };
 const panel_width: f32 = 260;
 
 pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo.Command {
+    if (state.photo) return .none;
     const area = style.screen();
     if (gridLabels(state, world, area)) |index| return .{ .select_kind = index };
     var command: zoo.Command = .none;
