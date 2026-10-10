@@ -2,7 +2,7 @@ const std = @import("std");
 const nz = @import("numz");
 const Mesh = @import("Mesh.zig");
 const Chunk = @import("Chunk.zig");
-const Biome = @import("../Biome.zig");
+const PlanetType = @import("../PlanetType.zig");
 const sdf = @import("sdf.zig");
 
 const Vec3 = nz.Vec3(f32);
@@ -34,10 +34,10 @@ pub fn appendProps(
     owned: Chunk.CellRegion,
     normals: []const Vec3,
     planet_radius: f32,
-    biome: *const Biome,
+    planet_type: *const PlanetType,
 ) !void {
-    const props = biome.props;
-    const water_level = if (biome.water) |water| planet_radius + water.level else -std.math.inf(
+    const props = planet_type.props;
+    const water_level = if (planet_type.water) |water| planet_radius + water.level else -std.math.inf(
         f32,
     );
     const cells = chunk.surface_cells;
@@ -132,7 +132,7 @@ fn appendTree(
     frame: Frame,
     random: std.Random,
     shade: f32,
-    props: Biome.Props,
+    props: PlanetType.Props,
 ) !void {
     const height = 3 + random.float(f32) * 3;
     const trunk_height = height * 0.4;

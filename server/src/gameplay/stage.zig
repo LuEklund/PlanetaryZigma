@@ -48,10 +48,10 @@ pub fn loadPlace(
 fn planetRadius(world: *World, place: World.Place) u32 {
     if (place == .ship) return World.ship_planet_radius;
     const base = if (world.dev_mode) shared.Planet.dev_radius_min else shared.Planet.radius_min + (world.stage - 1) * 9;
-    const pools = shared.Biome.stage_pools;
+    const pools = shared.PlanetType.stage_pools;
     const pool = pools[(world.stage - 1) % pools.len];
     const wanted = pool[world.prng.random().uintLessThan(usize, pool.len)];
-    return shared.Biome.radiusFor(wanted, base);
+    return shared.PlanetType.radiusFor(wanted, base);
 }
 
 fn buildShip(world: *World, physics: *Physics) !void {

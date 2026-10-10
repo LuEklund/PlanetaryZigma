@@ -14,7 +14,7 @@ opaque_index_count: u32,
 pub const outer_surface_band: f32 = 1.5;
 
 pub const Vertex = @import("../vertex.zig").StaticVertex;
-const Biome = @import("../Biome.zig");
+const PlanetType = @import("../PlanetType.zig");
 const decoration = @import("decoration.zig");
 
 pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32) !Mesh {
@@ -25,8 +25,8 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
         .max = Chunk.max(chunk.coord),
     };
     const radius_float: f32 = @floatFromInt(planet_radius);
-    const biome = Biome.forRadius(planet_radius);
-    const water_level = if (biome.water) |water| radius_float + water.level else -std.math.inf(f32);
+    const planet_type = PlanetType.forRadius(planet_radius);
+    const water_level = if (planet_type.water) |water| radius_float + water.level else -std.math.inf(f32);
     var water_quads: std.ArrayList([4]nz.Vec3(f32)) = .empty;
     defer water_quads.deinit(gpa);
 
@@ -103,9 +103,9 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
         }
     }
 
-    try decoration.appendProps(gpa, &chunk_mesh, chunk, owned, normals, radius_float, biome);
+    try decoration.appendProps(gpa, &chunk_mesh, chunk, owned, normals, radius_float, planet_type);
     chunk_mesh.opaque_index_count = @intCast(chunk_mesh.indices.items.len);
-    if (biome.water) |water| try decoration.appendWater(
+    if (planet_type.water) |water| try decoration.appendWater(
         gpa,
         &chunk_mesh,
         water_quads.items,
@@ -128,14 +128,14 @@ fn appendVertex(
     uv: [2]f32,
     planet_radius: f32,
 ) !void {
-    const biome = Biome.forRadius(@intFromFloat(planet_radius));
+    const planet_type = PlanetType.forRadius(@intFromFloat(planet_radius));
     const height = nz.vec.length(position);
     const height_fraction = std.math.clamp((height - planet_radius) / 30, 0, 1);
     const up = nz.vec.normalize(position);
     const steepness = std.math.clamp((1 - nz.vec.dot(normal, up) - 0.25) / 0.35, 0, 1);
-    const low_color: nz.Vec3(f32) = biome.low_color;
-    const high_color: nz.Vec3(f32) = biome.high_color;
-    const steep_color: nz.Vec3(f32) = biome.steep_color;
+    const low_color: nz.Vec3(f32) = planet_type.low_color;
+    const high_color: nz.Vec3(f32) = planet_type.high_color;
+    const steep_color: nz.Vec3(f32) = planet_type.steep_color;
     const height_color = nz.vec.scale(
         low_color,
         1 - height_fraction,

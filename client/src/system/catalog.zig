@@ -10,7 +10,7 @@ pub fn write(writer: *std.Io.Writer) !void {
     for (std.enums.values(shared.Elite.Kind)) |kind| if (kind != .none) try elite(writer, kind);
     for (std.enums.values(shared.Item.Kind)) |kind| try item(writer, kind);
     for (interactables) |row| try interactable(writer, row);
-    for (std.enums.values(shared.Biome.Kind)) |kind| try biome(writer, kind);
+    for (std.enums.values(shared.PlanetType.Kind)) |kind| try planet_type(writer, kind);
     for (sounds) |row| try sound(writer, row);
 }
 
@@ -194,11 +194,11 @@ fn interactable(writer: *std.Io.Writer, row: Interactable) !void {
     try writer.writeByte('\n');
 }
 
-fn biome(writer: *std.Io.Writer, kind: shared.Biome.Kind) !void {
-    const row = shared.Biome.forRadius(shared.Biome.radiusFor(kind, 1000));
-    try writer.print("id: biome-{t}\n", .{kind});
+fn planet_type(writer: *std.Io.Writer, kind: shared.PlanetType.Kind) !void {
+    const row = shared.PlanetType.forRadius(shared.PlanetType.radiusFor(kind, 1000));
+    try writer.print("id: planet-{t}\n", .{kind});
     try field(writer, "name", row.name);
-    try writer.print("category: biome\nthumb: biome:{d}\nwhere: shared/src/Biome.zig\n", .{shared.Biome.radiusFor(kind, 124)});
+    try writer.print("category: planet\nthumb: planet:{d}\nwhere: shared/src/PlanetType.zig\n", .{shared.PlanetType.radiusFor(kind, 124)});
     try writer.print("description: props trees {d} rocks {d} grass {d} per flat cell; water {s}\n\n", .{
         row.props.trees,
         row.props.rocks,

@@ -67,7 +67,7 @@ def screenshot(target):
 
 def take_thumbs(records, thumbs, shots):
     if shots:
-        sparse = [r["thumb"][len("biome:"):] for r in records if r.get("id") == "biome-dust"]
+        sparse = [r["thumb"][len("planet:"):] for r in records if r.get("id") == "planet-dust"]
         console("photo")
         if sparse:
             console("radius " + sparse[0])
@@ -88,8 +88,8 @@ def take_thumbs(records, thumbs, shots):
         if source.startswith("zoo:"):
             kind = source[len("zoo:"):]
             console("kind " + kind, "focus")
-        elif source.startswith("biome:"):
-            console("radius " + source[len("biome:"):], "kind teleporter", "focus")
+        elif source.startswith("planet:"):
+            console("radius " + source[len("planet:"):], "kind teleporter", "focus")
             time.sleep(3)
             screenshot(target)
             record["thumb_file"] = target

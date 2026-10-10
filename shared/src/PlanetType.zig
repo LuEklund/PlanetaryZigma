@@ -1,4 +1,4 @@
-const Biome = @This();
+const PlanetType = @This();
 
 const std = @import("std");
 const entity = @import("entity.zig");
@@ -34,7 +34,7 @@ pub const Water = struct {
 };
 
 pub const rows = struct {
-    pub const coral: Biome = .{
+    pub const coral: PlanetType = .{
         .name = "Coral Shelf",
         .field_scale = .{ 1, 1, 1 },
         .frequency_scale = 1,
@@ -69,7 +69,7 @@ pub const rows = struct {
         .water = .{ .level = -1.5, .color = .{ 0.1, 0.55, 0.65, 0.6 } },
     };
 
-    pub const verdant: Biome = .{
+    pub const verdant: PlanetType = .{
         .name = "Verdant Hills",
         .field_scale = .{ 1, 0.5, 0.3 },
         .frequency_scale = 1.3,
@@ -102,7 +102,7 @@ pub const rows = struct {
         .water = .{ .level = -2, .color = .{ 0.15, 0.4, 0.75, 0.6 } },
     };
 
-    pub const frost: Biome = .{
+    pub const frost: PlanetType = .{
         .name = "Frost Spires",
         .field_scale = .{ 0.6, 1, 0.4 },
         .frequency_scale = 1.6,
@@ -135,7 +135,7 @@ pub const rows = struct {
         .water = .{ .level = -2.5, .color = .{ 0.7, 0.85, 0.95, 0.85 } },
     };
 
-    pub const dust: Biome = .{
+    pub const dust: PlanetType = .{
         .name = "Dust Basin",
         .field_scale = .{ 0.4, 0.3, 1 },
         .frequency_scale = 0.8,
@@ -172,8 +172,8 @@ pub const rows = struct {
 
 const row_count: usize = @typeInfo(rows).@"struct".decls.len;
 
-const all: [row_count]Biome = table: {
-    var table: [row_count]Biome = undefined;
+const all: [row_count]PlanetType = table: {
+    var table: [row_count]PlanetType = undefined;
     for (@typeInfo(rows).@"struct".decls, &table) |decl, *slot| {
         slot.* = @field(rows, decl.name);
         for (slot.field_scale) |scale| std.debug.assert(scale >= 0 and scale <= 1);
@@ -192,7 +192,7 @@ pub const Kind = kind: {
     break :kind @Enum(u8, .exhaustive, &names, &values);
 };
 
-/// RoR2-style stage slots: each stage draws its biome from a small pool; after the last slot
+/// RoR2-style stage slots: each stage draws its planet_type from a small pool; after the last slot
 /// the run loops back to the first.
 pub const stage_pools = [_][]const Kind{
     &.{ .verdant, .coral },
@@ -206,11 +206,11 @@ pub fn kindForRadius(planet_radius: u32) Kind {
     return @enumFromInt(std.hash.int(planet_radius) % row_count);
 }
 
-pub fn forRadius(planet_radius: u32) *const Biome {
+pub fn forRadius(planet_radius: u32) *const PlanetType {
     return &all[@intFromEnum(kindForRadius(planet_radius))];
 }
 
-/// The biome travels as the planet radius: the first radius from `base` up whose biome is `wanted`.
+/// The planet_type travels as the planet radius: the first radius from `base` up whose planet_type is `wanted`.
 pub fn radiusFor(wanted: Kind, base: u32) u32 {
     var radius = base;
     while (radius < base + 256) : (radius += 1) {
@@ -219,13 +219,13 @@ pub fn radiusFor(wanted: Kind, base: u32) u32 {
     return base;
 }
 
-pub fn pickEnemy(biome: *const Biome, random: std.Random) ?entity.EnemyKind {
+pub fn pickEnemy(planet_type: *const PlanetType, random: std.Random) ?entity.EnemyKind {
     var total: u32 = 0;
-    for (biome.enemy_weights.values) |weight| total += weight;
+    for (planet_type.enemy_weights.values) |weight| total += weight;
     if (total == 0) return null;
     var pick = random.uintLessThan(u32, total);
     for (std.enums.values(entity.EnemyKind)) |enemy_kind| {
-        const weight = biome.enemy_weights.get(enemy_kind);
+        const weight = planet_type.enemy_weights.get(enemy_kind);
         if (pick < weight) return enemy_kind;
         pick -= weight;
     }

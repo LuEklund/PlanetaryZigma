@@ -8,7 +8,7 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 
 | Package | Builds | Role |
 |---|---|---|
-| `shared/` | module `shared` | The contract both sides compile: wire format (`net.zig`), data rows (`entity.zig` + `entity/` kinds, `Item.zig` items + procs, `Survivor.zig`, `Elite.zig`, `Biome.zig`), pure rule functions (`difficulty.zig`, `daynight.zig`), planet SDF + chunking + nav graph + baked props/water (`planet/`, `planet/decoration.zig`), Steam transport (`SteamNet.zig`, `steamNet/`), hot reload (`HotLib.zig`, `DynLib.zig`, `layout.zig`), fixed-step `Clock.zig`, log fn, tick constants. |
+| `shared/` | module `shared` | The contract both sides compile: wire format (`net.zig`), data rows (`entity.zig` + `entity/` kinds, `Item.zig` items + procs, `Survivor.zig`, `Elite.zig`, `PlanetType.zig` (planet types)), pure rule functions (`difficulty.zig`, `daynight.zig`), planet SDF + chunking + nav graph + baked props/water (`planet/`, `planet/decoration.zig`), Steam transport (`SteamNet.zig`, `steamNet/`), hot reload (`HotLib.zig`, `DynLib.zig`, `layout.zig`), fixed-step `Clock.zig`, log fn, tick constants. |
 | `server/` | `server` exe, `libsystem_server.so` | Authoritative simulation. Host exe is a thin loop; the `.so` owns `System` + `World` and runs network → gameplay → physics → flush → replication. Optional `viewer/` (build option) draws the server world through the renderer. |
 | `client/` | `client` exe, `libsystem_client.so` | Thin host exe; the `.so` replicates server state, runs input/camera/HUD/audio/animation, extracts a `DrawList` for the renderer. Spawns the server process for hosting. |
 | `render/` | `librender.so` + modules `renderer_contract`, `graphics`, `ui`, `Window` | Vulkan 1.3 core renderer (BDA, dynamic rendering) behind a C-ABI `Api` table; asset loading + model manifests (`graphics/`, `ModelRow.zig` ↔ `assets/manifest/<kind>.zon`), dvui backend (`dvui/`), native windowing (`window/`: Wayland, Xlib, Win32, Cocoa). |
@@ -26,7 +26,7 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 | zoo | `client/src/system/zoo.zig`, `hud/zoo.zig` | `zoo.State` on System | `zoo.Command` from the panel or console → writes `assets/manifest/*.zon`; the model watcher applies it |
 | SteamInput | `shared/src/SteamInput.zig` | action handles | names in, `Frame` out; client writes the action manifest from `Controller.actions` |
 | ping | `client/src/system/ping.zig` | — | crosshair → `PingRequest` packet; server echoes a `ping` event; HUD draws `World.pings` |
-| extract | `client/src/system/extract.zig` | — | World → DrawList (incl. sun direction + biome sky from `daynight`/`Biome`) |
+| extract | `client/src/system/extract.zig` | — | World → DrawList (incl. sun direction + planet-type sky from `daynight`/`PlanetType`) |
 | events | `client/src/system/events.zig` | — | server events → audio, particles, World fields |
 | Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources; post chain bloom → composite → FXAA (decision 0015) | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
 | Server host | `server/src/main.zig` | gpa, args, viewer window, `HotLib(system_server)`; loop is `trySwap → systemUpdate` | `server/src/system_contract.zig` `Api` (5 fns) |
@@ -94,7 +94,7 @@ flowchart LR
 | Items (stats, tier, procs, equipment effect) | `shared/src/Item.zig` | `combat`/`procs`/`skills`, HUD |
 | Survivors (base stats, 4 abilities + equipment) | `shared/src/Survivor.zig` | `entity.baseStats` / `entity.abilities` on both sides |
 | Elites (multipliers, granted items, tint) | `shared/src/Elite.zig` | director, `World.spawn`, HUD |
-| Biomes (terrain scales, palette, sky, enemy pool) | `shared/src/Biome.zig` | `planet/sdf.zig`, `planet/Mesh.zig`, director, extract |
+| Planet types (terrain scales, palette, sky, enemy pool) | `shared/src/PlanetType.zig` | `planet/sdf.zig`, `planet/Mesh.zig`, director, extract |
 | Particle effects (shape, ramp, blend) | `render/ParticleEffects.zig` | particle pass |
 
 Decisions: `docs/decisions/0001`–`0009`.

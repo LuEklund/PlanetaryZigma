@@ -2,7 +2,7 @@ const std = @import("std");
 const nz = @import("numz");
 const noise = @import("../noise.zig");
 const Field = @import("Field.zig");
-const Biome = @import("../Biome.zig");
+const PlanetType = @import("../PlanetType.zig");
 
 pub const noise_amplitude = Field.max_height;
 
@@ -56,17 +56,17 @@ fn cave(position: nz.Vec3(f32), planet_radius: f32, depth: f32) f32 {
 pub fn terrain(position: nz.Vec3(f32), planet_radius: f32) f32 {
     const surface_point = nz.vec.scale(nz.vec.normalize(position), planet_radius);
     const height_scale = @min(planet_radius / full_height_radius, 1);
-    const biome = Biome.forRadius(@intFromFloat(planet_radius));
+    const planet_type = PlanetType.forRadius(@intFromFloat(planet_radius));
     var height: f32 = 0;
     inline for (Field.fields, 0..) |field, index| {
         const shift: f32 = @mod(planet_radius * 137, 1024) + @as(f32, @floatFromInt(index)) * 512;
         const sample = nz.vec.scale(
             surface_point,
-            field.frequency * biome.frequency_scale,
+            field.frequency * planet_type.frequency_scale,
         ) + @as(nz.Vec3(f32), @splat(shift));
         height += field.evaluate(
             noise.simplex3(sample[0], sample[1], sample[2]),
-        ) * biome.field_scale[index];
+        ) * planet_type.field_scale[index];
     }
     return nz.vec.length(position) - planet_radius - height * height_scale;
 }

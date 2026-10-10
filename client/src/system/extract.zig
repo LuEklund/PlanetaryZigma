@@ -39,7 +39,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.sun_direction = shared.daynight.sunDirectionForStage(
         if (server_seconds > 0) server_seconds else world.elapsed_time,
         world.stage,
-        shared.Biome.stage_pools.len,
+        shared.PlanetType.stage_pools.len,
     );
     const day = shared.daynight.daylight(list.sun_direction, world.camera.transform.position);
     const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
@@ -55,17 +55,17 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         daylight_color[2] * boss_tint[2],
         1,
     };
-    const biome = shared.Biome.forRadius(world.planet.planet_radius);
+    const planet_type = shared.PlanetType.forRadius(world.planet.planet_radius);
     list.sky_zenith = .{
-        biome.sky_zenith[0] * boss_tint[0],
-        biome.sky_zenith[1] * boss_tint[1],
-        biome.sky_zenith[2] * boss_tint[2],
+        planet_type.sky_zenith[0] * boss_tint[0],
+        planet_type.sky_zenith[1] * boss_tint[1],
+        planet_type.sky_zenith[2] * boss_tint[2],
         1,
     };
     list.sky_horizon = .{
-        biome.sky_horizon[0] * boss_tint[0],
-        biome.sky_horizon[1] * boss_tint[1],
-        biome.sky_horizon[2] * boss_tint[2],
+        planet_type.sky_horizon[0] * boss_tint[0],
+        planet_type.sky_horizon[1] * boss_tint[1],
+        planet_type.sky_horizon[2] * boss_tint[2],
         1,
     };
     list.draw_sky = draw_sky;

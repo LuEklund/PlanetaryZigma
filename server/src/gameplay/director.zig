@@ -183,17 +183,17 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
     const is_boss = kind == .teleporter_boss;
     const instant = tunings.get(kind).instant;
     if (!is_boss and world.enemyCount() >= map_monster_cap) return false;
-    const biome = spawnPool(world);
+    const planet_type = spawnPool(world);
     if (director.wave == null) {
-        const enemy = (if (is_boss) pickBossCard(&biome, director.credits, random) else pickCard(&biome, random)) orelse return false;
-        director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, world.stage > shared.Biome.stage_pools.len, random), .spawned = 0 };
+        const enemy = (if (is_boss) pickBossCard(&planet_type, director.credits, random) else pickCard(&planet_type, random)) orelse return false;
+        director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, world.stage > shared.PlanetType.stage_pools.len, random), .spawned = 0 };
     }
     const wave = &director.wave.?;
     const limit = if (instant) boss_max_spawns else max_per_wave;
     if (wave.spawned >= limit) return false;
     const cost = cardCost(wave.enemy, wave.elite);
     if (director.credits < cost) return false;
-    if (!instant and tooCheap(&biome, wave.enemy, cost, director.credits)) return false;
+    if (!instant and tooCheap(&planet_type, wave.enemy, cost, director.credits)) return false;
 
     const near = if (is_boss) teleporterPosition(world) orelse return false else targetPlayer(world, random) orelse return false;
     const distance: [2]f32 = if (is_boss) .{ 15, 25 } else .{ enemy_min_spawn_distance, enemy_max_spawn_distance + 30 };
@@ -204,9 +204,9 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
     return true;
 }
 
-/// The biome's monster weights, or only the family's members during a family event.
-fn spawnPool(world: *const World) shared.Biome {
-    var pool = shared.Biome.forRadius(world.planet.planet_radius).*;
+/// The planet_type's monster weights, or only the family's members during a family event.
+fn spawnPool(world: *const World) shared.PlanetType {
+    var pool = shared.PlanetType.forRadius(world.planet.planet_radius).*;
     const stages_done = world.stage -| 1;
     for (std.enums.values(EnemyKind)) |enemy| {
         if (spec(enemy).min_stage > stages_done) pool.enemy_weights.set(enemy, 0);
@@ -218,63 +218,63 @@ fn spawnPool(world: *const World) shared.Biome {
 }
 
 /// RoR2: a card is too cheap when credits exceed 6× its cost and a pricier card exists.
-fn tooCheap(biome: *const shared.Biome, enemy: EnemyKind, cost: f32, credits: f32) bool {
+fn tooCheap(planet_type: *const shared.PlanetType, enemy: EnemyKind, cost: f32, credits: f32) bool {
     if (credits <= too_cheap_factor * cost) return false;
-    return baseCost(enemy) < mostExpensive(biome);
+    return baseCost(enemy) < mostExpensive(planet_type);
 }
 
-fn mostExpensive(biome: *const shared.Biome) f32 {
+fn mostExpensive(planet_type: *const shared.PlanetType) f32 {
     var highest: f32 = 0;
     for (std.enums.values(EnemyKind)) |enemy| {
-        if (biome.enemy_weights.get(enemy) == 0) continue;
+        if (planet_type.enemy_weights.get(enemy) == 0) continue;
         highest = @max(highest, baseCost(enemy));
     }
     return highest;
 }
 
-fn pickCard(biome: *const shared.Biome, random: std.Random) ?EnemyKind {
+fn pickCard(planet_type: *const shared.PlanetType, random: std.Random) ?EnemyKind {
     var category_total: u32 = 0;
     for (std.enums.values(Category)) |category| {
-        if (poolWeight(biome, category) > 0) category_total += category_weights.get(category);
+        if (poolWeight(planet_type, category) > 0) category_total += category_weights.get(category);
     }
     if (category_total == 0) return null;
     var roll = random.uintLessThan(u32, category_total);
     for (std.enums.values(Category)) |category| {
-        if (poolWeight(biome, category) == 0) continue;
+        if (poolWeight(planet_type, category) == 0) continue;
         const weight = category_weights.get(category);
-        if (roll < weight) return pickInCategory(biome, category, random);
+        if (roll < weight) return pickInCategory(planet_type, category, random);
         roll -= weight;
     }
     unreachable;
 }
 
 /// Champions first; if none is affordable, any monster (RoR2's "Horde of Many").
-fn pickBossCard(biome: *const shared.Biome, credits: f32, random: std.Random) ?EnemyKind {
-    if (pickInCategory(biome, .champion, random)) |champion| {
+fn pickBossCard(planet_type: *const shared.PlanetType, credits: f32, random: std.Random) ?EnemyKind {
+    if (pickInCategory(planet_type, .champion, random)) |champion| {
         if (baseCost(champion) <= credits) return champion;
     }
     for (0..16) |_| {
-        const enemy = pickCard(biome, random) orelse return null;
+        const enemy = pickCard(planet_type, random) orelse return null;
         if (baseCost(enemy) <= credits) return enemy;
     }
     return null;
 }
 
-fn poolWeight(biome: *const shared.Biome, category: Category) u32 {
+fn poolWeight(planet_type: *const shared.PlanetType, category: Category) u32 {
     var total: u32 = 0;
     for (std.enums.values(EnemyKind)) |enemy| {
-        if (spec(enemy).category == category) total += biome.enemy_weights.get(enemy);
+        if (spec(enemy).category == category) total += planet_type.enemy_weights.get(enemy);
     }
     return total;
 }
 
-fn pickInCategory(biome: *const shared.Biome, category: Category, random: std.Random) ?EnemyKind {
-    const total = poolWeight(biome, category);
+fn pickInCategory(planet_type: *const shared.PlanetType, category: Category, random: std.Random) ?EnemyKind {
+    const total = poolWeight(planet_type, category);
     if (total == 0) return null;
     var roll = random.uintLessThan(u32, total);
     for (std.enums.values(EnemyKind)) |enemy| {
         if (spec(enemy).category != category) continue;
-        const weight = biome.enemy_weights.get(enemy);
+        const weight = planet_type.enemy_weights.get(enemy);
         if (roll < weight) return enemy;
         roll -= weight;
     }
@@ -379,11 +379,11 @@ fn populateScene(world: *World) !void {
         _ = try world.spawn(.{ .kind = card.kind, .item = item, .transform = world.planet.surfaceTransform(direction, 0.2) });
     }
 
-    const biome = spawnPool(world);
+    const planet_type = spawnPool(world);
     var monster_credits = scene_monster_credits * world.difficultyCoefficient();
     var attempts: usize = 0;
     while (attempts < 64 and world.enemyCount() < map_monster_cap) : (attempts += 1) {
-        const enemy = pickCard(&biome, random) orelse return;
+        const enemy = pickCard(&planet_type, random) orelse return;
         const cost = baseCost(enemy);
         if (cost > monster_credits) continue;
         const surface = world.planet.surfacePoint(nz.vec.randomUnitVector(nz.Vec3(f32), random));

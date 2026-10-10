@@ -5,12 +5,12 @@ const World = @import("../World.zig");
 /// Compact text snapshot of the client world for dev tools (`pz state`).
 pub fn write(writer: *std.Io.Writer, world: *World, scene: []const u8, overlay: []const u8) !void {
     const radius = world.planet.planet_radius;
-    try writer.print("scene {s} overlay {s} stage {d} radius {d} biome {s} fps {d:.0} time {d:.1}\n", .{
+    try writer.print("scene {s} overlay {s} stage {d} radius {d} planet {s} fps {d:.0} time {d:.1}\n", .{
         scene,
         overlay,
         world.stage,
         radius,
-        shared.Biome.forRadius(radius).name,
+        shared.PlanetType.forRadius(radius).name,
         world.fps,
         world.elapsed_time,
     });

@@ -145,6 +145,13 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 ### Phase 5 — RoR2 mimic (Lucas 2026-10-10: "mimic a lot, then add our twist")
 - [x] D4 — Directors like RoR2 (decision 0014): fast/slow wave directors, teleporter director (2× income while charging, 40% handover), teleporter boss director (600·√coeff, champions, Horde of Many fallback), scene director (220 interactable credits → chests at 15, 100·coeff monster credits spread over the planet), "too cheap" reroll, affordable ×6 elites, 40-monster cap, RoR2 card costs + kill gold. Dev: `/boss`, `/directors`. Tested solo: waves arrive, boss spawns. Needs playtest for feel.
 
+### Ideas (Lucas 2026-10-10, parked; vault `planet-types-and-events.md`)
+- [ ] E1 — Night event: monsters that only spawn or get stronger in the dark (stay on the sunny side).
+- [ ] E2 — Thunderstorm: lightning strikes with telegraph rings.
+- [ ] E3 — Asteroid impact event.
+- [ ] E4 — Monsters arriving in drop pods.
+- [ ] N1 — Props (trees, rocks) and interactables block pathfinding.
+
 ## Needs asset from Lucas
 - Drone + broken drone models (placeholder: default cube).
 - Printer model (placeholder: squat pillar). Ideally it shows its item floating on top.

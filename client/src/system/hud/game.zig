@@ -148,7 +148,7 @@ fn addTopLeft(world: *World, area: dvui.Rect) void {
 fn rightColumnWidth(world: *World, area: dvui.Rect) f32 {
     var buffer: [96]u8 = undefined;
     const biome_line = std.fmt.bufPrint(&buffer, "{s}  00:00  Lv 99", .{
-        shared.Biome.forRadius(world.planet.planet_radius).name,
+        shared.PlanetType.forRadius(world.planet.planet_radius).name,
     }) catch "";
     const panel_padding: f32 = 24;
     var widest = style.font(22).textSize(biome_line).w;
@@ -214,7 +214,7 @@ fn addRightColumn(world: *World, network: *Network, area: dvui.Rect) void {
         const run_seconds: u32 = @intFromFloat(@mod(world.difficulty.run_seconds, 60));
         const heat = std.math.clamp((world.difficulty.coefficient - 1) / 6, 0, 1);
         dvui.label(@src(), "{s}  {d:0>2}:{d:0>2}  Lv {d:.0}", .{
-            shared.Biome.forRadius(world.planet.planet_radius).name,
+            shared.PlanetType.forRadius(world.planet.planet_radius).name,
             run_minutes,
             run_seconds,
             world.difficulty.level,
@@ -243,7 +243,7 @@ fn addObjective(world: *World) void {
     var panel = sidePanel(@src());
     defer panel.deinit();
     const boss_alive = world.teleporter_bosses.items.len > 0;
-    const stages_per_loop: u32 = shared.Biome.stage_pools.len;
+    const stages_per_loop: u32 = shared.PlanetType.stage_pools.len;
     const loop = (world.stage -| 1) / stages_per_loop;
     if (loop == 0) {
         dvui.label(@src(), "Stage {d}", .{world.stage}, .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) });
