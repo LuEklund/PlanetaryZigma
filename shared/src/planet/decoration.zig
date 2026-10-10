@@ -122,12 +122,8 @@ fn frameAt(base: Vec3, up: Vec3, yaw: f32) Frame {
     const helper: Vec3 = if (@abs(up[1]) < 0.9) .{ 0, 1, 0 } else .{ 1, 0, 0 };
     const tangent = nz.vec.normalize(nz.vec.cross(up, helper));
     const bitangent = nz.vec.cross(up, tangent);
-    return .{
-        .base = base,
-        .up = up,
-        .right = nz.vec.scale(tangent, @cos(yaw)) + nz.vec.scale(bitangent, @sin(yaw)),
-        .forward = nz.vec.scale(bitangent, @cos(yaw)) - nz.vec.scale(tangent, @sin(yaw)),
-    };
+    const right = nz.vec.scale(tangent, @cos(yaw)) + nz.vec.scale(bitangent, @sin(yaw));
+    return .{ .base = base, .up = up, .right = right, .forward = nz.vec.cross(right, up) };
 }
 
 fn appendTree(

@@ -537,6 +537,7 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
             self.zoo.planet_radius = radius;
             try self.enterScene(world, .zoo);
         },
+        .toggle_spin => self.zoo.spinning = !self.zoo.spinning,
         .toggle_grid => {
             self.zoo.grid = !self.zoo.grid;
             self.zoo.distance = if (self.zoo.grid) 60 else 6;

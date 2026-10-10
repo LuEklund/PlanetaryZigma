@@ -18,6 +18,7 @@ pub const State = struct {
     yaw: f32 = 0,
     distance: f32 = 6,
     grid: bool = false,
+    spinning: bool = true,
     planet_radius: u32 = 150,
 };
 
@@ -29,6 +30,7 @@ pub const Command = union(enum) {
     assign_clip: ?u16,
     play_action,
     toggle_grid,
+    toggle_spin,
     set_radius: u32,
 };
 
@@ -86,7 +88,7 @@ fn spawn(world: *World, slot: usize, kind_index: usize, up: nz.Vec3(f32)) !void 
 }
 
 pub fn update(world: *World, state: *State, wheel: f64) void {
-    state.yaw += spin_speed * world.delta_time;
+    if (state.spinning) state.yaw += spin_speed * world.delta_time;
     const max_distance: f32 = if (state.grid) 150 else 80;
     state.distance = std.math.clamp(
         state.distance * std.math.pow(f32, 0.9, @floatCast(wheel)),
@@ -142,7 +144,7 @@ pub const Label = struct { name: []const u8, position: nz.Vec3(f32), selected: b
 pub const max_labels = kinds.len;
 
 /// Console form of the zoo panel:
-/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `grid`, `radius <n>`, `exit`.
+/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `grid`, `spin`, `radius <n>`, `exit`.
 pub fn parseCommand(line: []const u8, models: *const Models, state: *const State) Command {
     var words = std.mem.tokenizeScalar(u8, line, ' ');
     const verb = words.next() orelse return .none;
@@ -150,6 +152,7 @@ pub fn parseCommand(line: []const u8, models: *const Models, state: *const State
     if (std.mem.eql(u8, verb, "exit")) return .exit;
     if (std.mem.eql(u8, verb, "play")) return .play_action;
     if (std.mem.eql(u8, verb, "grid")) return .toggle_grid;
+    if (std.mem.eql(u8, verb, "spin")) return .toggle_spin;
     if (std.mem.eql(u8, verb, "radius")) {
         const radius = std.fmt.parseInt(u32, argument, 10) catch return .none;
         return .{ .set_radius = radius };
