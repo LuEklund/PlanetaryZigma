@@ -25,7 +25,7 @@ pub fn update(self: *Discord, io: std.Io, state: Presence, elapsed_time: f32) vo
     self.next_send_time = elapsed_time + 15;
 
     const details: []const u8 = switch (state.scene) {
-        .menu => "In Menu",
+        .menu, .zoo => "In Menu",
         .game => "On a Planet",
     };
     self.nonce += 1;

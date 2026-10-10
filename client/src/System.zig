@@ -21,6 +21,8 @@ const renderer_contract = @import("renderer_contract");
 const DrawList = renderer_contract.DrawList;
 
 const menu_world = @import("system/menu.zig");
+const zoo_scene = @import("system/zoo.zig");
+const zoo_hud = @import("system/hud/zoo.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
@@ -33,6 +35,7 @@ pub const std_options: std.Options = .{ .logFn = shared.logFn };
 pub const Scene = enum {
     menu,
     game,
+    zoo,
 };
 
 pub const World = @import("World.zig");
@@ -50,6 +53,7 @@ animator: Animator,
 particles: Particle,
 network: Network,
 scene: Scene,
+zoo: zoo_scene.State,
 hud: Hud,
 dvui_backend: DvuiBackend,
 dvui_window: dvui.Window,
@@ -140,6 +144,7 @@ pub fn init(self: *System, data: Init) !void {
     errdefer self.dvui_window.deinit();
     try self.network.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network.deinit();
+    self.zoo = .{};
     try self.enterScene(&self.world, .menu);
     self.auto_ready = false;
     self.console_path = data.console;
@@ -152,8 +157,10 @@ pub fn init(self: *System, data: Init) !void {
             self.network.requestHost(.singleplayer, false);
         } else if (std.mem.eql(u8, autostart, "dev")) {
             self.network.requestHost(.singleplayer, true);
+        } else if (std.mem.eql(u8, autostart, "zoo")) {
+            try self.enterScene(&self.world, .zoo);
         } else std.log.err(
-            "PZ_AUTOSTART: unknown \"{s}\", expected singleplayer, dev or run",
+            "PZ_AUTOSTART: unknown \"{s}\", expected singleplayer, dev, run or zoo",
             .{autostart},
         );
     }
@@ -181,6 +188,7 @@ fn enterScene(self: *System, world: *World, next: Scene) !void {
     switch (next) {
         .menu => try menu_world.populate(world, self.gpa),
         .game => {},
+        .zoo => try zoo_scene.populate(world, self.gpa, &self.zoo),
     }
     self.scene = next;
 }
@@ -217,7 +225,11 @@ fn step(self: *System, world: *World) !void {
     var text_buffer: [1024]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
-    if (self.scene == .menu) menu_world.update(world);
+    switch (self.scene) {
+        .menu => menu_world.update(world),
+        .zoo => zoo_scene.update(world, &self.zoo, self.window.pointer.axis.vertical),
+        .game => {},
+    }
     self.dvui_backend.size = .{
         .w = @floatFromInt(self.window.size.width),
         .h = @floatFromInt(self.window.size.height),
@@ -238,7 +250,9 @@ fn step(self: *System, world: *World) !void {
         &world.options,
         &self.assets,
     );
+    const zoo_command: zoo_scene.Command = if (self.scene == .zoo) zoo_hud.update(&self.zoo, &self.assets.models) else .none;
     _ = try self.dvui_window.end(.{});
+    try self.applyZooCommand(world, zoo_command);
     if (self.auto_ready and world.stage == 0) if (world.getPtr(world.player_id)) |player| {
         if (!player.ready) try self.network.sendCommand(.{ .lobby = .{ .ready = true } }, .reliable);
         self.auto_ready = false;
@@ -252,6 +266,7 @@ fn step(self: *System, world: *World) !void {
             .reliable,
         ),
         .quit => self.request_exit = true,
+        .zoo => try self.enterScene(world, .zoo),
     }
 
     const player_input: shared.net.Input = try self.handleInput(
@@ -279,7 +294,7 @@ fn step(self: *System, world: *World) !void {
         world.chat.input_len = 0;
     }
 
-    const next_scene: Scene = if (self.network.connected()) .game else .menu;
+    const next_scene: Scene = if (self.network.connected()) .game else if (self.scene == .zoo) .zoo else .menu;
     if (next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(
         self.io,
@@ -336,7 +351,7 @@ fn step(self: *System, world: *World) !void {
     );
 }
 
-/// Sends every line of the dev console file as a chat line, then empties the file.
+/// Sends every line of the dev console file as a chat line (zoo: a zoo command), then empties the file.
 fn pollConsole(self: *System, world: *World) !void {
     const path = self.console_path orelse return;
     if (world.elapsed_time < self.console_next_poll) return;
@@ -348,6 +363,10 @@ fn pollConsole(self: *System, world: *World) !void {
     cwd.writeFile(self.io, .{ .sub_path = path, .data = "" }) catch {};
     var lines = std.mem.tokenizeAny(u8, content, "\r\n");
     while (lines.next()) |line| {
+        if (self.scene == .zoo) {
+            try self.applyZooCommand(world, zoo_scene.parseCommand(line, &self.assets.models, &self.zoo));
+            continue;
+        }
         const text = line[0..@min(line.len, shared.max_chat_len)];
         try self.network.sendCommand(.{ .chat = .{ .text_len = @intCast(text.len), .text = text } }, .reliable);
     }
@@ -380,6 +399,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
                 world.chat.input_len = 0;
             },
         },
+        .zoo => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
         .menu => if (self.hud.overlay == .options and world.controller.rebinding_action != null) {
             world.controller.captureBinding(self.window);
         } else if (self.window.keyboard.get(.escape) == .press) {
@@ -393,6 +413,35 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
     player_input.camera_position = world.camera.transform.position;
     player_input.camera_rotation = world.camera.transform.rotation.toVec();
     return player_input;
+}
+
+fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !void {
+    const kind = zoo_scene.kinds[self.zoo.kind_index];
+    switch (command) {
+        .none => {},
+        .exit => try self.enterScene(world, .menu),
+        .select_kind => |index| {
+            self.zoo.kind_index = index;
+            try self.enterScene(world, .zoo);
+        },
+        .select_slot => |slot| {
+            self.zoo.slot = slot;
+            if (slot == .action) self.playZooAction(world);
+        },
+        .assign_clip => |clip| zoo_scene.assign(self.io, &self.assets.models, kind, self.zoo.slot, clip) catch |err|
+            std.log.err("zoo: save manifest: {t}", .{err}),
+        .play_action => self.playZooAction(world),
+    }
+}
+
+fn playZooAction(self: *System, world: *World) void {
+    const action = switch (self.zoo.slot) {
+        .action => |action| action,
+        .loop => return,
+    };
+    const models = &self.assets.models;
+    const clip = models.rig(models.get(zoo_scene.kinds[self.zoo.kind_index])).action_clips.get(action) orelse return;
+    self.animator.playOverlay(zoo_scene.subjectAnimation(world), clip, models);
 }
 
 fn applyOptions(self: *System, world: *World) !void {

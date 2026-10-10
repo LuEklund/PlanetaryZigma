@@ -12,7 +12,7 @@ pub fn update(network: *Network, hud: *Hud, options: *Options) !Request {
     const button_width = std.math.clamp(area.w * 0.2, 260, 360);
     const button_height = std.math.clamp(area.h * 0.048, 36, 46);
     const left = std.math.clamp(area.w * 0.07, 48, 132);
-    const column_height = (button_height + 16) * 5;
+    const column_height = (button_height + 16) * 6;
     const top = @max(28, (area.h - column_height) * 0.5);
     const steam_logged_on = network.steam_logged_on;
     const singleplayer_hosting = network.host_intent == .singleplayer and
@@ -59,6 +59,7 @@ pub fn update(network: *Network, hud: *Hud, options: *Options) !Request {
         )) {
             options.dev_planet = !options.dev_planet;
         }
+        if (style.button(@src(), "Zoo", 0, button_size, false, true)) request = .zoo;
         if (style.button(@src(), "Quit to Desktop", 0, button_size, false, true)) request = .quit;
     }
 

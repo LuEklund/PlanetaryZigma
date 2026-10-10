@@ -111,6 +111,17 @@ pub fn write(row: *const ModelRow, writer: *std.Io.Writer) !void {
     try writer.writeByte('\n');
 }
 
+pub fn save(row: *const ModelRow, io: std.Io, assets_dir: std.Io.Dir, kind: entity.Kind) !void {
+    var path_buffer: [256]u8 = undefined;
+    const path = try filePath(&path_buffer, kind);
+    var buffer: [16 * 1024]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try row.write(&writer);
+    try assets_dir.createDirPath(io, dir_name);
+    try assets_dir.writeFile(io, .{ .sub_path = path, .data = writer.buffered() });
+    std.log.info("saved {s}", .{path});
+}
+
 fn assertNamesMatch(Fields: type, Enum: type) void {
     const fields = @typeInfo(Fields).@"struct".fields;
     const tags = @typeInfo(Enum).@"enum".fields;

@@ -42,6 +42,7 @@ pub const Request = union(enum) {
     none,
     main_menu,
     quit,
+    zoo,
     lobby: shared.net.LobbyCommand,
 };
 
@@ -119,6 +120,7 @@ pub fn update(
     world.damage_events.clearRetainingCapacity();
 
     var request: Request = .none;
+    if (scene == .zoo) return .none;
     if (scene == .menu) {
         request = try main_menu.update(network, hud, options);
         if (hud.overlay == .options) options_menu.update(hud, options, controller);
