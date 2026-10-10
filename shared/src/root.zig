@@ -19,6 +19,7 @@ pub const skill_info = @import("skill_info.zig");
 pub const daynight = @import("daynight.zig");
 pub const DynLib = @import("DynLib.zig").DynLib;
 pub const SteamNet = @import("SteamNet.zig");
+pub const SteamInput = @import("SteamInput.zig");
 
 pub const Item = @import("Item.zig");
 pub const Inventory = Item.Inventory;

@@ -24,6 +24,7 @@ const menu_world = @import("system/menu.zig");
 const zoo_scene = @import("system/zoo.zig");
 const zoo_hud = @import("system/hud/zoo.zig");
 const ping = @import("system/ping.zig");
+const Controller = @import("system/Controller.zig");
 const dump = @import("system/dump.zig");
 
 pub const Chat = @import("system/Chat.zig");
@@ -55,6 +56,8 @@ animator: Animator,
 particles: Particle,
 network: Network,
 scene: Scene,
+steam_input: shared.SteamInput,
+pad: shared.SteamInput.Frame,
 zoo: zoo_scene.State,
 hud: Hud,
 dvui_backend: DvuiBackend,
@@ -151,6 +154,8 @@ pub fn init(self: *System, data: Init) !void {
     try self.network.init(data.gpa, data.io, data.log_connection_status);
     errdefer self.network.deinit();
     self.zoo = .{};
+    self.pad = .{};
+    self.steam_input = startSteamInput(data.io, data.gpa);
     try self.enterScene(&self.world, .menu);
     self.auto_ready = false;
     self.console_path = data.console;
@@ -223,6 +228,7 @@ fn step(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     world.planet.clearOutboxes();
+    self.pad = self.steam_input.poll(&Controller.pad_names);
     const options_were_open = self.hud.overlay == .options;
     defer if (options_were_open and self.hud.overlay != .options) Settings.save(self.io, .{
         .options = world.options,
@@ -356,10 +362,12 @@ fn step(self: *System, world: *World) !void {
     motion.evaluate(world, server_time);
 
     try self.applyOptions(world);
-    const look_delta: @Vector(2, f64) = switch (self.window.pointer.movement) {
-        .relative => |relative| if (world.chat.open) .{ 0, 0 } else .{ relative.dx, relative.dy },
+    const mouse_delta: @Vector(2, f64) = switch (self.window.pointer.movement) {
+        .relative => |relative| .{ relative.dx, relative.dy },
         .position => .{ 0, 0 },
     };
+    const pad_delta: @Vector(2, f64) = .{ self.pad.look[0], self.pad.look[1] };
+    const look_delta: @Vector(2, f64) = if (world.chat.open) .{ 0, 0 } else mouse_delta + pad_delta;
     if (self.hud.overlay == .none) world.camera.update(
         world,
         &world.options,
@@ -456,6 +464,24 @@ fn flyIntoCave(world: *World) void {
     std.log.info("cave: camera at {d:.1} {d:.1} {d:.1}", .{ point[0], point[1], point[2] });
 }
 
+const steam_input_manifest = "steam_input_manifest.vdf";
+
+/// Writes the action manifest next to the exe's cwd and hands its absolute path to Steam Input.
+fn startSteamInput(io: std.Io, gpa: std.mem.Allocator) shared.SteamInput {
+    var buffer: [8 * 1024]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    shared.SteamInput.writeManifest(&writer, &Controller.pad_names, &Controller.pad_titles) catch return .off;
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = steam_input_manifest, .data = writer.buffered() }) catch |err| {
+        std.log.warn("steam input manifest: {t}", .{err});
+        return .off;
+    };
+    const cwd = std.process.currentPathAlloc(io, gpa) catch return .off;
+    defer gpa.free(cwd);
+    const path = std.fmt.allocPrintSentinel(gpa, "{s}/{s}", .{ cwd, steam_input_manifest }, 0) catch return .off;
+    defer gpa.free(path);
+    return .start(path);
+}
+
 fn writeStateDump(self: *System, world: *World, console_path: []const u8) void {
     var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path = std.fmt.bufPrint(&path_buffer, "{s}.state", .{console_path}) catch return;
@@ -477,7 +503,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
                 } else {
                     if (self.window.keyboard.get(Chat.open_key) == .press) world.chat.open = true;
                     if (self.window.keyboard.get(.escape) == .press) self.hud.overlay = .pause;
-                    if (world.stage != 0) player_input = world.controller.update(self.window);
+                    if (world.stage != 0) player_input = world.controller.update(self.window, self.pad);
                 }
             },
             .pause => if (self.window.keyboard.get(.escape) == .press) {

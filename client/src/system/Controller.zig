@@ -86,6 +86,33 @@ pub const bindable: std.EnumArray(ActionKind, ?[]const u8) = table: {
 
 pub const Bindings = std.EnumArray(ActionKind, Binding);
 
+const stick_actions = [_]@EnumLiteral(){ .move_forward, .move_backward, .move_left, .move_right };
+
+/// Bindable actions except movement (that is the stick), in Steam Input button order.
+pub const pad_actions: []const ActionKind = &pad_actions_array;
+const pad_actions_array = list: {
+    var list: [actions.len]ActionKind = undefined;
+    var count: usize = 0;
+    for (actions, 0..) |action, index| {
+        if (action.bindable == null) continue;
+        if (std.mem.indexOfScalar(@EnumLiteral(), &stick_actions, action.id) != null) continue;
+        list[count] = @enumFromInt(index);
+        count += 1;
+    }
+    break :list list[0..count].*;
+};
+pub const pad_names: [pad_actions.len][:0]const u8 = names: {
+    var names: [pad_actions.len][:0]const u8 = undefined;
+    for (pad_actions, &names) |action, *name| name.* = @tagName(action);
+    break :names names;
+};
+pub const pad_titles: [pad_actions.len][]const u8 = titles: {
+    var titles: [pad_actions.len][]const u8 = undefined;
+    for (pad_actions, &titles) |action, *title| title.* = bindable.get(action).?;
+    break :titles titles;
+};
+const stick_deadzone: f32 = 0.3;
+
 pub const default_bindings: Bindings = bindings: {
     var table: Bindings = .initFill(.none);
     for (actions, 0..) |action, i| table.set(@enumFromInt(i), action.default);
@@ -98,11 +125,12 @@ rebinding_fresh: bool = false,
 previous_buttons: Window.Pointer.Buttons = .{},
 held_buttons: Window.Pointer.Buttons = .{},
 ping_requested: bool = false,
+pad_previous: std.bit_set.IntegerBitSet(shared.SteamInput.max_buttons) = .initEmpty(),
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 cooldown: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
 
-pub fn update(self: *Controller, window: *const Window) shared.net.Input {
+pub fn update(self: *Controller, window: *const Window, pad: shared.SteamInput.Frame) shared.net.Input {
     var new_player_inputs: shared.net.Input = .{};
 
     for (std.enums.values(ActionKind)) |action| {
@@ -134,8 +162,27 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
         }
     }
     self.held_buttons = window.pointer.buttons;
+    self.applyPad(&new_player_inputs, pad);
 
     return new_player_inputs;
+}
+
+/// Controller input on top of keyboard/mouse: it can only add presses, never release a held key.
+fn applyPad(self: *Controller, inputs: *shared.net.Input, pad: shared.SteamInput.Frame) void {
+    defer self.pad_previous = pad.held;
+    if (!pad.connected) return;
+    for (pad_actions, 0..) |action, index| {
+        const down = pad.held.isSet(index);
+        const pressed = switch (actions[@intFromEnum(action)].behavior) {
+            .held => down,
+            .pressed => down and !self.pad_previous.isSet(index),
+        };
+        if (pressed) self.applyAction(inputs, action, true);
+    }
+    if (pad.move[1] > stick_deadzone) inputs.keys.move_forward = true;
+    if (pad.move[1] < -stick_deadzone) inputs.keys.move_backward = true;
+    if (pad.move[0] > stick_deadzone) inputs.keys.move_right = true;
+    if (pad.move[0] < -stick_deadzone) inputs.keys.move_left = true;
 }
 
 fn applyAction(
