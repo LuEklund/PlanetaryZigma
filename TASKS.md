@@ -62,6 +62,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   Master Volume slider (Options → Audio). Music/sfx split waits for separate buses. Not saved yet (S1). Built, needs playtest.
 - [x] M1 — Mouse sensitivity too fast (friend: slowest = 3×360 per swipe). Now Source/CS scale: 0.022°/count × sens, range 0.1–10, default 2. Built, needs playtest.
 - [ ] T1 — More terrain detail: caves + decoration (trees, grass, stones, water). Vault: `caves-terrain.md`, `surface-nets.md`. Trees/stones = placeholder primitives until Lucas has models.
+- [ ] P2 — Ping on middle mouse: marks the aimed point/entity for all players (RoR2 ping).
+- [x] F2 — Free camera could not move: camera got the blanked wire input. Now gets local input. Built, needs playtest.
 - [ ] C1 — Steam Deck / gamepad support (Steam Input).
 - [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
 - [ ] R1 — Zig style guide pass (langref "Style Guide"): lines ≤ ~100, lists > 2 one per line with trailing comma, flat functions with early return (max ~3 nesting levels), no Manager/Data/Context/State/utils in type names, TitleCase files only with fields. Order: renames (mechanical commit) → flatten deepest files (server NetworkManager, gltf) → wrap long lines file by file.
