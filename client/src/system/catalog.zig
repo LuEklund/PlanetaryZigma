@@ -58,7 +58,7 @@ const sounds = [_]Sound{
 fn sound(writer: *std.Io.Writer, row: Sound) !void {
     try writer.print("id: {s}-{s}\nname: {s}\ncategory: {s}\nthumb: none\n", .{ row.category, row.slot, row.file, row.category });
     try field(writer, "description", row.when);
-    try writer.print("file: sounds/{s}\n\n", .{row.file});
+    try writer.print("file: sounds/{s}\nwhere: assets/sounds/{s}\n\n", .{ row.file, row.file });
 }
 
 const Interactable = struct { kind: entity.Kind, name: []const u8, description: []const u8 };
@@ -75,6 +75,25 @@ const interactables = [_]Interactable{
     .{ .kind = .shrine_mountain, .name = "Shrine of the Mountain", .description = "Free; the teleporter boss gets twice the budget and drops twice the items." },
     .{ .kind = .shrine_chance, .name = "Shrine of Chance", .description = "Pay gold; 45% nothing (price rises), otherwise an item." },
 };
+
+/// Where this kind's model goes: its current file, or `objects/<name>.glb` for a placeholder.
+fn modelPath(kind: entity.Kind) []const u8 {
+    const model = kind.spec().model orelse return placeholderPath(kind);
+    const shared_placeholders = [_][]const u8{ "", "objects/pillar.glb", "objects/lootbox.glb", "objects/chest.glb" };
+    for (shared_placeholders) |placeholder| {
+        if (std.mem.eql(u8, model.path, placeholder) and kind != .teleporter and kind != .lootbox) return placeholderPath(kind);
+    }
+    return model.path;
+}
+
+fn placeholderPath(kind: entity.Kind) []const u8 {
+    return switch (kind) {
+        .enemy => |enemy| switch (enemy) {
+            inline else => |tag| "objects/" ++ @tagName(tag) ++ ".glb",
+        },
+        inline else => |_, tag| "objects/" ++ @tagName(tag) ++ ".glb",
+    };
+}
 
 fn field(writer: *std.Io.Writer, key: []const u8, value: []const u8) !void {
     try writer.print("{s}: ", .{key});
@@ -112,6 +131,7 @@ fn survivor(writer: *std.Io.Writer, kind: shared.Survivor.Kind) !void {
     try field(writer, "name", row.name);
     try field(writer, "category", "survivor");
     try field(writer, "thumb", "zoo:player");
+    try writer.print("where: assets/{s}\n", .{modelPath(.player)});
     try field(writer, "description", row.description);
     try stats(writer, &row.base_stats);
     try abilities(writer, &row.abilities);
@@ -129,6 +149,7 @@ fn monster(writer: *std.Io.Writer, kind: entity.EnemyKind) !void {
     });
     try stats(writer, &spec.base_stats);
     try abilities(writer, &spec.skills);
+    try writer.print("where: assets/{s}\n", .{modelPath(.{ .enemy = kind })});
     const model = spec.model orelse return writer.writeAll("needs: model\n\n");
     if (model.path.len == 0) try writer.writeAll("needs: model\n");
     try writer.writeByte('\n');
@@ -138,7 +159,7 @@ fn elite(writer: *std.Io.Writer, kind: shared.Elite.Kind) !void {
     const row = shared.Elite.get(kind);
     try writer.print("id: elite-{t}\n", .{kind});
     try field(writer, "name", row.name);
-    try writer.print("category: elite\nthumb: none\n", .{});
+    try writer.print("category: elite\nthumb: none\nwhere: shared/src/Elite.zig\n", .{});
     try writer.print("description: tier {d} elite: x{d} health, x{d} damage, x{d} cost; grants", .{
         row.tier,
         row.health_multiplier,
@@ -154,6 +175,7 @@ fn item(writer: *std.Io.Writer, kind: shared.Item.Kind) !void {
     try writer.print("id: item-{t}\nname: {t}\n", .{ kind, kind });
     try writer.print("category: {s}\n", .{if (row.is_equipment) "equipment" else "item"});
     try writer.print("thumb: icon:{s}\n", .{shared.Item.icon_paths[@intFromEnum(kind)]});
+    try writer.print("where: assets/{s}, assets/{s}\n", .{ shared.Item.model_paths[@intFromEnum(kind)], shared.Item.icon_paths[@intFromEnum(kind)] });
     try field(writer, "description", row.description);
     try writer.print("stats: tier {t}\n", .{row.tier});
     try writer.print("needs: model {s}, icon {s}\n\n", .{ shared.Item.model_paths[@intFromEnum(kind)], shared.Item.icon_paths[@intFromEnum(kind)] });
@@ -162,7 +184,7 @@ fn item(writer: *std.Io.Writer, kind: shared.Item.Kind) !void {
 fn interactable(writer: *std.Io.Writer, row: Interactable) !void {
     try writer.print("id: interactable-{t}\n", .{row.kind});
     try field(writer, "name", row.name);
-    try writer.print("category: interactable\nthumb: zoo:{t}\n", .{row.kind});
+    try writer.print("category: interactable\nthumb: zoo:{t}\nwhere: assets/{s}\n", .{ row.kind, modelPath(row.kind) });
     try field(writer, "description", row.description);
     const spec = row.kind.spec();
     if (spec.currency != 0) try writer.print("stats: base price {d}\n", .{spec.currency});
@@ -176,7 +198,7 @@ fn biome(writer: *std.Io.Writer, kind: shared.Biome.Kind) !void {
     const row = shared.Biome.forRadius(shared.Biome.radiusFor(kind, 1000));
     try writer.print("id: biome-{t}\n", .{kind});
     try field(writer, "name", row.name);
-    try writer.print("category: biome\nthumb: biome:{d}\n", .{shared.Biome.radiusFor(kind, 124)});
+    try writer.print("category: biome\nthumb: biome:{d}\nwhere: shared/src/Biome.zig\n", .{shared.Biome.radiusFor(kind, 124)});
     try writer.print("description: props trees {d} rocks {d} grass {d} per flat cell; water {s}\n\n", .{
         row.props.trees,
         row.props.rocks,

@@ -112,14 +112,14 @@ def misc_records():
     section = tasks.split("## Needs asset from Lucas", 1)[1].split("\n## ", 1)[0]
     for line in section.splitlines():
         if line.startswith("- "):
-            records.append({"name": line[2:].strip(), "category": "misc", "description": "Asset request (TASKS.md)"})
+            records.append({"name": line[2:].strip(), "category": "misc", "description": "Asset request (TASKS.md)", "where": "TASKS.md"})
     for line in tasks.splitlines():
         if line.startswith("- [ ] "):
             name = line[6:].split(" — ", 1)[0].strip()
-            records.append({"name": name, "category": "misc", "description": line[6:].strip()[:400]})
+            records.append({"name": name, "category": "misc", "description": line[6:].strip()[:400], "where": "TASKS.md"})
     for line in open(os.path.join(ROOT, "docs", "lucas-approval.md"), encoding="utf-8"):
         if line.startswith("- [ ] "):
-            records.append({"name": line[6:].strip(), "category": "text", "description": "Player-facing text (docs/lucas-approval.md)"})
+            records.append({"name": line[6:].strip(), "category": "text", "description": "Player-facing text (docs/lucas-approval.md)", "where": "docs/lucas-approval.md"})
     for record in records:
         slug = re.sub(r"[^a-z0-9]+", "-", record["name"].lower()).strip("-")[:48]
         record["id"] = record["category"] + "-" + slug
@@ -145,8 +145,8 @@ def existing_state(path):
 
 
 def write_note(notes, record):
-    path = os.path.join(notes, record["id"] + ".md")
-    state = existing_state(path)
+    note_path = os.path.join(notes, record["id"] + ".md")
+    state = existing_state(note_path)
     thumb = ""
     if record.get("thumb_file"):
         thumb = "[[" + os.path.relpath(record["thumb_file"], VAULT_ROOT) + "]]"
@@ -159,15 +159,24 @@ def write_note(notes, record):
     if record.get("file"):
         exists = os.path.exists(os.path.join(ROOT, "assets", record["file"]))
         record["needs"] = "" if exists else "sound file assets/" + record["file"]
-    for key in ("description", "stats", "abilities", "file", "needs"):
+    asset_paths = [where.strip() for where in record.get("where", "").split(",") if where.strip()]
+    if asset_paths:
+        record["folder"] = "file://" + os.path.dirname(os.path.join(ROOT, asset_paths[0]))
+    for key in ("description", "stats", "abilities", "file", "where", "folder", "needs"):
         if record.get(key):
             lines.append(key + ": " + yaml_string(record[key]))
     lines.append("---")
     if thumb:
         lines.append("!" + thumb)
+    for asset_path in asset_paths:
+        absolute = os.path.join(ROOT, asset_path)
+        state_word = "exists" if os.path.exists(absolute) else "missing, put it here"
+        lines.append(f"- [{asset_path}](file://{absolute}) ({state_word}) · [open folder](file://{os.path.dirname(absolute)})")
     lines.append("")
     lines.append("## My notes" + state["notes"].rstrip("\n") + "\n" if state["notes"].strip() else "## My notes\n")
-    with open(path, "w", encoding="utf-8") as file:
+    if os.path.commonpath([os.path.realpath(note_path), os.path.realpath(notes)]) != os.path.realpath(notes):
+        sys.exit("refusing to write outside the board: " + note_path)
+    with open(note_path, "w", encoding="utf-8") as file:
         file.write("\n".join(lines))
 
 
@@ -193,6 +202,10 @@ properties:
     displayName: Needs
   note.file:
     displayName: File
+  note.where:
+    displayName: Where
+  note.folder:
+    displayName: Open folder
 views:
   - type: cards
     name: To approve
@@ -210,6 +223,8 @@ views:
       - stats
       - abilities
       - needs
+      - where
+      - folder
     image: note.thumb
     imageAspectRatio: 1
     cardSize: 260
@@ -226,6 +241,8 @@ views:
       - stats
       - abilities
       - needs
+      - where
+      - folder
     image: note.thumb
     imageAspectRatio: 1
     cardSize: 260
@@ -257,6 +274,8 @@ views:
       - approved
       - description
       - needs
+      - where
+      - folder
   - type: table
     name: Ship gate (everything not approved)
     filters:
@@ -267,6 +286,8 @@ views:
       - category
       - status
       - needs
+      - where
+      - folder
 """
 
 
