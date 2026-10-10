@@ -24,6 +24,7 @@ const menu_world = @import("system/menu.zig");
 const zoo_scene = @import("system/zoo.zig");
 const zoo_hud = @import("system/hud/zoo.zig");
 const ping = @import("system/ping.zig");
+const dump = @import("system/dump.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
@@ -369,7 +370,7 @@ fn step(self: *System, world: *World) !void {
 }
 
 /// Runs every line of the dev console file, then empties it:
-/// `!ping`, a zoo command in the zoo, else a chat line.
+/// `!dump` (state to `<console>.state`), `!ping`, a zoo command in the zoo, else a chat line.
 fn pollConsole(self: *System, world: *World) !void {
     const path = self.console_path orelse return;
     if (world.elapsed_time < self.console_next_poll) return;
@@ -381,6 +382,10 @@ fn pollConsole(self: *System, world: *World) !void {
     cwd.writeFile(self.io, .{ .sub_path = path, .data = "" }) catch {};
     var lines = std.mem.tokenizeAny(u8, content, "\r\n");
     while (lines.next()) |line| {
+        if (std.mem.eql(u8, line, "!dump")) {
+            self.writeStateDump(world, path);
+            continue;
+        }
         if (std.mem.eql(u8, line, "!ping")) {
             world.controller.ping_requested = true;
             continue;
@@ -398,6 +403,16 @@ fn pollConsole(self: *System, world: *World) !void {
             .reliable,
         );
     }
+}
+
+fn writeStateDump(self: *System, world: *World, console_path: []const u8) void {
+    var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buffer, "{s}.state", .{console_path}) catch return;
+    var buffer: [8 * 1024]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    dump.write(&writer, world, @tagName(self.scene), @tagName(self.hud.overlay)) catch {};
+    std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = writer.buffered() }) catch |err|
+        std.log.err("dump {s}: {t}", .{ path, err });
 }
 
 fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Input {

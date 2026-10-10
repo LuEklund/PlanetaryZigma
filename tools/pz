@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pz build | reload | run [menu|dev|singleplayer|run|zoo] | shot [out.png] [scale] | log [pattern] | cmd "/command" | kill
+# pz build | reload | run [menu|dev|singleplayer|run|zoo] | shot [out.png] [scale] | log [pattern] | cmd "/command" | state | kill
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 logfile="${PZ_LOG:-/tmp/pz-client.log}"
@@ -46,6 +46,10 @@ case "${1:-}" in
     cmd)
         shift; printf '%s\n' "$@" >>"$console"; sleep 1
         grep -a "chat server:" "$logfile" | tail -n "$#" ;;
+    state)
+        rm -f "$console.state"; printf '!dump\n' >>"$console"
+        for _ in $(seq 1 20); do [ -s "$console.state" ] && break; sleep 0.1; done
+        cat "$console.state" 2>/dev/null || echo "no state (game not running?)" ;;
     kill)
         pkill -x client || true; pkill -x server || true ;;
     *) sed -n 2p "$0"; exit 1 ;;
