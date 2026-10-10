@@ -24,15 +24,16 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 | Hud | `client/src/system/Hud.zig`, `hud/` | screen/overlay state, UI context, damage popups | returns `Hud.Request` |
 | Settings | `client/src/Settings.zig` | — | `settings.zon` ↔ Options + keybinds (load at init, save when Options closes) |
 | zoo | `client/src/system/zoo.zig`, `hud/zoo.zig` | `zoo.State` on System | `zoo.Command` from the panel or console → writes `assets/manifest/*.zon`; the model watcher applies it |
+| SteamInput | `shared/src/SteamInput.zig` | action handles | names in, `Frame` out; client writes the action manifest from `Controller.actions` |
 | ping | `client/src/system/ping.zig` | — | crosshair → `PingRequest` packet; server echoes a `ping` event; HUD draws `World.pings` |
 | extract | `client/src/system/extract.zig` | — | World → DrawList (incl. sun direction + biome sky from `daynight`/`Biome`) |
 | events | `client/src/system/events.zig` | — | server events → audio, particles, World fields |
-| Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
+| Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources; post chain bloom → composite → FXAA (decision 0015) | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
 | Server host | `server/src/main.zig` | gpa, args, viewer window, `HotLib(system_server)`; loop is `trySwap → systemUpdate` | `server/src/system_contract.zig` `Api` (5 fns) |
 | Server System | `server/src/System.zig` | server `World`, fixed-step `Clock` + tick counter, Network, Physics, Viewer | World |
 | Server World | `server/src/World.zig` | entities, players, spawn/despawn queues, physics command + impact queues, client_updates outbox, director, planet, navmesh, stage | `flush(physics)` is the one drain |
 | Physics | `server/src/system/Physics.zig` | box3d world | `physics_commands` in, `impacts` out |
-| gameplay | `server/src/gameplay/`: `combat` (one damage door), `procs` (item procs), `skills` (one resolve per skill kind), `enemies` (one function per behavior), `director` (credits, biome pool, elites, run timer), `stage`, `projectiles`, `items`, `teleporter`, `players`, `lobby` | — | free functions over `*World` (+ `*Physics` where they spawn bodies or raycast) |
+| gameplay | `server/src/gameplay/`: `combat` (one damage door), `procs` (item procs), `skills` (one resolve per skill kind), `enemies` (one function per behavior), `director` (RoR2 fast/slow/teleporter/boss/shrine directors, scene director, family events, run timer — decision 0014), `stage`, `projectiles`, `items`, `teleporter`, `players`, `lobby` | — | free functions over `*World` (+ `*Physics` where they spawn bodies or raycast) |
 | PlayerController | `server/src/gameplay/PlayerController.zig` | — | input → physics commands, interact, skills, dev keys |
 | Navmesh | `server/src/system/Navmesh.zig` | flow field + worker thread | `direction()` queries |
 | Server Network | `server/src/system/Network.zig` | Steam server, client table, motion dedup | `client_updates` + `spawned` → wire |
