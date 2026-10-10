@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Builds the Obsidian asset board: one note per asset (+ thumbnail) and Board.base.
+"""Builds Lucas's TODO board in Obsidian: one note per asset, sound, text or task
+(+ thumbnail) and "Lucas TODO.base".
 
 Usage: tools/asset_board.py [--no-shots] [--vault DIR]
 Needs the game running in the zoo (`tools/pz run zoo`) unless --no-shots and a catalog exists.
@@ -14,7 +15,7 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONSOLE = os.environ.get("PZ_CONSOLE", "/tmp/pz-console")
-DEFAULT_VAULT = os.path.expanduser("~/Obsidian/Projects/PlanetaryZigma/Assets")
+DEFAULT_VAULT = os.path.expanduser("~/Obsidian/Projects/PlanetaryZigma/Lucas TODO")
 VAULT_ROOT = os.path.expanduser("~/Obsidian")
 SHOT_SETTLE = 1.6
 
@@ -155,7 +156,10 @@ def write_note(notes, record):
     lines.append("approved: " + state["approved"])
     lines.append("status: " + state["status"])
     lines.append("thumb: " + yaml_string(thumb))
-    for key in ("description", "stats", "abilities", "needs"):
+    if record.get("file"):
+        exists = os.path.exists(os.path.join(ROOT, "assets", record["file"]))
+        record["needs"] = "" if exists else "sound file assets/" + record["file"]
+    for key in ("description", "stats", "abilities", "file", "needs"):
         if record.get(key):
             lines.append(key + ": " + yaml_string(record[key]))
     lines.append("---")
@@ -169,7 +173,7 @@ def write_note(notes, record):
 
 BOARD = """filters:
   and:
-    - file.inFolder("Projects/PlanetaryZigma/Assets/notes")
+    - file.inFolder("Projects/PlanetaryZigma/Lucas TODO/notes")
 properties:
   note.name:
     displayName: Name
@@ -187,6 +191,8 @@ properties:
     displayName: Abilities
   note.needs:
     displayName: Needs
+  note.file:
+    displayName: File
 views:
   - type: cards
     name: To approve
@@ -238,6 +244,20 @@ views:
     imageAspectRatio: 1
     cardSize: 200
   - type: table
+    name: Sound and music
+    filters:
+      or:
+        - category == "sfx"
+        - category == "music"
+    groupBy:
+      property: category
+      direction: ASC
+    order:
+      - name
+      - approved
+      - description
+      - needs
+  - type: table
     name: Ship gate (everything not approved)
     filters:
       and:
@@ -264,7 +284,10 @@ def main():
     records += misc_records()
     for record in records:
         write_note(notes, record)
-    with open(os.path.join(args.vault, "Board.base"), "w", encoding="utf-8") as file:
+    old_board = os.path.join(args.vault, "Board.base")
+    if os.path.exists(old_board):
+        os.remove(old_board)
+    with open(os.path.join(args.vault, "Lucas TODO.base"), "w", encoding="utf-8") as file:
         file.write(BOARD)
     print(f"{len(records)} notes in {notes}")
 

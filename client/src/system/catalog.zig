@@ -11,6 +11,54 @@ pub fn write(writer: *std.Io.Writer) !void {
     for (std.enums.values(shared.Item.Kind)) |kind| try item(writer, kind);
     for (interactables) |row| try interactable(writer, row);
     for (std.enums.values(shared.Biome.Kind)) |kind| try biome(writer, kind);
+    for (sounds) |row| try sound(writer, row);
+}
+
+const Sound = struct { slot: []const u8, file: []const u8, category: []const u8, when: []const u8 };
+
+/// Every sound the game wants; `tools/asset_board.py` marks the ones whose file is missing.
+const sounds = [_]Sound{
+    .{ .slot = "shoot", .file = "laser-gun.mp3", .category = "sfx", .when = "Survivor and monster shots (shoot, scatter, cube)." },
+    .{ .slot = "melee", .file = "punch.mp3", .category = "sfx", .when = "Melee hits (punch, cone, slam)." },
+    .{ .slot = "ui-click", .file = "button-click.mp3", .category = "sfx", .when = "Menu button press (unused since the dvui port)." },
+    .{ .slot = "ui-hover", .file = "button-hover.mp3", .category = "sfx", .when = "Menu button hover (unused since the dvui port)." },
+    .{ .slot = "jump", .file = "jump.mp3", .category = "sfx", .when = "Player jump and feather air jump." },
+    .{ .slot = "hurt", .file = "hurt.mp3", .category = "sfx", .when = "Player takes damage." },
+    .{ .slot = "low-health", .file = "low-health.mp3", .category = "sfx", .when = "Loop while under 35% health (heartbeat)." },
+    .{ .slot = "enemy-hit", .file = "enemy-hit.mp3", .category = "sfx", .when = "A monster takes damage (short tick)." },
+    .{ .slot = "enemy-death", .file = "enemy-death.mp3", .category = "sfx", .when = "A monster dies." },
+    .{ .slot = "enemy-spawn", .file = "enemy-spawn.mp3", .category = "sfx", .when = "Monster spawn puff." },
+    .{ .slot = "elite-spawn", .file = "elite-spawn.mp3", .category = "sfx", .when = "An elite appears." },
+    .{ .slot = "explosion", .file = "explosion.mp3", .category = "sfx", .when = "Rockets, grenades, bombers, gasoline." },
+    .{ .slot = "lightning", .file = "lightning.mp3", .category = "sfx", .when = "Chain lightning proc." },
+    .{ .slot = "heal", .file = "heal.mp3", .category = "sfx", .when = "Healing pulses and heal projectiles." },
+    .{ .slot = "chest-open", .file = "chest-open.mp3", .category = "sfx", .when = "Chest, multishop, shrine of chance pays out." },
+    .{ .slot = "item-pickup", .file = "item-pickup.mp3", .category = "sfx", .when = "Item picked up." },
+    .{ .slot = "gold", .file = "gold.mp3", .category = "sfx", .when = "Gold gained (barrel, kill)." },
+    .{ .slot = "shrine", .file = "shrine.mp3", .category = "sfx", .when = "Shrine used (combat, mountain, chance)." },
+    .{ .slot = "shrine-fail", .file = "shrine-fail.mp3", .category = "sfx", .when = "Shrine of chance gives nothing." },
+    .{ .slot = "printer", .file = "printer.mp3", .category = "sfx", .when = "3D printer trade." },
+    .{ .slot = "drone", .file = "drone.mp3", .category = "sfx", .when = "Drone repaired and drone shots." },
+    .{ .slot = "teleporter-activate", .file = "teleporter-activate.mp3", .category = "sfx", .when = "Teleporter event starts (boss arrives)." },
+    .{ .slot = "teleporter-charged", .file = "teleporter-charged.mp3", .category = "sfx", .when = "Teleporter fully charged." },
+    .{ .slot = "stage-travel", .file = "stage-travel.mp3", .category = "sfx", .when = "Leaving a planet / arriving at the next." },
+    .{ .slot = "ping", .file = "ping.mp3", .category = "sfx", .when = "Middle-mouse ping." },
+    .{ .slot = "family-event", .file = "family-event.mp3", .category = "sfx", .when = "Family event announcement." },
+    .{ .slot = "menu", .file = "music-menu.mp3", .category = "music", .when = "Main menu." },
+    .{ .slot = "ship", .file = "music-ship.mp3", .category = "music", .when = "The ship / character select lobby." },
+    .{ .slot = "coral", .file = "music-coral.mp3", .category = "music", .when = "Stage music, Coral Shelf." },
+    .{ .slot = "verdant", .file = "music-verdant.mp3", .category = "music", .when = "Stage music, Verdant Hills." },
+    .{ .slot = "frost", .file = "music-frost.mp3", .category = "music", .when = "Stage music, Frost Spires." },
+    .{ .slot = "dust", .file = "music-dust.mp3", .category = "music", .when = "Stage music, Dust Basin." },
+    .{ .slot = "boss", .file = "music-boss.mp3", .category = "music", .when = "Teleporter event / boss fight." },
+    .{ .slot = "loop", .file = "music-loop.mp3", .category = "music", .when = "Looped (night) stages, after stage 5." },
+    .{ .slot = "wipe", .file = "music-wipe.mp3", .category = "music", .when = "Everyone died (short sting)." },
+};
+
+fn sound(writer: *std.Io.Writer, row: Sound) !void {
+    try writer.print("id: {s}-{s}\nname: {s}\ncategory: {s}\nthumb: none\n", .{ row.category, row.slot, row.file, row.category });
+    try field(writer, "description", row.when);
+    try writer.print("file: sounds/{s}\n\n", .{row.file});
 }
 
 const Interactable = struct { kind: entity.Kind, name: []const u8, description: []const u8 };
