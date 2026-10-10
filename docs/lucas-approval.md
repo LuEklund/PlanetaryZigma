@@ -82,3 +82,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Tier-2 elite name "Malachite" (RoR2 name; ours grants thorns + leech)
 - [ ] Interact label "Drone"
 - [ ] Interact names: "Teleporter", "Chest", "Item"; ally list label "Drone"
+- [ ] Boss title above the boss bar: "<Elite> <Monster name>" plus " x<count>" for hordes; monster names come from code ids (e.g. "Bloorp Lord", "Grass1")

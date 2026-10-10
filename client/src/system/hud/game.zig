@@ -511,11 +511,48 @@ fn addBossBar(world: *World, area: dvui.Rect) void {
         max_health += boss.max_health;
     }
     const width = area.w * 0.4;
+    const bar_top = area.h * 0.2;
     style.bar(
-        .{ .x = (area.w - width) / 2, .y = area.h * 0.2, .w = width, .h = 22 },
+        .{ .x = (area.w - width) / 2, .y = bar_top, .w = width, .h = 22 },
         if (max_health > 0) health / max_health else 0,
         style.rgba(.{ 0.9, 0.1, 0.1, 1 }),
     );
+    const first = for (world.teleporter_bosses.items) |boss_id| {
+        if (world.getPtr(boss_id)) |boss| break boss;
+    } else return;
+    var buffer: [96]u8 = undefined;
+    const name = bossName(&buffer, first, world.teleporter_bosses.items.len);
+    const size: f32 = 26;
+    const text_height = style.font(size).textSize(name).h + 2;
+    const color = if (first.elite != .none) eliteColor(first.elite) else style.text;
+    style.floatingLabel(@src(), 0, name, .{ area.w / 2, bar_top - text_height - 4 }, size, color);
+}
+
+/// RoR2-style boss title: "Overloading Bloorp Lord", "Bloorp Lord ×3" for a horde.
+fn bossName(buffer: []u8, boss: *const World.Entity, count: usize) []const u8 {
+    var writer: std.Io.Writer = .fixed(buffer);
+    if (boss.elite != .none) writer.print("{s} ", .{shared.Elite.get(boss.elite).name}) catch {};
+    const raw = switch (boss.kind) {
+        .enemy => |enemy| @tagName(enemy),
+        else => @tagName(boss.kind),
+    };
+    var capitalize = true;
+    for (raw) |char| {
+        if (char == '_') {
+            writer.writeByte(' ') catch {};
+            capitalize = true;
+            continue;
+        }
+        writer.writeByte(if (capitalize) std.ascii.toUpper(char) else char) catch {};
+        capitalize = false;
+    }
+    if (count > 1) writer.print(" x{d}", .{count}) catch {};
+    return writer.buffered();
+}
+
+fn eliteColor(elite: shared.Elite.Kind) dvui.Color {
+    const tint = shared.Elite.get(elite).tint;
+    return style.rgba(.{ tint[0], tint[1], tint[2], 1 });
 }
 
 const chat_width: f32 = 460;
