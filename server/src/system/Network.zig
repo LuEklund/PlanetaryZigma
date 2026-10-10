@@ -101,6 +101,7 @@ fn cloneClientPacket(
         .go_again => .go_again,
         .lobby => |lobby_command| .{ .lobby = lobby_command },
         .input => |input| .{ .input = input },
+        .ping => |ping| .{ .ping = ping },
         .chat => |chat| chat: {
             const text = try gpa.dupe(u8, chat.text);
             break :chat .{ .chat = .{
@@ -114,7 +115,7 @@ fn cloneClientPacket(
 fn freeClientPacket(gpa: std.mem.Allocator, packet: *shared.net.ClientPacket) void {
     switch (packet.*) {
         .chat => |chat| if (chat.text.len != 0) gpa.free(chat.text),
-        .connect, .disconnect, .input, .go_again, .lobby => {},
+        .connect, .disconnect, .input, .go_again, .lobby, .ping => {},
     }
 }
 
@@ -233,6 +234,15 @@ fn applyCommand(
                 .ready => |ready| lobby.setReady(world, player, ready),
                 .difficulty => |setting| if (is_host) lobby.setDifficulty(world, setting),
             }
+        },
+        .ping => |ping| {
+            if (client.entity_id == .none) return false;
+            if (world.client_updates.unusedCapacitySlice().len == 0) return false;
+            world.client_updates.appendAssumeCapacity(.{ .event = .{ .ping = .{
+                .pinger = client.entity_id,
+                .position = ping.position,
+                .target = ping.target,
+            } } });
         },
         .go_again => {
             if (client.conn == self.steam_server.host_conn) world.go_again_requested = true;

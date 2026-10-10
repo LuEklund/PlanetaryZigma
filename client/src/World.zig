@@ -36,6 +36,14 @@ stage: u32 = 0,
 difficulty_setting: shared.difficulty.Setting = .rainstorm,
 difficulty: shared.net.Event.Difficulty = .{ .run_seconds = 0, .coefficient = 1, .level = 1 },
 prng: std.Random.DefaultPrng,
+pings: [max_pings]Ping = @splat(.{ .event = .{ .pinger = .none, .position = @splat(0), .target = .none }, .expires_at = 0 }),
+next_ping: u8 = 0,
+
+pub const max_pings = 8;
+pub const Ping = struct {
+    event: shared.net.Event.Ping,
+    expires_at: f32,
+};
 
 pub const Dying = struct {
     kind: shared.entity.Kind,

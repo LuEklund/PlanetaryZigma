@@ -30,6 +30,7 @@ pub fn update(
 
     if (world.getPtr(world.player_id)) |player| {
         addNameTags(world, view_proj);
+        addPings(world, view_proj);
         addWorldHealthBars(world, view_proj);
         addDamagePopups(&hud.damage_popups, view_proj);
         addInventory(player, game_assets, area);
@@ -548,6 +549,36 @@ fn addDamagePopups(damage_popups: *const DamagePopup.List, view_proj: nz.Mat4x4(
             .gravity_x = 0.5,
         });
     }
+}
+
+fn addPings(world: *World, view_proj: nz.Mat4x4(f32)) void {
+    for (world.pings, 0..) |ping, index| {
+        if (ping.expires_at <= world.elapsed_time) continue;
+        const target = world.getPtr(ping.event.target);
+        const position = if (target) |entity| entity.transform.position else ping.event.position;
+        const up = shared.Planet.up(position) orelse continue;
+        const screen = style.worldToScreen(view_proj, position + nz.vec.scale(up, 2)) orelse continue;
+        const pinger = world.getPtr(ping.event.pinger);
+        const name = if (pinger) |player| player.player_name.slice() else "";
+        const what = if (target) |entity| kindLabel(entity.kind) else "here";
+        var buffer: [96]u8 = undefined;
+        const text = std.fmt.bufPrint(&buffer, "v {s}: {s}", .{ name, what }) catch "v";
+        dvui.labelNoFmt(@src(), text, .{}, .{
+            .id_extra = index,
+            .rect = .{ .x = screen[0] - 120, .y = screen[1] - 30, .w = 240, .h = 28 },
+            .font = style.font(22),
+            .color_text = .fromColor(style.accent),
+            .gravity_x = 0.5,
+        });
+    }
+}
+
+fn kindLabel(kind: shared.entity.Kind) []const u8 {
+    return switch (kind) {
+        .enemy => |enemy| @tagName(enemy),
+        .item_pickup => "item",
+        else => @tagName(kind),
+    };
 }
 
 fn addNameTags(world: *World, view_proj: nz.Mat4x4(f32)) void {

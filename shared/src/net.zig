@@ -23,6 +23,12 @@ pub const ClientPacket = union(enum) {
     chat: ChatSend,
     go_again: void,
     lobby: LobbyCommand,
+    ping: PingRequest,
+};
+
+pub const PingRequest = struct {
+    position: @Vector(3, f32),
+    target: entity.Id,
 };
 
 pub const LobbyCommand = union(enum) {
@@ -242,6 +248,12 @@ pub const Event = union(enum) {
         duration: f32,
     };
 
+    pub const Ping = struct {
+        pinger: entity.Id,
+        position: @Vector(3, f32),
+        target: entity.Id,
+    };
+
     pub const Difficulty = struct {
         run_seconds: f32,
         coefficient: f32,
@@ -268,6 +280,7 @@ pub const Event = union(enum) {
     interact: Interact,
     effect: Effect,
     difficulty: Difficulty,
+    ping: Ping,
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {

@@ -23,6 +23,7 @@ const DrawList = renderer_contract.DrawList;
 const menu_world = @import("system/menu.zig");
 const zoo_scene = @import("system/zoo.zig");
 const zoo_hud = @import("system/hud/zoo.zig");
+const ping = @import("system/ping.zig");
 
 pub const Chat = @import("system/Chat.zig");
 const Hud = @import("system/Hud.zig");
@@ -273,6 +274,10 @@ fn step(self: *System, world: *World) !void {
         world,
         text_buffer[0..text_writer.end],
     );
+    if (world.controller.ping_requested) {
+        world.controller.ping_requested = false;
+        try self.network.sendCommand(.{ .ping = ping.aim(world) }, .reliable);
+    }
     const wire_input: shared.net.Input = if (world.controller.free_camera) .{} else player_input;
     try self.network.update(
         wire_input,
@@ -363,6 +368,10 @@ fn pollConsole(self: *System, world: *World) !void {
     cwd.writeFile(self.io, .{ .sub_path = path, .data = "" }) catch {};
     var lines = std.mem.tokenizeAny(u8, content, "\r\n");
     while (lines.next()) |line| {
+        if (std.mem.eql(u8, line, "!ping")) {
+            world.controller.ping_requested = true;
+            continue;
+        }
         if (self.scene == .zoo) {
             try self.applyZooCommand(world, zoo_scene.parseCommand(line, &self.assets.models, &self.zoo));
             continue;

@@ -46,6 +46,12 @@ pub const actions: []const Action = &.{
         .behavior = .pressed,
     },
     .{ .id = .utility, .default = .{ .key = .left_shift }, .bindable = "Utility" },
+    .{
+        .id = .ping,
+        .default = .{ .mouse = .{ .middle = true } },
+        .bindable = "Ping",
+        .behavior = .pressed,
+    },
     .{ .id = .secondary, .default = .{ .mouse = .{ .right = true } }, .bindable = "Secondary" },
     .{ .id = .dev_f1, .default = .{ .key = .f1 }, .behavior = .pressed },
     .{ .id = .dev_f2, .default = .{ .key = .f2 }, .behavior = .pressed },
@@ -90,6 +96,8 @@ bindings: Bindings = default_bindings,
 rebinding_action: ?ActionKind = null,
 rebinding_fresh: bool = false,
 previous_buttons: Window.Pointer.Buttons = .{},
+held_buttons: Window.Pointer.Buttons = .{},
+ping_requested: bool = false,
 debug_draw_colliders: bool = false,
 free_camera: bool = false,
 cooldown: std.EnumArray(shared.entity.Action, f32) = .initFill(0),
@@ -108,13 +116,18 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
                 };
                 self.applyAction(&new_player_inputs, action, pressed);
             },
-            .mouse => |mask| self.applyAction(
-                &new_player_inputs,
-                action,
-                @as(u8, @bitCast(window.pointer.buttons)) & @as(u8, @bitCast(mask)) != 0,
-            ),
+            .mouse => |mask| {
+                const down = @as(u8, @bitCast(window.pointer.buttons)) & @as(u8, @bitCast(mask)) != 0;
+                const was_down = @as(u8, @bitCast(self.held_buttons)) & @as(u8, @bitCast(mask)) != 0;
+                const pressed = switch (actions[@intFromEnum(action)].behavior) {
+                    .held => down,
+                    .pressed => down and !was_down,
+                };
+                self.applyAction(&new_player_inputs, action, pressed);
+            },
         }
     }
+    self.held_buttons = window.pointer.buttons;
 
     return new_player_inputs;
 }
@@ -128,6 +141,9 @@ fn applyAction(
     switch (action) {
         .free_camera => if (pressed) {
             self.free_camera = !self.free_camera;
+        },
+        .ping => if (pressed) {
+            self.ping_requested = true;
         },
         .debug_colliders => if (pressed) {
             self.debug_draw_colliders = !self.debug_draw_colliders;

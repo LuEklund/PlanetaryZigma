@@ -9,6 +9,7 @@ const Color = [3]f32;
 
 const min_flatness: f32 = 0.8;
 const sides: usize = 6;
+const landing_clear_radius: f32 = 10;
 
 const Frame = struct {
     base: Vec3,
@@ -38,6 +39,7 @@ pub fn appendProps(
         const up = nz.vec.normalize(centroid);
         if (nz.vec.dot(normal, up) < min_flatness) continue;
         if (nz.vec.length(centroid) < water_level) continue;
+        if (centroid[1] > 0 and @sqrt(centroid[0] * centroid[0] + centroid[2] * centroid[2]) < landing_clear_radius) continue;
         var prng: std.Random.DefaultPrng = .init(std.hash.Wyhash.hash(0, std.mem.asBytes(&anchor)));
         const random = prng.random();
         const frame = frameAt(centroid, up, random.float(f32) * std.math.tau);
