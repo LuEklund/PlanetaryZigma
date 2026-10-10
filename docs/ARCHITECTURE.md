@@ -8,10 +8,10 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 
 | Package | Builds | Role |
 |---|---|---|
-| `shared/` | module `shared` | The contract both sides compile: wire format (`net.zig`), data rows (`entity.zig` + `entity/` kinds, `Item.zig` items + procs, `Survivor.zig`, `Elite.zig`, `Biome.zig`), pure rule functions (`difficulty.zig`, `daynight.zig`), planet SDF + chunking + nav graph (`planet/`), Steam transport (`SteamNet.zig`, `steamNet/`), hot reload (`HotLib.zig`, `DynLib.zig`, `layout.zig`), fixed-step `Clock.zig`, log fn, tick constants. |
+| `shared/` | module `shared` | The contract both sides compile: wire format (`net.zig`), data rows (`entity.zig` + `entity/` kinds, `Item.zig` items + procs, `Survivor.zig`, `Elite.zig`, `Biome.zig`), pure rule functions (`difficulty.zig`, `daynight.zig`), planet SDF + chunking + nav graph + baked props/water (`planet/`, `planet/decoration.zig`), Steam transport (`SteamNet.zig`, `steamNet/`), hot reload (`HotLib.zig`, `DynLib.zig`, `layout.zig`), fixed-step `Clock.zig`, log fn, tick constants. |
 | `server/` | `server` exe, `libsystem_server.so` | Authoritative simulation. Host exe is a thin loop; the `.so` owns `System` + `World` and runs network → gameplay → physics → flush → replication. Optional `viewer/` (build option) draws the server world through the renderer. |
 | `client/` | `client` exe, `libsystem_client.so` | Thin host exe; the `.so` replicates server state, runs input/camera/HUD/audio/animation, extracts a `DrawList` for the renderer. Spawns the server process for hosting. |
-| `render/` | `librender.so` + modules `renderer_contract`, `graphics`, `ui`, `Window` | Vulkan renderer (shader objects, descriptor buffers, BDA) behind a C-ABI `Api` table; asset loading (`graphics/`), immediate-mode UI (`ui/`), native windowing (`window/`: Wayland, Xlib, Win32, Cocoa). |
+| `render/` | `librender.so` + modules `renderer_contract`, `graphics`, `ui`, `Window` | Vulkan 1.3 core renderer (BDA, dynamic rendering) behind a C-ABI `Api` table; asset loading + model manifests (`graphics/`, `ModelRow.zig` ↔ `assets/manifest/<kind>.zon`), dvui backend (`dvui/`), native windowing (`window/`: Wayland, Xlib, Win32, Cocoa). |
 
 ## Modules
 
@@ -22,6 +22,9 @@ hot-reloadable code in a `.so`; the executables are thin hosts.
 | Client World | `client/src/World.zig` | replicated entities, dying list, damage events, camera/controller/chat/options, planet | packets in, read by extract/hud |
 | Client Network | `client/src/system/Network.zig` | Steam client, server process spawning, `packets` inbox, tick estimate | `packets` list consumed by World/System |
 | Hud | `client/src/system/Hud.zig`, `hud/` | screen/overlay state, UI context, damage popups | returns `Hud.Request` |
+| Settings | `client/src/Settings.zig` | — | `settings.zon` ↔ Options + keybinds (load at init, save when Options closes) |
+| zoo | `client/src/system/zoo.zig`, `hud/zoo.zig` | `zoo.State` on System | `zoo.Command` from the panel or console → writes `assets/manifest/*.zon`; the model watcher applies it |
+| ping | `client/src/system/ping.zig` | — | crosshair → `PingRequest` packet; server echoes a `ping` event; HUD draws `World.pings` |
 | extract | `client/src/system/extract.zig` | — | World → DrawList (incl. sun direction + biome sky from `daynight`/`Biome`) |
 | events | `client/src/system/events.zig` | — | server events → audio, particles, World fields |
 | Renderer | `render/vulkan/` | Vulkan device, swapchain, frame data, resources | `renderer_contract.Api` (C ABI, hot-reloaded inside the client System) |
