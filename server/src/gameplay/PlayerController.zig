@@ -137,10 +137,10 @@ fn updateInteractTarget(
     });
 }
 
-fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
+pub fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
     const entity = world.getPtr(id) orelse return .none;
     return switch (entity.kind) {
-        .lootbox, .item_pickup => id,
+        .lootbox, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
         .teleporter => switch (entity.teleporter.state) {
             .active => .none,
             .completed => if (world.teleport_bosses.items.len > 0) .none else id,
@@ -155,16 +155,70 @@ fn interact(world: *World, player: *World.Entity) !void {
     if (world.elapsed_time - player.last_interact < interact_cooldown) return;
     const target = world.getPtr(player.interacting) orelse return;
     player.last_interact = world.elapsed_time;
+    try use(world, player, target);
+}
+
+/// The one door for using an interactable (E key, or `/use` in dev).
+pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
     switch (target.kind) {
         .lootbox => try openChest(world, player, target),
         .teleporter => try useTeleporter(world, player, target),
         .item_pickup => pickUp(world, player, target),
+        .shrine_combat => {
+            director.startShrineOfCombat(world);
+            world.queueDespawn(target.id);
+            announce(world, "The air grows tense.");
+        },
+        .shrine_mountain => {
+            world.mountain_stacks +|= 1;
+            world.queueDespawn(target.id);
+            announce(world, "A great challenge awaits at the teleporter.");
+        },
+        .shrine_chance => try useShrineOfChance(world, player, target),
         else => {},
     }
 }
 
+const chance_fail_odds: f32 = 0.45;
+const chance_price_growth: f32 = 1.4;
+
+fn announce(world: *World, text: []const u8) void {
+    world.client_updates.appendAssumeCapacity(.{ .chat_message = .{
+        .id = .none,
+        .text_len = @intCast(text.len),
+        .text = text,
+    } });
+}
+
+/// RoR2 Shrine of Chance: pay, then 45% nothing (price rises) or an item and the shrine is spent.
+fn useShrineOfChance(world: *World, player: *World.Entity, shrine: *World.Entity) !void {
+    if (player.currency < shrine.currency) return;
+    player.currency -= shrine.currency;
+    world.client_updates.appendAssumeCapacity(.{
+        .set_currency = .{ .id = player.id, .amount = player.currency },
+    });
+    if (world.prng.random().float(f32) < chance_fail_odds) {
+        shrine.currency = @intFromFloat(@round(@as(f32, @floatFromInt(shrine.currency)) * chance_price_growth));
+        world.client_updates.appendAssumeCapacity(.{
+            .set_currency = .{ .id = shrine.id, .amount = shrine.currency },
+        });
+        announce(world, "You fail to gain the shrine's favor.");
+        return;
+    }
+    try dropItemFrom(world, shrine);
+}
+
 fn openChest(world: *World, player: *World.Entity, chest: *World.Entity) !void {
     if (player.currency < chest.currency) return;
+    player.currency -= chest.currency;
+    world.client_updates.appendAssumeCapacity(.{
+        .set_currency = .{ .id = player.id, .amount = player.currency },
+    });
+    try dropItemFrom(world, chest);
+}
+
+/// Spends the container and throws a small-chest item out of it.
+fn dropItemFrom(world: *World, chest: *World.Entity) !void {
     world.queueDespawn(chest.id);
     const item_kind = shared.Item.rollChest(&shared.Item.small_chest_odds, world.prng.random());
     const chest_up = shared.Planet.surfaceUp(chest.transform.position);
@@ -176,10 +230,6 @@ fn openChest(world: *World, player: *World.Entity, chest: *World.Entity) !void {
             .rotation = chest.transform.rotation,
         },
         .spawn_impulse = nz.vec.scale(chest_up, World.item_throw_speed),
-    });
-    player.currency -= chest.currency;
-    world.client_updates.appendAssumeCapacity(.{
-        .set_currency = .{ .id = player.id, .amount = player.currency },
     });
 }
 

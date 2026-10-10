@@ -20,7 +20,16 @@ const handover_fraction: f32 = 0.4;
 const boss_base_credits: f32 = 600;
 const scene_interactable_credits: f32 = 220;
 const scene_monster_credits: f32 = 100;
-const chest_card_cost: f32 = 15;
+const shrine_combat_credits: f32 = 100;
+
+/// RoR2 interactable spawn cards: scene credits cost and weight.
+const InteractableCard = struct { kind: shared.entity.Kind, cost: f32, weight: u32 };
+const interactable_cards = [_]InteractableCard{
+    .{ .kind = .lootbox, .cost = 15, .weight = 24 },
+    .{ .kind = .shrine_chance, .cost = 20, .weight = 4 },
+    .{ .kind = .shrine_combat, .cost = 20, .weight = 3 },
+    .{ .kind = .shrine_mountain, .cost = 20, .weight = 3 },
+};
 const scene_min_player_distance: f32 = 60;
 
 const Tuning = struct {
@@ -35,6 +44,7 @@ const tunings: std.EnumArray(Director.Kind, Tuning) = .init(.{
     .slow = .{ .credit_multiplier = 0.75, .wave_interval = .{ 0.1, 1 }, .rest_interval = .{ 22.5, 30 } },
     .teleporter = .{ .credit_multiplier = 2, .wave_interval = .{ 0.5, 0.5 }, .rest_interval = .{ 2, 4 } },
     .teleporter_boss = .{ .credit_multiplier = 0, .wave_interval = .{ 0.1, 0.3 }, .rest_interval = .{ 0, 0 }, .instant = true },
+    .shrine = .{ .credit_multiplier = 0, .wave_interval = .{ 0.1, 0.4 }, .rest_interval = .{ 0, 0 }, .instant = true },
 });
 
 /// RoR2 family event: for a whole stage only one family spawns, announced at stage start.
@@ -71,6 +81,7 @@ pub fn startStage(world: *World) !void {
     world.directors = .initFill(.{});
     world.directors.getPtr(.fast).active = true;
     world.directors.getPtr(.slow).active = true;
+    world.mountain_stacks = 0;
     const random = world.prng.random();
     world.family = if (random.float(f32) < family_chance) random.uintLessThan(u8, families.len) else null;
     if (world.family) |family| announceFamily(world, family);
@@ -89,7 +100,7 @@ pub fn startTeleporterEvent(world: *World) void {
     world.directors.set(.teleporter, .{ .active = true, .credits = handover });
     world.directors.set(.teleporter_boss, .{
         .active = true,
-        .credits = boss_base_credits * @sqrt(world.difficultyCoefficient()),
+        .credits = boss_base_credits * @sqrt(world.difficultyCoefficient()) * (1 + @as(f32, @floatFromInt(world.mountain_stacks))),
     });
 }
 
@@ -105,6 +116,11 @@ pub fn announceFamily(world: *World, family: u8) void {
         .text_len = @intCast(text.len),
         .text = text,
     } });
+}
+
+/// RoR2 Shrine of Combat: an instant director with 100·coeff credits.
+pub fn startShrineOfCombat(world: *World) void {
+    world.directors.set(.shrine, .{ .active = true, .credits = shrine_combat_credits * world.difficultyCoefficient() });
 }
 
 pub fn stopAll(world: *World) void {
@@ -154,6 +170,7 @@ fn step(world: *World, director: *Director, kind: Director.Kind) !void {
 /// One RoR2 spawn attempt. False ends the wave (cap hit, can't afford, too cheap, wave full).
 fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random: std.Random) !bool {
     const is_boss = kind == .teleporter_boss;
+    const instant = tunings.get(kind).instant;
     if (!is_boss and world.enemyCount() >= map_monster_cap) return false;
     const biome = spawnPool(world);
     if (director.wave == null) {
@@ -161,11 +178,11 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
         director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, random), .spawned = 0 };
     }
     const wave = &director.wave.?;
-    const limit = if (is_boss) boss_max_spawns else max_per_wave;
+    const limit = if (instant) boss_max_spawns else max_per_wave;
     if (wave.spawned >= limit) return false;
     const cost = cardCost(wave.enemy, wave.elite);
     if (director.credits < cost) return false;
-    if (!tunings.get(kind).instant and tooCheap(&biome, wave.enemy, cost, director.credits)) return false;
+    if (!instant and tooCheap(&biome, wave.enemy, cost, director.credits)) return false;
 
     const near = if (is_boss) teleporterPosition(world) orelse return false else targetPlayer(world, random) orelse return false;
     const distance: [2]f32 = if (is_boss) .{ 15, 25 } else .{ enemy_min_spawn_distance, enemy_max_spawn_distance + 30 };
@@ -326,12 +343,21 @@ fn populateScene(world: *World) !void {
     const random = world.prng.random();
     const players: f32 = @floatFromInt(@max(world.players.items.len, 1));
     var interactable_credits = scene_interactable_credits * (1 + 0.5 * (players - 1));
-    while (interactable_credits >= chest_card_cost) : (interactable_credits -= chest_card_cost) {
+    var total_weight: u32 = 0;
+    for (interactable_cards) |card| total_weight += card.weight;
+    while (interactable_credits >= interactable_cards[0].cost) {
+        var roll = random.uintLessThan(u32, total_weight);
+        const card = for (interactable_cards) |candidate| {
+            if (roll < candidate.weight) break candidate;
+            roll -= candidate.weight;
+        } else unreachable;
+        if (card.cost > interactable_credits) continue;
+        interactable_credits -= card.cost;
         const direction = if (world.dev_mode)
-            nz.vec.normalize(world.planet.surfacePointNear(teleporterPosition(world) orelse .{ 0, 1, 0 }, 5, 10, random))
+            nz.vec.normalize(world.planet.surfacePointNear(teleporterPosition(world) orelse .{ 0, 1, 0 }, 5, 12, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        _ = try world.spawn(.{ .kind = .lootbox, .transform = world.planet.surfaceTransform(direction, 0.2) });
+        _ = try world.spawn(.{ .kind = card.kind, .transform = world.planet.surfaceTransform(direction, 0.2) });
     }
 
     const biome = spawnPool(world);

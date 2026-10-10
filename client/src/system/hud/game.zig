@@ -442,11 +442,20 @@ fn addInteractPrompt(world: *World, player: *const World.Entity, area: dvui.Rect
         .color_fill = .fromColor(style.rgba(.{ 0, 0, 0, 0.7 })),
         .padding = .{ .x = 8 },
     };
-    if (entity.kind == .lootbox) {
-        dvui.label(@src(), "E  ${d}", .{entity.currency}, options);
-    } else {
-        dvui.labelNoFmt(@src(), "E", .{}, options);
-    }
+    const name: []const u8 = switch (entity.kind) {
+        .shrine_chance => "Shrine of Chance",
+        .shrine_combat => "Shrine of Combat",
+        .shrine_mountain => "Shrine of the Mountain",
+        else => "",
+    };
+    var buffer: [64]u8 = undefined;
+    const text = switch (entity.kind) {
+        .lootbox, .shrine_chance => std.fmt.bufPrint(&buffer, "E  ${d}  {s}", .{ entity.currency, name }),
+        else => std.fmt.bufPrint(&buffer, "E  {s}", .{name}),
+    } catch "E";
+    var sized = options;
+    sized.rect = .{ .x = options.rect.?.x, .y = options.rect.?.y, .w = style.font(24).textSize(text).w + 24, .h = options.rect.?.h };
+    dvui.labelNoFmt(@src(), text, .{}, sized);
 }
 
 fn addBossBar(world: *World, area: dvui.Rect) void {

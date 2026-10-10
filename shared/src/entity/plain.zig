@@ -52,6 +52,25 @@ pub const lootbox: Spec = .{
     .currency = 25,
 };
 
+/// Placeholder look: the pillar model scaled down (needs a shrine model from Lucas).
+const shrine_model: entity.ModelSpec = .{
+    .path = "objects/pillar.glb",
+    .offset = .{ .scale = .{ 0.35, 0.35, 0.35 } },
+    .loop_clips = null,
+};
+const shrine_collider: entity.Collider = .{
+    .shape = .{ .box = .{ .x = 0.6, .y = 1.6, .z = 0.6 } },
+    .motion = .static,
+    .layer = .moving,
+};
+
+/// RoR2 Shrine of Combat: free, summons a wave right away.
+pub const shrine_combat: Spec = .{ .collider = shrine_collider, .model = shrine_model };
+/// RoR2 Shrine of the Mountain: free, the teleporter boss gets twice the credits and drops.
+pub const shrine_mountain: Spec = .{ .collider = shrine_collider, .model = shrine_model };
+/// RoR2 Shrine of Chance: pay gold, 45% to fail; price goes up after each try.
+pub const shrine_chance: Spec = .{ .collider = shrine_collider, .model = shrine_model, .currency = 17 };
+
 pub const platform: Spec = .{
     .collider = .{
         .shape = .{ .box = .{ .x = 20, .y = 0.5, .z = 20 } },

@@ -20,6 +20,8 @@ directors: std.EnumArray(Director.Kind, Director),
 spawning_enabled: bool,
 /// Index into `director.families` when this stage is a family event.
 family: ?u8,
+/// Shrines of the Mountain used this stage: each doubles boss credits and drops again.
+mountain_stacks: u8,
 client_updates: std.ArrayList(shared.net.ServerPacket),
 spawned: std.ArrayList(shared.entity.Id),
 physics_commands: std.ArrayList(Physics.Command),
@@ -62,7 +64,7 @@ pub const Options = struct {
 };
 
 pub const Director = struct {
-    pub const Kind = enum { fast, slow, teleporter, teleporter_boss };
+    pub const Kind = enum { fast, slow, teleporter, teleporter_boss, shrine };
     pub const Wave = struct {
         enemy: shared.entity.EnemyKind,
         elite: shared.Elite.Kind,
@@ -197,6 +199,7 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .directors = .initFill(.{}),
         .spawning_enabled = true,
         .family = null,
+        .mountain_stacks = 0,
         .run_seconds = 0,
         .difficulty_setting = .rainstorm,
         .next_entity_id = 1,
@@ -250,7 +253,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
             );
             for (elite.granted_items) |grant| _ = entity.inventory.add(grant.item, grant.count);
         },
-        .lootbox => entity.currency = shared.difficulty.chestCost(
+        .lootbox, .shrine_chance => entity.currency = shared.difficulty.chestCost(
             base_currency,
             difficulty_coefficient,
         ),
@@ -309,7 +312,8 @@ pub fn rayCast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)
 
 /// RoR2: one random uncommon per player when the last teleporter boss dies.
 fn dropBossRewards(self: *World) void {
-    for (self.players.items) |_| {
+    const drops = self.players.items.len * (1 + @as(usize, self.mountain_stacks));
+    for (0..drops) |_| {
         const reward = shared.Item.rollFromTier(.uncommon, self.prng.random()) orelse continue;
         self.dropTeleporterReward(reward);
     }

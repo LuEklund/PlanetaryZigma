@@ -73,3 +73,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Main menu button "Zoo" (dev tool — keep visible in release?)
 - [ ] Family event announcements (chat, stage start): "Something stirs in the tubes below." (tubloid) / "The grass begins to whisper." (grass) / "The air hums and bubbles." (bloop) / "The ground crawls with tiny legs." (swarm)
 - [ ] Options → Graphics: "Anti-aliasing (FXAA)", "Bloom"
+- [ ] Shrine names (RoR2's own, swap for our twist?): "Shrine of Chance", "Shrine of Combat", "Shrine of the Mountain"; chat: "The air grows tense." / "A great challenge awaits at the teleporter." / "You fail to gain the shrine's favor."

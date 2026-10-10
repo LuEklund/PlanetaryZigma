@@ -20,6 +20,9 @@ pub const Kind = union(enum) {
 
     teleporter,
     lootbox,
+    shrine_combat,
+    shrine_mountain,
+    shrine_chance,
     platform,
     target_dummy,
 

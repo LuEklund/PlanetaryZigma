@@ -33,6 +33,7 @@ const table = [_]Command{
     .{ .name = "spawning", .usage = "/spawning", .run = spawning },
     .{ .name = "boss", .usage = "/boss (activate the teleporter)", .run = boss },
     .{ .name = "directors", .usage = "/directors", .run = directors },
+    .{ .name = "use", .usage = "/use (nearest interactable)", .run = useNearest },
     .{ .name = "family", .usage = "/family <tubloid|grass|bloop|swarm|off>", .run = family },
 };
 
@@ -207,4 +208,21 @@ fn family(world: *World, _: *Entity, args: *Args, reply: []u8) []const u8 {
         return print(reply, "family event: {s}", .{name});
     }
     return print(reply, "no family '{s}'", .{name});
+}
+
+fn useNearest(world: *World, player: *Entity, _: *Args, reply: []u8) []const u8 {
+    var nearest: ?*Entity = null;
+    var nearest_distance: f32 = std.math.inf(f32);
+    for (world.entities.values()) |*entity| {
+        if (entity.id == player.id) continue;
+        if (PlayerController.interactable(world, entity.id) == .none) continue;
+        const distance = nz.vec.distance(entity.transform.position, player.transform.position);
+        if (distance >= nearest_distance) continue;
+        nearest_distance = distance;
+        nearest = entity;
+    }
+    const target = nearest orelse return print(reply, "nothing to use", .{});
+    const kind = target.kind;
+    PlayerController.use(world, player, target) catch |err| return print(reply, "use: {t}", .{err});
+    return print(reply, "used {t} {d:.0}m away", .{ kind, nearest_distance });
 }
