@@ -15,6 +15,13 @@ pub fn sunDirection(server_seconds: f32) nz.Vec3(f32) {
     );
 }
 
+/// RoR2 loop variants, our way: looped stages (past `stages_per_loop`) run half a day ahead,
+/// so a loop starts at night.
+pub fn sunDirectionForStage(server_seconds: f32, stage: u32, stages_per_loop: u32) nz.Vec3(f32) {
+    const looped = stage > stages_per_loop;
+    return sunDirection(server_seconds + if (looped) day_length_seconds / 2 else 0);
+}
+
 pub fn daylight(sun_direction: nz.Vec3(f32), position: nz.Vec3(f32)) f32 {
     const length = nz.vec.length(position);
     if (length < 0.0001) return 1;

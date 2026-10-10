@@ -36,8 +36,10 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.post.bloom_strength = world.options.bloom;
     list.post.danger = danger(world);
     const server_seconds = system.network.server_tick_estimate * shared.tick_seconds;
-    list.sun_direction = shared.daynight.sunDirection(
+    list.sun_direction = shared.daynight.sunDirectionForStage(
         if (server_seconds > 0) server_seconds else world.elapsed_time,
+        world.stage,
+        shared.Biome.stage_pools.len,
     );
     const day = shared.daynight.daylight(list.sun_direction, world.camera.transform.position);
     const boss_tint: [4]f32 = if (world.teleporter_bosses.items.len == 0) .{ 1, 1, 1, 1 } else .{
