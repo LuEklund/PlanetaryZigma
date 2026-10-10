@@ -73,7 +73,10 @@ pub fn init(
 
     for (std.enums.values(shared.entity.Loop)) |loop| {
         const clip_name = row.loop(loop) orelse continue;
-        self.loop_clips.set(loop, model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row));
+        self.loop_clips.set(
+            loop,
+            model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row),
+        );
     }
     if (self.loop_clips.get(.death)) |index| {
         const death_clip = model.clips[index];
@@ -81,7 +84,10 @@ pub fn init(
     }
     for (std.enums.values(shared.entity.Action)) |action| {
         const clip_name = row.action(action) orelse continue;
-        self.action_clips.set(action, model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row));
+        self.action_clips.set(
+            action,
+            model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row),
+        );
     }
 }
 

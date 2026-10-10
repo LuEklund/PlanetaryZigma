@@ -23,11 +23,25 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
         var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
         defer scroll.deinit();
         for (zoo.kinds, 0..) |kind, index| {
-            if (style.button(@src(), ModelRow.kindName(kind), index, row_size, index == state.kind_index, true)) {
+            if (style.button(
+                @src(),
+                ModelRow.kindName(kind),
+                index,
+                row_size,
+                index == state.kind_index,
+                true,
+            )) {
                 command = .{ .select_kind = @intCast(index) };
             }
         }
-        if (style.button(@src(), "Grid view", 0, row_size, state.grid, true)) command = .toggle_grid;
+        if (style.button(
+            @src(),
+            "Grid view",
+            0,
+            row_size,
+            state.grid,
+            true,
+        )) command = .toggle_grid;
         if (style.button(@src(), "Back (Esc)", 0, row_size, false, true)) command = .exit;
     }
 
@@ -38,9 +52,17 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
     const clips = models.modelPtr(handle).clips;
     const assigned = zoo.slotClip(&row, state.slot);
 
-    var right = panel(@src(), .{ .x = area.w - column_width - 8, .y = 8, .w = column_width, .h = area.h - 16 });
+    var right = panel(
+        @src(),
+        .{ .x = area.w - column_width - 8, .y = 8, .w = column_width, .h = area.h - 16 },
+    );
     defer right.deinit();
-    dvui.labelNoFmt(@src(), row.model, .{}, .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) });
+    dvui.labelNoFmt(
+        @src(),
+        row.model,
+        .{},
+        .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) },
+    );
     heading(@src(), "Slot");
     var label_buffer: [128]u8 = undefined;
     var slot_index: usize = 0;
@@ -50,17 +72,38 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
             const clip = zoo.slotClip(&row, slot) orelse "-";
             const label = std.fmt.bufPrint(&label_buffer, "{t}: {s}", .{ value, clip }) catch "?";
             const selected = std.meta.eql(slot, state.slot);
-            if (style.button(@src(), label, slot_index, row_size, selected, true)) command = .{ .select_slot = slot };
+            if (style.button(
+                @src(),
+                label,
+                slot_index,
+                row_size,
+                selected,
+                true,
+            )) command = .{ .select_slot = slot };
             slot_index += 1;
         }
     }
     if (state.slot == .action) {
-        if (style.button(@src(), "Play action", 0, row_size, false, assigned != null)) command = .play_action;
+        if (style.button(
+            @src(),
+            "Play action",
+            0,
+            row_size,
+            false,
+            assigned != null,
+        )) command = .play_action;
     }
     heading(@src(), "Clip");
     var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
     defer scroll.deinit();
-    if (style.button(@src(), "(none)", 0, row_size, assigned == null, true)) command = .{ .assign_clip = null };
+    if (style.button(
+        @src(),
+        "(none)",
+        0,
+        row_size,
+        assigned == null,
+        true,
+    )) command = .{ .assign_clip = null };
     for (clips, 0..) |clip, index| {
         const selected = if (assigned) |name| std.mem.eql(u8, name, clip.name) else false;
         if (style.button(@src(), clip.name, index + 1, row_size, selected, true)) {

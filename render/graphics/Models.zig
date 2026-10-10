@@ -114,7 +114,12 @@ pub fn row(self: *const Models, handle: u32) ?ModelRow {
 pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
     for (self.entries.items, 0..) |*entry, handle| {
         const manifest_changed = try self.updateManifest(gpa, io, entry);
-        const model_changed = entry.path.len > 0 and assets.changed(io, self.dir, entry.path, &entry.mtime);
+        const model_changed = entry.path.len > 0 and assets.changed(
+            io,
+            self.dir,
+            entry.path,
+            &entry.mtime,
+        );
         if (model_changed) {
             if (!try self.reloadModel(gpa, io, renderer, entry)) continue;
             try self.reloaded.append(gpa, @intCast(handle));
@@ -132,7 +137,14 @@ fn updateManifest(self: *Models, gpa: std.mem.Allocator, io: std.Io, entry: *Ent
     var path_buffer: [256]u8 = undefined;
     const path = try ModelRow.filePath(&path_buffer, kind);
     if (!assets.changed(io, self.dir, path, &entry.manifest_mtime)) return false;
-    const source = self.dir.readFileAllocOptions(io, path, gpa, .limited(64 * 1024), .of(u8), 0) catch |err| {
+    const source = self.dir.readFileAllocOptions(
+        io,
+        path,
+        gpa,
+        .limited(64 * 1024),
+        .of(u8),
+        0,
+    ) catch |err| {
         std.log.err("{s}: {t}", .{ path, err });
         return false;
     };

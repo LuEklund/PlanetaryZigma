@@ -88,10 +88,18 @@ fn spawn(world: *World, slot: usize, kind_index: usize, up: nz.Vec3(f32)) !void 
 pub fn update(world: *World, state: *State, wheel: f64) void {
     state.yaw += spin_speed * world.delta_time;
     const max_distance: f32 = if (state.grid) 150 else 80;
-    state.distance = std.math.clamp(state.distance * std.math.pow(f32, 0.9, @floatCast(wheel)), 1.5, max_distance);
+    state.distance = std.math.clamp(
+        state.distance * std.math.pow(f32, 0.9, @floatCast(wheel)),
+        1.5,
+        max_distance,
+    );
     const top = surfaceRadius(world, .{ 0, 1, 0 }) + subject_height;
     world.camera.transform = if (state.grid) .{
-        .position = .{ 0, top - state.distance * @sin(grid_pitch), state.distance * @cos(grid_pitch) },
+        .position = .{
+            0,
+            top - state.distance * @sin(grid_pitch),
+            state.distance * @cos(grid_pitch),
+        },
         .rotation = nz.Quat(f32).angleAxis(grid_pitch, .{ 1, 0, 0 }),
     } else .{ .position = .{ 0, top + state.distance * 0.2, state.distance } };
 
@@ -104,7 +112,9 @@ pub fn update(world: *World, state: *State, wheel: f64) void {
         const subject = world.getPtr(subjectId(index)) orelse continue;
         const up = if (state.grid) gridUp(index, state.planet_radius) else nz.Vec3(f32){ 0, 1, 0 };
         subject.motion.update = null;
-        subject.transform.rotation = shared.math.rotationFromUp(up).mul(nz.Quat(f32).angleAxis(state.yaw, .{ 0, 1, 0 }));
+        subject.transform.rotation = shared.math.rotationFromUp(up).mul(
+            nz.Quat(f32).angleAxis(state.yaw, .{ 0, 1, 0 }),
+        );
         subject.override_animation_loop = loop;
     }
 }
@@ -118,7 +128,11 @@ pub fn labels(world: *World, state: *const State, out: []Label) []Label {
     var len: usize = 0;
     for (0..count) |index| {
         const subject = world.getPtr(subjectId(index)) orelse continue;
-        out[len] = .{ .name = ModelRow.kindName(kinds[index]), .position = subject.transform.position, .selected = index == state.kind_index };
+        out[len] = .{
+            .name = ModelRow.kindName(kinds[index]),
+            .position = subject.transform.position,
+            .selected = index == state.kind_index,
+        };
         len += 1;
     }
     return out[0..len];
@@ -127,7 +141,8 @@ pub fn labels(world: *World, state: *const State, out: []Label) []Label {
 pub const Label = struct { name: []const u8, position: nz.Vec3(f32), selected: bool };
 pub const max_labels = kinds.len;
 
-/// Console form of the zoo panel: `kind <name>`, `slot <loop|action name>`, `clip <name|none>`, `play`, `grid`, `radius <n>`, `exit`.
+/// Console form of the zoo panel:
+/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `grid`, `radius <n>`, `exit`.
 pub fn parseCommand(line: []const u8, models: *const Models, state: *const State) Command {
     var words = std.mem.tokenizeScalar(u8, line, ' ');
     const verb = words.next() orelse return .none;
@@ -141,11 +156,19 @@ pub fn parseCommand(line: []const u8, models: *const Models, state: *const State
     }
     if (std.mem.eql(u8, verb, "kind")) {
         for (kinds, 0..) |kind, index| {
-            if (std.mem.eql(u8, ModelRow.kindName(kind), argument)) return .{ .select_kind = @intCast(index) };
+            if (std.mem.eql(
+                u8,
+                ModelRow.kindName(kind),
+                argument,
+            )) return .{ .select_kind = @intCast(index) };
         }
     } else if (std.mem.eql(u8, verb, "slot")) {
-        if (std.meta.stringToEnum(shared.entity.Loop, argument)) |loop| return .{ .select_slot = .{ .loop = loop } };
-        if (std.meta.stringToEnum(shared.entity.Action, argument)) |action| return .{ .select_slot = .{ .action = action } };
+        if (std.meta.stringToEnum(shared.entity.Loop, argument)) |loop| return .{
+            .select_slot = .{ .loop = loop },
+        };
+        if (std.meta.stringToEnum(shared.entity.Action, argument)) |action| return .{
+            .select_slot = .{ .action = action },
+        };
     } else if (std.mem.eql(u8, verb, "clip")) {
         if (std.mem.eql(u8, argument, "none")) return .{ .assign_clip = null };
         const clips = models.modelPtr(models.get(kinds[state.kind_index])).clips;
@@ -174,7 +197,9 @@ pub fn slotClip(row: *const ModelRow, slot: Slot) ?[]const u8 {
 pub fn assign(io: std.Io, models: *const Models, kind: Kind, slot: Slot, clip: ?u16) !void {
     const handle = models.get(kind);
     var row = models.row(handle) orelse return;
-    const clip_name: ?[]const u8 = if (clip) |index| models.modelPtr(handle).clips[index].name else null;
+    const clip_name: ?[]const u8 = if (clip) |index| models.modelPtr(
+        handle,
+    ).clips[index].name else null;
     switch (slot) {
         .loop => |loop| row.setLoop(loop, clip_name),
         .action => |action| row.setAction(action, clip_name),

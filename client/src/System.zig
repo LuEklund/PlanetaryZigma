@@ -109,7 +109,11 @@ pub fn init(self: *System, data: Init) !void {
     errdefer self.render.api.deinit(self.render.handle);
 
     self.assets = try .init(data.gpa, data.io);
-    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "objects/portalsphere.glb", null);
+    self.teleport_sphere_model = try self.assets.models.add(
+        data.gpa,
+        "objects/portalsphere.glb",
+        null,
+    );
     errdefer self.assets.deinit(data.gpa, data.io);
 
     try self.audio.init(self.assets.root);
@@ -251,11 +255,18 @@ fn step(self: *System, world: *World) !void {
         &world.options,
         &self.assets,
     );
-    const zoo_command: zoo_scene.Command = if (self.scene == .zoo) zoo_hud.update(&self.zoo, &self.assets.models, world) else .none;
+    const zoo_command: zoo_scene.Command = if (self.scene == .zoo) zoo_hud.update(
+        &self.zoo,
+        &self.assets.models,
+        world,
+    ) else .none;
     _ = try self.dvui_window.end(.{});
     try self.applyZooCommand(world, zoo_command);
     if (self.auto_ready and world.stage == 0) if (world.getPtr(world.player_id)) |player| {
-        if (!player.ready) try self.network.sendCommand(.{ .lobby = .{ .ready = true } }, .reliable);
+        if (!player.ready) try self.network.sendCommand(
+            .{ .lobby = .{ .ready = true } },
+            .reliable,
+        );
         self.auto_ready = false;
     };
     try self.pollConsole(world);
@@ -299,7 +310,8 @@ fn step(self: *System, world: *World) !void {
         world.chat.input_len = 0;
     }
 
-    const next_scene: Scene = if (self.network.connected()) .game else if (self.scene == .zoo) .zoo else .menu;
+    const offline_scene: Scene = if (self.scene == .zoo) .zoo else .menu;
+    const next_scene: Scene = if (self.network.connected()) .game else offline_scene;
     if (next_scene != self.scene) try self.enterScene(world, next_scene);
     if (self.discord) |*discord| discord.update(
         self.io,
@@ -356,7 +368,8 @@ fn step(self: *System, world: *World) !void {
     );
 }
 
-/// Sends every line of the dev console file as a chat line (zoo: a zoo command), then empties the file.
+/// Runs every line of the dev console file, then empties it:
+/// `!ping`, a zoo command in the zoo, else a chat line.
 fn pollConsole(self: *System, world: *World) !void {
     const path = self.console_path orelse return;
     if (world.elapsed_time < self.console_next_poll) return;
@@ -373,11 +386,17 @@ fn pollConsole(self: *System, world: *World) !void {
             continue;
         }
         if (self.scene == .zoo) {
-            try self.applyZooCommand(world, zoo_scene.parseCommand(line, &self.assets.models, &self.zoo));
+            try self.applyZooCommand(
+                world,
+                zoo_scene.parseCommand(line, &self.assets.models, &self.zoo),
+            );
             continue;
         }
         const text = line[0..@min(line.len, shared.max_chat_len)];
-        try self.network.sendCommand(.{ .chat = .{ .text_len = @intCast(text.len), .text = text } }, .reliable);
+        try self.network.sendCommand(
+            .{ .chat = .{ .text_len = @intCast(text.len), .text = text } },
+            .reliable,
+        );
     }
 }
 
@@ -439,7 +458,13 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
             self.zoo.slot = slot;
             if (slot == .action) self.playZooAction(world);
         },
-        .assign_clip => |clip| zoo_scene.assign(self.io, &self.assets.models, kind, self.zoo.slot, clip) catch |err|
+        .assign_clip => |clip| zoo_scene.assign(
+            self.io,
+            &self.assets.models,
+            kind,
+            self.zoo.slot,
+            clip,
+        ) catch |err|
             std.log.err("zoo: save manifest: {t}", .{err}),
         .play_action => self.playZooAction(world),
         .set_radius => |radius| {
@@ -460,7 +485,9 @@ fn playZooAction(self: *System, world: *World) void {
         .loop => return,
     };
     const models = &self.assets.models;
-    const clip = models.rig(models.get(zoo_scene.kinds[self.zoo.kind_index])).action_clips.get(action) orelse return;
+    const clip = models.rig(
+        models.get(zoo_scene.kinds[self.zoo.kind_index]),
+    ).action_clips.get(action) orelse return;
     self.animator.playOverlay(zoo_scene.subjectAnimation(world, &self.zoo), clip, models);
 }
 

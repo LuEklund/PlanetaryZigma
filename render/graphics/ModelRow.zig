@@ -125,7 +125,9 @@ pub fn save(row: *const ModelRow, io: std.Io, assets_dir: std.Io.Dir, kind: enti
 fn assertNamesMatch(Fields: type, Enum: type) void {
     const fields = @typeInfo(Fields).@"struct".fields;
     const tags = @typeInfo(Enum).@"enum".fields;
-    if (fields.len != tags.len) @compileError(@typeName(Fields) ++ " out of sync with " ++ @typeName(Enum));
+    if (fields.len != tags.len) @compileError(
+        @typeName(Fields) ++ " out of sync with " ++ @typeName(Enum),
+    );
     for (fields, tags) |field, tag| {
         if (!std.mem.eql(u8, field.name, tag.name)) @compileError(field.name ++ " != " ++ tag.name);
     }

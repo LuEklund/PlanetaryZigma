@@ -51,7 +51,12 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
 
             const index_anchor = chunk.surface_cells.getIndex(anchor).?;
             const centroids = chunk.surface_cells.values();
-            const quad = [4]nz.Vec3(f32){ centroids[index_anchor], centroids[index_b], centroids[index_c], centroids[index_bc] };
+            const quad = [4]nz.Vec3(f32){
+                centroids[index_anchor],
+                centroids[index_b],
+                centroids[index_c],
+                centroids[index_bc],
+            };
             for (quad) |corner| {
                 if (nz.vec.length(corner) >= water_level) continue;
                 try water_quads.append(gpa, quad);
@@ -92,7 +97,13 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
 
     try decoration.appendProps(gpa, &chunk_mesh, chunk, owned, normals, radius_float, biome);
     chunk_mesh.opaque_index_count = @intCast(chunk_mesh.indices.items.len);
-    if (biome.water) |water| try decoration.appendWater(gpa, &chunk_mesh, water_quads.items, water_level, water.color);
+    if (biome.water) |water| try decoration.appendWater(
+        gpa,
+        &chunk_mesh,
+        water_quads.items,
+        water_level,
+        water.color,
+    );
     return chunk_mesh;
 }
 

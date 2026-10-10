@@ -117,8 +117,14 @@ pub fn update(self: *Controller, window: *const Window) shared.net.Input {
                 self.applyAction(&new_player_inputs, action, pressed);
             },
             .mouse => |mask| {
-                const down = @as(u8, @bitCast(window.pointer.buttons)) & @as(u8, @bitCast(mask)) != 0;
-                const was_down = @as(u8, @bitCast(self.held_buttons)) & @as(u8, @bitCast(mask)) != 0;
+                const down = @as(
+                    u8,
+                    @bitCast(window.pointer.buttons),
+                ) & @as(u8, @bitCast(mask)) != 0;
+                const was_down = @as(
+                    u8,
+                    @bitCast(self.held_buttons),
+                ) & @as(u8, @bitCast(mask)) != 0;
                 const pressed = switch (actions[@intFromEnum(action)].behavior) {
                     .held => down,
                     .pressed => down and !was_down,

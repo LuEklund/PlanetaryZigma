@@ -27,7 +27,10 @@ pub fn aim(world: *World) shared.net.PingRequest {
         best_position = entity.transform.position;
     }
     if (best_target != .none) return .{ .position = best_position, .target = best_target };
-    return .{ .position = origin + nz.vec.scale(forward, terrainDistance(&world.planet, origin, forward)), .target = .none };
+    return .{
+        .position = origin + nz.vec.scale(forward, terrainDistance(&world.planet, origin, forward)),
+        .target = .none,
+    };
 }
 
 fn terrainDistance(planet: *const shared.Planet, origin: Vec3, direction: Vec3) f32 {

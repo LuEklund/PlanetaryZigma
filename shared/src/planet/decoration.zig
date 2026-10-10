@@ -18,11 +18,14 @@ const Frame = struct {
     forward: Vec3,
 
     fn at(frame: Frame, x: f32, y: f32, z: f32) Vec3 {
-        return frame.base + nz.vec.scale(frame.right, x) + nz.vec.scale(frame.up, y) + nz.vec.scale(frame.forward, z);
+        return frame.base + nz.vec.scale(frame.right, x) + nz.vec.scale(frame.up, y) + nz.vec.scale(
+            frame.forward,
+            z,
+        );
     }
 };
 
-/// Scatters trees, rocks and grass over the chunk's owned flat surface cells, deterministically per cell.
+/// Trees, rocks and grass on the chunk's owned flat surface cells, deterministic per cell.
 pub fn appendProps(
     gpa: std.mem.Allocator,
     mesh: *Mesh,
@@ -33,13 +36,18 @@ pub fn appendProps(
     biome: *const Biome,
 ) !void {
     const props = biome.props;
-    const water_level = if (biome.water) |water| planet_radius + water.level else -std.math.inf(f32);
-    for (chunk.surface_cells.keys(), chunk.surface_cells.values(), normals) |anchor, centroid, normal| {
+    const water_level = if (biome.water) |water| planet_radius + water.level else -std.math.inf(
+        f32,
+    );
+    const cells = chunk.surface_cells;
+    for (cells.keys(), cells.values(), normals) |anchor, centroid, normal| {
         if (!owned.contains(anchor)) continue;
         const up = nz.vec.normalize(centroid);
         if (nz.vec.dot(normal, up) < min_flatness) continue;
         if (nz.vec.length(centroid) < water_level) continue;
-        if (centroid[1] > 0 and @sqrt(centroid[0] * centroid[0] + centroid[2] * centroid[2]) < landing_clear_radius) continue;
+        if (centroid[1] > 0 and @sqrt(
+            centroid[0] * centroid[0] + centroid[2] * centroid[2],
+        ) < landing_clear_radius) continue;
         var prng: std.Random.DefaultPrng = .init(std.hash.Wyhash.hash(0, std.mem.asBytes(&anchor)));
         const random = prng.random();
         const frame = frameAt(centroid, up, random.float(f32) * std.math.tau);
@@ -55,7 +63,13 @@ pub fn appendProps(
             continue;
         }
         roll -= props.rocks;
-        if (roll < props.grass) try appendGrass(gpa, mesh, frame, random, scaled(props.grass_color, shade));
+        if (roll < props.grass) try appendGrass(
+            gpa,
+            mesh,
+            frame,
+            random,
+            scaled(props.grass_color, shade),
+        );
     }
 }
 
@@ -69,13 +83,23 @@ pub fn appendWater(
 ) !void {
     for (quads) |quad| {
         var shell: [4]Vec3 = undefined;
-        for (quad, &shell) |corner, *projected| projected.* = nz.vec.scale(nz.vec.normalize(corner), level);
+        for (quad, &shell) |corner, *projected| projected.* = nz.vec.scale(
+            nz.vec.normalize(corner),
+            level,
+        );
         try waterTriangle(gpa, mesh, shell[0], shell[1], shell[3], color);
         try waterTriangle(gpa, mesh, shell[0], shell[3], shell[2], color);
     }
 }
 
-fn waterTriangle(gpa: std.mem.Allocator, mesh: *Mesh, a: Vec3, b: Vec3, c: Vec3, color: [4]f32) !void {
+fn waterTriangle(
+    gpa: std.mem.Allocator,
+    mesh: *Mesh,
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    color: [4]f32,
+) !void {
     const face = nz.vec.cross(b - a, c - a);
     if (nz.vec.length(face) < 1e-6) return;
     const outward = nz.vec.dot(face, a) > 0;
@@ -117,10 +141,24 @@ fn appendTree(
     try appendPrism(gpa, mesh, frame, -0.3, trunk_height, 0.18, scaled(props.trunk_color, shade));
     const leaves = scaled(props.leaf_color, shade);
     try appendCone(gpa, mesh, frame, trunk_height * 0.8, height * 0.45, height * 0.3, leaves);
-    try appendCone(gpa, mesh, frame, trunk_height + height * 0.25, height * 0.4, height * 0.22, leaves);
+    try appendCone(
+        gpa,
+        mesh,
+        frame,
+        trunk_height + height * 0.25,
+        height * 0.4,
+        height * 0.22,
+        leaves,
+    );
 }
 
-fn appendRock(gpa: std.mem.Allocator, mesh: *Mesh, frame: Frame, random: std.Random, color: Color) !void {
+fn appendRock(
+    gpa: std.mem.Allocator,
+    mesh: *Mesh,
+    frame: Frame,
+    random: std.Random,
+    color: Color,
+) !void {
     const size = 0.3 + random.float(f32) * random.float(f32) * 1.4;
     var ring: [sides]Vec3 = undefined;
     for (&ring, 0..) |*point, index| {
@@ -137,7 +175,13 @@ fn appendRock(gpa: std.mem.Allocator, mesh: *Mesh, frame: Frame, random: std.Ran
     }
 }
 
-fn appendGrass(gpa: std.mem.Allocator, mesh: *Mesh, frame: Frame, random: std.Random, color: Color) !void {
+fn appendGrass(
+    gpa: std.mem.Allocator,
+    mesh: *Mesh,
+    frame: Frame,
+    random: std.Random,
+    color: Color,
+) !void {
     for (0..3) |_| {
         const angle = random.float(f32) * std.math.tau;
         const height = 0.3 + random.float(f32) * 0.5;
@@ -198,7 +242,14 @@ fn appendCone(
     }
 }
 
-fn appendTriangle(gpa: std.mem.Allocator, mesh: *Mesh, a: Vec3, b: Vec3, c: Vec3, color: Color) !void {
+fn appendTriangle(
+    gpa: std.mem.Allocator,
+    mesh: *Mesh,
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    color: Color,
+) !void {
     const normal = nz.vec.normalize(nz.vec.cross(b - a, c - a));
     const base: u32 = @intCast(mesh.vertices.items.len);
     for ([_]Vec3{ a, b, c }) |corner| try mesh.vertices.append(gpa, .{

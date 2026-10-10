@@ -557,7 +557,10 @@ fn addPings(world: *World, view_proj: nz.Mat4x4(f32)) void {
         const target = world.getPtr(ping.event.target);
         const position = if (target) |entity| entity.transform.position else ping.event.position;
         const up = shared.Planet.up(position) orelse continue;
-        const screen = style.worldToScreen(view_proj, position + nz.vec.scale(up, 2)) orelse continue;
+        const screen = style.worldToScreen(
+            view_proj,
+            position + nz.vec.scale(up, 2),
+        ) orelse continue;
         const pinger = world.getPtr(ping.event.pinger);
         const name = if (pinger) |player| player.player_name.slice() else "";
         const what = if (target) |entity| kindLabel(entity.kind) else "here";
