@@ -104,7 +104,7 @@ pub fn init(self: *System, data: Init) !void {
     errdefer self.render.api.deinit(self.render.handle);
 
     self.assets = try .init(data.gpa, data.io);
-    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "portalsphere.glb", null);
+    self.teleport_sphere_model = try self.assets.models.add(data.gpa, "objects/portalsphere.glb", null);
     errdefer self.assets.deinit(data.gpa, data.io);
 
     try self.audio.init(self.assets.root);

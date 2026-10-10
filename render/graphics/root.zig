@@ -4,3 +4,4 @@ pub const Rig = @import("Rig.zig");
 
 pub const Animator = @import("Animator.zig");
 pub const Particle = @import("Particle.zig");
+pub const ModelRow = @import("ModelRow.zig");

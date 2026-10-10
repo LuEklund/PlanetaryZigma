@@ -3,7 +3,9 @@ const Rig = @This();
 const std = @import("std");
 const shared = @import("shared");
 const Model = @import("assets/root.zig").Model;
+const ModelRow = @import("ModelRow.zig");
 
+offset: shared.numz.Transform3D(f32),
 loop_clips: std.EnumArray(shared.entity.Loop, ?usize),
 action_clips: std.EnumArray(shared.entity.Action, ?usize),
 look_nodes: []usize,
@@ -12,6 +14,7 @@ spawn_duration: f32,
 death_duration: f32,
 
 pub const empty: Rig = .{
+    .offset = .{},
     .loop_clips = .initFill(null),
     .action_clips = .initFill(null),
     .look_nodes = &.{},
@@ -24,15 +27,16 @@ pub fn init(
     self: *Rig,
     gpa: std.mem.Allocator,
     model: *const Model,
+    row: *const ModelRow,
     kind_spec: *const shared.entity.Spec,
-    spec: shared.entity.ModelSpec,
 ) !void {
     self.deinit(gpa);
     self.* = .empty;
+    self.offset = row.offset;
     self.spawn_duration = kind_spec.spawn_duration;
     self.death_duration = kind_spec.death_duration;
 
-    if (spec.look_node_names) |look_node_names| {
+    if (row.look_nodes) |look_node_names| {
         var found: [3]usize = undefined;
         var count: usize = 0;
         inline for (.{
@@ -45,7 +49,7 @@ pub fn init(
                     model,
                     "look node",
                     node_name,
-                    spec,
+                    row,
                 );
                 count += 1;
             }
@@ -53,12 +57,12 @@ pub fn init(
         self.look_nodes = try gpa.dupe(usize, found[0..count]);
     }
 
-    if (spec.overlay_root_name) |root_name| {
+    if (row.overlay_root) |root_name| {
         const overlay_root = model.nodeIndex(root_name) orelse return reportMissing(
             model,
             "overlay root",
             root_name,
-            spec,
+            row,
         );
         const overlay_mask = try gpa.alloc(bool, model.nodes.items.len);
         for (model.nodes.items, overlay_mask, 0..) |node, *masked, node_index| {
@@ -67,24 +71,17 @@ pub fn init(
         self.overlay_mask = overlay_mask;
     }
 
-    if (spec.loop_clips) |loop_clips| {
-        for (loop_clips.values, &self.loop_clips.values) |maybe_name, *loop_clip| {
-            loop_clip.* = if (maybe_name) |clip_name| model.clipIndex(clip_name) orelse
-                return reportMissingClip(model, clip_name, spec) else null;
-        }
-        if (self.loop_clips.get(.death)) |index| {
-            const death_clip = model.clips[index];
-            self.death_duration = death_clip.end - death_clip.start;
-        }
+    for (std.enums.values(shared.entity.Loop)) |loop| {
+        const clip_name = row.loop(loop) orelse continue;
+        self.loop_clips.set(loop, model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row));
     }
-    for (kind_spec.skills.values, &self.action_clips.values) |maybe_assigned, *action_clip| {
-        const assigned = maybe_assigned orelse continue;
-        const clip_name = assigned.clip orelse continue;
-        action_clip.* = model.clipIndex(clip_name) orelse return reportMissingClip(
-            model,
-            clip_name,
-            spec,
-        );
+    if (self.loop_clips.get(.death)) |index| {
+        const death_clip = model.clips[index];
+        self.death_duration = death_clip.end - death_clip.start;
+    }
+    for (std.enums.values(shared.entity.Action)) |action| {
+        const clip_name = row.action(action) orelse continue;
+        self.action_clips.set(action, model.clipIndex(clip_name) orelse return reportMissingClip(model, clip_name, row));
     }
 }
 
@@ -98,21 +95,21 @@ fn reportMissing(
     model: *const Model,
     what: []const u8,
     name: []const u8,
-    spec: shared.entity.ModelSpec,
+    row: *const ModelRow,
 ) error{NodeNotFound} {
-    std.log.err("{s} \"{s}\" not found in {s}; nodes in this file:", .{ what, name, spec.path });
+    std.log.err("{s} \"{s}\" not found in {s}; nodes in this file:", .{ what, name, row.model });
     for (model.node_names) |node_name| std.log.err("  \"{s}\"", .{node_name});
-    std.log.err("in the model spec (shared/entity.zig) assign one of these", .{});
+    std.log.err("in assets/manifest (or the Zig spec) assign one of these", .{});
     return error.NodeNotFound;
 }
 
 fn reportMissingClip(
     model: *const Model,
     name: []const u8,
-    spec: shared.entity.ModelSpec,
+    row: *const ModelRow,
 ) error{ClipNotFound} {
-    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, spec.path });
+    std.log.err("clip \"{s}\" not found in {s}; clips in this file:", .{ name, row.model });
     for (model.clips) |clip| std.log.err("  \"{s}\"", .{clip.name});
-    std.log.err("in the model spec assign null or one of these", .{});
+    std.log.err("in assets/manifest (or the Zig spec) assign null or one of these", .{});
     return error.ClipNotFound;
 }

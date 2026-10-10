@@ -129,10 +129,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
     for (world.entities.values()) |*entity| {
         const handle = viewer.animations.get(entity.id) orelse continue;
         const pose = viewer.animator.pose(handle) orelse continue;
-        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{
-            .path = "",
-            .loop_clips = null,
-        };
+        const model_offset = models.rig(pose.model).offset;
         var transform = entity.transform;
         if (entity.kind == .item_pickup) {
             transform.rotation = transform.rotation
@@ -148,7 +145,7 @@ pub fn frame(world: *World, viewer: *Viewer, gpa: std.mem.Allocator) !void {
             list,
             models,
             pose,
-            transform.toMat4x4().mul(model_spec.offset.toMat4x4()),
+            transform.toMat4x4().mul(model_offset.toMat4x4()),
             entity.transform.position,
             entity.kind == .teleporter,
         );

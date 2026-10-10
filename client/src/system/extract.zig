@@ -126,10 +126,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
         }
 
         const pose = animator.pose(entity.animation) orelse continue;
-        const model_spec: shared.entity.ModelSpec = entity.kind.modelSpec() orelse .{
-            .path = "",
-            .loop_clips = null,
-        };
+        const model_offset = models.rig(pose.model).offset;
         var transform = entity.transform;
         if (entity.elite != .none) transform.scale = @splat(elite_scale);
         if (entity.kind == .item_pickup) {
@@ -153,17 +150,14 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             list,
             models,
             pose,
-            transform.toMat4x4().mul(model_spec.offset.toMat4x4()),
+            transform.toMat4x4().mul(model_offset.toMat4x4()),
             entity.transform.position,
             player_interact == entity.id,
         );
     }
     for (world.dying.items) |corpse| {
         const pose = animator.pose(corpse.animation) orelse continue;
-        const corpse_spec: shared.entity.ModelSpec = corpse.kind.modelSpec() orelse .{
-            .path = "",
-            .loop_clips = null,
-        };
+        const corpse_offset = models.rig(pose.model).offset;
         var transform = corpse.transform;
         if (corpse.kind == .lootbox) {
             const death_duration = models.rig(models.get(corpse.kind)).death_duration;
@@ -177,7 +171,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             list,
             models,
             pose,
-            transform.toMat4x4().mul(corpse_spec.offset.toMat4x4()),
+            transform.toMat4x4().mul(corpse_offset.toMat4x4()),
             corpse.transform.position,
             false,
         );

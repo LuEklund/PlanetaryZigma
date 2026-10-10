@@ -8,6 +8,7 @@ const assets = @import("assets/root.zig");
 const gltf = @import("assets/types/gltf.zig");
 const Model = @import("assets/root.zig").Model;
 const Rig = @import("Rig.zig");
+const ModelRow = @import("ModelRow.zig");
 
 const RenderLib = shared.HotLib(contract.Api, *anyopaque);
 
@@ -15,6 +16,8 @@ pub const Entry = struct {
     path: []const u8,
     mtime: std.Io.Timestamp,
     kind: ?entity.Kind,
+    manifest: ?ModelRow,
+    manifest_mtime: std.Io.Timestamp,
     model: Model,
     rig: Rig,
     image_slots: []contract.TextureHandle,
@@ -28,10 +31,8 @@ default: u32,
 item_models: std.EnumArray(shared.Item.Kind, u32),
 
 pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
-    const root = try assets.openDir(io);
-    defer root.close(io);
     var self: Models = .{
-        .dir = try root.openDir(io, "objects", .{}),
+        .dir = try assets.openDir(io),
         .entries = .empty,
         .reloaded = .empty,
         .default = 0,
@@ -42,12 +43,12 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     self.default = try self.add(gpa, "", null);
     for (entity.all_kinds) |kind| {
         const model_spec = kind.modelSpec() orelse continue;
-        _ = try self.add(gpa, std.fs.path.basename(model_spec.path), kind);
+        _ = try self.add(gpa, model_spec.path, kind);
     }
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const handle = try self.add(
             gpa,
-            std.fs.path.basename(shared.Item.model_paths[@intFromEnum(item_kind)]),
+            shared.Item.model_paths[@intFromEnum(item_kind)],
             null,
         );
         self.item_models.set(item_kind, handle);
@@ -63,6 +64,7 @@ pub fn deinit(self: *Models, gpa: std.mem.Allocator, io: std.Io) void {
     self.dir.close(io);
     for (self.entries.items) |*entry| {
         entry.rig.deinit(gpa);
+        if (entry.manifest) |manifest| ModelRow.free(gpa, manifest);
         gpa.free(entry.image_slots);
         entry.model.deinit(gpa);
     }
@@ -76,6 +78,8 @@ pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: ?entit
         .path = path,
         .mtime = .zero,
         .kind = kind,
+        .manifest = null,
+        .manifest_mtime = .zero,
         .model = .empty,
         .rig = .empty,
         .image_slots = &.{},
@@ -100,37 +104,76 @@ pub fn rig(self: *const Models, handle: u32) *const Rig {
     return &self.entries.items[handle].rig;
 }
 
+/// The kind's presentation: its manifest file if one exists, else its Zig spec.
+pub fn row(self: *const Models, handle: u32) ?ModelRow {
+    const entry = &self.entries.items[handle];
+    if (entry.manifest) |manifest| return manifest;
+    return ModelRow.fromSpec(entry.kind orelse return null);
+}
+
 pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
     for (self.entries.items, 0..) |*entry, handle| {
-        if (entry.path.len == 0) continue;
-        if (!assets.changed(io, self.dir, entry.path, &entry.mtime)) continue;
-
-        const kind_spec: ?*const entity.Spec = if (entry.kind) |kind| kind.spec() else null;
-        const model_spec: ?entity.ModelSpec = if (kind_spec) |spec| (spec.model orelse continue) else null;
-        const bytes = try assets.read(gpa, io, self.dir, entry.path);
-        defer gpa.free(bytes);
-
-        var fresh: Model = .empty;
-        var parsed = glb(gpa, bytes, &fresh) catch |err| {
-            std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
-            fresh.deinit(gpa);
-            continue;
-        };
-        defer parsed.deinit(gpa);
-
-        for (entry.model.mesh_handles) |mesh| {
-            if (mesh != 0) renderer.api.freeMesh(renderer.handle, @enumFromInt(mesh));
+        const manifest_changed = try self.updateManifest(gpa, io, entry);
+        const model_changed = entry.path.len > 0 and assets.changed(io, self.dir, entry.path, &entry.mtime);
+        if (model_changed) {
+            if (!try self.reloadModel(gpa, io, renderer, entry)) continue;
+            try self.reloaded.append(gpa, @intCast(handle));
         }
-        for (entry.image_slots) |texture| renderer.api.freeImage(renderer.handle, texture);
-        gpa.free(entry.image_slots);
-        entry.image_slots = &.{};
-        entry.model.deinit(gpa);
-        entry.model = fresh;
-
-        if (kind_spec) |spec| try entry.rig.init(gpa, &entry.model, spec, model_spec.?);
-        try uploadMeshes(gpa, renderer, entry, &parsed);
-        try self.reloaded.append(gpa, @intCast(handle));
+        if (!model_changed and !manifest_changed) continue;
+        const kind = entry.kind orelse continue;
+        const current = self.row(@intCast(handle)) orelse continue;
+        entry.rig.init(gpa, &entry.model, &current, kind.spec()) catch |err|
+            std.log.err("{s}: {t}, fix its manifest or spec", .{ entry.path, err });
     }
+}
+
+fn updateManifest(self: *Models, gpa: std.mem.Allocator, io: std.Io, entry: *Entry) !bool {
+    const kind = entry.kind orelse return false;
+    var path_buffer: [256]u8 = undefined;
+    const path = try ModelRow.filePath(&path_buffer, kind);
+    if (!assets.changed(io, self.dir, path, &entry.manifest_mtime)) return false;
+    const source = self.dir.readFileAllocOptions(io, path, gpa, .limited(64 * 1024), .of(u8), 0) catch |err| {
+        std.log.err("{s}: {t}", .{ path, err });
+        return false;
+    };
+    defer gpa.free(source);
+    const fresh = ModelRow.parse(gpa, source) catch return false;
+    if (!std.mem.eql(u8, fresh.model, entry.path)) entry.mtime = .zero;
+    entry.path = fresh.model;
+    if (entry.manifest) |old| ModelRow.free(gpa, old);
+    entry.manifest = fresh;
+    std.log.info("manifest {s} loaded", .{path});
+    return true;
+}
+
+fn reloadModel(
+    self: *Models,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    renderer: *const RenderLib,
+    entry: *Entry,
+) !bool {
+    const bytes = try assets.read(gpa, io, self.dir, entry.path);
+    defer gpa.free(bytes);
+
+    var fresh: Model = .empty;
+    var parsed = glb(gpa, bytes, &fresh) catch |err| {
+        std.log.warn("model {s}: {t} - keeping the one already loaded", .{ entry.path, err });
+        fresh.deinit(gpa);
+        return false;
+    };
+    defer parsed.deinit(gpa);
+
+    for (entry.model.mesh_handles) |mesh| {
+        if (mesh != 0) renderer.api.freeMesh(renderer.handle, @enumFromInt(mesh));
+    }
+    for (entry.image_slots) |texture| renderer.api.freeImage(renderer.handle, texture);
+    gpa.free(entry.image_slots);
+    entry.image_slots = &.{};
+    entry.model.deinit(gpa);
+    entry.model = fresh;
+    try uploadMeshes(gpa, renderer, entry, &parsed);
+    return true;
 }
 
 fn uploadMeshes(
