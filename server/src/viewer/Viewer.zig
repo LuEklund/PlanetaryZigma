@@ -135,7 +135,8 @@ pub fn draw(self: *Viewer, world: *World, gpa: std.mem.Allocator, io: std.Io) !b
         (self.arrow_lines.items.len + self.border_lines.items.len) * 2,
         DrawList.max_lines * 2,
     }, .{
-        .rect = .{ .x = 8, .y = 8, .w = 400, .h = 20 },
+        .rect = .{ .x = 8, .y = 8, .w = 400, .h = 22 },
+        .padding = .all(0),
         .font = dvui.Font.theme(.body).withSize(16),
     });
     _ = try self.dvui_window.end(.{});
