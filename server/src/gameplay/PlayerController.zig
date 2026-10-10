@@ -141,7 +141,7 @@ fn updateInteractTarget(
 pub fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
     const entity = world.getPtr(id) orelse return .none;
     return switch (entity.kind) {
-        .lootbox, .barrel, .printer, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
+        .lootbox, .barrel, .printer, .multishop, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
         .teleporter => switch (entity.teleporter.state) {
             .active => .none,
             .completed => if (world.teleport_bosses.items.len > 0) .none else id,
@@ -166,6 +166,7 @@ pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
         .teleporter => try useTeleporter(world, player, target),
         .item_pickup => pickUp(world, player, target),
         .printer => printItem(world, player, target),
+        .multishop => try buyFromMultishop(world, player, target),
         .barrel => {
             player.currency += target.currency;
             world.client_updates.appendAssumeCapacity(.{
@@ -209,6 +210,19 @@ fn printItem(world: *World, player: *World.Entity, printer: *World.Entity) void 
     player.inventory.set(given, left);
     world.client_updates.appendAssumeCapacity(.{ .inventory = .{ .id = player.id, .item_kind = given, .set = left } });
     _ = items.giveItem(world, player, wanted, 1);
+}
+
+/// Pays, takes this terminal's item, closes every terminal of the same group.
+fn buyFromMultishop(world: *World, player: *World.Entity, terminal: *World.Entity) !void {
+    if (player.currency < terminal.currency) return;
+    const item = terminal.item orelse return;
+    player.currency -= terminal.currency;
+    world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = player.id, .amount = player.currency } });
+    _ = items.giveItem(world, player, item, 1);
+    const group = terminal.owner_id;
+    for (world.entities.values()) |*entity| {
+        if (entity.kind == .multishop and entity.owner_id == group) world.queueDespawn(entity.id);
+    }
 }
 
 const chance_fail_odds: f32 = 0.45;

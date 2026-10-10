@@ -15,6 +15,7 @@ Playtest these (built and screenshotted, but not played):
    - **Sprint:** Left Ctrl, ×1.45, attacking cancels it.
    - New items: feather (air jump), fungus (heal while standing still).
    - 3D printers trade a random same-tier item for theirs.
+   - Multishops: three terminals, buy one and the others close (placeholder: small lootbox).
    - Low-health red screen edges.
    - Loops (stage 6+) start at night.
    - Enemy bullets have red-violet tracers (unverified in a live fight: enemies never got line of sight during my test).

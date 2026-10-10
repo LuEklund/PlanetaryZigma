@@ -257,7 +257,7 @@ pub fn spawn(self: *World, entity_info: Entity) SpawnError!*Entity {
             for (elite.granted_items) |grant| _ = entity.inventory.add(grant.item, grant.count);
         },
         .barrel => entity.currency = shared.difficulty.killReward(base_currency, difficulty_coefficient),
-        .lootbox, .shrine_chance => entity.currency = shared.difficulty.chestCost(
+        .lootbox, .shrine_chance, .multishop => entity.currency = shared.difficulty.chestCost(
             base_currency,
             difficulty_coefficient,
         ),

@@ -446,14 +446,14 @@ fn addInteractPrompt(world: *World, player: *const World.Entity, area: dvui.Rect
     const name: []const u8 = switch (entity.kind) {
         .shrine_chance => "Shrine of Chance",
         .barrel => "Barrel",
-        .printer => if (entity.item) |item| @tagName(item) else "Printer",
+        .printer, .multishop => if (entity.item) |item| @tagName(item) else "",
         .shrine_combat => "Shrine of Combat",
         .shrine_mountain => "Shrine of the Mountain",
         else => "",
     };
     var buffer: [64]u8 = undefined;
     const text = switch (entity.kind) {
-        .lootbox, .shrine_chance => std.fmt.bufPrint(&buffer, "E  ${d}  {s}", .{ entity.currency, name }),
+        .lootbox, .shrine_chance, .multishop => std.fmt.bufPrint(&buffer, "E  ${d}  {s}", .{ entity.currency, name }),
         .printer => std.fmt.bufPrint(&buffer, "E  Print {s}", .{name}),
         else => std.fmt.bufPrint(&buffer, "E  {s}", .{name}),
     } catch "E";

@@ -73,6 +73,18 @@ pub const printer: Spec = .{
     .model = .{ .path = "objects/pillar.glb", .offset = .{ .scale = .{ 0.5, 0.25, 0.5 } }, .loop_clips = null },
 };
 
+/// RoR2 multishop terminal: three in a row, each shows an item; buying one closes the others.
+/// Placeholder: the lootbox model, smaller.
+pub const multishop: Spec = .{
+    .collider = .{
+        .shape = .{ .box = .{ .x = 0.5, .y = 0.6, .z = 0.5 } },
+        .motion = .static,
+        .layer = .moving,
+    },
+    .model = .{ .path = "objects/lootbox.glb", .offset = .{ .scale = .{ 0.7, 0.9, 0.7 } }, .loop_clips = null },
+    .currency = 25,
+};
+
 /// Placeholder look: the pillar model scaled down (needs a shrine model from Lucas).
 const shrine_model: entity.ModelSpec = .{
     .path = "objects/pillar.glb",

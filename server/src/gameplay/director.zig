@@ -28,6 +28,7 @@ const interactable_cards = [_]InteractableCard{
     .{ .kind = .lootbox, .cost = 15, .weight = 24 },
     .{ .kind = .barrel, .cost = 1, .weight = 10 },
     .{ .kind = .printer, .cost = 25, .weight = 3 },
+    .{ .kind = .multishop, .cost = 20, .weight = 8 },
     .{ .kind = .shrine_chance, .cost = 20, .weight = 4 },
     .{ .kind = .shrine_combat, .cost = 20, .weight = 3 },
     .{ .kind = .shrine_mountain, .cost = 20, .weight = 3 },
@@ -369,6 +370,10 @@ fn populateScene(world: *World) !void {
             nz.vec.normalize(world.planet.surfacePointNear(teleporterPosition(world) orelse .{ 0, 1, 0 }, 5, 12, random))
         else
             nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        if (card.kind == .multishop) {
+            try spawnMultishop(world, direction, random);
+            continue;
+        }
         const item: ?shared.Item.Kind = if (card.kind == .printer) shared.Item.rollFromTier(.common, random) else null;
         _ = try world.spawn(.{ .kind = card.kind, .item = item, .transform = world.planet.surfaceTransform(direction, 0.2) });
     }
@@ -383,6 +388,31 @@ fn populateScene(world: *World) !void {
         const surface = world.planet.surfacePoint(nz.vec.randomUnitVector(nz.Vec3(f32), random));
         if (nearPlayer(world, surface)) continue;
         if (spawnPackAt(world, enemy, .none, surface, false)) monster_credits -= cost;
+    }
+}
+
+const multishop_terminals = 3;
+const multishop_spacing: f32 = 2.2;
+
+/// Three terminals side by side; the first one's id links the group (`owner_id`).
+fn spawnMultishop(world: *World, direction: nz.Vec3(f32), random: std.Random) !void {
+    const center = world.planet.surfaceTransform(direction, 0.2);
+    const up = shared.Planet.surfaceUp(center.position);
+    const side = nz.vec.normalize(shared.math.projectOnPlane(.{ 1, 0, 0.3 }, up));
+    var group: shared.entity.Id = .none;
+    for (0..multishop_terminals) |index| {
+        const offset = (@as(f32, @floatFromInt(index)) - 1) * multishop_spacing;
+        const spot = nz.vec.normalize(center.position + nz.vec.scale(side, offset));
+        const terminal = try world.spawn(.{
+            .kind = .multishop,
+            .item = shared.Item.rollFromTier(.common, random),
+            .owner_id = group,
+            .transform = world.planet.surfaceTransform(spot, 0.2),
+        });
+        if (group == .none) {
+            group = terminal.id;
+            terminal.owner_id = group;
+        }
     }
 }
 

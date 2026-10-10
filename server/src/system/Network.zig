@@ -504,7 +504,7 @@ fn spawnPacket(
         .data = switch (entity.kind) {
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
-            .item_pickup, .printer => .{ .item = entity.item.? },
+            .item_pickup, .printer, .multishop => .{ .item = entity.item.? },
             .projectile_heal, .projectile_cube, .projectile_rocket => if (isHostile(world, entity.owner_id)) .hostile_projectile else .none,
             .unknown, .teleporter, .lootbox, .platform, .target_dummy, .barrel, .shrine_combat, .shrine_mountain, .shrine_chance => .none,
         },
