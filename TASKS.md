@@ -9,6 +9,12 @@ Playtest these (built and screenshotted, but not played):
 1. **Directors (decision 0014):** RoR2 fast/slow waves, teleporter director, boss director, scene director. Does stage 1 feel right? Watch the "big monsters late" curve. Dev: `/directors`, `/boss`, `/family swarm`, `/spawning`.
 2. **Teleporter:** now 90 s to charge in a 40 m zone, spawns stop at 99%, and the boss drops one random uncommon per player. Too slow for our map size? It's one const in `server/src/gameplay/teleporter.zig`.
 3. **Shrines (placeholder pillar model):** Chance / Combat / Mountain. Use them with E (or `/use` in dev).
+   - Barrels (placeholder: the unused chest model) give small gold.
+   - Stages draw biomes from RoR2-style pools and loop after stage 5.
+   - Bloorp Lord isn't in the normal spawn pool before stage 3.
+   - **Sprint:** Left Ctrl, ×1.45, attacking cancels it.
+   - New items: feather (air jump), fungus (heal while standing still).
+   - Enemy bullets have red-violet tracers (unverified in a live fight: enemies never got line of sight during my test).
 4. **Look:**
    - New post chain: bloom + soft tone clip + FXAA. Toggle and slider are in Options → Graphics.
    - Hit flash and elite recolor.
