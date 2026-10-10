@@ -1,5 +1,5 @@
 """Deepest block nesting per Zig function. Usage: tools/nesting.py [min_depth] [files...]
-Prints `depth file:line fn_name`, deepest first. Depth 1 = the function body."""
+Prints `depth file:line fn_name`, deepest first. Depth 1 = the function body; `.{` literals do not count."""
 import re
 import subprocess
 import sys
@@ -36,17 +36,18 @@ def scan(path):
             match = FN.match(raw)
             line = strip(raw)
             if match:
-                stack.append({"name": match.group(1), "line": number, "depth": 0, "max": 0})
-            for char in line:
+                stack.append({"name": match.group(1), "line": number, "braces": [], "max": 0})
+            for index, char in enumerate(line):
                 if not stack:
                     break
                 top = stack[-1]
                 if char == "{":
-                    top["depth"] += 1
-                    top["max"] = max(top["max"], top["depth"])
-                elif char == "}":
-                    top["depth"] -= 1
-                    if top["depth"] == 0 and top["max"] > 0:
+                    is_block = line[:index].rstrip()[-1:] != "."
+                    top["braces"].append(is_block)
+                    top["max"] = max(top["max"], sum(top["braces"]))
+                elif char == "}" and top["braces"]:
+                    top["braces"].pop()
+                    if not top["braces"]:
                         results.append((top["max"], path, top["line"], top["name"]))
                         stack.pop()
     return results
