@@ -388,7 +388,8 @@ fn addActionBar(
                 .{
                     .id_extra = index,
                     .rect = rect,
-                    .font = style.font(15),
+                    .padding = .all(0),
+                    .font = style.fitFont(name, 15, rect.w - 4),
                     .color_text = .fromColor(style.text),
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -570,14 +571,7 @@ fn addPings(world: *World, view_proj: nz.Mat4x4(f32)) void {
         const what = if (target) |entity| kindLabel(entity.kind) else "here";
         var buffer: [96]u8 = undefined;
         const text = std.fmt.bufPrint(&buffer, "v {s}: {s}", .{ name, what }) catch "v";
-        dvui.labelNoFmt(@src(), text, .{}, .{
-            .id_extra = index,
-            .rect = .{ .x = screen[0] - 120, .y = screen[1] - 30, .w = 240, .h = 30 },
-            .padding = .all(0),
-            .font = style.font(22),
-            .color_text = .fromColor(style.accent),
-            .gravity_x = 0.5,
-        });
+        style.floatingLabel(@src(), index, text, .{ screen[0], screen[1] - 30 }, 22, style.accent);
     }
 }
 
@@ -600,14 +594,7 @@ fn addNameTags(world: *World, view_proj: nz.Mat4x4(f32)) void {
             entity.transform.position + nz.vec.scale(up, 1.6),
         ) orelse continue;
         const name = if (entity.player_name.slice().len != 0) entity.player_name.slice() else shared.default_player_name;
-        dvui.labelNoFmt(@src(), name, .{}, .{
-            .id_extra = index,
-            .rect = .{ .x = screen[0] - 100, .y = screen[1] - 30, .w = 200, .h = 26 },
-            .padding = .all(0),
-            .font = style.font(18),
-            .color_text = .fromColor(style.text),
-            .gravity_x = 0.5,
-        });
+        style.floatingLabel(@src(), index, name, .{ screen[0], screen[1] - 30 }, 18, style.text);
     }
 }
 

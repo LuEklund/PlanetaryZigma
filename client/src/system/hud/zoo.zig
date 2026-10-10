@@ -118,14 +118,8 @@ fn gridLabels(state: *const zoo.State, world: *World, area: dvui.Rect) void {
     const view_proj = world.camera.viewProj(world.options.fov_rad, area.w / area.h);
     for (zoo.labels(world, state, &buffer), 0..) |label, index| {
         const screen = style.worldToScreen(view_proj, label.position) orelse continue;
-        dvui.labelNoFmt(@src(), label.name, .{}, .{
-            .id_extra = index,
-            .rect = .{ .x = screen[0] - 80, .y = screen[1] + 10, .w = 160, .h = 26 },
-            .padding = .all(0),
-            .font = style.font(18),
-            .color_text = .fromColor(if (label.selected) style.accent else style.text),
-            .gravity_x = 0.5,
-        });
+        const color = if (label.selected) style.accent else style.text;
+        style.floatingLabel(@src(), index, label.name, .{ screen[0], screen[1] + 10 }, 18, color);
     }
 }
 

@@ -19,6 +19,33 @@ pub fn font(size: f32) dvui.Font {
     return dvui.Font.theme(.body).withSize(size);
 }
 
+/// Largest font up to `size` whose `content` fits in `width`.
+pub fn fitFont(content: []const u8, size: f32, width: f32) dvui.Font {
+    var fitted = size;
+    while (fitted > 9 and font(fitted).textSize(content).w > width) fitted -= 1;
+    return font(fitted);
+}
+
+/// Label sized to its whole content, horizontally centered on `anchor[0]`, top at `anchor[1]`.
+pub fn floatingLabel(
+    src: std.builtin.SourceLocation,
+    id_extra: usize,
+    content: []const u8,
+    anchor: [2]f32,
+    size: f32,
+    color: dvui.Color,
+) void {
+    const text_font = font(size);
+    const extent = text_font.textSize(content);
+    dvui.labelNoFmt(src, content, .{}, .{
+        .id_extra = id_extra,
+        .rect = .{ .x = anchor[0] - extent.w / 2 - 2, .y = anchor[1], .w = extent.w + 4, .h = extent.h + 2 },
+        .padding = .all(0),
+        .font = text_font,
+        .color_text = .fromColor(color),
+    });
+}
+
 pub fn rgba(color: [4]f32) dvui.Color {
     return .{
         .r = @intFromFloat(std.math.clamp(color[0], 0, 1) * 255),
