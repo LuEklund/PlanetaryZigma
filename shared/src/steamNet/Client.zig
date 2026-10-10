@@ -296,46 +296,39 @@ fn steamPump(self: *Client) !void {
         defer steam.SteamAPI_ManualDispatch_FreeLastCallback(self.pipe);
         const callback_data = callback.data() orelse continue;
         switch (callback_data) {
-            .SteamNetConnectionStatusChangedCallback => |status_changed| {
-                std.log.info(
-                    "client net state: {s} (conn={d})",
-                    .{ @tagName(status_changed.m_info.m_eState), status_changed.m_hConn },
-                );
-                switch (status_changed.m_info.m_eState) {
-                    .k_ESteamNetworkingConnectionState_Connected => {
-                        self.server_conn = status_changed.m_hConn;
-                        try self.packets.pushEvent(
-                            self.gpa,
-                            .{ .connected = status_changed.m_hConn },
-                        );
-                    },
-                    .k_ESteamNetworkingConnectionState_ClosedByPeer,
-                    .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
-                    => {
-                        std.log.warn("client disconnect: state={s} end_reason={d} ({s}) debug=\"{s}\"", .{
-                            @tagName(status_changed.m_info.m_eState),
-                            status_changed.m_info.m_eEndReason,
-                            endReasonName(status_changed.m_info.m_eEndReason),
-                            std.mem.sliceTo(&status_changed.m_info.m_szEndDebug, 0),
-                        });
-                        _ = steam.SteamNetworkingSockets_SteamAPI().CloseConnection(
-                            status_changed.m_hConn,
-                            0,
-                            "client-close",
-                            false,
-                        );
-                        if (self.server_conn == status_changed.m_hConn) self.server_conn = 0;
-                        try self.packets.pushEvent(
-                            self.gpa,
-                            .{ .disconnected = status_changed.m_hConn },
-                        );
-                    },
-                    else => {},
-                }
-            },
-
+            .SteamNetConnectionStatusChangedCallback => |event| try self.onConnectionStatus(event),
             else => {},
         }
+    }
+}
+
+fn onConnectionStatus(self: *Client, event: steam.SteamNetConnectionStatusChangedCallback_t) !void {
+    const info = event.m_info;
+    std.log.info("client net state: {t} (conn={d})", .{ info.m_eState, event.m_hConn });
+    switch (info.m_eState) {
+        .k_ESteamNetworkingConnectionState_Connected => {
+            self.server_conn = event.m_hConn;
+            try self.packets.pushEvent(self.gpa, .{ .connected = event.m_hConn });
+        },
+        .k_ESteamNetworkingConnectionState_ClosedByPeer,
+        .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
+        => {
+            std.log.warn("client disconnect: state={t} end_reason={d} ({s}) debug=\"{s}\"", .{
+                info.m_eState,
+                info.m_eEndReason,
+                endReasonName(info.m_eEndReason),
+                std.mem.sliceTo(&info.m_szEndDebug, 0),
+            });
+            _ = steam.SteamNetworkingSockets_SteamAPI().CloseConnection(
+                event.m_hConn,
+                0,
+                "client-close",
+                false,
+            );
+            if (self.server_conn == event.m_hConn) self.server_conn = 0;
+            try self.packets.pushEvent(self.gpa, .{ .disconnected = event.m_hConn });
+        },
+        else => {},
     }
 }
 
