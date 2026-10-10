@@ -77,3 +77,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Keybind label "Sprint"
 - [ ] Items: "feather" — "+1 jump in mid-air, +1 per stack"; "fungus" — "stand still for 1s to heal 4.5% max health per second, +4.5% per stack"
 - [ ] Interact label "Barrel"
+- [ ] HUD "Stage N  Loop L" after stage 5

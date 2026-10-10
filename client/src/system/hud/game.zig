@@ -213,12 +213,13 @@ fn addObjective(world: *World) void {
     var panel = sidePanel(@src());
     defer panel.deinit();
     const boss_alive = world.teleporter_bosses.items.len > 0;
-    dvui.label(
-        @src(),
-        "Stage {d}",
-        .{world.stage},
-        .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) },
-    );
+    const stages_per_loop: u32 = shared.Biome.stage_pools.len;
+    const loop = (world.stage -| 1) / stages_per_loop;
+    if (loop == 0) {
+        dvui.label(@src(), "Stage {d}", .{world.stage}, .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) });
+    } else {
+        dvui.label(@src(), "Stage {d}  Loop {d}", .{ world.stage, loop }, .{ .font = style.font(16), .color_text = .fromColor(style.text_dim) });
+    }
     dvui.labelNoFmt(
         @src(),
         "Objective",
