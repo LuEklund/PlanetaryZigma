@@ -27,8 +27,16 @@ pub const Kind = union(enum) {
     projectile_rocket,
     projectile_heal,
 
-    pub fn eql(kind: Kind, other_kind: Kind) bool {
-        return std.meta.eql(kind, other_kind);
+    pub fn team(kind: Kind) Team {
+        return switch (kind) {
+            .player => .players,
+            .enemy => .monsters,
+            else => .neutral,
+        };
+    }
+
+    pub fn allied(kind: Kind, other_kind: Kind) bool {
+        return kind.team() == other_kind.team();
     }
 
     //TODO: move out from entites.
@@ -56,6 +64,8 @@ pub const Kind = union(enum) {
         return kind.spec().model;
     }
 };
+
+pub const Team = enum { players, monsters, neutral };
 
 pub const EnemyKind = kind: {
     const decls = @typeInfo(enemies).@"struct".decls;

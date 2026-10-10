@@ -61,7 +61,7 @@ fn resolve(
             const damage = owner.stat(.damage) * blast.damage_fraction;
             for (world.entities.values()) |*candidate| {
                 if (candidate.max_health <= 0 or candidate.flags.is_dead) continue;
-                if (candidate.id == owner.id or candidate.kind.eql(owner.kind)) continue;
+                if (candidate.kind.allied(owner.kind) or candidate.kind.projectileKind() != null) continue;
                 if (nz.vec.distance(
                     candidate.transform.position,
                     hit.victim_position,

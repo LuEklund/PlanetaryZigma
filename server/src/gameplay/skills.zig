@@ -318,7 +318,7 @@ fn meleeCone(cast: Cast) void {
 fn healPulse(cast: Cast) void {
     const caster = cast.caster;
     for (cast.world.entities.values()) |*ally| {
-        if (!ally.kind.eql(caster.kind) or ally.flags.is_dead) continue;
+        if (!ally.kind.allied(caster.kind) or ally.flags.is_dead) continue;
         if (nz.vec.distance(
             ally.transform.position,
             caster.transform.position,
@@ -333,9 +333,8 @@ fn healPulse(cast: Cast) void {
 }
 
 fn isFoe(caster: *const Entity, candidate: *const Entity) bool {
-    return candidate.max_health > 0 and !candidate.flags.is_dead and !candidate.kind.eql(
-        caster.kind,
-    );
+    return candidate.max_health > 0 and !candidate.flags.is_dead and
+        !candidate.kind.allied(caster.kind) and candidate.kind.projectileKind() == null;
 }
 
 fn aimPoint(

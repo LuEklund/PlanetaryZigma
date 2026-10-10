@@ -90,7 +90,7 @@ pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: ?entit
 pub fn get(self: *const Models, kind: entity.Kind) u32 {
     for (self.entries.items, 0..) |entry, handle| {
         if (entry.kind) |owner| {
-            if (owner.eql(kind)) return @intCast(handle);
+            if (std.meta.eql(owner, kind)) return @intCast(handle);
         }
     }
     return self.default;

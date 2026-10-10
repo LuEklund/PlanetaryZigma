@@ -31,7 +31,7 @@ fn resolveImpact(world: *World, impact: Physics.Impact) void {
         },
         .entity => |hit_id| {
             const hit = world.getPtr(hit_id) orelse return;
-            if (owner.kind.eql(hit.kind)) return;
+            if (owner.kind.allied(hit.kind) == (projectile.damage > 0)) return;
             switch (projectile_kind) {
                 .cube => if (combat.removeHealth(world, hit, projectile.damage, owner) != .ignored) {
                     tryProcLightning(world, owner, hit.transform.position, hit);
@@ -122,7 +122,8 @@ fn nearestTargets(
 ) usize {
     var count: usize = 0;
     for (world.entities.values()) |*candidate| {
-        if (candidate.kind.eql(owner.kind) or candidate.max_health <= 0) continue;
+        if (candidate.kind.allied(owner.kind) or candidate.max_health <= 0) continue;
+        if (candidate.kind.projectileKind() != null) continue;
         if (std.mem.indexOfScalar(shared.entity.Id, visited, candidate.id) != null) continue;
         const distance = nz.vec.distance(candidate.transform.position, source);
         if (distance > range) continue;
@@ -148,7 +149,8 @@ fn damageRocketImpact(
     for (world.entities.values()) |*candidate| {
         if (candidate.max_health <= 0) continue;
         if (candidate.id == owner_entity.id) continue;
-        if (owner_entity.kind.eql(candidate.kind)) continue;
+        if (owner_entity.kind.allied(candidate.kind)) continue;
+        if (candidate.kind.projectileKind() != null) continue;
 
         const distance = nz.vec.distance(candidate.transform.position, impact_position);
         if (distance > blast_radius) continue;
