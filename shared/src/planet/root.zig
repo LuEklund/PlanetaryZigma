@@ -231,6 +231,25 @@ pub fn sdf(self: *const Planet, position: nz.Vec3(f32)) f32 {
     return sdf_math.sdf(position, self.radiusFloat());
 }
 
+/// True when no terrain lies between `start` and `end` (sphere trace of the SDF; the last metre
+/// is ignored so a target standing on the ground still counts as visible).
+pub fn clearLine(self: *const Planet, start: nz.Vec3(f32), end: nz.Vec3(f32)) bool {
+    if (self.planet_radius == 0) return true;
+    const segment = end - start;
+    const length = nz.vec.length(segment);
+    if (length < 0.001) return true;
+    const direction = nz.vec.scale(segment, 1 / length);
+    const end_margin: f32 = 1;
+    var travelled: f32 = 0;
+    for (0..64) |_| {
+        if (travelled >= length - end_margin) return true;
+        const clearance = self.sdf(start + nz.vec.scale(direction, travelled));
+        if (clearance < 0.05) return false;
+        travelled += clearance;
+    }
+    return true;
+}
+
 /// Outer surface only, no caves.
 pub fn terrain(self: *const Planet, position: nz.Vec3(f32)) f32 {
     return sdf_math.terrain(position, self.radiusFloat());

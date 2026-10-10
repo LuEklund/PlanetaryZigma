@@ -247,9 +247,20 @@ fn danger(world: *World) f32 {
 }
 const hit_flash_seconds: f32 = 0.15;
 
+/// Placeholder interactables share models; a color tells them apart until real models exist.
+fn kindTint(kind: shared.entity.Kind) ?[3]f32 {
+    return switch (kind) {
+        .shrine_combat => .{ 1, 0.3, 0.25 },
+        .shrine_mountain => .{ 0.4, 0.55, 1 },
+        .shrine_chance => .{ 1, 0.85, 0.3 },
+        .printer => .{ 0.5, 1, 0.6 },
+        else => null,
+    };
+}
+
 /// Elite color times albedo, plus a white flash right after a hit.
 fn entityTint(entity: *const World.Entity, now: f32) [4]f32 {
-    const color = shared.Elite.get(entity.elite).tint;
+    const color = kindTint(entity.kind) orelse shared.Elite.get(entity.elite).tint;
     const flash = std.math.clamp(1 - (now - entity.last_hit) / hit_flash_seconds, 0, 1) * 0.7;
     return .{ color[0], color[1], color[2], flash };
 }

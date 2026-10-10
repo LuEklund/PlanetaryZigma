@@ -17,7 +17,7 @@ pub fn updateDrones(world: *World, physics: *system.Physics) !void {
         follow(world, drone, owner);
         const primary = drone.kind.spec().skills.get(.primary) orelse continue;
         const target = nearestMonster(world, drone.transform.position, primary.range) orelse continue;
-        if (!clearShot(physics, drone, target)) continue;
+        if (!clearShot(world, physics, drone, target)) continue;
         if (skills.useAction(world, drone, target, .primary) == .fired) {
             try skills.executeSkill(world, physics, drone, target, primary);
         }
@@ -36,12 +36,16 @@ fn follow(world: *World, drone: *World.Entity, owner: *World.Entity) void {
     world.act(.{ .id = drone.id, .verb = .{ .hover = .{ .direction = direction, .speed = speed, .height = hover_height } } });
 }
 
-/// Fire only with nothing between the drone and its target (pillars, teleporter, terrain).
-fn clearShot(physics: *system.Physics, drone: *const World.Entity, target: *const World.Entity) bool {
+/// Fire only with nothing between the drone and its target. Bodies (pillars, teleporter) come
+/// from the physics ray; terrain is an SDF, not a body, so it is marched separately.
+fn clearShot(world: *World, physics: *system.Physics, drone: *const World.Entity, target: *const World.Entity) bool {
     const start = drone.transform.position + nz.vec.scale(shared.Planet.surfaceUp(drone.transform.position), 0.8);
-    const hit = World.rayCast(physics, start, target.transform.position - start) orelse return true;
+    const to_target = target.transform.position - start;
+    if (!world.planet.clearLine(start, target.transform.position)) return false;
+    const hit = World.rayCast(physics, start, to_target) orelse return true;
     return hit.id == target.id or hit.id == drone.id;
 }
+
 
 fn nearestMonster(world: *World, position: nz.Vec3(f32), range: f32) ?*World.Entity {
     var best: ?*World.Entity = null;

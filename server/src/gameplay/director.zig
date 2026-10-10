@@ -370,10 +370,7 @@ fn populateScene(world: *World) !void {
         } else unreachable;
         if (card.cost > interactable_credits) continue;
         interactable_credits -= card.cost;
-        const direction = if (world.dev_mode)
-            nz.vec.normalize(world.planet.surfacePointNear(teleporterPosition(world) orelse .{ 0, 1, 0 }, 5, 12, random))
-        else
-            nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        const direction = freeSpot(world, random) orelse continue;
         if (card.kind == .multishop) {
             try spawnMultishop(world, direction, random);
             continue;
@@ -418,6 +415,37 @@ fn spawnMultishop(world: *World, direction: nz.Vec3(f32), random: std.Random) !v
             terminal.owner_id = group;
         }
     }
+}
+
+const teleporter_clearance: f32 = 10;
+const interactable_spacing: f32 = 4;
+
+/// A surface direction that is clear of the teleporter and of every placed interactable, so two
+/// interactables can never overlap or be mistaken for each other. Dev mode keeps them close.
+fn freeSpot(world: *World, random: std.Random) ?nz.Vec3(f32) {
+    const teleporter = teleporterPosition(world) orelse nz.Vec3(f32){ 0, 1, 0 };
+    for (0..16) |_| {
+        const direction = if (world.dev_mode)
+            nz.vec.normalize(world.planet.surfacePointNear(teleporter, teleporter_clearance, teleporter_clearance + 14, random))
+        else
+            nz.vec.randomUnitVector(nz.Vec3(f32), random);
+        const spot = world.planet.surfacePoint(direction);
+        if (nz.vec.distance(spot, teleporter) < teleporter_clearance) continue;
+        if (crowded(world, spot)) continue;
+        return direction;
+    }
+    return null;
+}
+
+fn crowded(world: *World, spot: nz.Vec3(f32)) bool {
+    for (world.entities.values()) |*entity| {
+        const placed = switch (entity.kind) {
+            .lootbox, .barrel, .printer, .multishop, .drone_broken, .shrine_combat, .shrine_mountain, .shrine_chance => true,
+            else => false,
+        };
+        if (placed and nz.vec.distance(entity.transform.position, spot) < interactable_spacing) return true;
+    }
+    return false;
 }
 
 fn nearPlayer(world: *World, position: nz.Vec3(f32)) bool {

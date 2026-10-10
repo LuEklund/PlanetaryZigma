@@ -86,8 +86,38 @@ pub fn update(
     }
 
     addTopLeft(world, area);
+    addAllies(world, area);
     addRightColumn(world, network, area);
     addChat(world, area);
+}
+
+const ally_row_height: f32 = 34;
+const ally_bar_height: f32 = 7;
+
+/// RoR2's left-side ally list: every other player, then every drone, each with a health bar.
+fn addAllies(world: *World, area: dvui.Rect) void {
+    const width = @min(sideWidth(area), 220);
+    var top: f32 = margin + 124;
+    var row: usize = 0;
+    for ([_]bool{ true, false }) |players_first| {
+        for (world.entities.values()) |*entity| {
+            const is_ally = if (players_first) entity.kind == .player and entity.id != world.player_id else entity.kind == .drone;
+            if (!is_ally or entity.max_health <= 0) continue;
+            const name = if (entity.kind == .player) (if (entity.player_name.slice().len != 0) entity.player_name.slice() else shared.default_player_name) else "Drone";
+            dvui.labelNoFmt(@src(), name, .{}, .{
+                .id_extra = row,
+                .rect = .{ .x = margin, .y = top, .w = width, .h = ally_row_height - ally_bar_height - 4 },
+                .padding = .all(0),
+                .font = style.font(17),
+                .color_text = .fromColor(style.text),
+            });
+            const fill = if (entity.kind == .player) style.rgba(.{ 0.1, 0.85, 0.2, 1 }) else style.rgba(.{ 0.4, 0.75, 1, 1 });
+            style.bar(.{ .x = margin, .y = top + ally_row_height - ally_bar_height - 4, .w = width, .h = ally_bar_height }, entity.health / entity.max_health, fill);
+            top += ally_row_height;
+            row += 1;
+            if (top > area.h * 0.6) return;
+        }
+    }
 }
 
 fn addTopLeft(world: *World, area: dvui.Rect) void {
@@ -432,6 +462,22 @@ fn addActionBar(
     }
 }
 
+/// Exhaustive on purpose: a new kind does not compile until it says what it is.
+fn interactName(entity: *const World.Entity) []const u8 {
+    return switch (entity.kind) {
+        .teleporter => "Teleporter",
+        .lootbox => "Chest",
+        .barrel => "Barrel",
+        .drone_broken => "Drone",
+        .printer, .multishop, .item_pickup => if (entity.item) |item| @tagName(item) else "Item",
+        .shrine_chance => "Shrine of Chance",
+        .shrine_combat => "Shrine of Combat",
+        .shrine_mountain => "Shrine of the Mountain",
+        .unknown, .player, .enemy, .platform, .target_dummy, .drone => "",
+        .projectile_cube, .projectile_rocket, .projectile_heal => "",
+    };
+}
+
 fn addInteractPrompt(world: *World, player: *const World.Entity, area: dvui.Rect) void {
     if (player.interacting == .none) return;
     const entity = world.getPtr(player.interacting) orelse return;
@@ -443,15 +489,7 @@ fn addInteractPrompt(world: *World, player: *const World.Entity, area: dvui.Rect
         .color_fill = .fromColor(style.rgba(.{ 0, 0, 0, 0.7 })),
         .padding = .{ .x = 8 },
     };
-    const name: []const u8 = switch (entity.kind) {
-        .shrine_chance => "Shrine of Chance",
-        .barrel => "Barrel",
-        .drone_broken => "Drone",
-        .printer, .multishop => if (entity.item) |item| @tagName(item) else "",
-        .shrine_combat => "Shrine of Combat",
-        .shrine_mountain => "Shrine of the Mountain",
-        else => "",
-    };
+    const name = interactName(entity);
     var buffer: [64]u8 = undefined;
     const text = switch (entity.kind) {
         .lootbox, .shrine_chance, .multishop, .drone_broken => std.fmt.bufPrint(&buffer, "E  ${d}  {s}", .{ entity.currency, name }),
@@ -538,6 +576,7 @@ fn addWorldHealthBars(world: *World, view_proj: nz.Mat4x4(f32)) void {
             up,
             1.3 * entity.transform.scale[1],
         );
+        if (!world.planet.clearLine(camera_position, bar_position)) continue;
         const screen = style.worldToScreen(view_proj, bar_position) orelse continue;
         const scale = std.math.clamp(
             reference_distance / @max(nz.vec.distance(camera_position, bar_position), 0.001),
@@ -553,20 +592,10 @@ fn addWorldHealthBars(world: *World, view_proj: nz.Mat4x4(f32)) void {
         );
         if (entity.elite != .none) {
             const elite = shared.Elite.get(entity.elite);
-            dvui.labelNoFmt(@src(), elite.name, .{}, .{
-                .id_extra = index,
-                .rect = .{
-                    .x = screen[0] - 100,
-                    .y = screen[1] - height - 18 * scale,
-                    .w = 200,
-                    .h = 18 * scale,
-                },
-                .font = style.font(12 * scale),
-                .color_text = .fromColor(
-                    style.rgba(.{ elite.tint[0], elite.tint[1], elite.tint[2], 1 }),
-                ),
-                .gravity_x = 0.5,
-            });
+            const size = 12 * scale;
+            const text_height = style.font(size).textSize(elite.name).h + 2;
+            const color = style.rgba(.{ elite.tint[0], elite.tint[1], elite.tint[2], 1 });
+            style.floatingLabel(@src(), index, elite.name, .{ screen[0], screen[1] - height - text_height }, size, color);
         }
     }
 }

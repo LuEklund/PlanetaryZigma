@@ -81,3 +81,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Printer prompt "E  Print <item>" and chat "You have nothing to trade."
 - [ ] Tier-2 elite name "Malachite" (RoR2 name; ours grants thorns + leech)
 - [ ] Interact label "Drone"
+- [ ] Interact names: "Teleporter", "Chest", "Item"; ally list label "Drone"

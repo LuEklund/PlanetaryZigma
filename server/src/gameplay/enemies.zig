@@ -155,6 +155,8 @@ fn move(context: Context, locomotion: Locomotion, direction: nz.Vec3(f32), speed
 }
 
 fn firePrimary(context: Context, target: *system.Entity) !void {
+    const eye = context.enemy.transform.position + nz.vec.scale(shared.Planet.surfaceUp(context.enemy.transform.position), 0.8);
+    if (!context.world.planet.clearLine(eye, target.transform.position)) return;
     if (skills.useAction(context.world, context.enemy, target, .primary) == .fired) {
         try skills.executeSkill(
             context.world,
