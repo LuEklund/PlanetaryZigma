@@ -37,6 +37,21 @@ const tunings: std.EnumArray(Director.Kind, Tuning) = .init(.{
     .teleporter_boss = .{ .credit_multiplier = 0, .wave_interval = .{ 0.1, 0.3 }, .rest_interval = .{ 0, 0 }, .instant = true },
 });
 
+/// RoR2 family event: for a whole stage only one family spawns, announced at stage start.
+pub const Family = struct {
+    name: []const u8,
+    members: []const EnemyKind,
+    announcement: []const u8,
+};
+
+pub const families = [_]Family{
+    .{ .name = "tubloid", .members = &.{ .tubloid, .tubloida, .hunkloid }, .announcement = "Something stirs in the tubes below." },
+    .{ .name = "grass", .members = &.{ .grass1, .grass_tank, .acorn }, .announcement = "The grass begins to whisper." },
+    .{ .name = "bloop", .members = &.{ .blooploid, .wisp, .bloorp_lord }, .announcement = "The air hums and bubbles." },
+    .{ .name = "swarm", .members = &.{ .mite, .bomber, .spitter }, .announcement = "The ground crawls with tiny legs." },
+};
+const family_chance: f32 = 0.02;
+
 const category_weights: std.EnumArray(Category, u32) = .init(.{ .basic = 4, .miniboss = 2, .champion = 1 });
 
 pub fn updateRunTimer(world: *World) void {
@@ -56,6 +71,9 @@ pub fn startStage(world: *World) !void {
     world.directors = .initFill(.{});
     world.directors.getPtr(.fast).active = true;
     world.directors.getPtr(.slow).active = true;
+    const random = world.prng.random();
+    world.family = if (random.float(f32) < family_chance) random.uintLessThan(u8, families.len) else null;
+    if (world.family) |family| announceFamily(world, family);
     try populateScene(world);
 }
 
@@ -78,6 +96,15 @@ pub fn startTeleporterEvent(world: *World) void {
 /// Everything but the boss director (RoR2 at 99% teleporter charge).
 pub fn stopCombat(world: *World) void {
     for ([_]Director.Kind{ .fast, .slow, .teleporter }) |kind| world.directors.set(kind, .{});
+}
+
+pub fn announceFamily(world: *World, family: u8) void {
+    const text = families[family].announcement;
+    world.client_updates.appendAssumeCapacity(.{ .chat_message = .{
+        .id = .none,
+        .text_len = @intCast(text.len),
+        .text = text,
+    } });
 }
 
 pub fn stopAll(world: *World) void {
@@ -128,9 +155,9 @@ fn step(world: *World, director: *Director, kind: Director.Kind) !void {
 fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random: std.Random) !bool {
     const is_boss = kind == .teleporter_boss;
     if (!is_boss and world.enemyCount() >= map_monster_cap) return false;
-    const biome = shared.Biome.forRadius(world.planet.planet_radius);
+    const biome = spawnPool(world);
     if (director.wave == null) {
-        const enemy = (if (is_boss) pickBossCard(biome, director.credits, random) else pickCard(biome, random)) orelse return false;
+        const enemy = (if (is_boss) pickBossCard(&biome, director.credits, random) else pickCard(&biome, random)) orelse return false;
         director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, random), .spawned = 0 };
     }
     const wave = &director.wave.?;
@@ -138,7 +165,7 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
     if (wave.spawned >= limit) return false;
     const cost = cardCost(wave.enemy, wave.elite);
     if (director.credits < cost) return false;
-    if (!tunings.get(kind).instant and tooCheap(biome, wave.enemy, cost, director.credits)) return false;
+    if (!tunings.get(kind).instant and tooCheap(&biome, wave.enemy, cost, director.credits)) return false;
 
     const near = if (is_boss) teleporterPosition(world) orelse return false else targetPlayer(world, random) orelse return false;
     const distance: [2]f32 = if (is_boss) .{ 15, 25 } else .{ enemy_min_spawn_distance, enemy_max_spawn_distance + 30 };
@@ -147,6 +174,15 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
     director.spawned_any = true;
     wave.spawned += 1;
     return true;
+}
+
+/// The biome's monster weights, or only the family's members during a family event.
+fn spawnPool(world: *const World) shared.Biome {
+    var pool = shared.Biome.forRadius(world.planet.planet_radius).*;
+    const family = world.family orelse return pool;
+    pool.enemy_weights = .initFill(0);
+    for (families[family].members) |member| pool.enemy_weights.set(member, 1);
+    return pool;
 }
 
 /// RoR2: a card is too cheap when credits exceed 6× its cost and a pricier card exists.
@@ -298,11 +334,11 @@ fn populateScene(world: *World) !void {
         _ = try world.spawn(.{ .kind = .lootbox, .transform = world.planet.surfaceTransform(direction, 0.2) });
     }
 
-    const biome = shared.Biome.forRadius(world.planet.planet_radius);
+    const biome = spawnPool(world);
     var monster_credits = scene_monster_credits * world.difficultyCoefficient();
     var attempts: usize = 0;
     while (attempts < 64 and world.enemyCount() < map_monster_cap) : (attempts += 1) {
-        const enemy = pickCard(biome, random) orelse return;
+        const enemy = pickCard(&biome, random) orelse return;
         const cost = baseCost(enemy);
         if (cost > monster_credits) continue;
         const surface = world.planet.surfacePoint(nz.vec.randomUnitVector(nz.Vec3(f32), random));

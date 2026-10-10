@@ -6,6 +6,7 @@ const Entity = World.Entity;
 const combat = @import("combat.zig");
 const items = @import("items.zig");
 const PlayerController = @import("PlayerController.zig");
+const directors_system = @import("director.zig");
 
 pub const prefix = '/';
 
@@ -32,6 +33,7 @@ const table = [_]Command{
     .{ .name = "spawning", .usage = "/spawning", .run = spawning },
     .{ .name = "boss", .usage = "/boss (activate the teleporter)", .run = boss },
     .{ .name = "directors", .usage = "/directors", .run = directors },
+    .{ .name = "family", .usage = "/family <tubloid|grass|bloop|swarm|off>", .run = family },
 };
 
 /// Runs one chat line that starts with `prefix`. Returns the reply for the sender.
@@ -190,4 +192,19 @@ fn directors(world: *World, _: *Entity, _: *Args, reply: []u8) []const u8 {
         writer.writeByte('\n') catch break;
     }
     return writer.buffered();
+}
+
+fn family(world: *World, _: *Entity, args: *Args, reply: []u8) []const u8 {
+    const name = args.next() orelse return print(reply, "usage: /family <name|off>", .{});
+    if (std.mem.eql(u8, name, "off")) {
+        world.family = null;
+        return print(reply, "family event off", .{});
+    }
+    for (directors_system.families, 0..) |row, index| {
+        if (!std.mem.eql(u8, row.name, name)) continue;
+        world.family = @intCast(index);
+        directors_system.announceFamily(world, world.family.?);
+        return print(reply, "family event: {s}", .{name});
+    }
+    return print(reply, "no family '{s}'", .{name});
 }
