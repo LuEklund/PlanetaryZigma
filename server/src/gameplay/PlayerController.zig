@@ -141,7 +141,7 @@ fn updateInteractTarget(
 pub fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
     const entity = world.getPtr(id) orelse return .none;
     return switch (entity.kind) {
-        .lootbox, .barrel, .printer, .multishop, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
+        .lootbox, .barrel, .printer, .multishop, .drone_broken, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
         .teleporter => switch (entity.teleporter.state) {
             .active => .none,
             .completed => if (world.teleport_bosses.items.len > 0) .none else id,
@@ -167,6 +167,7 @@ pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
         .item_pickup => pickUp(world, player, target),
         .printer => printItem(world, player, target),
         .multishop => try buyFromMultishop(world, player, target),
+        .drone_broken => try repairDrone(world, player, target),
         .barrel => {
             player.currency += target.currency;
             world.client_updates.appendAssumeCapacity(.{
@@ -223,6 +224,20 @@ fn buyFromMultishop(world: *World, player: *World.Entity, terminal: *World.Entit
     for (world.entities.values()) |*entity| {
         if (entity.kind == .multishop and entity.owner_id == group) world.queueDespawn(entity.id);
     }
+}
+
+/// Pays and turns the broken drone into an ally that follows `player`.
+fn repairDrone(world: *World, player: *World.Entity, broken: *World.Entity) !void {
+    if (player.currency < broken.currency) return;
+    player.currency -= broken.currency;
+    world.client_updates.appendAssumeCapacity(.{ .set_currency = .{ .id = player.id, .amount = player.currency } });
+    const up = shared.Planet.surfaceUp(broken.transform.position);
+    _ = try world.spawn(.{
+        .kind = .drone,
+        .owner_id = player.id,
+        .transform = .{ .position = broken.transform.position + nz.vec.scale(up, 2) },
+    });
+    world.queueDespawn(broken.id);
 }
 
 const chance_fail_odds: f32 = 0.45;

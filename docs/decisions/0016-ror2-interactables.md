@@ -7,6 +7,7 @@
 | lootbox (chest) | 15 | 24 | pay `25·coeff^1.25`, small-chest item |
 | barrel | 1 | 10 | free, `0.4·25·coeff` gold |
 | multishop | 20 | 8 | three terminals, each shows a common; buying one (chest price) closes the group (linked by `owner_id`) |
+| broken drone | 15 | 6 | pay `40·coeff^1.25`: an ally `drone` (players' team) hovers beside its owner and shoots the nearest visible monster (`server/src/gameplay/drones.zig`) |
 | printer | 25 | 3 | trade one random same-tier item for its (common) item; reusable |
 | shrine of chance | 20 | 4 | pay `17·coeff^1.25`; 45% nothing (price ×1.4), else an item and the shrine is spent |
 | shrine of combat | 20 | 3 | free; instant director with 100·coeff credits |
@@ -14,6 +15,6 @@
 
 Every use goes through one door, `PlayerController.use` (E key, or `/use` in dev). All of them are plain `Kind` rows (wire change, protocol bumps automatically). Printers send their item in the spawn data.
 
-**Why.** Lucas: mimic RoR2 heavily. These are the RoR2 stage staples that need no new UI. Scrapper needs a pick-one UI, and drones need ally AI, so they wait.
+**Why.** Lucas: mimic RoR2 heavily. These are the RoR2 stage staples that need no new UI. Scrapper needs a pick-one UI, so it waits.
 
 **Placeholders.** Shrines and printers use the pillar model, barrels the unused `chest.glb`. Listed under "Needs asset from Lucas".

@@ -32,6 +32,19 @@ pub fn write(writer: *std.Io.Writer, world: *World, scene: []const u8, overlay: 
         });
     }
 
+    if (world.getPtr(world.player_id)) |player| {
+        var nearest: f32 = std.math.inf(f32);
+        var nearest_name: []const u8 = "-";
+        for (world.entities.values()) |*entity| {
+            if (entity.kind != .enemy) continue;
+            const distance = shared.numz.vec.distance(entity.transform.position, player.transform.position);
+            if (distance >= nearest) continue;
+            nearest = distance;
+            nearest_name = @tagName(entity.kind.enemy);
+        }
+        try writer.print("nearest_enemy {s} {d:.1}m\n", .{ nearest_name, nearest });
+    }
+
     var names: [shared.max_entities][]const u8 = undefined;
     var count: usize = 0;
     for (world.entities.values()) |*entity| {

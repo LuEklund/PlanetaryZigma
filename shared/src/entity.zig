@@ -23,6 +23,8 @@ pub const Kind = union(enum) {
     barrel,
     printer,
     multishop,
+    drone,
+    drone_broken,
     shrine_combat,
     shrine_mountain,
     shrine_chance,
@@ -35,7 +37,7 @@ pub const Kind = union(enum) {
 
     pub fn team(kind: Kind) Team {
         return switch (kind) {
-            .player => .players,
+            .player, .drone => .players,
             .enemy => .monsters,
             else => .neutral,
         };

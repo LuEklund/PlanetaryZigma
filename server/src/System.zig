@@ -4,6 +4,7 @@ const std = @import("std");
 const shared = @import("shared");
 const Network = @import("system/Network.zig");
 const director = @import("gameplay/director.zig");
+const drones = @import("gameplay/drones.zig");
 const enemies = @import("gameplay/enemies.zig");
 const items = @import("gameplay/items.zig");
 const players = @import("gameplay/players.zig");
@@ -118,6 +119,7 @@ fn step(self: *System, world: *World) !void {
     try PlayerController.update(world, &self.physics);
     lobby.updateLobby(world);
     if (world.place == .planet) try enemies.updateEnemies(world, &self.physics);
+    if (world.place == .planet) try drones.updateDrones(world, &self.physics);
     if (world.place == .planet) director.updateRunTimer(world);
     if (world.place == .planet) try director.update(world);
     try self.physics.update(world);

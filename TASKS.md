@@ -16,6 +16,7 @@ Playtest these (built and screenshotted, but not played):
    - New items: feather (air jump), fungus (heal while standing still).
    - 3D printers trade a random same-tier item for theirs.
    - Multishops: three terminals, buy one and the others close (placeholder: small lootbox).
+   - Drones: buy a broken drone (~40 gold); it follows you and shoots the nearest monster it can see (placeholder: default cube). Dev: `/drones`.
    - Low-health red screen edges.
    - Loops (stage 6+) start at night.
    - Enemy bullets have red-violet tracers (unverified in a live fight: enemies never got line of sight during my test).
@@ -145,6 +146,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] D4 — Directors like RoR2 (decision 0014): fast/slow wave directors, teleporter director (2× income while charging, 40% handover), teleporter boss director (600·√coeff, champions, Horde of Many fallback), scene director (220 interactable credits → chests at 15, 100·coeff monster credits spread over the planet), "too cheap" reroll, affordable ×6 elites, 40-monster cap, RoR2 card costs + kill gold. Dev: `/boss`, `/directors`. Tested solo: waves arrive, boss spawns. Needs playtest for feel.
 
 ## Needs asset from Lucas
+- Drone + broken drone models (placeholder: default cube).
 - Printer model (placeholder: squat pillar). Ideally it shows its item floating on top.
 - Item models + icons: feather, fungus (draw as the default cube / blank icon until then).
 - Shrine model(s) (Combat / Mountain / Chance) — placeholder is the pillar at 0.35 scale.
@@ -156,6 +158,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
+- Healers: a dust/coral stage rolled 8 healers, and their heals out-pace low damage (a drone's 15 DPS barely dented a tubloid). RoR2 has no pure healer monster. Options: (a) lower healer weight in biome pools, (b) heal cooldown/cap per target, (c) make healers a miniboss card (cost 40). I left it as is.
 - T1a: should trees/rocks get collision? Currently walk-through (cheapest, no server cost). Collision means the server must generate the same props (it doesn't chunk today).
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.

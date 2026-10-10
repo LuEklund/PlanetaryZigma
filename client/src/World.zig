@@ -253,7 +253,7 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
         .item_pickup, .printer, .multishop => {
             if (entity_info.data == .item) entity.item = entity_info.data.item;
         },
-        .unknown, .lootbox, .platform, .target_dummy, .barrel, .shrine_combat, .shrine_mountain, .shrine_chance => {},
+        .unknown, .lootbox, .platform, .target_dummy, .barrel, .drone, .drone_broken, .shrine_combat, .shrine_mountain, .shrine_chance => {},
     }
 }
 

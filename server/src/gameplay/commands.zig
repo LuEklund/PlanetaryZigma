@@ -34,6 +34,7 @@ const table = [_]Command{
     .{ .name = "spawning", .usage = "/spawning", .run = spawning },
     .{ .name = "boss", .usage = "/boss (activate the teleporter)", .run = boss },
     .{ .name = "directors", .usage = "/directors", .run = directors },
+    .{ .name = "drones", .usage = "/drones", .run = dronesReport },
     .{ .name = "use", .usage = "/use (nearest interactable)", .run = useNearest },
     .{ .name = "family", .usage = "/family <tubloid|grass|bloop|swarm|off>", .run = family },
 };
@@ -232,4 +233,30 @@ fn hurt(world: *World, player: *Entity, args: *Args, reply: []u8) []const u8 {
     const amount: f32 = @floatFromInt(count(args, 10));
     _ = combat.removeHealth(world, player, amount, player);
     return print(reply, "hurt {d:.0}, health {d:.0}", .{ amount, player.health });
+}
+
+fn dronesReport(world: *World, player: *Entity, _: *Args, reply: []u8) []const u8 {
+    var writer: std.Io.Writer = .fixed(reply);
+    for (world.entities.values()) |*drone| {
+        if (drone.kind != .drone) continue;
+        var nearest: f32 = std.math.inf(f32);
+        var nearest_health: f32 = 0;
+        for (world.entities.values()) |*entity| {
+            if (entity.kind != .enemy) continue;
+            const distance = nz.vec.distance(entity.transform.position, drone.transform.position);
+            if (distance >= nearest) continue;
+            nearest = distance;
+            nearest_health = entity.health;
+        }
+        writer.print("drone {d}: fired {d:.1}s ago, owner {d:.1}m, monster {d:.1}m ({d:.0} hp), hp {d:.0}, height {d:.1}\n", .{
+            @intFromEnum(drone.id),
+            world.elapsed_time - drone.last_used.get(.primary),
+            nz.vec.distance(drone.transform.position, player.transform.position),
+            nearest,
+            nearest_health,
+            drone.health,
+            nz.vec.length(drone.transform.position) - nz.vec.length(player.transform.position),
+        }) catch break;
+    }
+    return writer.buffered();
 }

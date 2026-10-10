@@ -30,6 +30,7 @@ const interactable_cards = [_]InteractableCard{
     .{ .kind = .barrel, .cost = 1, .weight = 10 },
     .{ .kind = .printer, .cost = 25, .weight = 3 },
     .{ .kind = .multishop, .cost = 20, .weight = 8 },
+    .{ .kind = .drone_broken, .cost = 15, .weight = 6 },
     .{ .kind = .shrine_chance, .cost = 20, .weight = 4 },
     .{ .kind = .shrine_combat, .cost = 20, .weight = 3 },
     .{ .kind = .shrine_mountain, .cost = 20, .weight = 3 },

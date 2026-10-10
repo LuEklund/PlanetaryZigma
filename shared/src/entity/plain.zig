@@ -85,6 +85,30 @@ pub const multishop: Spec = .{
     .currency = 25,
 };
 
+/// RoR2 gunner drone: an ally that hovers near its owner and shoots the nearest monster.
+/// Placeholder look: the default cube, small.
+pub const drone: Spec = .{
+    .collider = .{
+        .shape = .{ .capsule = .{ .half_height = 0.2, .radius = 0.4 } },
+        .motion = .dynamic,
+        .layer = .moving,
+    },
+    .model = .{ .path = "", .offset = .{ .scale = .{ 0.4, 0.4, 0.4 } }, .loop_clips = null },
+    .base_stats = .initDefault(0, .{ .health = 60, .speed = 9, .damage = 6, .primary_cooldown = 0.4 }),
+    .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 30 } }),
+};
+
+/// Buy it to get a drone. Placeholder: the default cube.
+pub const drone_broken: Spec = .{
+    .collider = .{
+        .shape = .{ .box = .{ .x = 0.5, .y = 0.4, .z = 0.5 } },
+        .motion = .static,
+        .layer = .moving,
+    },
+    .model = .{ .path = "", .offset = .{ .scale = .{ 0.5, 0.35, 0.5 } }, .loop_clips = null },
+    .currency = 40,
+};
+
 /// Placeholder look: the pillar model scaled down (needs a shrine model from Lucas).
 const shrine_model: entity.ModelSpec = .{
     .path = "objects/pillar.glb",
