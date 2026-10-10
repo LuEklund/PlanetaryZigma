@@ -28,6 +28,7 @@ pub const OptionsTab = enum {
     keyboard_mouse,
     video,
     graphics,
+    audio,
 };
 
 pub const Overlay = union(enum) {

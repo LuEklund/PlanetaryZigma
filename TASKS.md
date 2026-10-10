@@ -57,7 +57,11 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
 - [ ] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
 - [ ] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
-- [ ] S2 — Audio options in the Options screen (sliders), driven by S1.
+- [x] S2 — Audio options in the Options screen (sliders), driven by S1.
+  Master Volume slider (Options → Audio). Music/sfx split waits for separate buses. Not saved yet (S1). Built, needs playtest.
+- [x] M1 — Mouse sensitivity too fast (friend: slowest = 3×360 per swipe). Now Source/CS scale: 0.022°/count × sens, range 0.1–10, default 2. Built, needs playtest.
+- [ ] T1 — More terrain detail / caves. Vault: `caves-terrain.md`, `surface-nets.md`.
+- [ ] C1 — Steam Deck / gamepad support (Steam Input).
 - [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
 - [ ] R1 — Zig style guide pass (langref "Style Guide"): lines ≤ ~100, lists > 2 one per line with trailing comma, flat functions with early return (max ~3 nesting levels), no Manager/Data/Context/State/utils in type names, TitleCase files only with fields. Order: renames (mechanical commit) → flatten deepest files (server NetworkManager, gltf) → wrap long lines file by file.
   - Progress: PlayerController done (small functions, 0 long lines, max nesting 3); `Planet.surfaceUp`; `shared/src/math.zig` + `docs/numz-candidates.md`.

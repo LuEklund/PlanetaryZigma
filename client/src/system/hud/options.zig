@@ -46,9 +46,9 @@ pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
                     @src(),
                     "Mouse Sensitivity",
                     &options.mouse_sensitivity,
-                    0.25,
-                    3.0,
-                    "{d:.2}x",
+                    0.1,
+                    10.0,
+                    "{d:.2}",
                 );
                 toggle(@src(), "Invert Y", &options.invert_y);
                 var index: usize = 0;
@@ -73,6 +73,7 @@ pub fn update(hud: *Hud, options: *Options, controller: *Controller) void {
                 options.chunk_view_distance = @round(options.chunk_view_distance);
             },
             .graphics => toggle(@src(), "Debug Colliders", &controller.debug_draw_colliders),
+            .audio => slider(@src(), "Master Volume", &options.master_volume, 0, 1, "{d:.2}"),
         }
     }
 
@@ -174,5 +175,6 @@ fn tabLabel(tab: OptionsTab) []const u8 {
         .keyboard_mouse => "Keyboard-Mouse",
         .video => "Video",
         .graphics => "Graphics",
+        .audio => "Audio",
     };
 }

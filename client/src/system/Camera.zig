@@ -18,7 +18,7 @@ boom_offset: Vec3 = .{ 0, 1.5, 8 },
 arm_length: f32 = 1.5,
 free_speed: f32 = 30,
 
-pub const sensitivity: f32 = 0.02;
+pub const radians_per_count: f32 = std.math.degreesToRadians(0.022);
 pub const camera_padding: f32 = 0.5;
 pub const arm_ease_speed: f32 = 4;
 pub const near: f32 = 0.01;
@@ -50,7 +50,7 @@ pub fn update(
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
 
-    const mouse_sensitivity = sensitivity * options.mouse_sensitivity;
+    const mouse_sensitivity = radians_per_count * options.mouse_sensitivity;
     const pitch_direction: f64 = if (options.invert_y) 1 else -1;
     const delta_yaw: f32 = @floatCast(-look_delta[0] * mouse_sensitivity);
     const delta_pitch: f32 = @floatCast(look_delta[1] * pitch_direction * mouse_sensitivity);

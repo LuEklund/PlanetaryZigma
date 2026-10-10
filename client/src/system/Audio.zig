@@ -86,6 +86,10 @@ pub fn update(self: *Audio) void {
     }
 }
 
+pub fn setVolume(self: *Audio, volume: f32) void {
+    _ = ma.ma_device_set_master_volume(&self.device, volume);
+}
+
 pub fn play(self: *Audio, sound: Sound) void {
     if (sound == .none) return;
 

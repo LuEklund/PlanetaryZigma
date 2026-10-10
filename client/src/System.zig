@@ -388,6 +388,7 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
 
 fn applyOptions(self: *System, world: *World) !void {
     try self.window.setFullscreen(world.options.fullscreen);
+    self.audio.setVolume(world.options.master_volume);
     const wants_cursor_lock = self.scene == .game and world.stage != 0 and self.hud.overlay == .none and self.window.focused;
     if (wants_cursor_lock) {
         try self.window.setPointerVisible(false);
