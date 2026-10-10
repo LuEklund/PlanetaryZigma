@@ -19,6 +19,10 @@ pub fn apply(
         particles.spawn(.{ .effect = .hit_sparks, .origin = point, .target = point }, world.elapsed_time);
     }
     for (packets) |packet| switch (packet) {
+        .spawn_entity => |spawn| if (spawn.kind == .enemy) {
+            const position: nz.Vec3(f32) = spawn.position;
+            particles.spawn(.{ .effect = .spawn_puff, .origin = position, .target = position }, world.elapsed_time);
+        },
         .event => |event| switch (event) {
             .action => |action| {
                 audio.play(skill_sounds.get(action.skill));

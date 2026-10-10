@@ -16,8 +16,9 @@ Playtest these (built and screenshotted, but not played):
    - Telegraph rings: hunkloid landing spot, bomber blast radius.
 5. **Zoo:** grid only, WASD fly, hold RMB to look, click an entity to select it.
 6. **Ping:** middle mouse, countdown ring, outline on the pinged entity, can't ping through terrain.
-7. **Chat:** wraps long lines; `/help` lists every command.
-8. **Steam Deck / controller:** launch through Steam with a controller and check the log for "steam input:" (unverified; the manifest was rejected on this PC).
+7. **Lighting:** shadows now take a cool sky tint while sunlit parts stay warm, and fog matches the horizon. The tint strength is `hue_strength` in `mesh.slang`, and it hot-reloads.
+8. **Chat:** wraps long lines; `/help` lists every command.
+9. **Steam Deck / controller:** launch through Steam with a controller and check the log for "steam input:" (unverified; the manifest was rejected on this PC).
 
 Decide:
 - Player-facing names in `docs/lucas-approval.md`: shrine names (RoR2's own), family-event lines, options labels.

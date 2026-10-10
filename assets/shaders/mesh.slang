@@ -128,7 +128,8 @@ float lightLuminance(float3 color) {
 // Sky hue with its brightness removed, so ambient and fog follow the biome's colors while the
 // light color decides how bright (day vs night) they are.
 float3 skyHue(float3 color) {
-    return color / max(lightLuminance(color), 0.2);
+    const float hue_strength = 0.25;
+    return lerp(float3(1.0, 1.0, 1.0), color / max(lightLuminance(color), 0.2), hue_strength);
 }
 
 [shader("fragment")]
