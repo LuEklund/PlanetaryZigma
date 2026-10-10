@@ -459,6 +459,7 @@ fn renderShadowPass(
     });
     self.bindWorldDescriptors(cmd, self.resources.pipeline_layouts.get(.world).handle);
     proxy.cmdSetDepthBiasEnable(cmd, .true);
+    proxy.cmdSetCullMode(cmd, .{ .front_bit = true });
     proxy.cmdSetDepthBias(cmd, 0, 0, 3);
     for (cascade_vps, 0..) |cascade_vp, cascade_index| {
         const x: u32 = @intCast(cascade_index * Resources.shadow_map_size);
@@ -507,6 +508,7 @@ fn renderShadowPass(
         .{ .shader_read_bit = true },
     );
     proxy.cmdSetDepthBiasEnable(cmd, .false);
+    proxy.cmdSetCullMode(cmd, .{ .back_bit = true });
     proxy.cmdSetViewportWithCount(cmd, &.{self.fullViewport()});
     proxy.cmdSetScissorWithCount(cmd, &.{self.fullScissor()});
 }
