@@ -75,6 +75,11 @@ pub fn startTeleporterEvent(world: *World) void {
     });
 }
 
+/// Everything but the boss director (RoR2 at 99% teleporter charge).
+pub fn stopCombat(world: *World) void {
+    for ([_]Director.Kind{ .fast, .slow, .teleporter }) |kind| world.directors.set(kind, .{});
+}
+
 pub fn stopAll(world: *World) void {
     world.directors = .initFill(.{});
 }

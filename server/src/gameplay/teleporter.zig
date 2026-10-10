@@ -3,13 +3,16 @@ const nz = shared.numz;
 const World = @import("../World.zig");
 const director = @import("director.zig");
 
-const charge_per_second: f32 = 10;
+/// RoR2: 90 s with every living player in the zone.
+const charge_seconds: f32 = 90;
+/// RoR2 stops natural spawns at 99%.
+const spawn_stop_fraction: f32 = 0.99;
 
 pub fn updateTeleporter(world: *World) void {
     const entity = world.getPtr(world.teleporter_id) orelse return;
     const teleporter = &entity.teleporter;
+    if (teleporter.charged >= teleporter.max_charge * spawn_stop_fraction) director.stopCombat(world);
     if (teleporter.charged == teleporter.max_charge) {
-        director.stopAll(world);
         teleporter.state = .completed;
         return;
     }
@@ -25,7 +28,7 @@ pub fn updateTeleporter(world: *World) void {
         ) < shared.teleporter.charge_distance) players_in_zone += 1;
     }
     if (teleporter.state == .active and players_in_zone > 0) {
-        teleporter.charged += world.delta_time * charge_per_second * players_in_zone / living_players;
+        teleporter.charged += world.delta_time * teleporter.max_charge / charge_seconds * players_in_zone / living_players;
         teleporter.charged = @min(teleporter.charged, teleporter.max_charge);
     }
     if (old_teleporter_charge != teleporter.charged) {

@@ -304,6 +304,14 @@ pub fn rayCast(physics: *Physics, start: nz.Vec3(f32), translation: nz.Vec3(f32)
     return Physics.Ray.cast(physics, start, translation);
 }
 
+/// RoR2: one random uncommon per player when the last teleporter boss dies.
+fn dropBossRewards(self: *World) void {
+    for (self.players.items) |_| {
+        const reward = shared.Item.rollFromTier(.uncommon, self.prng.random()) orelse continue;
+        self.dropTeleporterReward(reward);
+    }
+}
+
 fn dropTeleporterReward(self: *World, reward: shared.Item.Kind) void {
     const teleporter = self.getPtr(self.teleporter_id) orelse return;
     const teleporter_up = shared.Planet.surfaceUp(teleporter.transform.position);
@@ -357,7 +365,7 @@ pub fn flush(self: *World, physics: *Physics) !void {
                 despawn.id,
             )) |boss_index| {
                 _ = self.teleport_bosses.swapRemove(boss_index);
-                if (self.teleport_bosses.items.len == 0) self.dropTeleporterReward(.lightning);
+                if (self.teleport_bosses.items.len == 0) self.dropBossRewards();
             }
             _ = self.entities.swapRemove(despawn.id);
         }
