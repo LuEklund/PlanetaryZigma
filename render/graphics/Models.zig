@@ -18,6 +18,9 @@ pub const Entry = struct {
     kind: ?entity.Kind,
     manifest: ?ModelRow,
     manifest_mtime: std.Io.Timestamp,
+    /// `objects/<kind>.glb`: once that file exists it replaces a placeholder model.
+    preferred_path: []const u8,
+    preferred_mtime: std.Io.Timestamp,
     model: Model,
     rig: Rig,
     image_slots: []contract.TextureHandle,
@@ -41,9 +44,10 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     errdefer self.deinit(gpa, io);
 
     self.default = try self.add(gpa, "", null);
-    for (entity.all_kinds) |kind| {
+    for (entity.all_kinds, preferred_paths) |kind, preferred| {
         const model_spec = kind.modelSpec() orelse continue;
-        _ = try self.add(gpa, model_spec.path, kind);
+        const handle = try self.add(gpa, model_spec.path, kind);
+        self.entries.items[handle].preferred_path = preferred;
     }
     for (std.enums.values(shared.Item.Kind)) |item_kind| {
         const handle = try self.add(
@@ -55,6 +59,19 @@ pub fn init(gpa: std.mem.Allocator, io: std.Io) !Models {
     }
     return self;
 }
+
+/// Where a dropped-in model for each kind is looked for (also what the Lucas TODO board shows).
+const preferred_paths: [entity.all_kinds.len][]const u8 = paths: {
+    var paths: [entity.all_kinds.len][]const u8 = undefined;
+    for (entity.all_kinds, &paths) |kind, *path| {
+        const name = switch (kind) {
+            .enemy => |enemy| @tagName(enemy),
+            else => @tagName(kind),
+        };
+        path.* = "objects/" ++ name ++ ".glb";
+    }
+    break :paths paths;
+};
 
 pub fn getItem(self: *const Models, item: shared.Item.Kind) u32 {
     return self.item_models.get(item);
@@ -80,6 +97,8 @@ pub fn add(self: *Models, gpa: std.mem.Allocator, path: []const u8, kind: ?entit
         .kind = kind,
         .manifest = null,
         .manifest_mtime = .zero,
+        .preferred_path = "",
+        .preferred_mtime = .zero,
         .model = .empty,
         .rig = .empty,
         .image_slots = &.{},
@@ -114,6 +133,7 @@ pub fn row(self: *const Models, handle: u32) ?ModelRow {
 pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *const RenderLib) !void {
     for (self.entries.items, 0..) |*entry, handle| {
         const manifest_changed = try self.updateManifest(gpa, io, entry);
+        self.adoptPreferredModel(io, entry);
         const model_changed = entry.path.len > 0 and assets.changed(
             io,
             self.dir,
@@ -132,6 +152,16 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
         entry.rig.init(gpa, &entry.model, &current, kind.spec()) catch |err|
             std.log.err("{s}: {t}, fix its manifest or spec", .{ entry.path, err });
     }
+}
+
+/// Switches to `objects/<kind>.glb` when it exists and no manifest picked a model.
+fn adoptPreferredModel(self: *Models, io: std.Io, entry: *Entry) void {
+    if (entry.manifest != null or entry.preferred_path.len == 0) return;
+    if (std.mem.eql(u8, entry.path, entry.preferred_path)) return;
+    if (!assets.changed(io, self.dir, entry.preferred_path, &entry.preferred_mtime)) return;
+    std.log.info("model {s} found, replacing the placeholder", .{entry.preferred_path});
+    entry.path = entry.preferred_path;
+    entry.mtime = .zero;
 }
 
 fn updateManifest(self: *Models, gpa: std.mem.Allocator, io: std.Io, entry: *Entry) !bool {
