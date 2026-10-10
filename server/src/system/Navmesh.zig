@@ -215,10 +215,14 @@ fn nodeNearCell(self: *const Navmesh, cell: nz.Vec3(i32), position: nz.Vec3(f32)
     return null;
 }
 
+const airborne_distance: f32 = 6;
+
 fn collectSeeds(self: *const Navmesh, out: *[shared.max_players]NodeRef) usize {
     var count: usize = 0;
     for (self.player_seeds[0..self.player_seed_count]) |seed| {
         const node = self.nodeNearCell(seed.cell, seed.position) orelse {
+            const surface: nz.Vec3(f32) = @floatFromInt(seed.cell);
+            if (nz.vec.distance(surface, seed.position) > airborne_distance) continue;
             std.log.err(
                 "navmesh: no start node for player {d} at {d:.1} {d:.1} {d:.1}",
                 .{ @intFromEnum(seed.id), seed.position[0], seed.position[1], seed.position[2] },
