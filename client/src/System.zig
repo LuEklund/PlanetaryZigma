@@ -250,7 +250,7 @@ fn step(self: *System, world: *World) !void {
         &world.options,
         &self.assets,
     );
-    const zoo_command: zoo_scene.Command = if (self.scene == .zoo) zoo_hud.update(&self.zoo, &self.assets.models) else .none;
+    const zoo_command: zoo_scene.Command = if (self.scene == .zoo) zoo_hud.update(&self.zoo, &self.assets.models, world) else .none;
     _ = try self.dvui_window.end(.{});
     try self.applyZooCommand(world, zoo_command);
     if (self.auto_ready and world.stage == 0) if (world.getPtr(world.player_id)) |player| {
@@ -422,6 +422,8 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
         .exit => try self.enterScene(world, .menu),
         .select_kind => |index| {
             self.zoo.kind_index = index;
+            self.zoo.grid = false;
+            self.zoo.distance = 6;
             try self.enterScene(world, .zoo);
         },
         .select_slot => |slot| {
@@ -431,6 +433,11 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
         .assign_clip => |clip| zoo_scene.assign(self.io, &self.assets.models, kind, self.zoo.slot, clip) catch |err|
             std.log.err("zoo: save manifest: {t}", .{err}),
         .play_action => self.playZooAction(world),
+        .toggle_grid => {
+            self.zoo.grid = !self.zoo.grid;
+            self.zoo.distance = if (self.zoo.grid) 60 else 6;
+            try self.enterScene(world, .zoo);
+        },
     }
 }
 
@@ -441,7 +448,7 @@ fn playZooAction(self: *System, world: *World) void {
     };
     const models = &self.assets.models;
     const clip = models.rig(models.get(zoo_scene.kinds[self.zoo.kind_index])).action_clips.get(action) orelse return;
-    self.animator.playOverlay(zoo_scene.subjectAnimation(world), clip, models);
+    self.animator.playOverlay(zoo_scene.subjectAnimation(world, &self.zoo), clip, models);
 }
 
 fn applyOptions(self: *System, world: *World) !void {

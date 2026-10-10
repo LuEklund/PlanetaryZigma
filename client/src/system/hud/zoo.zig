@@ -6,11 +6,13 @@ const zoo = @import("../zoo.zig");
 const style = @import("style.zig");
 const Models = graphics.Assets.Models;
 const ModelRow = graphics.ModelRow;
+const World = @import("../../World.zig");
 
 const row_size: dvui.Size = .{ .w = 220, .h = 30 };
 
-pub fn update(state: *const zoo.State, models: *const Models) zoo.Command {
+pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo.Command {
     const area = style.screen();
+    gridLabels(state, world, area);
     const column_width: f32 = 260;
     var command: zoo.Command = .none;
 
@@ -25,9 +27,11 @@ pub fn update(state: *const zoo.State, models: *const Models) zoo.Command {
                 command = .{ .select_kind = @intCast(index) };
             }
         }
+        if (style.button(@src(), "Grid view", 0, row_size, state.grid, true)) command = .toggle_grid;
         if (style.button(@src(), "Back (Esc)", 0, row_size, false, true)) command = .exit;
     }
 
+    if (state.grid) return command;
     const kind = zoo.kinds[state.kind_index];
     const handle = models.get(kind);
     const row = models.row(handle) orelse return command;
@@ -64,6 +68,21 @@ pub fn update(state: *const zoo.State, models: *const Models) zoo.Command {
         }
     }
     return command;
+}
+
+fn gridLabels(state: *const zoo.State, world: *World, area: dvui.Rect) void {
+    var buffer: [zoo.max_labels]zoo.Label = undefined;
+    const view_proj = world.camera.viewProj(world.options.fov_rad, area.w / area.h);
+    for (zoo.labels(world, state, &buffer), 0..) |label, index| {
+        const screen = style.worldToScreen(view_proj, label.position) orelse continue;
+        dvui.labelNoFmt(@src(), label.name, .{}, .{
+            .id_extra = index,
+            .rect = .{ .x = screen[0] - 80, .y = screen[1] + 10, .w = 160, .h = 24 },
+            .font = style.font(18),
+            .color_text = .fromColor(if (label.selected) style.accent else style.text),
+            .gravity_x = 0.5,
+        });
+    }
 }
 
 fn panel(src: std.builtin.SourceLocation, rect: dvui.Rect) *dvui.BoxWidget {
