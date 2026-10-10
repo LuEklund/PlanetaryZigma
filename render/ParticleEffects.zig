@@ -3,6 +3,8 @@ const std = @import("std");
 pub const Placement = enum(u32) { burst, line, orbit, ring };
 pub const Motion = enum(u32) { ballistic, along_path };
 pub const Blend = enum { alpha, additive };
+/// Fragment shape: soft dot, a streak stretched along its own velocity, or a thin expanding ring.
+pub const Shape = enum(u32) { dot, spark, shockwave };
 pub const ParticleEffect = enum(u32) {
     explosion_puffs,
     explosion_sparks,
@@ -10,6 +12,10 @@ pub const ParticleEffect = enum(u32) {
     item_effect,
     tracer,
     telegraph,
+    muzzle_flash,
+    hit_sparks,
+    shockwave,
+    heal_tracer,
 
     pub const count: usize = @typeInfo(ParticleEffect).@"enum".fields.len;
 };
@@ -30,6 +36,10 @@ pub const Effect = struct {
         ramp_steps: [4]f32,
         color_ramp: [5][4]f32,
         stretch: f32,
+        shape: u32,
+        drag: f32,
+        gravity: f32,
+        glow: f32,
     };
 
     pub fn instancesPerEmitter(effect: Effect) u32 {
@@ -48,6 +58,13 @@ pub const Effect = struct {
     size_end: f32,
     ramp_steps: [4]f32,
     color_ramp: [5][4]f32,
+    shape: Shape = .dot,
+    /// Burst speed decays as e^(-drag·t) (closed form, still stateless).
+    drag: f32 = 0,
+    /// Pull toward the planet, m/s².
+    gravity: f32 = 0,
+    /// HDR multiplier: above 1 feeds the bloom.
+    glow: f32 = 1,
     placement: union(Placement) {
         burst: struct { radius: f32, speed: f32, stretch: f32 },
         line: struct { jitter: f32, arch_height: f32, strands: u32 },
@@ -74,6 +91,10 @@ pub const Effect = struct {
             .stretch = 0,
             .ramp_steps = effect.ramp_steps,
             .color_ramp = effect.color_ramp,
+            .shape = @intFromEnum(effect.shape),
+            .drag = effect.drag,
+            .gravity = effect.gravity,
+            .glow = effect.glow,
         };
         params.placement = @intFromEnum(effect.placement);
         switch (effect.placement) {
@@ -138,7 +159,11 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 1.0, 0.922, 0.188, 1.0 },
             .{ 1.0, 0.922, 0.188, 1.0 },
         },
-        .placement = .{ .burst = .{ .radius = 0.1, .speed = 5.5, .stretch = 0 } },
+        .shape = .spark,
+        .drag = 2.5,
+        .gravity = 6,
+        .glow = 2.5,
+        .placement = .{ .burst = .{ .radius = 0.1, .speed = 9, .stretch = 3 } },
     },
     .lightning = .{
         .count = 64,
@@ -154,6 +179,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 1.0, 1.0, 1.0, 0.45 },
             .{ 1.0, 1.0, 1.0, 0.45 },
         },
+        .glow = 3,
         .placement = .{ .line = .{ .jitter = 0.55, .arch_height = 0.35, .strands = 8 } },
     },
     .item_effect = .{
@@ -195,6 +221,7 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 1.0, 0.8, 0.3, 1.0 },
             .{ 1.0, 0.8, 0.3, 1.0 },
         },
+        .glow = 2.5,
         .placement = .{ .burst = .{ .radius = 0.0, .speed = 0.0, .stretch = 6.0 } },
     },
     .telegraph = .{
@@ -211,6 +238,79 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 1.0, 0.5, 0.2, 1.0 },
             .{ 1.0, 0.6, 0.3, 1.0 },
         },
+        .glow = 1.5,
         .placement = .{ .ring = .{ .strands = 2 } },
+    },
+    .muzzle_flash = .{
+        .count = 6,
+        .lifetime = 0.09,
+        .blend = .additive,
+        .size_start = 0.7,
+        .size_end = 0.1,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 1.0, 0.55, 0.15, 1.0 },
+            .{ 1.0, 0.75, 0.3, 1.0 },
+            .{ 1.0, 0.9, 0.55, 1.0 },
+            .{ 1.0, 1.0, 0.85, 1.0 },
+            .{ 1.0, 1.0, 1.0, 1.0 },
+        },
+        .glow = 3,
+        .placement = .{ .burst = .{ .radius = 0.05, .speed = 3, .stretch = 0 } },
+    },
+    .hit_sparks = .{
+        .count = 10,
+        .lifetime = 0.35,
+        .blend = .additive,
+        .size_start = 0.12,
+        .size_end = 0.02,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 1.0, 0.35, 0.1, 1.0 },
+            .{ 1.0, 0.55, 0.2, 1.0 },
+            .{ 1.0, 0.8, 0.4, 1.0 },
+            .{ 1.0, 0.95, 0.7, 1.0 },
+            .{ 1.0, 1.0, 1.0, 1.0 },
+        },
+        .shape = .spark,
+        .drag = 5,
+        .gravity = 12,
+        .glow = 2.5,
+        .placement = .{ .burst = .{ .radius = 0.05, .speed = 10, .stretch = 4 } },
+    },
+    .shockwave = .{
+        .count = 1,
+        .lifetime = 0.35,
+        .blend = .additive,
+        .size_start = 0.5,
+        .size_end = 9,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 1.0, 0.5, 0.2, 0.6 },
+            .{ 1.0, 0.6, 0.3, 0.7 },
+            .{ 1.0, 0.8, 0.5, 0.8 },
+            .{ 1.0, 0.9, 0.7, 0.9 },
+            .{ 1.0, 1.0, 1.0, 1.0 },
+        },
+        .shape = .shockwave,
+        .glow = 1.8,
+        .placement = .{ .burst = .{ .radius = 0, .speed = 0, .stretch = 0 } },
+    },
+    .heal_tracer = .{
+        .count = 1,
+        .lifetime = 0.0,
+        .blend = .additive,
+        .size_start = 0.18,
+        .size_end = 0.18,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 0.3, 1.0, 0.45, 1.0 },
+            .{ 0.3, 1.0, 0.45, 1.0 },
+            .{ 0.6, 1.0, 0.6, 1.0 },
+            .{ 0.6, 1.0, 0.6, 1.0 },
+            .{ 0.8, 1.0, 0.8, 1.0 },
+        },
+        .glow = 2,
+        .placement = .{ .burst = .{ .radius = 0.0, .speed = 0.0, .stretch = 6.0 } },
     },
 });

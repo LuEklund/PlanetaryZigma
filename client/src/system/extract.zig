@@ -117,7 +117,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                     world.elapsed_time,
                 );
             },
-            .projectile_cube => {
+            .projectile_cube, .projectile_heal => {
                 const velocity: nz.Vec3(
                     f32,
                 ) = if (entity.motion.update) |update| update.velocity else .{
@@ -126,7 +126,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                     0,
                 };
                 system.particles.keepAlive(
-                    .tracer,
+                    if (entity.kind == .projectile_heal) .heal_tracer else .tracer,
                     @intFromEnum(entity.id),
                     entity.transform.position,
                     entity.transform.position + velocity,

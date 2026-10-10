@@ -12,10 +12,20 @@ pub fn apply(
     skill_sounds: *const std.EnumArray(shared.entity.Skill, Audio.Sound),
     particles: *Particle,
 ) void {
+    for (world.damage_events.items) |hit| {
+        if (hit.delta <= 0) continue;
+        const up = nz.vec.normalize(hit.position);
+        const point = hit.position + nz.vec.scale(up, 1);
+        particles.spawn(.{ .effect = .hit_sparks, .origin = point, .target = point }, world.elapsed_time);
+    }
     for (packets) |packet| switch (packet) {
         .event => |event| switch (event) {
             .action => |action| {
                 audio.play(skill_sounds.get(action.skill));
+                if (firesShot(action.skill)) if (world.getPtr(action.id)) |shooter| {
+                    const muzzle = shooter.transform.position + nz.vec.scale(nz.vec.normalize(shooter.transform.position), 1.2);
+                    particles.spawn(.{ .effect = .muzzle_flash, .origin = muzzle, .target = muzzle }, world.elapsed_time);
+                };
                 if (action.id == world.player_id) world.controller.cooldown.set(
                     action.action,
                     world.elapsed_time,
@@ -23,6 +33,10 @@ pub fn apply(
             },
             .effect => |effect| switch (effect) {
                 .rocket_impact => |position| {
+                    particles.spawn(
+                        .{ .effect = .shockwave, .origin = position, .target = position },
+                        world.elapsed_time,
+                    );
                     particles.spawn(
                         .{ .effect = .explosion_puffs, .origin = position, .target = position },
                         world.elapsed_time,
@@ -76,5 +90,12 @@ pub fn apply(
             },
         },
         else => {},
+    };
+}
+
+fn firesShot(skill: shared.entity.Skill) bool {
+    return switch (skill) {
+        .shoot, .spread_shot, .shoot_cube, .railgun, .grenade, .artillery => true,
+        else => false,
     };
 }

@@ -394,6 +394,10 @@ fn pollConsole(self: *System, world: *World) !void {
             self.writeStateDump(world, path);
             continue;
         }
+        if (std.mem.startsWith(u8, line, "!fx ")) {
+            self.spawnEffectInView(world, line["!fx ".len..]);
+            continue;
+        }
         if (std.mem.eql(u8, line, "!cave")) {
             flyIntoCave(world);
             continue;
@@ -415,6 +419,22 @@ fn pollConsole(self: *System, world: *World) !void {
             .reliable,
         );
     }
+}
+
+/// Fires a particle effect 6 m in front of the camera (dev effects lab).
+fn spawnEffectInView(self: *System, world: *World, name: []const u8) void {
+    const effect = std.meta.stringToEnum(renderer_contract.ParticleEffect, name) orelse
+        return std.log.info("fx: no effect '{s}'", .{name});
+    const camera = world.camera.transform;
+    const forward = camera.rotation.rotateVec(.{ 0, 0, -1 });
+    const origin = camera.position + nz.vec.scale(forward, 6);
+    const up = nz.vec.normalize(origin);
+    const target = switch (effect) {
+        .telegraph => origin + nz.vec.scale(up, 3),
+        .lightning, .tracer, .heal_tracer => origin + nz.vec.scale(nz.vec.cross(forward, up), 4),
+        else => origin,
+    };
+    self.particles.spawn(.{ .effect = effect, .origin = origin, .target = target }, world.elapsed_time);
 }
 
 /// Free camera into the nearest tunnel under the player (dev inspection).

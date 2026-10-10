@@ -22,7 +22,15 @@ struct EffectParams {
     float4 ramp_steps;
     float4 color_ramp[5];
     float stretch;
+    uint shape;
+    float drag;
+    float gravity;
+    float glow;
 };
+
+static const uint shape_dot = 0;
+static const uint shape_spark = 1;
+static const uint shape_shockwave = 2;
 
 struct PushConstant {
     Emitter *emitter_buffer;
@@ -39,6 +47,7 @@ struct VertexOutput {
     nointerpolation float age_fraction : TEXCOORD1;
     float2 capsule : TEXCOORD2;
     nointerpolation float capsule_length : TEXCOORD3;
+    nointerpolation uint shape : TEXCOORD4;
 };
 
 static const uint placement_burst = 0;
@@ -148,12 +157,15 @@ float3 pathPoint(EffectParams params, Emitter emitter, float3 planet_up, float s
     return orbitPoint(params, emitter, planet_up, seed, animation_time, t);
 }
 
+// Smooth gradient through the five stops; ramp_steps are where stops 1..4 sit.
 float4 colorRamp(EffectParams params, float intensity) {
+    float stops[5] = { 0.0, params.ramp_steps.x, params.ramp_steps.y, params.ramp_steps.z, params.ramp_steps.w };
     float4 color = params.color_ramp[0];
-    color = intensity < params.ramp_steps.x ? color : params.color_ramp[1];
-    color = intensity < params.ramp_steps.y ? color : params.color_ramp[2];
-    color = intensity < params.ramp_steps.z ? color : params.color_ramp[3];
-    return intensity < params.ramp_steps.w ? color : params.color_ramp[4];
+    for (int stop = 1; stop < 5; stop++) {
+        float t = saturate((intensity - stops[stop - 1]) / max(stops[stop] - stops[stop - 1], 1e-4));
+        color = lerp(color, params.color_ramp[stop], t);
+    }
+    return color;
 }
 
 [shader("vertex")]
@@ -174,8 +186,11 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
     if (params.placement == placement_burst) {
         float3 direction = burstDirection(seed, local_index, planet_up);
         float3 start = emitter.origin + planet_up * params.arch_height + direction * params.radius;
-        float3 travel = params.motion == motion_ballistic ? direction * params.speed * speedVariance(seed, local_index) * age : float3(0.0, 0.0, 0.0);
+        float speed = params.speed * speedVariance(seed, local_index);
+        float distance = params.drag > 0.0 ? speed * (1.0 - exp(-params.drag * age)) / params.drag : speed * age;
+        float3 travel = params.motion == motion_ballistic ? direction * distance - planet_up * (0.5 * params.gravity * age * age) : float3(0.0, 0.0, 0.0);
         float3 position = start + travel;
+        float3 velocity = direction * speed * exp(-params.drag * age) - planet_up * (params.gravity * age);
 
         output.age_fraction = ageFraction(params, seed, local_index, age);
         float size = lerp(params.size_start, params.size_end, output.age_fraction);
@@ -185,7 +200,7 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
         float3 up = cross(forward, right);
         float3 world_position;
         if (params.stretch > 0.0) {
-            float3 heading = emitter.target - emitter.origin;
+            float3 heading = params.shape == shape_spark ? velocity : emitter.target - emitter.origin;
             float3 projected = heading - forward * dot(heading, forward);
             float projected_length = length(projected);
             float3 long_axis = projected_length > 0.001 ? projected / projected_length : right;
@@ -199,6 +214,7 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
         output.uv = float2(corner.x + 0.5, 0.5 - corner.y);
         output.capsule = float2(0.0, 0.0);
         output.capsule_length = -1.0;
+        output.shape = params.shape;
         return output;
     }
 
@@ -233,6 +249,7 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
     float length_in_radii = segment_length / radius;
     output.capsule = float2(corner.x < 0.0 ? -1.0 : length_in_radii + 1.0, corner.y * 2.0);
     output.capsule_length = length_in_radii;
+    output.shape = shape_dot;
     return output;
 }
 
@@ -243,11 +260,14 @@ float4 particles_frag(VertexOutput input) : SV_Target {
     if (input.capsule_length >= 0.0) {
         float along = input.capsule.x - clamp(input.capsule.x, 0.0, input.capsule_length);
         core = clamp(1.0 - length(float2(along, input.capsule.y)), 0.0, 1.0);
+    } else if (input.shape == shape_shockwave) {
+        float distance = length(input.uv * 2.0 - 1.0);
+        core = clamp(1.0 - abs(distance - 0.85) / 0.15, 0.0, 1.0);
     } else {
         core = clamp(1.0 - length(input.uv * 2.0 - 1.0), 0.0, 1.0);
     }
     float life = 1.0 - input.age_fraction;
     float intensity = clamp(sqrt(core) * 0.75 + life * 0.25, 0.0, 1.0);
     float4 color = colorRamp(params, intensity);
-    return float4(color.rgb, core * core * color.a * life);
+    return float4(color.rgb * params.glow, core * core * color.a * life);
 }
