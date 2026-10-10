@@ -522,14 +522,22 @@ fn markAllClientsForFullSync(self: *Network) void {
 
 fn runCommand(world: *World, outbox: Outbox, client: *Client, line: []const u8) !bool {
     const player = world.getPtrRaw(client.entity_id) orelse return false;
-    var reply_buffer: [shared.max_chat_len]u8 = undefined;
+    var reply_buffer: [16 * shared.max_chat_len]u8 = undefined;
     const reply = commands.run(world, player, line, &reply_buffer);
     std.log.info("command {s}: {s} -> {s}", .{ client.name, line, reply });
-    try outbox.send(client, .{ .chat_message = .{
-        .id = .none,
-        .text_len = @intCast(reply.len),
-        .text = reply,
-    } }, .reliable);
+    var lines = std.mem.tokenizeScalar(u8, reply, '\n');
+    while (lines.next()) |reply_line| {
+        var rest = reply_line;
+        while (rest.len > 0) {
+            const piece = rest[0..@min(rest.len, shared.max_chat_len)];
+            rest = rest[piece.len..];
+            try outbox.send(client, .{ .chat_message = .{
+                .id = .none,
+                .text_len = @intCast(piece.len),
+                .text = piece,
+            } }, .reliable);
+        }
+    }
     return false;
 }
 

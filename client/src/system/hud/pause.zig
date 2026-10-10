@@ -6,7 +6,7 @@ const Request = Hud.Request;
 pub fn update(hud: *Hud) Request {
     const button_size: dvui.Size = .{ .w = 260, .h = 44 };
     style.fillScreen(style.scrim);
-    var panel = style.centeredPanel(@src(), 340, 270);
+    var panel = style.centeredPanel(@src(), 340, 320);
     defer panel.deinit();
     style.title(@src(), "Paused");
     if (style.button(@src(), "Resume", 0, button_size, false, true)) hud.overlay = .none;

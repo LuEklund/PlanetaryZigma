@@ -46,6 +46,25 @@ pub fn floatingLabel(
     });
 }
 
+/// Greedy word wrap of `content` into lines no wider than `width`; returns the line count.
+pub fn wrapWords(content: []const u8, text_font: dvui.Font, width: f32, out: [][]const u8) usize {
+    var count: usize = 0;
+    var start: usize = 0;
+    while (start < content.len and count < out.len) {
+        var end = content.len;
+        while (end > start and text_font.textSize(content[start..end]).w > width) {
+            const space = std.mem.lastIndexOfScalar(u8, content[start .. end - 1], ' ');
+            end = if (space) |at| start + at else end - 1;
+        }
+        if (end == start) end = start + 1;
+        out[count] = content[start..end];
+        count += 1;
+        start = end;
+        while (start < content.len and content[start] == ' ') start += 1;
+    }
+    return count;
+}
+
 pub fn rgba(color: [4]f32) dvui.Color {
     return .{
         .r = @intFromFloat(std.math.clamp(color[0], 0, 1) * 255),

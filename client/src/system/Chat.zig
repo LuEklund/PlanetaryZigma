@@ -5,7 +5,7 @@ const shared = @import("shared");
 
 const Window = @import("Window");
 
-pub const max_lines = 8;
+pub const max_lines = 20;
 pub const visible_seconds: f32 = 12;
 pub const open_key: Window.Keyboard.Key = .t;
 

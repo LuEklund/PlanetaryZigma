@@ -466,19 +466,22 @@ fn addBossBar(world: *World, area: dvui.Rect) void {
     );
 }
 
+const chat_width: f32 = 460;
+
 fn addChat(world: *World, area: dvui.Rect) void {
     const chat = &world.chat;
     const line_height: f32 = 24;
+    const chat_font = style.font(18);
     var top = area.h - 50 - margin - 12 - line_height;
     const line_options: dvui.Options = .{
-        .font = style.font(18),
+        .font = chat_font,
         .color_text = .fromColor(style.text),
         .background = true,
         .padding = .{ .x = 6, .w = 6 },
     };
     if (chat.open) {
         var options = line_options;
-        options.rect = .{ .x = margin, .y = top, .w = 420, .h = line_height };
+        options.rect = .{ .x = margin, .y = top, .w = chat_width, .h = line_height };
         options.color_fill = .fromColor(style.rgba(.{ 0, 0, 0, 0.6 }));
         dvui.label(@src(), "> {s}_", .{chat.text()}, options);
     }
@@ -487,12 +490,18 @@ fn addChat(world: *World, area: dvui.Rect) void {
         index -= 1;
         const line = chat.get(index);
         if (!chat.open and world.elapsed_time - line.time > system.Chat.visible_seconds) break;
-        top -= line_height;
-        var options = line_options;
-        options.id_extra = index;
-        options.rect = .{ .x = margin, .y = top, .w = 420, .h = line_height };
-        options.color_fill = .fromColor(style.rgba(.{ 0, 0, 0, 0.45 }));
-        dvui.labelNoFmt(@src(), line.slice(), .{}, options);
+        var pieces: [8][]const u8 = undefined;
+        const piece_count = style.wrapWords(line.slice(), chat_font, chat_width - 12, &pieces);
+        var piece = piece_count;
+        while (piece > 0) {
+            piece -= 1;
+            top -= line_height;
+            var options = line_options;
+            options.id_extra = index * pieces.len + piece;
+            options.rect = .{ .x = margin, .y = top, .w = chat_width, .h = line_height };
+            options.color_fill = .fromColor(style.rgba(.{ 0, 0, 0, 0.45 }));
+            dvui.labelNoFmt(@src(), pieces[piece], .{}, options);
+        }
     }
 }
 

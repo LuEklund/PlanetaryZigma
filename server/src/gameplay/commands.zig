@@ -52,7 +52,7 @@ fn count(args: *Args, default: u32) u32 {
 
 fn help(_: *World, _: *Entity, _: *Args, reply: []u8) []const u8 {
     var writer: std.Io.Writer = .fixed(reply);
-    for (table) |command| writer.print("{s} ", .{command.name}) catch break;
+    for (table) |command| writer.print("{s}\n", .{command.usage}) catch break;
     return writer.buffered();
 }
 
