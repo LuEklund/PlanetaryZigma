@@ -286,6 +286,9 @@ fn orbit(context: Context, radius: f32, height: f32) !void {
     try firePrimary(context, context.player);
 }
 
+/// Telegraph size at the end of a charger dash.
+const charge_hit_radius: f32 = 2.5;
+
 fn charge(
     context: Context,
     trigger_distance: f32,
@@ -313,6 +316,8 @@ fn charge(
                 .direction = nz.vec.normalize(flat),
                 .struck = false,
             };
+            const dash_length = context.speed * speed_multiplier * dash_seconds;
+            skills.telegraph(world, enemy.transform.position + nz.vec.scale(ai.direction, dash_length), charge_hit_radius);
         },
         .windup => {
             world.act(.{ .id = enemy.id, .verb = .{ .face = ai.direction } });
