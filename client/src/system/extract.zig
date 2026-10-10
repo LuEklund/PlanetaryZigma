@@ -1,4 +1,5 @@
 const std = @import("std");
+const zoo_scene = @import("zoo.zig");
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
@@ -10,6 +11,14 @@ const collider_color: [4]f32 = .{ 0, 1, 0, 1 };
 const circle_segments = 16;
 
 const elite_scale: f32 = 1.25;
+
+fn pinged(world: *const World, id: shared.entity.Id) bool {
+    if (id == .none) return false;
+    for (world.pings) |ping| {
+        if (ping.event.target == id and ping.expires_at > world.elapsed_time) return true;
+    }
+    return false;
+}
 
 pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const animator = &system.animator;
@@ -90,6 +99,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     const player_interact: shared.entity.Id = if (world.getPtr(
         world.player_id,
     )) |player| player.interacting else .none;
+    const zoo_selected: shared.entity.Id = if (system.scene == .zoo) zoo_scene.selectedId(&system.zoo) else .none;
     for (world.entities.values()) |*entity| {
         switch (entity.kind) {
             .item_pickup => {
@@ -152,7 +162,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
             pose,
             transform.toMat4x4().mul(model_offset.toMat4x4()),
             entity.transform.position,
-            player_interact == entity.id,
+            player_interact == entity.id or entity.id == zoo_selected or pinged(world, entity.id),
         );
     }
     for (world.dying.items) |corpse| {

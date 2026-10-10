@@ -9,15 +9,15 @@ const ModelRow = graphics.ModelRow;
 const World = @import("../../World.zig");
 
 const row_size: dvui.Size = .{ .w = 220, .h = 30 };
+const panel_width: f32 = 260;
 
 pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo.Command {
     const area = style.screen();
-    gridLabels(state, world, area);
-    const column_width: f32 = 260;
+    if (gridLabels(state, world, area)) |index| return .{ .select_kind = index };
     var command: zoo.Command = .none;
 
     {
-        var left = panel(@src(), .{ .x = 8, .y = 8, .w = column_width, .h = area.h - 16 });
+        var left = panel(@src(), .{ .x = 8, .y = 8, .w = panel_width, .h = area.h - 16 });
         defer left.deinit();
         heading(@src(), "Entity");
         var scroll = dvui.scrollArea(@src(), .{}, .{ .expand = .both });
@@ -34,18 +34,9 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
                 command = .{ .select_kind = @intCast(index) };
             }
         }
-        if (style.button(
-            @src(),
-            "Grid view",
-            0,
-            row_size,
-            state.grid,
-            true,
-        )) command = .toggle_grid;
         if (style.button(@src(), "Back (Esc)", 0, row_size, false, true)) command = .exit;
     }
 
-    if (state.grid) return command;
     const kind = zoo.kinds[state.kind_index];
     const handle = models.get(kind);
     const row = models.row(handle) orelse return command;
@@ -54,7 +45,7 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
 
     var right = panel(
         @src(),
-        .{ .x = area.w - column_width - 8, .y = 8, .w = column_width, .h = area.h - 16 },
+        .{ .x = area.w - panel_width - 8, .y = 8, .w = panel_width, .h = area.h - 16 },
     );
     defer right.deinit();
     dvui.labelNoFmt(
@@ -113,14 +104,45 @@ pub fn update(state: *const zoo.State, models: *const Models, world: *World) zoo
     return command;
 }
 
-fn gridLabels(state: *const zoo.State, world: *World, area: dvui.Rect) void {
+const pick_radius: f32 = 70;
+
+/// Draws a name under every subject; returns the subject clicked in the scene (not on a panel).
+fn gridLabels(state: *const zoo.State, world: *World, area: dvui.Rect) ?u16 {
+    const click = sceneClick();
+    var picked: ?u16 = null;
+    var picked_distance = pick_radius;
     var buffer: [zoo.max_labels]zoo.Label = undefined;
     const view_proj = world.camera.viewProj(world.options.fov_rad, area.w / area.h);
     for (zoo.labels(world, state, &buffer), 0..) |label, index| {
         const screen = style.worldToScreen(view_proj, label.position) orelse continue;
         const color = if (label.selected) style.accent else style.text;
         style.floatingLabel(@src(), index, label.name, .{ screen[0], screen[1] + 10 }, 18, color);
+        const point = click orelse continue;
+        const distance = std.math.hypot(screen[0] - point[0], screen[1] - point[1]);
+        if (distance >= picked_distance) continue;
+        picked_distance = distance;
+        picked = label.index;
     }
+    return picked;
+}
+
+/// A left click no widget took this frame, in natural units. Runs before the panels draw,
+/// so it skips clicks that land inside them by position.
+fn sceneClick() ?[2]f32 {
+    const scale = dvui.windowNaturalScale();
+    const area = style.screen();
+    for (dvui.events()) |*event| {
+        if (event.handled) continue;
+        const mouse = switch (event.evt) {
+            .mouse => |mouse| mouse,
+            else => continue,
+        };
+        if (mouse.action != .press or mouse.button != .left) continue;
+        const point: [2]f32 = .{ mouse.p.x / scale, mouse.p.y / scale };
+        if (point[0] < panel_width + 16 or point[0] > area.w - panel_width - 16) continue;
+        return point;
+    }
+    return null;
 }
 
 fn panel(src: std.builtin.SourceLocation, rect: dvui.Rect) *dvui.BoxWidget {

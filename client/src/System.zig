@@ -239,7 +239,7 @@ fn step(self: *System, world: *World) !void {
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
     switch (self.scene) {
         .menu => menu_world.update(world),
-        .zoo => zoo_scene.update(world, &self.zoo, self.window.pointer.axis.vertical),
+        .zoo => zoo_scene.update(world, &self.zoo),
         .game => {},
     }
     self.dvui_backend.size = .{
@@ -519,7 +519,11 @@ fn handleInput(self: *System, world: *World, typed: []const u8) !shared.net.Inpu
                 world.chat.input_len = 0;
             },
         },
-        .zoo => if (self.window.keyboard.get(.escape) == .press) try self.enterScene(world, .menu),
+        .zoo => if (self.window.keyboard.get(.escape) == .press) {
+            try self.enterScene(world, .menu);
+        } else {
+            player_input = world.controller.update(self.window, self.pad);
+        },
         .menu => if (self.hud.overlay == .options and world.controller.rebinding_action != null) {
             world.controller.captureBinding(self.window);
         } else if (self.window.keyboard.get(.escape) == .press) {
@@ -542,9 +546,6 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
         .exit => try self.enterScene(world, .menu),
         .select_kind => |index| {
             self.zoo.kind_index = index;
-            self.zoo.grid = false;
-            self.zoo.distance = 6;
-            try self.enterScene(world, .zoo);
         },
         .select_slot => |slot| {
             self.zoo.slot = slot;
@@ -564,11 +565,6 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
             try self.enterScene(world, .zoo);
         },
         .toggle_spin => self.zoo.spinning = !self.zoo.spinning,
-        .toggle_grid => {
-            self.zoo.grid = !self.zoo.grid;
-            self.zoo.distance = if (self.zoo.grid) 60 else 6;
-            try self.enterScene(world, .zoo);
-        },
     }
 }
 
@@ -587,7 +583,9 @@ fn playZooAction(self: *System, world: *World) void {
 fn applyOptions(self: *System, world: *World) !void {
     try self.window.setFullscreen(world.options.fullscreen);
     self.audio.setVolume(world.options.master_volume);
-    const wants_cursor_lock = self.scene == .game and world.stage != 0 and self.hud.overlay == .none and self.window.focused;
+    const playing = self.scene == .game and world.stage != 0 and self.hud.overlay == .none;
+    const zoo_looking = self.scene == .zoo and self.window.pointer.buttons.right;
+    const wants_cursor_lock = (playing or zoo_looking) and self.window.focused;
     if (wants_cursor_lock) {
         try self.window.setPointerVisible(false);
         try self.window.setPointerConstraint(.locked);

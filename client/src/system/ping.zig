@@ -7,7 +7,7 @@ const Vec3 = nz.Vec3(f32);
 const max_distance: f32 = 300;
 const entity_cone: f32 = 0.995;
 
-/// What the crosshair points at: the entity closest to the center of the screen, else the terrain.
+/// What the crosshair points at: the visible entity closest to screen center, else the terrain hit.
 pub fn aim(world: *World) shared.net.PingRequest {
     const origin = world.camera.transform.position;
     const forward = world.camera.transform.rotation.rotateVec(.{ 0, 0, -1 });
@@ -22,6 +22,8 @@ pub fn aim(world: *World) shared.net.PingRequest {
         if (distance < 0.5 or distance > max_distance) continue;
         const alignment = nz.vec.dot(nz.vec.scale(to_entity, 1 / distance), forward);
         if (alignment <= best_alignment) continue;
+        const to_direction = nz.vec.scale(to_entity, 1 / distance);
+        if (terrainDistance(&world.planet, origin, to_direction) < distance - 1) continue;
         best_alignment = alignment;
         best_target = entity.id;
         best_position = entity.transform.position;

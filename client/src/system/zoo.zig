@@ -16,8 +16,6 @@ pub const State = struct {
     kind_index: u16 = 0,
     slot: Slot = .{ .loop = .idle },
     yaw: f32 = 0,
-    distance: f32 = 6,
-    grid: bool = false,
     spinning: bool = true,
     planet_radius: u32 = 150,
 };
@@ -29,7 +27,6 @@ pub const Command = union(enum) {
     select_slot: Slot,
     assign_clip: ?u16,
     play_action,
-    toggle_grid,
     toggle_spin,
     set_radius: u32,
 };
@@ -55,7 +52,8 @@ const subject_height: f32 = 1;
 const spin_speed: f32 = 0.6;
 const grid_columns: usize = 6;
 const grid_spacing: f32 = 7;
-const grid_pitch: f32 = -0.55;
+const camera_pitch: f32 = -0.55;
+const camera_back: f32 = 40;
 
 fn subjectId(index: usize) shared.entity.Id {
     return @enumFromInt(first_id + index);
@@ -71,54 +69,50 @@ fn gridUp(index: usize, planet_radius: u32) nz.Vec3(f32) {
 }
 
 pub fn populate(world: *World, gpa: std.mem.Allocator, state: *const State) !void {
-    world.controller.free_camera = false;
     try world.planet.sync(gpa, state.planet_radius);
-    if (!state.grid) return spawn(world, 0, state.kind_index, .{ 0, 1, 0 });
-    for (0..kinds.len) |index| try spawn(world, index, index, gridUp(index, state.planet_radius));
+    for (0..kinds.len) |index| try spawn(world, index, gridUp(index, state.planet_radius));
+    const top = surfaceRadius(world, .{ 0, 1, 0 }) + subject_height;
+    world.controller.free_camera = true;
+    world.camera.free_speed = 12;
+    world.camera.pitch = camera_pitch;
+    world.camera.yaw_rotation = .identity;
+    world.camera.transform = .{ .position = .{
+        0,
+        top - camera_back * @sin(camera_pitch),
+        camera_back * @cos(camera_pitch),
+    } };
 }
 
-fn spawn(world: *World, slot: usize, kind_index: usize, up: nz.Vec3(f32)) !void {
+fn spawn(world: *World, index: usize, up: nz.Vec3(f32)) !void {
     try world.applySpawn(.{
-        .id = subjectId(slot),
-        .kind = kinds[kind_index],
+        .id = subjectId(index),
+        .kind = kinds[index],
         .position = nz.vec.scale(up, surfaceRadius(world, up) + subject_height),
         .rotation = nz.Quat(f32).identity.toVec(),
         .data = .none,
     });
 }
 
-pub fn update(world: *World, state: *State, wheel: f64) void {
+/// Spins the subjects; only the selected one plays the selected loop.
+pub fn update(world: *World, state: *State) void {
     if (state.spinning) state.yaw += spin_speed * world.delta_time;
-    const max_distance: f32 = if (state.grid) 150 else 80;
-    state.distance = std.math.clamp(
-        state.distance * std.math.pow(f32, 0.9, @floatCast(wheel)),
-        1.5,
-        max_distance,
-    );
-    const top = surfaceRadius(world, .{ 0, 1, 0 }) + subject_height;
-    world.camera.transform = if (state.grid) .{
-        .position = .{
-            0,
-            top - state.distance * @sin(grid_pitch),
-            state.distance * @cos(grid_pitch),
-        },
-        .rotation = nz.Quat(f32).angleAxis(grid_pitch, .{ 1, 0, 0 }),
-    } else .{ .position = .{ 0, top + state.distance * 0.2, state.distance } };
-
-    const loop: shared.entity.Loop = switch (state.slot) {
+    const selected_loop: shared.entity.Loop = switch (state.slot) {
         .loop => |loop| loop,
         .action => .idle,
     };
-    const count = if (state.grid) kinds.len else 1;
-    for (0..count) |index| {
+    for (0..kinds.len) |index| {
         const subject = world.getPtr(subjectId(index)) orelse continue;
-        const up = if (state.grid) gridUp(index, state.planet_radius) else nz.Vec3(f32){ 0, 1, 0 };
+        const up = gridUp(index, state.planet_radius);
         subject.motion.update = null;
         subject.transform.rotation = shared.math.rotationFromUp(up).mul(
             nz.Quat(f32).angleAxis(state.yaw, .{ 0, 1, 0 }),
         );
-        subject.override_animation_loop = loop;
+        subject.override_animation_loop = if (index == state.kind_index) selected_loop else .idle;
     }
+}
+
+pub fn selectedId(state: *const State) shared.entity.Id {
+    return subjectId(state.kind_index);
 }
 
 fn surfaceRadius(world: *const World, up: nz.Vec3(f32)) f32 {
@@ -126,11 +120,12 @@ fn surfaceRadius(world: *const World, up: nz.Vec3(f32)) f32 {
 }
 
 pub fn labels(world: *World, state: *const State, out: []Label) []Label {
-    const count = if (state.grid) kinds.len else 0;
+    const count = kinds.len;
     var len: usize = 0;
     for (0..count) |index| {
         const subject = world.getPtr(subjectId(index)) orelse continue;
         out[len] = .{
+            .index = @intCast(index),
             .name = ModelRow.kindName(kinds[index]),
             .position = subject.transform.position,
             .selected = index == state.kind_index,
@@ -140,18 +135,17 @@ pub fn labels(world: *World, state: *const State, out: []Label) []Label {
     return out[0..len];
 }
 
-pub const Label = struct { name: []const u8, position: nz.Vec3(f32), selected: bool };
+pub const Label = struct { index: u16, name: []const u8, position: nz.Vec3(f32), selected: bool };
 pub const max_labels = kinds.len;
 
 /// Console form of the zoo panel:
-/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `grid`, `spin`, `radius <n>`, `exit`.
+/// `kind <name>`, `slot <loop|action>`, `clip <name|none>`, `play`, `spin`, `radius <n>`, `exit`.
 pub fn parseCommand(line: []const u8, models: *const Models, state: *const State) Command {
     var words = std.mem.tokenizeScalar(u8, line, ' ');
     const verb = words.next() orelse return .none;
     const argument = words.rest();
     if (std.mem.eql(u8, verb, "exit")) return .exit;
     if (std.mem.eql(u8, verb, "play")) return .play_action;
-    if (std.mem.eql(u8, verb, "grid")) return .toggle_grid;
     if (std.mem.eql(u8, verb, "spin")) return .toggle_spin;
     if (std.mem.eql(u8, verb, "radius")) {
         const radius = std.fmt.parseInt(u32, argument, 10) catch return .none;
@@ -184,8 +178,7 @@ pub fn parseCommand(line: []const u8, models: *const Models, state: *const State
 }
 
 pub fn subjectAnimation(world: *World, state: *const State) graphics.Animator.Handle {
-    const slot = if (state.grid) state.kind_index else 0;
-    const subject = world.getPtr(subjectId(slot)) orelse return .none;
+    const subject = world.getPtr(subjectId(state.kind_index)) orelse return .none;
     return subject.animation;
 }
 
