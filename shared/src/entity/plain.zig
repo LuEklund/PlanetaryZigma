@@ -52,6 +52,17 @@ pub const lootbox: Spec = .{
     .currency = 25,
 };
 
+/// RoR2 barrel: free, a little gold. Placeholder look: the unused chest model.
+pub const barrel: Spec = .{
+    .collider = .{
+        .shape = .{ .box = .{ .x = 0.5, .y = 0.5, .z = 0.5 } },
+        .motion = .static,
+        .layer = .moving,
+    },
+    .model = .{ .path = "objects/chest.glb", .offset = .{ .scale = .{ 0.6, 0.6, 0.6 } }, .loop_clips = null },
+    .currency = 25,
+};
+
 /// Placeholder look: the pillar model scaled down (needs a shrine model from Lucas).
 const shrine_model: entity.ModelSpec = .{
     .path = "objects/pillar.glb",

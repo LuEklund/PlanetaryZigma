@@ -140,7 +140,7 @@ fn updateInteractTarget(
 pub fn interactable(world: *World, id: shared.entity.Id) shared.entity.Id {
     const entity = world.getPtr(id) orelse return .none;
     return switch (entity.kind) {
-        .lootbox, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
+        .lootbox, .barrel, .item_pickup, .shrine_combat, .shrine_mountain, .shrine_chance => id,
         .teleporter => switch (entity.teleporter.state) {
             .active => .none,
             .completed => if (world.teleport_bosses.items.len > 0) .none else id,
@@ -164,6 +164,13 @@ pub fn use(world: *World, player: *World.Entity, target: *World.Entity) !void {
         .lootbox => try openChest(world, player, target),
         .teleporter => try useTeleporter(world, player, target),
         .item_pickup => pickUp(world, player, target),
+        .barrel => {
+            player.currency += target.currency;
+            world.client_updates.appendAssumeCapacity(.{
+                .set_currency = .{ .id = player.id, .amount = player.currency },
+            });
+            world.queueDespawn(target.id);
+        },
         .shrine_combat => {
             director.startShrineOfCombat(world);
             world.queueDespawn(target.id);

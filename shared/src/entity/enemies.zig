@@ -72,6 +72,7 @@ pub const bloorp_lord: Spec = .{
     ),
     .currency = 600,
     .category = .champion,
+    .min_stage = 2,
 };
 
 pub const hunkloid: Spec = .{

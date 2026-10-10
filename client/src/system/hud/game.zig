@@ -444,6 +444,7 @@ fn addInteractPrompt(world: *World, player: *const World.Entity, area: dvui.Rect
     };
     const name: []const u8 = switch (entity.kind) {
         .shrine_chance => "Shrine of Chance",
+        .barrel => "Barrel",
         .shrine_combat => "Shrine of Combat",
         .shrine_mountain => "Shrine of the Mountain",
         else => "",

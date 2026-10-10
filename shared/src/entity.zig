@@ -20,6 +20,7 @@ pub const Kind = union(enum) {
 
     teleporter,
     lootbox,
+    barrel,
     shrine_combat,
     shrine_mountain,
     shrine_chance,
@@ -229,6 +230,8 @@ pub const Spec = struct {
     behavior: Behavior = .idle,
     pack_size: u8 = 1,
     category: Category = .basic,
+    /// Combat/scene directors skip this card before this many stages are done (RoR2 card field).
+    min_stage: u32 = 0,
 };
 
 /// Director card category (RoR2: basic monsters / minibosses / champions).

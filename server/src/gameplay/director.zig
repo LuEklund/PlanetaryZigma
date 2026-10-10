@@ -26,6 +26,7 @@ const shrine_combat_credits: f32 = 100;
 const InteractableCard = struct { kind: shared.entity.Kind, cost: f32, weight: u32 };
 const interactable_cards = [_]InteractableCard{
     .{ .kind = .lootbox, .cost = 15, .weight = 24 },
+    .{ .kind = .barrel, .cost = 1, .weight = 10 },
     .{ .kind = .shrine_chance, .cost = 20, .weight = 4 },
     .{ .kind = .shrine_combat, .cost = 20, .weight = 3 },
     .{ .kind = .shrine_mountain, .cost = 20, .weight = 3 },
@@ -118,6 +119,12 @@ pub fn announceFamily(world: *World, family: u8) void {
     } });
 }
 
+fn cheapestCard() f32 {
+    var cheapest: f32 = std.math.inf(f32);
+    for (interactable_cards) |card| cheapest = @min(cheapest, card.cost);
+    return cheapest;
+}
+
 /// RoR2 Shrine of Combat: an instant director with 100·coeff credits.
 pub fn startShrineOfCombat(world: *World) void {
     world.directors.set(.shrine, .{ .active = true, .credits = shrine_combat_credits * world.difficultyCoefficient() });
@@ -196,6 +203,10 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
 /// The biome's monster weights, or only the family's members during a family event.
 fn spawnPool(world: *const World) shared.Biome {
     var pool = shared.Biome.forRadius(world.planet.planet_radius).*;
+    const stages_done = world.stage -| 1;
+    for (std.enums.values(EnemyKind)) |enemy| {
+        if (spec(enemy).min_stage > stages_done) pool.enemy_weights.set(enemy, 0);
+    }
     const family = world.family orelse return pool;
     pool.enemy_weights = .initFill(0);
     for (families[family].members) |member| pool.enemy_weights.set(member, 1);
@@ -345,7 +356,7 @@ fn populateScene(world: *World) !void {
     var interactable_credits = scene_interactable_credits * (1 + 0.5 * (players - 1));
     var total_weight: u32 = 0;
     for (interactable_cards) |card| total_weight += card.weight;
-    while (interactable_credits >= interactable_cards[0].cost) {
+    while (interactable_credits >= cheapestCard()) {
         var roll = random.uintLessThan(u32, total_weight);
         const card = for (interactable_cards) |candidate| {
             if (roll < candidate.weight) break candidate;
