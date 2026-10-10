@@ -272,7 +272,13 @@ fn move(world: *World, player: *World.Entity, frame: Frame) void {
     const stun_slow: f32 = if (player.un_stun_at > world.elapsed_time) 0.3 else 1;
     const attacking = input.keys.attack or input.keys.secondary;
     const sprinting = input.keys.sprint and input.keys.move_forward and !input.keys.move_backward and !attacking;
+    const jump_pressed = input.keys.jump and !player.jump_held;
+    player.jump_held = input.keys.jump;
+    if (player.mode == .walking) player.air_jumps_used = 0;
     if (input.keys.jump and player.mode == .walking) {
+        world.act(.{ .id = player.id, .verb = .{ .jump = 20 } });
+    } else if (jump_pressed and @as(f32, @floatFromInt(player.air_jumps_used)) < player.stat(.extra_jumps)) {
+        player.air_jumps_used += 1;
         world.act(.{ .id = player.id, .verb = .{ .jump = 20 } });
     }
     world.act(.{

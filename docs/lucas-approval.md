@@ -75,3 +75,4 @@ and tick it. Rule (CLAUDE.md): any new player-facing name/description from Claud
 - [ ] Options → Graphics: "Anti-aliasing (FXAA)", "Bloom"
 - [ ] Shrine names (RoR2's own, swap for our twist?): "Shrine of Chance", "Shrine of Combat", "Shrine of the Mountain"; chat: "The air grows tense." / "A great challenge awaits at the teleporter." / "You fail to gain the shrine's favor."
 - [ ] Keybind label "Sprint"
+- [ ] Items: "feather" — "+1 jump in mid-air, +1 per stack"; "fungus" — "stand still for 1s to heal 4.5% max health per second, +4.5% per stack"

@@ -90,6 +90,16 @@ pub const items = struct {
         .description = "+10 max health",
     };
 
+    pub const feather: Item = .{
+        .flat = .initDefault(0, .{ .extra_jumps = 1 }),
+        .description = "+1 jump in mid-air, +1 per stack",
+    };
+
+    pub const fungus: Item = .{
+        .flat = .initDefault(0, .{ .still_heal = 0.045 }),
+        .description = "stand still for 1s to heal 4.5% max health per second, +4.5% per stack",
+    };
+
     pub const energy_drink: Item = .{
         .flat = .initDefault(0, .{ .speed = 1 }),
         .description = "+1 speed",
@@ -342,6 +352,10 @@ pub const Stat = enum(u16) {
     critical_chance,
     block_chance,
     stun_chance,
+    /// Mid-air jumps (RoR2 Hopoo Feather).
+    extra_jumps,
+    /// Fraction of max health healed per second after standing still for a second (Bustling Fungus).
+    still_heal,
 
     pub fn value(stat: Stat, base: *const std.EnumArray(Stat, f32), inv: Inventory) f32 {
         var flat: f32 = 0;
@@ -355,7 +369,7 @@ pub const Stat = enum(u16) {
         }
         const linear = (base.get(stat) + flat) * @max(min_percent_scale, 1 + percent);
         return switch (stat) {
-            .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance => linear,
+            .health, .speed, .damage, .regen, .rocket_chance, .lightning_chance, .critical_chance, .stun_chance, .extra_jumps, .still_heal => linear,
             .primary_cooldown, .utility_cooldown, .secondary_cooldown, .equipment_cooldown, .special_cooldown => @max(
                 0.1,
                 base.get(stat) + flat,
