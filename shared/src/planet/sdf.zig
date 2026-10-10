@@ -8,8 +8,10 @@ pub const noise_amplitude = Field.max_height;
 
 const full_height_radius = 100;
 
+/// Off until caves have a gameplay use (Lucas 2026-10-10): they cost chunk-gen time.
+pub const caves_enabled = false;
 /// Caves live in this band under the outer surface; deeper is solid.
-pub const cave_depth: comptime_int = 24;
+pub const cave_depth: comptime_int = if (caves_enabled) 24 else 0;
 /// Tunnel paths: where this surface noise crosses zero.
 const path_frequency: f32 = 0.012;
 /// Tunnel center depth: slow surface noise, so floors slope gently (~10-25 degrees).
@@ -22,6 +24,7 @@ const noise_gradient: f32 = 2.5;
 /// Terrain with caves carved out. Everything that collides or meshes uses this.
 pub fn sdf(position: nz.Vec3(f32), planet_radius: f32) f32 {
     const outer = terrain(position, planet_radius);
+    if (!caves_enabled) return outer;
     const depth = -outer;
     if (depth < -1 or depth > cave_depth or planet_radius < full_height_radius) return outer;
     return @max(outer, -cave(position, planet_radius, depth));
@@ -108,6 +111,7 @@ pub fn sampled(position: nz.Vec3(f32), planet_radius: f32) f32 {
 }
 
 test "caves carve only inside the band under the surface" {
+    if (!caves_enabled) return error.SkipZigTest;
     const planet_radius: f32 = 1000;
     var prng: std.Random.DefaultPrng = .init(7);
     const random = prng.random();
@@ -129,6 +133,7 @@ test "caves carve only inside the band under the surface" {
 }
 
 test "tunnel floors slope gently" {
+    if (!caves_enabled) return error.SkipZigTest;
     const planet_radius: f32 = 1000;
     const shift = caveShift(planet_radius);
     var prng: std.Random.DefaultPrng = .init(11);

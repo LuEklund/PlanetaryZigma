@@ -11,3 +11,5 @@
 **Why not 3D noodle noise.** Lucas: caves must go into the ground gently so players can get out and enemies don't get stuck. 3D noise makes vertical shafts.
 
 **Also.** Shared tests were never run, because nothing referenced the nested test files. `shared/src/root.zig` now references planet + layout; one stale range test was fixed. Dev: `pz cmd "!cave"` flies the free camera into the nearest tunnel.
+
+**Status 2026-10-10:** disabled (`caves_enabled = false`, comptime — zero cost). Flip it once caves have a gameplay use.
