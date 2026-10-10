@@ -248,6 +248,12 @@ pub const Event = union(enum) {
         duration: f32,
     };
 
+    /// Ground warning for an incoming attack: where it lands and how wide.
+    pub const Telegraph = struct {
+        position: @Vector(3, f32),
+        radius: f32,
+    };
+
     pub const Ping = struct {
         pinger: entity.Id,
         position: @Vector(3, f32),
@@ -281,6 +287,7 @@ pub const Event = union(enum) {
     effect: Effect,
     difficulty: Difficulty,
     ping: Ping,
+    telegraph: Telegraph,
 };
 
 pub fn write(comptime Packet: type, self: Packet, writer: *std.Io.Writer) !void {

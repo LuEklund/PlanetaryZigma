@@ -44,6 +44,7 @@ struct VertexOutput {
 static const uint placement_burst = 0;
 static const uint placement_line = 1;
 static const uint placement_orbit = 2;
+static const uint placement_ring = 3;
 
 static const uint motion_ballistic = 0;
 static const uint motion_along_path = 1;
@@ -129,6 +130,19 @@ float3 orbitPoint(EffectParams params, Emitter emitter, float3 planet_up, float 
     return emitter.origin + offset + planet_up * (t * height) + (side * cos(angle) + forward * sin(angle)) * radius;
 }
 
+// Chain 0: the full edge. Chain 1: a circle that grows to the edge as the attack lands.
+float3 ringPoint(Emitter emitter, uint chain_index, float grown, float t) {
+    float3 axis = emitter.target - emitter.origin;
+    float radius = length(axis);
+    float3 normal = axis / max(radius, 0.0001);
+    float3 helper = abs(normal.y) < 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+    float3 side = normalize(cross(normal, helper));
+    float3 forward = cross(normal, side);
+    float scale = chain_index == 0u ? 1.0 : grown;
+    float angle = t * tau;
+    return emitter.origin + (side * cos(angle) + forward * sin(angle)) * radius * scale;
+}
+
 float3 pathPoint(EffectParams params, Emitter emitter, float3 planet_up, float seed, float animation_time, float t) {
     if (params.placement == placement_line) return linePoint(params, emitter, planet_up, seed, t);
     return orbitPoint(params, emitter, planet_up, seed, animation_time, t);
@@ -188,7 +202,7 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
         return output;
     }
 
-    uint chains = params.placement == placement_orbit ? max(params.strands, 1u) : 1u;
+    uint chains = params.placement == placement_line ? 1u : max(params.strands, 1u);
     uint segments = params.count / chains - 1u;
     uint chain_index = local_index / segments;
     uint segment_index = local_index % segments;
@@ -196,12 +210,15 @@ VertexOutput particles_vert(uint vertex_index: SV_VertexID, uint instance_index:
 
     float t0 = float(segment_index) / float(segments);
     float t1 = float(segment_index + 1) / float(segments);
-    float3 start = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t0);
-    float3 end = pathPoint(params, emitter, planet_up, chain_seed, animation_time, t1);
+    float grown = params.lifetime > 0.0 ? clamp(age / params.lifetime, 0.0, 1.0) : 1.0;
+    bool is_ring = params.placement == placement_ring;
+    float3 start = is_ring ? ringPoint(emitter, chain_index, grown, t0) : pathPoint(params, emitter, planet_up, chain_seed, animation_time, t0);
+    float3 end = is_ring ? ringPoint(emitter, chain_index, grown, t1) : pathPoint(params, emitter, planet_up, chain_seed, animation_time, t1);
 
-    output.age_fraction = ageFraction(params, seed, chain_index, age);
+    output.age_fraction = is_ring ? grown * 0.5 : ageFraction(params, seed, chain_index, age);
     float size = lerp(params.size_start, params.size_end, output.age_fraction);
-    float radius = max(size * (0.35 + 1.3 * sin((t0 + t1) * 0.5 * 3.1415926)) * 0.5, 0.0001);
+    float taper = is_ring ? 1.0 : 0.35 + 1.3 * sin((t0 + t1) * 0.5 * 3.1415926);
+    float radius = max(size * taper * 0.5, 0.0001);
 
     float3 along = end - start;
     float segment_length = length(along);

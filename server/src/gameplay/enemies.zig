@@ -354,6 +354,7 @@ fn fuse(context: Context, fuse_seconds: f32, blast_radius: f32) void {
             if (skills.useAction(world, enemy, context.player, .primary) != .fired) return;
             ai.phase = .fuse;
             ai.phase_until = world.elapsed_time + fuse_seconds;
+            skills.telegraph(world, enemy.transform.position, blast_radius);
         },
         .fuse => {
             move(context, .walk, .{ 0, 0, 0 }, context.speed);

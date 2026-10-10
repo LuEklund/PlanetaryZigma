@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Placement = enum(u32) { burst, line, orbit };
+pub const Placement = enum(u32) { burst, line, orbit, ring };
 pub const Motion = enum(u32) { ballistic, along_path };
 pub const Blend = enum { alpha, additive };
 pub const ParticleEffect = enum(u32) {
@@ -9,6 +9,7 @@ pub const ParticleEffect = enum(u32) {
     lightning,
     item_effect,
     tracer,
+    telegraph,
 
     pub const count: usize = @typeInfo(ParticleEffect).@"enum".fields.len;
 };
@@ -36,6 +37,7 @@ pub const Effect = struct {
             .burst => effect.count,
             .line => effect.count - 1,
             .orbit => |orbit| effect.count - orbit.strands,
+            .ring => |ring| effect.count - ring.strands,
         };
     }
 
@@ -50,6 +52,9 @@ pub const Effect = struct {
         burst: struct { radius: f32, speed: f32, stretch: f32 },
         line: struct { jitter: f32, arch_height: f32, strands: u32 },
         orbit: struct { radius: f32, spin: f32, strands: u32, height: f32, scroll: f32, jitter: f32 },
+        /// Closed circles around `origin` in the plane normal to `target - origin`, radius =
+        /// its length. Chain 0 is the edge, chain 1 fills in to the edge over the lifetime.
+        ring: struct { strands: u32 },
     },
 
     pub fn toGPU(effect: Effect) GPU {
@@ -92,6 +97,10 @@ pub const Effect = struct {
                 params.arch_height = orbit.height;
                 params.speed = orbit.scroll;
                 params.jitter = orbit.jitter;
+            },
+            .ring => |ring| {
+                params.motion = @intFromEnum(Motion.along_path);
+                params.strands = ring.strands;
             },
         }
         return params;
@@ -187,5 +196,21 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
             .{ 1.0, 0.8, 0.3, 1.0 },
         },
         .placement = .{ .burst = .{ .radius = 0.0, .speed = 0.0, .stretch = 6.0 } },
+    },
+    .telegraph = .{
+        .count = 2 * 49,
+        .lifetime = 1.0,
+        .blend = .additive,
+        .size_start = 0.25,
+        .size_end = 0.35,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 1.0, 0.25, 0.1, 0.8 },
+            .{ 1.0, 0.3, 0.1, 0.9 },
+            .{ 1.0, 0.4, 0.15, 1.0 },
+            .{ 1.0, 0.5, 0.2, 1.0 },
+            .{ 1.0, 0.6, 0.3, 1.0 },
+        },
+        .placement = .{ .ring = .{ .strands = 2 } },
     },
 });

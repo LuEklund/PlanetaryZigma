@@ -113,6 +113,7 @@ pub fn executeSkill(
             world.act(
                 .{ .id = caster.id, .verb = .{ .arc_jump = destination.transform.position } },
             );
+            telegraph(world, destination.transform.position, @max(assigned.radius, landing_radius));
         },
         .plant, .charge, .explode => {},
         .melee_cone => meleeCone(cast),
@@ -410,4 +411,12 @@ fn blastAt(world: *World, caster: *Entity, center: nz.Vec3(f32), radius: f32, da
     world.client_updates.appendAssumeCapacity(
         .{ .event = .{ .effect = .{ .rocket_impact = center } } },
     );
+}
+
+const landing_radius: f32 = 3;
+
+/// Tells clients where an attack will land so players can dodge it.
+pub fn telegraph(world: *World, position: nz.Vec3(f32), radius: f32) void {
+    if (world.client_updates.unusedCapacitySlice().len == 0) return;
+    world.client_updates.appendAssumeCapacity(.{ .event = .{ .telegraph = .{ .position = position, .radius = radius } } });
 }

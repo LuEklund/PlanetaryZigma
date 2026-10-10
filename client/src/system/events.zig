@@ -1,5 +1,6 @@
 const std = @import("std");
 const shared = @import("shared");
+const nz = shared.numz;
 const Audio = @import("Audio.zig");
 const Particle = @import("graphics").Particle;
 const World = @import("../World.zig");
@@ -50,6 +51,15 @@ pub fn apply(
                 entity.teleporter.charged = charged;
             },
             .difficulty => |difficulty| world.difficulty = difficulty,
+            .telegraph => |telegraph| {
+                const up = nz.vec.normalize(telegraph.position);
+                const center = world.planet.surfacePoint(up) + nz.vec.scale(up, 0.3);
+                particles.spawn(.{
+                    .effect = .telegraph,
+                    .origin = center,
+                    .target = center + nz.vec.scale(up, telegraph.radius),
+                }, world.elapsed_time);
+            },
             .ping => |ping| {
                 world.pings[world.next_ping] = .{ .event = ping, .expires_at = world.elapsed_time + World.ping_seconds };
                 world.next_ping = (world.next_ping + 1) % World.max_pings;
