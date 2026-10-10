@@ -255,6 +255,9 @@ fn pickUp(world: *World, player: *World.Entity, pickup: *World.Entity) void {
     world.queueDespawn(pickup.id);
 }
 
+/// RoR2: sprinting is 45% faster, forward only, and attacking cancels it.
+const sprint_multiplier: f32 = 1.45;
+
 fn move(world: *World, player: *World.Entity, frame: Frame) void {
     const input = &player.controller.input;
     const move_right = nz.vec.normalize(nz.vec.cross(frame.move_forward, frame.planet_up));
@@ -267,12 +270,17 @@ fn move(world: *World, player: *World.Entity, frame: Frame) void {
     if (input.keys.move_left) direction -= move_right;
 
     const stun_slow: f32 = if (player.un_stun_at > world.elapsed_time) 0.3 else 1;
+    const attacking = input.keys.attack or input.keys.secondary;
+    const sprinting = input.keys.sprint and input.keys.move_forward and !input.keys.move_backward and !attacking;
     if (input.keys.jump and player.mode == .walking) {
         world.act(.{ .id = player.id, .verb = .{ .jump = 20 } });
     }
     world.act(.{
         .id = player.id,
-        .verb = .{ .walk = .{ .direction = direction, .speed = player.stat(.speed) * stun_slow } },
+        .verb = .{ .walk = .{
+            .direction = direction,
+            .speed = player.stat(.speed) * stun_slow * (if (sprinting) sprint_multiplier else 1),
+        } },
     });
     world.act(.{ .id = player.id, .verb = .{ .set_rotation = player.camera.yaw_rotation } });
     player.transform.rotation = player.camera.yaw_rotation;

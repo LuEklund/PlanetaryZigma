@@ -165,6 +165,7 @@ pub const Input = struct {
         move_right: bool = false,
         move_left: bool = false,
         jump: bool = false,
+        sprint: bool = false,
         move_down: bool = false,
         aim: bool = false,
 

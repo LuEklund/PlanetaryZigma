@@ -26,6 +26,7 @@ pub const actions: []const Action = &.{
     .{ .id = .move_left, .default = .{ .key = .a }, .bindable = "Move Left" },
     .{ .id = .move_right, .default = .{ .key = .d }, .bindable = "Move Right" },
     .{ .id = .jump, .default = .{ .key = .space }, .bindable = "Jump" },
+    .{ .id = .sprint, .default = .{ .key = .left_control }, .bindable = "Sprint" },
     .{ .id = .move_down, .default = .{ .key = .left_shift }, .bindable = "Move Down" },
     .{ .id = .reload, .default = .{ .key = .f10 }, .bindable = "Reset Position" },
     .{ .id = .special, .default = .{ .key = .r }, .bindable = "Special" },
