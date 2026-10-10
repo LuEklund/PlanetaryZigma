@@ -323,56 +323,70 @@ fn steamCallback(
             102 => return error.SteamServersConnectFailure,
             1221 => {
                 const data = msg.data() orelse return msg.m_iCallback;
-                const event = data.SteamNetConnectionStatusChangedCallback;
-                std.log.info(
-                    "server net state: {s} (conn={d})",
-                    .{ @tagName(event.m_info.m_eState), event.m_hConn },
+                try onConnectionStatus(
+                    self,
+                    gpa,
+                    socket,
+                    data.SteamNetConnectionStatusChangedCallback,
                 );
-                switch (event.m_info.m_eState) {
-                    .k_ESteamNetworkingConnectionState_Connecting => {
-                        if (socket) |sock| {
-                            const result = sock.AcceptConnection(event.m_hConn);
-                            std.log.info("AcceptConnection -> {s}", .{@tagName(result)});
-                        }
-                    },
-                    .k_ESteamNetworkingConnectionState_Connected => {
-                        var remote_identity = event.m_info.m_identityRemote;
-                        if (self.?.host_steam_id != 0 and remote_identity.GetSteamID64() == self.?.host_steam_id and self.?.host_state != .connected) {
-                            self.?.host_conn = event.m_hConn;
-                            self.?.host_state = .connected;
-                            std.log.info("host connected (conn={d})", .{event.m_hConn});
-                        } else if (self.?.mode == .local_singleplayer and self.?.host_conn == 0) {
-                            self.?.host_conn = event.m_hConn;
-                            self.?.host_state = .connected;
-                            std.log.info("local host connected (conn={d})", .{event.m_hConn});
-                        }
-                        self.?.addConnection(event.m_hConn);
-                        try self.?.packets.pushEvent(gpa, .{ .connected = event.m_hConn });
-                    },
-                    .k_ESteamNetworkingConnectionState_ClosedByPeer,
-                    .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
-                    => {
-                        if (socket) |s| _ = s.CloseConnection(
-                            event.m_hConn,
-                            0,
-                            "peer-closed",
-                            false,
-                        );
-                        if (event.m_hConn == self.?.host_conn) {
-                            self.?.host_state = .left;
-                            std.log.info("host disconnected, shutting down", .{});
-                        }
-                        self.?.removeConnection(event.m_hConn);
-                        try self.?.packets.pushEvent(gpa, .{ .disconnected = event.m_hConn });
-                    },
-                    else => {},
-                }
                 return msg.m_iCallback;
             },
             else => return msg.m_iCallback,
         }
     }
     return -1;
+}
+
+fn onConnectionStatus(
+    self: ?*Server,
+    gpa: std.mem.Allocator,
+    socket: ?steam.ISteamNetworkingSockets,
+    event: steam.SteamNetConnectionStatusChangedCallback_t,
+) !void {
+    std.log.info("server net state: {t} (conn={d})", .{ event.m_info.m_eState, event.m_hConn });
+    switch (event.m_info.m_eState) {
+        .k_ESteamNetworkingConnectionState_Connecting => if (socket) |sock| {
+            const result = sock.AcceptConnection(event.m_hConn);
+            std.log.info("AcceptConnection -> {t}", .{result});
+        },
+        .k_ESteamNetworkingConnectionState_Connected => {
+            var remote_identity = event.m_info.m_identityRemote;
+            try self.?.onConnected(gpa, event.m_hConn, remote_identity.GetSteamID64());
+        },
+        .k_ESteamNetworkingConnectionState_ClosedByPeer,
+        .k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
+        => {
+            if (socket) |sock| _ = sock.CloseConnection(event.m_hConn, 0, "peer-closed", false);
+            try self.?.onClosed(gpa, event.m_hConn);
+        },
+        else => {},
+    }
+}
+
+fn onConnected(
+    self: *Server,
+    gpa: std.mem.Allocator,
+    conn: steam.HSteamNetConnection,
+    remote_steam_id: u64,
+) !void {
+    const is_host = self.host_steam_id != 0 and remote_steam_id == self.host_steam_id and self.host_state != .connected;
+    const is_local_host = self.mode == .local_singleplayer and self.host_conn == 0;
+    if (is_host or is_local_host) {
+        self.host_conn = conn;
+        self.host_state = .connected;
+        std.log.info("host connected (conn={d}, local={})", .{ conn, !is_host });
+    }
+    self.addConnection(conn);
+    try self.packets.pushEvent(gpa, .{ .connected = conn });
+}
+
+fn onClosed(self: *Server, gpa: std.mem.Allocator, conn: steam.HSteamNetConnection) !void {
+    if (conn == self.host_conn) {
+        self.host_state = .left;
+        std.log.info("host disconnected, shutting down", .{});
+    }
+    self.removeConnection(conn);
+    try self.packets.pushEvent(gpa, .{ .disconnected = conn });
 }
 
 fn addConnection(self: *Server, conn: steam.HSteamNetConnection) void {
