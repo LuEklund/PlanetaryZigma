@@ -24,6 +24,7 @@ const table = [_]Command{
     .{ .name = "give", .usage = "/give <item> [count]", .run = give },
     .{ .name = "money", .usage = "/money <amount>", .run = money },
     .{ .name = "heal", .usage = "/heal", .run = heal },
+    .{ .name = "hurt", .usage = "/hurt <amount>", .run = hurt },
     .{ .name = "god", .usage = "/god", .run = god },
     .{ .name = "kill", .usage = "/kill me|all", .run = kill },
     .{ .name = "stage", .usage = "/stage", .run = stage },
@@ -225,4 +226,10 @@ fn useNearest(world: *World, player: *Entity, _: *Args, reply: []u8) []const u8 
     const kind = target.kind;
     PlayerController.use(world, player, target) catch |err| return print(reply, "use: {t}", .{err});
     return print(reply, "used {t} {d:.0}m away", .{ kind, nearest_distance });
+}
+
+fn hurt(world: *World, player: *Entity, args: *Args, reply: []u8) []const u8 {
+    const amount: f32 = @floatFromInt(count(args, 10));
+    _ = combat.removeHealth(world, player, amount, player);
+    return print(reply, "hurt {d:.0}, health {d:.0}", .{ amount, player.health });
 }

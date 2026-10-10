@@ -32,6 +32,8 @@ pub const Post = struct {
     exposure: f32 = 1,
     saturation: f32 = 1.08,
     vignette: f32 = 0.25,
+    /// 0..1 red screen edges: low health and fresh hits.
+    danger: f32 = 0,
     fxaa: bool = true,
 };
 

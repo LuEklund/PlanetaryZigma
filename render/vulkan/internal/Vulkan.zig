@@ -498,7 +498,7 @@ fn renderPostPasses(self: *Vulkan, cmd: vk.CommandBuffer, post: DrawList.Post) v
         .composite,
         textures.scene,
         .{ @floatFromInt(@intFromEnum(textures.bloom[0])), post.bloom_strength, 0, 0 },
-        .{ post.exposure, post.saturation, post.vignette, 0 },
+        .{ post.exposure, post.saturation, post.vignette, post.danger },
     );
     self.toAttachment(cmd, swapchain.draw_image.vk_image, .shader_read_only_optimal);
     self.fullscreenPass(cmd, &swapchain.draw_image, .fxaa, textures.post, .{ if (post.fxaa) 1 else 0, 0, 0, 0 }, .{ 0, 0, 0, 0 });

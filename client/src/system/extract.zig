@@ -34,6 +34,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
     list.time = world.elapsed_time;
     list.post.fxaa = world.options.anti_aliasing;
     list.post.bloom_strength = world.options.bloom;
+    list.post.danger = danger(world);
     const server_seconds = system.network.server_tick_estimate * shared.tick_seconds;
     list.sun_direction = shared.daynight.sunDirection(
         if (server_seconds > 0) server_seconds else world.elapsed_time,
@@ -230,6 +231,18 @@ fn easeOutBack(x: f32) f32 {
 }
 
 const no_tint: [4]f32 = .{ 1, 1, 1, 0 };
+const low_health_fraction: f32 = 0.35;
+const hit_pulse_seconds: f32 = 0.4;
+
+/// RoR2-style red screen edges: grows below 35% health, pulses on every hit taken.
+fn danger(world: *World) f32 {
+    const player = world.getPtr(world.player_id) orelse return 0;
+    if (player.max_health <= 0 or player.health <= 0) return 0;
+    const health = player.health / player.max_health;
+    const low = @sqrt(std.math.clamp((low_health_fraction - health) / low_health_fraction, 0, 1)) * 0.85;
+    const pulse = std.math.clamp(1 - (world.elapsed_time - player.last_hit) / hit_pulse_seconds, 0, 1) * 0.35;
+    return @max(low, pulse);
+}
 const hit_flash_seconds: f32 = 0.15;
 
 /// Elite color times albedo, plus a white flash right after a hit.

@@ -6,7 +6,7 @@ Sampler2D textures[256];
 
 struct PostPush {
     float4 params;   // x: second texture index, y: strength/threshold, zw: blur step (uv)
-    float4 grade;    // x: exposure, y: saturation, z: vignette, w: unused
+    float4 grade;    // x: exposure, y: saturation, z: vignette, w: danger (red edges)
     float4 unused0;
     float4 unused1;
     uint64_t vertex_buffer;
@@ -88,7 +88,9 @@ float4 composite_frag(Fullscreen input) : SV_Target {
     float grey = luminance(color);
     color = lerp(float3(grey, grey, grey), color, push.grade.y);
     float2 centered = input.uv - 0.5;
-    color *= 1.0 - push.grade.z * dot(centered, centered) * 2.0;
+    float edge = dot(centered, centered) * 2.0;
+    color *= 1.0 - push.grade.z * edge;
+    color = lerp(color, float3(0.7, 0.02, 0.02), saturate(push.grade.w * smoothstep(0.08, 0.45, edge)));
     return float4(color, 1.0);
 }
 
