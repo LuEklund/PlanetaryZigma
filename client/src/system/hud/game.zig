@@ -114,15 +114,30 @@ fn addTopLeft(world: *World, area: dvui.Rect) void {
     }
 }
 
+/// Wide enough for the longest line the column can show, so nothing is cut off.
+fn rightColumnWidth(world: *World, area: dvui.Rect) f32 {
+    var buffer: [96]u8 = undefined;
+    const biome_line = std.fmt.bufPrint(&buffer, "{s}  00:00  Lv 99", .{
+        shared.Biome.forRadius(world.planet.planet_radius).name,
+    }) catch "";
+    const panel_padding: f32 = 24;
+    var widest = style.font(22).textSize(biome_line).w;
+    for ([_][]const u8{ "E on the teleporter: ready (4/4)", "Charge the teleporter 100%" }) |line| {
+        widest = @max(widest, style.font(20).textSize(line).w + panel_padding);
+    }
+    return std.math.clamp(@max(sideWidth(area), widest + 8), 0, area.w * 0.45);
+}
+
 fn addRightColumn(world: *World, network: *Network, area: dvui.Rect) void {
+    const width = rightColumnWidth(world, area);
     var column = dvui.box(
         @src(),
         .{ .dir = .vertical },
         .{
             .rect = .{
-                .x = area.w - sideWidth(area) - margin,
+                .x = area.w - width - margin,
                 .y = margin,
-                .w = sideWidth(area),
+                .w = width,
                 .h = area.h * 0.6,
             },
         },
@@ -406,7 +421,8 @@ fn addActionBar(
             .{},
             .{
                 .id_extra = index,
-                .rect = .{ .x = rect.x + 2, .y = rect.y + 2, .w = rect.w - 4, .h = 20 },
+                .rect = .{ .x = rect.x, .y = rect.y - 20, .w = rect.w, .h = 20 },
+                .gravity_x = 0.5,
                 .padding = .all(0),
                 .font = style.font(14),
                 .color_text = .fromColor(style.text_dim),
