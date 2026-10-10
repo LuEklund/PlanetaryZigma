@@ -3,6 +3,28 @@
 Lucas adds tasks from his PC; the cloud session works the Queue top-down. Rules: see CLAUDE.md "Cloud workflow" and "Architecture target".
 Goal: a Risk of Rain 2-like co-op roguelike on a walkable planet that Lucas will release on Steam himself. Architecture first, then gameplay.
 
+## For Lucas — when you're back (2026-10-10 session)
+
+Playtest these (built and screenshotted, but not played):
+1. **Directors (decision 0014):** RoR2 fast/slow waves, teleporter director, boss director, scene director. Does stage 1 feel right? Watch the "big monsters late" curve. Dev: `/directors`, `/boss`, `/family swarm`, `/spawning`.
+2. **Teleporter:** now 90 s to charge in a 40 m zone, spawns stop at 99%, and the boss drops one random uncommon per player. Too slow for our map size? It's one const in `server/src/gameplay/teleporter.zig`.
+3. **Shrines (placeholder pillar model):** Chance / Combat / Mountain. Use them with E (or `/use` in dev).
+4. **Look:**
+   - New post chain: bloom + soft tone clip + FXAA. Toggle and slider are in Options → Graphics.
+   - Hit flash and elite recolor.
+   - New particles: sparks with gravity, shockwave on rockets, muzzle flash, green heal tracers.
+   - Telegraph rings: hunkloid landing spot, bomber blast radius.
+5. **Zoo:** grid only, WASD fly, hold RMB to look, click an entity to select it.
+6. **Ping:** middle mouse, countdown ring, outline on the pinged entity, can't ping through terrain.
+7. **Chat:** wraps long lines; `/help` lists every command.
+8. **Steam Deck / controller:** launch through Steam with a controller and check the log for "steam input:" (unverified; the manifest was rejected on this PC).
+
+Decide:
+- Player-facing names in `docs/lucas-approval.md`: shrine names (RoR2's own), family-event lines, options labels.
+- Caves are off (`sdf.caves_enabled`). Flip it when there's a use for them.
+- Zig 0.17: blocked on dependencies (task Z17).
+- Tree/rock collision (question below).
+
 ## Queue
 
 ### Phase 1 — architecture (one commit per step, every step must build)
