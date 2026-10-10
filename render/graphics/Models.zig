@@ -124,7 +124,9 @@ pub fn update(self: *Models, gpa: std.mem.Allocator, io: std.Io, renderer: *cons
             if (!try self.reloadModel(gpa, io, renderer, entry)) continue;
             try self.reloaded.append(gpa, @intCast(handle));
         }
-        if (!model_changed and !manifest_changed) continue;
+        const placeholder_first_time = entry.path.len == 0 and entry.mtime.nanoseconds == 0;
+        if (placeholder_first_time) entry.mtime = .{ .nanoseconds = 1 };
+        if (!model_changed and !manifest_changed and !placeholder_first_time) continue;
         const kind = entry.kind orelse continue;
         const current = self.row(@intCast(handle)) orelse continue;
         entry.rig.init(gpa, &entry.model, &current, kind.spec()) catch |err|
