@@ -49,7 +49,7 @@ pub const lootbox: Spec = .{
     },
     .model = .{ .path = "objects/lootbox.glb", .loop_clips = null },
     .death_duration = 0.35,
-    .currency = 10,
+    .currency = 25,
 };
 
 pub const platform: Spec = .{

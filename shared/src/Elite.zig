@@ -68,9 +68,6 @@ pub fn get(kind: Kind) *const Elite {
     return &all[@intFromEnum(kind)];
 }
 
-pub const min_coefficient: f32 = 1.3;
-pub const chance: f32 = 0.25;
-
 pub fn roll(random: std.Random) Kind {
     const affixes = std.enums.values(Kind);
     return affixes[1 + random.uintLessThan(usize, affixes.len - 1)];

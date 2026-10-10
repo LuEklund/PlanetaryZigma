@@ -3,6 +3,7 @@ const shared = @import("shared");
 const nz = shared.numz;
 const system = @import("../System.zig");
 const World = @import("../World.zig");
+const director = @import("director.zig");
 const Physics = @import("../system/Physics.zig");
 
 pub fn shipRoomPosition(world: *const World) nz.Vec3(f32) {
@@ -94,21 +95,11 @@ fn buildShip(world: *World, physics: *Physics) !void {
 
 fn buildPlanet(world: *World) !void {
     const random = world.prng.random();
-    world.director.spawning = true;
     const teleporter_direction = if (world.dev_mode)
         nz.Vec3(f32){ 0, 1, 0 }
     else
         nz.vec.randomUnitVector(nz.Vec3(f32), random);
     const teleporter_position = world.planet.surfacePoint(teleporter_direction);
-    for (0..25) |_| {
-        const chest_direction = if (world.dev_mode)
-            nz.vec.normalize(world.planet.surfacePointNear(teleporter_position, 5, 10, random))
-        else
-            nz.vec.randomUnitVector(nz.Vec3(f32), random);
-        _ = try world.spawn(
-            .{ .kind = .lootbox, .transform = world.planet.surfaceTransform(chest_direction, 0.2) },
-        );
-    }
     const teleporter = try world.spawn(.{
         .kind = .teleporter,
         .transform = .{
@@ -117,6 +108,7 @@ fn buildPlanet(world: *World) !void {
         },
     });
     world.teleporter_id = teleporter.id;
+    try director.startStage(world);
 }
 
 fn placePlayers(world: *World, physics: *Physics) !void {

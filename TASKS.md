@@ -108,6 +108,9 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [x] R12 — UI 2048-quad cap uses `appendAssumeCapacity`; ~2100 quads in a fight panics ReleaseSafe.
   - Result: cap raised to 8192 quads (u32 indices, ~1.3 MB per frame buffer) and overflow drops quads/nodes with a debug log instead of panicking. Built, needs a fight to check.
 
+### Phase 5 — RoR2 mimic (Lucas 2026-10-10: "mimic a lot, then add our twist")
+- [x] D4 — Directors like RoR2 (decision 0014): fast/slow wave directors, teleporter director (2× income while charging, 40% handover), teleporter boss director (600·√coeff, champions, Horde of Many fallback), scene director (220 interactable credits → chests at 15, 100·coeff monster credits spread over the planet), "too cheap" reroll, affordable ×6 elites, 40-monster cap, RoR2 card costs + kill gold. Dev: `/boss`, `/directors`. Tested solo: waves arrive, boss spawns. Needs playtest for feel.
+
 ## Needs asset from Lucas
 - Ping sound (short blip) for P2.
 - C4: Brawler and Marksman models (rigged like benbozo: Idle/Run/Death + attack clips). Both use `benbozo.glb` today; `captainbozo.glb` has no skin/animations so it can't be used as a player yet.

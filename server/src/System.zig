@@ -119,7 +119,7 @@ fn step(self: *System, world: *World) !void {
     lobby.updateLobby(world);
     if (world.place == .planet) try enemies.updateEnemies(world, &self.physics);
     if (world.place == .planet) director.updateRunTimer(world);
-    if (world.place == .planet) try director.updateDirector(world);
+    if (world.place == .planet) try director.update(world);
     try self.physics.update(world);
     projectiles.updateProjectiles(world);
     try items.updateItems(world);

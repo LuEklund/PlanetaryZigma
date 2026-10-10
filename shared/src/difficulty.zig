@@ -79,11 +79,11 @@ pub fn chestCost(base_cost: u32, difficulty_coefficient: f32) u32 {
     );
 }
 
-pub fn killReward(base_reward: u32, difficulty_coefficient: f32) u32 {
-    return @intFromFloat(@round(@as(f32, @floatFromInt(base_reward)) * difficulty_coefficient));
+/// RoR2: gold = 2 × coeff × card cost × rewardMultiplier (0.2 for combat directors).
+pub const kill_reward_multiplier: f32 = 0.2;
+
+pub fn killReward(card_cost: u32, difficulty_coefficient: f32) u32 {
+    const value: f32 = @floatFromInt(card_cost);
+    return @intFromFloat(@max(1, @round(2 * difficulty_coefficient * value * kill_reward_multiplier)));
 }
 
-pub fn directorCreditScale(difficulty_coefficient: f32, players: usize) f32 {
-    const count: f32 = @floatFromInt(@max(players, 1));
-    return (1 + 0.4 * difficulty_coefficient) / 1.4 * (count + 1) / 2;
-}

@@ -16,7 +16,8 @@ planet: shared.Planet,
 navmesh: Navmesh,
 options: Options,
 place: Place,
-director: Director,
+directors: std.EnumArray(Director.Kind, Director),
+spawning_enabled: bool,
 client_updates: std.ArrayList(shared.net.ServerPacket),
 spawned: std.ArrayList(shared.entity.Id),
 physics_commands: std.ArrayList(Physics.Command),
@@ -59,10 +60,18 @@ pub const Options = struct {
 };
 
 pub const Director = struct {
-    credits: f32,
-    salary_per_second: f32,
-    last_salary: f32,
-    spawning: bool,
+    pub const Kind = enum { fast, slow, teleporter, teleporter_boss };
+    pub const Wave = struct {
+        enemy: shared.entity.EnemyKind,
+        elite: shared.Elite.Kind,
+        spawned: u8,
+    };
+
+    active: bool = false,
+    credits: f32 = 0,
+    timer: f32 = 0,
+    spawned_any: bool = false,
+    wave: ?Wave = null,
 };
 
 pub const Camera = struct {
@@ -183,7 +192,8 @@ pub fn init(gpa: std.mem.Allocator, dev_mode: bool) !World {
         .navmesh = .empty,
         .options = .{ .draw_flow_field = true, .draw_chunk_borders = true },
         .place = .ship,
-        .director = .{ .credits = 0, .salary_per_second = 10, .last_salary = 0, .spawning = false },
+        .directors = .initFill(.{}),
+        .spawning_enabled = true,
         .run_seconds = 0,
         .difficulty_setting = .rainstorm,
         .next_entity_id = 1,

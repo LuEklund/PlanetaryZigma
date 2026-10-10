@@ -5,6 +5,7 @@ const World = @import("../World.zig");
 const Entity = World.Entity;
 const combat = @import("combat.zig");
 const items = @import("items.zig");
+const PlayerController = @import("PlayerController.zig");
 
 pub const prefix = '/';
 
@@ -29,6 +30,8 @@ const table = [_]Command{
     .{ .name = "tp", .usage = "/tp teleporter", .run = teleport },
     .{ .name = "time", .usage = "/time <run seconds>", .run = time },
     .{ .name = "spawning", .usage = "/spawning", .run = spawning },
+    .{ .name = "boss", .usage = "/boss (activate the teleporter)", .run = boss },
+    .{ .name = "directors", .usage = "/directors", .run = directors },
 };
 
 /// Runs one chat line that starts with `prefix`. Returns the reply for the sender.
@@ -166,4 +169,25 @@ fn time(world: *World, _: *Entity, args: *Args, reply: []u8) []const u8 {
 fn spawning(world: *World, _: *Entity, _: *Args, reply: []u8) []const u8 {
     world.toggle_spawning_requested = true;
     return print(reply, "toggled enemy spawning", .{});
+}
+
+fn boss(world: *World, player: *Entity, _: *Args, reply: []u8) []const u8 {
+    const teleporter = world.getPtr(world.teleporter_id) orelse return print(reply, "no teleporter", .{});
+    if (teleporter.teleporter.state != .idle) return print(reply, "teleporter already active", .{});
+    PlayerController.activateTeleporter(world, player, teleporter) catch |err|
+        return print(reply, "boss: {t}", .{err});
+    return print(reply, "teleporter active", .{});
+}
+
+fn directors(world: *World, _: *Entity, _: *Args, reply: []u8) []const u8 {
+    var writer: std.Io.Writer = .fixed(reply);
+    writer.print("enemies {d}\n", .{world.enemyCount()}) catch {};
+    for (std.enums.values(World.Director.Kind)) |kind| {
+        const director = world.directors.get(kind);
+        if (!director.active) continue;
+        writer.print("{t} {d:.0} credits", .{ kind, director.credits }) catch break;
+        if (director.wave) |wave| writer.print(" wave {t} {t} x{d}", .{ wave.enemy, wave.elite, wave.spawned }) catch break;
+        writer.writeByte('\n') catch break;
+    }
+    return writer.buffered();
 }

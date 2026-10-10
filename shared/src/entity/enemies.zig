@@ -21,7 +21,7 @@ pub const tubloid: Spec = .{
         entity.no_skill,
         .{ .primary = .{ .skill = .melee, .range = 2, .clip = "attack" } },
     ),
-    .currency = 5,
+    .currency = 8,
 };
 
 pub const tubloida: Spec = .{
@@ -44,7 +44,7 @@ pub const tubloida: Spec = .{
         entity.no_skill,
         .{ .primary = .{ .skill = .shoot_cube, .range = 10, .clip = "attack_range" } },
     ),
-    .currency = 7,
+    .currency = 11,
 };
 
 pub const bloorp_lord: Spec = .{
@@ -70,7 +70,8 @@ pub const bloorp_lord: Spec = .{
         entity.no_skill,
         .{ .primary = .{ .skill = .shoot_cube, .range = 40, .clip = "Spawn_Enemy" } },
     ),
-    .currency = 100,
+    .currency = 600,
+    .category = .champion,
 };
 
 pub const hunkloid: Spec = .{
@@ -96,7 +97,8 @@ pub const hunkloid: Spec = .{
         .primary = .{ .skill = .melee, .range = 3, .clip = "Attack" },
         .utility = .{ .skill = .arc_jump, .range = 12, .clip = "Secondary" },
     }),
-    .currency = 30,
+    .currency = 40,
+    .category = .miniboss,
 };
 
 pub const blooploid: Spec = .{
@@ -116,7 +118,7 @@ pub const blooploid: Spec = .{
         .{ .health = 10, .speed = 10, .damage = 5, .primary_cooldown = 5 },
     ),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 15 } }),
-    .currency = 7,
+    .currency = 10,
 };
 
 pub const acorn: Spec = .{
@@ -141,7 +143,7 @@ pub const acorn: Spec = .{
         .primary = .{ .skill = .melee, .range = 2 },
         .utility = .{ .skill = .plant, .clip = "Planted" },
     }),
-    .currency = 5,
+    .currency = 10,
 };
 
 pub const grass1: Spec = .{
@@ -166,7 +168,7 @@ pub const grass1: Spec = .{
         entity.no_skill,
         .{ .primary = .{ .skill = .melee, .range = 2, .clip = "Attack" } },
     ),
-    .currency = 25,
+    .currency = 12,
 };
 
 pub const grass_tank: Spec = .{
@@ -193,7 +195,8 @@ pub const grass_tank: Spec = .{
         .{ .health = 40, .speed = 4, .damage = 18, .primary_cooldown = 4 },
     ),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .charge, .range = 14 } }),
-    .currency = 25,
+    .currency = 45,
+    .category = .miniboss,
 };
 
 pub const spitter: Spec = .{
@@ -209,7 +212,7 @@ pub const spitter: Spec = .{
         .{ .health = 18, .speed = 5, .damage = 6, .primary_cooldown = 2 },
     ),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .shoot_cube, .range = 25 } }),
-    .currency = 12,
+    .currency = 14,
 };
 
 pub const wisp: Spec = .{
@@ -242,7 +245,7 @@ pub const mite: Spec = .{
         .{ .health = 4, .speed = 9, .damage = 3, .primary_cooldown = 0.6 },
     ),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .melee, .range = 1.5 } }),
-    .currency = 3,
+    .currency = 4,
 };
 
 pub const bomber: Spec = .{
@@ -278,5 +281,5 @@ pub const healer: Spec = .{
         .{ .health = 10, .speed = 10, .damage = -1, .primary_cooldown = 0.2 },
     ),
     .skills = .initDefault(entity.no_skill, .{ .primary = .{ .skill = .heal, .range = 15 } }),
-    .currency = 7,
+    .currency = 15,
 };

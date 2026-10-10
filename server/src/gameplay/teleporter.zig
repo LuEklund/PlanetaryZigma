@@ -1,6 +1,7 @@
 const shared = @import("shared");
 const nz = shared.numz;
 const World = @import("../World.zig");
+const director = @import("director.zig");
 
 const charge_per_second: f32 = 10;
 
@@ -8,7 +9,7 @@ pub fn updateTeleporter(world: *World) void {
     const entity = world.getPtr(world.teleporter_id) orelse return;
     const teleporter = &entity.teleporter;
     if (teleporter.charged == teleporter.max_charge) {
-        world.director.spawning = false;
+        director.stopAll(world);
         teleporter.state = .completed;
         return;
     }

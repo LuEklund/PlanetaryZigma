@@ -225,7 +225,11 @@ pub const Spec = struct {
     skills: std.EnumArray(Action, ?AssignedSkill) = .initFill(null),
     behavior: Behavior = .idle,
     pack_size: u8 = 1,
+    category: Category = .basic,
 };
+
+/// Director card category (RoR2: basic monsters / minibosses / champions).
+pub const Category = enum { basic, miniboss, champion };
 
 pub const placeholder_model_offset: nz.Transform3D(f32) = .{ .scale = .{ 0.5, 0.5, 0.5 } };
 

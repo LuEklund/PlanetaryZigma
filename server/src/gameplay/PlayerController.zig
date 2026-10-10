@@ -1,6 +1,7 @@
 const shared = @import("shared");
 const system = @import("../System.zig");
 const World = system.World;
+const director = @import("director.zig");
 const tracy = @import("ztracy");
 const combat = @import("combat.zig");
 const items = @import("items.zig");
@@ -190,22 +191,13 @@ fn useTeleporter(world: *World, player: *World.Entity, teleporter_entity: *World
     if (charged and world.teleport_bosses.items.len == 0) world.next_stage_requested = true;
 }
 
-fn activateTeleporter(world: *World, player: *World.Entity, teleporter: *World.Entity) !void {
+pub fn activateTeleporter(world: *World, player: *World.Entity, teleporter: *World.Entity) !void {
     teleporter.teleporter.state = .active;
     world.client_updates.appendAssumeCapacity(.{ .event = .teleport_start });
     world.client_updates.appendAssumeCapacity(.{
         .event = .{ .interact = .{ .interactor = player.id, .interacted = .none } },
     });
-    const random = world.prng.random();
-    const near = teleporter.transform.position;
-    const boss_surface = world.planet.surfacePointNear(near, 15, 25, random);
-    const boss_position = boss_surface + nz.vec.scale(shared.Planet.surfaceUp(boss_surface), 3);
-    _ = try world.spawn(.{
-        .kind = .{ .enemy = .bloorp_lord },
-        .transform = .{ .position = boss_position },
-        .flags = .{ .is_teleporter_boss = true },
-        .last_used = .initDefault(0, .{ .primary = world.elapsed_time }),
-    });
+    director.startTeleporterEvent(world);
 }
 
 fn pickUp(world: *World, player: *World.Entity, pickup: *World.Entity) void {
