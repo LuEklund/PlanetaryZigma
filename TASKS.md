@@ -112,6 +112,7 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
+- C1 Steam Deck: (a) zero code — set a Steam Input default config "Keyboard (WASD) and Mouse" on the Steamworks partner site (gyro/trackpad aim works, UI shows keyboard glyphs); (b) Steam Input API with an action manifest (`game_actions_4891340.vdf`, proper controller glyphs, ~2-3 days, needs partner-site setup); (c) raw gamepad in the Window module (evdev/XInput, your module). Recommend (a) now, (b) before launch. Nothing built; UI already scales to 1280x800.
 - T1b caves: vault `caves-terrain.md` lists 4 rulings needed first: (a) surfacePoint = outer surface forever? (b) band-local vs deep caves? (c) Physics ground-check early-out vs cave gradient? (d) enemies path in caves, or caves are loot/decor? Skipped until you answer.
 - T1a: should trees/rocks get collision? Currently walk-through (cheapest, no server cost). Collision means the server must generate the same props (it doesn't chunk today).
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
