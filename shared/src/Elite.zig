@@ -9,6 +9,8 @@ damage_multiplier: f32,
 cost_multiplier: f32,
 granted_items: []const Grant,
 tint: [3]f32,
+/// RoR2 elite tier: 1 always, 2 only on looped stages (×36 cost).
+tier: u8 = 1,
 
 pub const Grant = struct { item: Item.Kind, count: u8 };
 
@@ -45,6 +47,15 @@ pub const rows = struct {
         .granted_items = &.{.{ .item = .lightning, .count = 3 }},
         .tint = .{ 0.35, 0.5, 1 },
     };
+    pub const malachite: Elite = .{
+        .name = "Malachite",
+        .health_multiplier = 18,
+        .damage_multiplier = 6,
+        .cost_multiplier = 36,
+        .granted_items = &.{ .{ .item = .thorn_vest, .count = 2 }, .{ .item = .leech_fang, .count = 2 } },
+        .tint = .{ 0.2, 0.9, 0.55 },
+        .tier = 2,
+    };
 };
 
 pub const Kind = kind: {
@@ -68,7 +79,17 @@ pub fn get(kind: Kind) *const Elite {
     return &all[@intFromEnum(kind)];
 }
 
-pub fn roll(random: std.Random) Kind {
-    const affixes = std.enums.values(Kind);
-    return affixes[1 + random.uintLessThan(usize, affixes.len - 1)];
+/// A random affix of exactly `tier`.
+pub fn roll(random: std.Random, tier: u8) Kind {
+    var count: usize = 0;
+    for (std.enums.values(Kind)) |kind| {
+        if (kind != .none and get(kind).tier == tier) count += 1;
+    }
+    var pick = random.uintLessThan(usize, count);
+    for (std.enums.values(Kind)) |kind| {
+        if (kind == .none or get(kind).tier != tier) continue;
+        if (pick == 0) return kind;
+        pick -= 1;
+    }
+    unreachable;
 }

@@ -16,6 +16,7 @@ const max_per_wave: u8 = 5;
 const boss_max_spawns: u8 = 6;
 const too_cheap_factor: f32 = 6;
 const elite_tier_cost: f32 = 6;
+const elite_tier2_cost: f32 = 36;
 const handover_fraction: f32 = 0.4;
 const boss_base_credits: f32 = 600;
 const scene_interactable_credits: f32 = 220;
@@ -184,7 +185,7 @@ fn spawnFromWave(world: *World, director: *Director, kind: Director.Kind, random
     const biome = spawnPool(world);
     if (director.wave == null) {
         const enemy = (if (is_boss) pickBossCard(&biome, director.credits, random) else pickCard(&biome, random)) orelse return false;
-        director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, random), .spawned = 0 };
+        director.wave = .{ .enemy = enemy, .elite = pickElite(enemy, director.credits, world.stage > shared.Biome.stage_pools.len, random), .spawned = 0 };
     }
     const wave = &director.wave.?;
     const limit = if (instant) boss_max_spawns else max_per_wave;
@@ -279,10 +280,12 @@ fn pickInCategory(biome: *const shared.Biome, category: Category, random: std.Ra
     unreachable;
 }
 
-/// Elite whenever the director can afford the ×6 tier.
-fn pickElite(enemy: EnemyKind, credits: f32, random: std.Random) shared.Elite.Kind {
-    if (credits < baseCost(enemy) * elite_tier_cost) return .none;
-    return shared.Elite.roll(random);
+/// The highest elite tier the director can afford: tier 2 (×36, looped stages only), tier 1 (×6).
+fn pickElite(enemy: EnemyKind, credits: f32, looped: bool, random: std.Random) shared.Elite.Kind {
+    const cost = baseCost(enemy);
+    if (looped and credits >= cost * elite_tier2_cost) return shared.Elite.roll(random, 2);
+    if (credits >= cost * elite_tier_cost) return shared.Elite.roll(random, 1);
+    return .none;
 }
 
 fn spec(enemy: EnemyKind) *const shared.entity.Spec {
