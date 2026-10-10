@@ -8,9 +8,11 @@ const Chunk = @import("Chunk.zig");
 
 vertices: std.ArrayList(Vertex),
 indices: std.ArrayList(u32),
+opaque_index_count: u32,
 
 pub const Vertex = @import("../vertex.zig").StaticVertex;
 const Biome = @import("../Biome.zig");
+const decoration = @import("decoration.zig");
 
 pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32) !Mesh {
     const tracy_scope = tracy.zone(@src());
@@ -20,8 +22,12 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
         .max = Chunk.max(chunk.coord),
     };
     const radius_float: f32 = @floatFromInt(planet_radius);
+    const biome = Biome.forRadius(planet_radius);
+    const water_level = if (biome.water) |water| radius_float + water.level else -std.math.inf(f32);
+    var water_quads: std.ArrayList([4]nz.Vec3(f32)) = .empty;
+    defer water_quads.deinit(gpa);
 
-    var chunk_mesh: Mesh = .{ .vertices = .empty, .indices = .empty };
+    var chunk_mesh: Mesh = .{ .vertices = .empty, .indices = .empty, .opaque_index_count = 0 };
     errdefer chunk_mesh.deinit(gpa);
     const normals = try gpa.alloc(nz.Vec3(f32), chunk.surface_cells.count());
     defer gpa.free(normals);
@@ -45,6 +51,12 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
 
             const index_anchor = chunk.surface_cells.getIndex(anchor).?;
             const centroids = chunk.surface_cells.values();
+            const quad = [4]nz.Vec3(f32){ centroids[index_anchor], centroids[index_b], centroids[index_c], centroids[index_bc] };
+            for (quad) |corner| {
+                if (nz.vec.length(corner) >= water_level) continue;
+                try water_quads.append(gpa, quad);
+                break;
+            }
             const base_vertex_index: u32 = @intCast(chunk_mesh.vertices.items.len);
             try chunk_mesh.appendVertex(
                 gpa,
@@ -78,6 +90,9 @@ pub fn generate(gpa: std.mem.Allocator, chunk: *const Chunk, planet_radius: u32)
         }
     }
 
+    try decoration.appendProps(gpa, &chunk_mesh, chunk, owned, normals, radius_float, biome);
+    chunk_mesh.opaque_index_count = @intCast(chunk_mesh.indices.items.len);
+    if (biome.water) |water| try decoration.appendWater(gpa, &chunk_mesh, water_quads.items, water_level, water.color);
     return chunk_mesh;
 }
 

@@ -32,6 +32,7 @@ pub const Upload = struct {
     coord: Chunk.Coord,
     vertices: []const Chunk.Mesh.Vertex,
     indices: []const u32,
+    opaque_index_count: u32,
 };
 
 const RunningJob = struct {
@@ -153,6 +154,7 @@ fn collectJob(
                     .coord = result.chunk.coord,
                     .vertices = result.mesh.vertices.items,
                     .indices = result.mesh.indices.items,
+                    .opaque_index_count = result.mesh.opaque_index_count,
                 },
             );
         }

@@ -18,6 +18,7 @@ pub const State = struct {
     yaw: f32 = 0,
     distance: f32 = 6,
     grid: bool = false,
+    planet_radius: u32 = 150,
 };
 
 pub const Command = union(enum) {
@@ -28,6 +29,7 @@ pub const Command = union(enum) {
     assign_clip: ?u16,
     play_action,
     toggle_grid,
+    set_radius: u32,
 };
 
 pub const kinds: []const Kind = &kinds_array;
@@ -47,7 +49,6 @@ const kinds_array = blk: {
 };
 
 const first_id: u32 = 2;
-const planet_radius: f32 = 150;
 const subject_height: f32 = 1;
 const spin_speed: f32 = 0.6;
 const grid_columns: usize = 6;
@@ -58,27 +59,27 @@ fn subjectId(index: usize) shared.entity.Id {
     return @enumFromInt(first_id + index);
 }
 
-fn gridUp(index: usize) nz.Vec3(f32) {
+fn gridUp(index: usize, planet_radius: u32) nz.Vec3(f32) {
     const rows = (kinds.len + grid_columns - 1) / grid_columns;
     const column: f32 = @floatFromInt(index % grid_columns);
     const row: f32 = @floatFromInt(index / grid_columns);
     const x = (column - @as(f32, @floatFromInt(grid_columns - 1)) / 2) * grid_spacing;
     const z = (row - @as(f32, @floatFromInt(rows - 1)) / 2) * grid_spacing;
-    return nz.vec.normalize(nz.Vec3(f32){ x, planet_radius, z });
+    return nz.vec.normalize(nz.Vec3(f32){ x, @floatFromInt(planet_radius), z });
 }
 
 pub fn populate(world: *World, gpa: std.mem.Allocator, state: *const State) !void {
     world.controller.free_camera = false;
-    try world.planet.sync(gpa, planet_radius);
+    try world.planet.sync(gpa, state.planet_radius);
     if (!state.grid) return spawn(world, 0, state.kind_index, .{ 0, 1, 0 });
-    for (0..kinds.len) |index| try spawn(world, index, index, gridUp(index));
+    for (0..kinds.len) |index| try spawn(world, index, index, gridUp(index, state.planet_radius));
 }
 
 fn spawn(world: *World, slot: usize, kind_index: usize, up: nz.Vec3(f32)) !void {
     try world.applySpawn(.{
         .id = subjectId(slot),
         .kind = kinds[kind_index],
-        .position = nz.vec.scale(up, planet_radius + subject_height),
+        .position = nz.vec.scale(up, surfaceRadius(world, up) + subject_height),
         .rotation = nz.Quat(f32).identity.toVec(),
         .data = .none,
     });
@@ -88,7 +89,7 @@ pub fn update(world: *World, state: *State, wheel: f64) void {
     state.yaw += spin_speed * world.delta_time;
     const max_distance: f32 = if (state.grid) 150 else 80;
     state.distance = std.math.clamp(state.distance * std.math.pow(f32, 0.9, @floatCast(wheel)), 1.5, max_distance);
-    const top = planet_radius + subject_height;
+    const top = surfaceRadius(world, .{ 0, 1, 0 }) + subject_height;
     world.camera.transform = if (state.grid) .{
         .position = .{ 0, top - state.distance * @sin(grid_pitch), state.distance * @cos(grid_pitch) },
         .rotation = nz.Quat(f32).angleAxis(grid_pitch, .{ 1, 0, 0 }),
@@ -101,11 +102,15 @@ pub fn update(world: *World, state: *State, wheel: f64) void {
     const count = if (state.grid) kinds.len else 1;
     for (0..count) |index| {
         const subject = world.getPtr(subjectId(index)) orelse continue;
-        const up = if (state.grid) gridUp(index) else nz.Vec3(f32){ 0, 1, 0 };
+        const up = if (state.grid) gridUp(index, state.planet_radius) else nz.Vec3(f32){ 0, 1, 0 };
         subject.motion.update = null;
         subject.transform.rotation = shared.math.rotationFromUp(up).mul(nz.Quat(f32).angleAxis(state.yaw, .{ 0, 1, 0 }));
         subject.override_animation_loop = loop;
     }
+}
+
+fn surfaceRadius(world: *const World, up: nz.Vec3(f32)) f32 {
+    return nz.vec.length(world.planet.surfacePoint(up));
 }
 
 pub fn labels(world: *World, state: *const State, out: []Label) []Label {
@@ -122,7 +127,7 @@ pub fn labels(world: *World, state: *const State, out: []Label) []Label {
 pub const Label = struct { name: []const u8, position: nz.Vec3(f32), selected: bool };
 pub const max_labels = kinds.len;
 
-/// Console form of the zoo panel: `kind <name>`, `slot <loop|action name>`, `clip <name|none>`, `play`, `grid`, `exit`.
+/// Console form of the zoo panel: `kind <name>`, `slot <loop|action name>`, `clip <name|none>`, `play`, `grid`, `radius <n>`, `exit`.
 pub fn parseCommand(line: []const u8, models: *const Models, state: *const State) Command {
     var words = std.mem.tokenizeScalar(u8, line, ' ');
     const verb = words.next() orelse return .none;
@@ -130,6 +135,10 @@ pub fn parseCommand(line: []const u8, models: *const Models, state: *const State
     if (std.mem.eql(u8, verb, "exit")) return .exit;
     if (std.mem.eql(u8, verb, "play")) return .play_action;
     if (std.mem.eql(u8, verb, "grid")) return .toggle_grid;
+    if (std.mem.eql(u8, verb, "radius")) {
+        const radius = std.fmt.parseInt(u32, argument, 10) catch return .none;
+        return .{ .set_radius = radius };
+    }
     if (std.mem.eql(u8, verb, "kind")) {
         for (kinds, 0..) |kind, index| {
             if (std.mem.eql(u8, ModelRow.kindName(kind), argument)) return .{ .select_kind = @intCast(index) };

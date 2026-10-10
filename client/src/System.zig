@@ -433,6 +433,10 @@ fn applyZooCommand(self: *System, world: *World, command: zoo_scene.Command) !vo
         .assign_clip => |clip| zoo_scene.assign(self.io, &self.assets.models, kind, self.zoo.slot, clip) catch |err|
             std.log.err("zoo: save manifest: {t}", .{err}),
         .play_action => self.playZooAction(world),
+        .set_radius => |radius| {
+            self.zoo.planet_radius = radius;
+            try self.enterScene(world, .zoo);
+        },
         .toggle_grid => {
             self.zoo.grid = !self.zoo.grid;
             self.zoo.distance = if (self.zoo.grid) 60 else 6;

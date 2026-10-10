@@ -13,6 +13,25 @@ steep_color: [3]f32,
 sky_zenith: [3]f32,
 sky_horizon: [3]f32,
 enemy_weights: std.EnumArray(entity.EnemyKind, u8),
+props: Props,
+water: ?Water,
+
+/// Chance per flat surface cell (~1 m²).
+pub const Props = struct {
+    trees: f32,
+    rocks: f32,
+    grass: f32,
+    trunk_color: [3]f32,
+    leaf_color: [3]f32,
+    rock_color: [3]f32,
+    grass_color: [3]f32,
+};
+
+/// `level` is relative to the planet radius; terrain dips to about -9.
+pub const Water = struct {
+    level: f32,
+    color: [4]f32,
+};
 
 pub const rows = struct {
     pub const coral: Biome = .{
@@ -38,6 +57,16 @@ pub const rows = struct {
                 .mite = 4,
             },
         ),
+        .props = .{
+            .trees = 0.004,
+            .rocks = 0.012,
+            .grass = 0.1,
+            .trunk_color = .{ 0.85, 0.45, 0.4 },
+            .leaf_color = .{ 0.95, 0.4, 0.55 },
+            .rock_color = .{ 0.6, 0.45, 0.42 },
+            .grass_color = .{ 0.2, 0.75, 0.6 },
+        },
+        .water = .{ .level = -1.5, .color = .{ 0.1, 0.55, 0.65, 0.6 } },
     };
 
     pub const verdant: Biome = .{
@@ -61,6 +90,16 @@ pub const rows = struct {
                 .mite = 8,
             },
         ),
+        .props = .{
+            .trees = 0.012,
+            .rocks = 0.01,
+            .grass = 0.3,
+            .trunk_color = .{ 0.4, 0.27, 0.15 },
+            .leaf_color = .{ 0.2, 0.5, 0.15 },
+            .rock_color = .{ 0.5, 0.5, 0.48 },
+            .grass_color = .{ 0.4, 0.7, 0.2 },
+        },
+        .water = .{ .level = -2, .color = .{ 0.15, 0.4, 0.75, 0.6 } },
     };
 
     pub const frost: Biome = .{
@@ -84,6 +123,16 @@ pub const rows = struct {
                 .spitter = 10,
             },
         ),
+        .props = .{
+            .trees = 0.006,
+            .rocks = 0.025,
+            .grass = 0,
+            .trunk_color = .{ 0.35, 0.3, 0.3 },
+            .leaf_color = .{ 0.2, 0.4, 0.35 },
+            .rock_color = .{ 0.55, 0.62, 0.75 },
+            .grass_color = .{ 0.8, 0.85, 0.9 },
+        },
+        .water = .{ .level = -2.5, .color = .{ 0.7, 0.85, 0.95, 0.85 } },
     };
 
     pub const dust: Biome = .{
@@ -108,6 +157,16 @@ pub const rows = struct {
                 .mite = 8,
             },
         ),
+        .props = .{
+            .trees = 0.0015,
+            .rocks = 0.04,
+            .grass = 0.03,
+            .trunk_color = .{ 0.4, 0.3, 0.22 },
+            .leaf_color = .{ 0.55, 0.5, 0.3 },
+            .rock_color = .{ 0.65, 0.45, 0.3 },
+            .grass_color = .{ 0.75, 0.65, 0.35 },
+        },
+        .water = null,
     };
 };
 

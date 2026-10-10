@@ -55,14 +55,18 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
   - Result: `client/src/system/hud/lobby.zig`: full-screen select in the ship (stage 0) — survivor list, skill rows (slot, cooldown, name, wrapped description from `shared/src/skill_info.zig`), player list, host difficulty picker with description, READY / Leave. No walking or cursor lock in the lobby; Esc still opens pause. UI scales with window height (1080p = 1.0). Survivor removed from main menu and pause. Screenshotted.
 - [x] Z1 — Zoo = asset workbench (Lucas 2026-10-09). Presentation per entity lives in `assets/manifest/<entity>.zon` (model, clip per action/loop, sounds per event, scale, tint, icon), runtime-parsed and hot-reloaded by the asset watcher — edits take effect mid-run. Zoo scene: pick an entity, turntable preview, list the .glb's clips and the entity's actions, click to assign, writes the .zon. New files appear by copying into `assets/` (window drag-drop later, needs Window module support). Gameplay numbers stay in Zig rows. Replaces P1/I1. Vault: `entity-architecture.md` ModelRow / models.zon trigger.
   - Result: decision 0012. `render/graphics/ModelRow.zig` = .zon row shape; `assets/manifest/<kind>.zon` overrides the Zig model spec and is hot-reloaded (bad clip → logged, lists the file's clips). Zoo scene (menu → Zoo, `pz run zoo`): entity list, turntable, wheel zoom, slot list (loops + actions), clip list; clicking a clip saves the .zon and the preview updates right away. Console drives it too (`pz cmd "kind tubloid" "slot walk" "clip idle"`). Tested locally. Grid view (button / `pz cmd grid`): every entity in rows with name labels. Not built: tint, sounds per event, icons, item models, drag-drop.
-- [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
-- [ ] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
+- [x] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
+  - Replaced by Z1 (Lucas 2026-10-09).
+- [x] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
+  - Replaced by Z1 (Lucas 2026-10-09).
 - [x] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
   `client/src/Settings.zig`: Options + keybinds → `settings.zon` in the cwd, loaded at init, saved when the Options screen closes. Unknown fields ignored, missing fields default; bad file (e.g. action list changed) → defaults + warning. Built, needs playtest.
 - [x] S2 — Audio options in the Options screen (sliders), driven by S1.
   Master Volume slider (Options → Audio). Music/sfx split waits for separate buses. Not saved yet (S1). Built, needs playtest.
 - [x] M1 — Mouse sensitivity too fast (friend: slowest = 3×360 per swipe). Now Source/CS scale: 0.022°/count × sens, range 0.1–10, default 2. Built, needs playtest.
-- [ ] T1 — More terrain detail: caves + decoration (trees, grass, stones, water). Vault: `caves-terrain.md`, `surface-nets.md`. Trees/stones = placeholder primitives until Lucas has models.
+- [x] T1a — Terrain decoration (trees, grass, stones, water).
+  - Result: `shared/src/planet/decoration.zig`: per-biome `Props` (chance per flat cell + colors) and `Water` (level, rgba) rows in `Biome.zig`. Props baked into each chunk mesh deterministically per cell (primitives: prism+cone trees, jittered rocks, 3-blade grass); water = terrain quads below the level flattened onto a shell, drawn as a transparent surface of the same mesh. Zero extra draws. No collision on props (walk through trees). Screenshotted all four biomes in the zoo (`pz cmd "radius 124"`). Needs playtest for density/perf.
+- [ ] T1b — Caves. Blocked on Lucas's rulings (see Questions).
 - [ ] P2 — Ping on middle mouse: marks the aimed point/entity for all players (RoR2 ping).
 - [x] F2 — Free camera could not move: camera got the blanked wire input. Now gets local input. Built, needs playtest.
 - [ ] C1 — Steam Deck / gamepad support (Steam Input).
@@ -106,6 +110,8 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - C2: elite look — optional emissive/tint variant per affix (blazing orange, glacial ice-blue, overloading blue); today elites are just 1.25× scale + a name label.
 
 ## Questions for Lucas
+- T1b caves: vault `caves-terrain.md` lists 4 rulings needed first: (a) surfacePoint = outer surface forever? (b) band-local vs deep caves? (c) Physics ground-check early-out vs cave gradient? (d) enemies path in caves, or caves are loot/decor? Skipped until you answer.
+- T1a: should trees/rocks get collision? Currently walk-through (cheapest, no server cost). Collision means the server must generate the same props (it doesn't chunk today).
 - G0: no legendary items exist yet, so the 1 % legendary chest roll falls back to common (C3 adds legendaries). Lightning is now `boss` tier: only the teleporter boss drops it (same as before, when chests re-rolled it to oxygen).
 - G0: enemy health used to scale ×stage (5× on stage 5). Now it follows the RoR2 level curve — similar by stage 5 at ~20 min, gentler early. Director base salary kept at 10 credits/s at coefficient 1.
 
