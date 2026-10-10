@@ -85,6 +85,7 @@ pub const Entity = struct {
 
     pub const Flags = packed struct {
         is_teleporter_boss: bool = false,
+        hostile: bool = false,
     };
 
     pub fn stat(self: *const Entity, stat_kind: shared.Item.Stat) f32 {
@@ -236,7 +237,10 @@ pub fn applySpawn(self: *World, entity_info: shared.net.SpawnEntity) !void {
                 self.controller.free_camera = false;
             }
         },
-        .projectile_cube => entity.transform.scale = @splat(0.3),
+        .projectile_cube => {
+            entity.transform.scale = @splat(0.3);
+            entity.flags.hostile = entity_info.data == .hostile_projectile;
+        },
         .projectile_heal => entity.transform.scale = @splat(0.1),
         .projectile_rocket => entity.transform.scale = @splat(0.9),
         .teleporter => self.teleporter_id = entity.id,

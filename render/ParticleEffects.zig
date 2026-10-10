@@ -17,6 +17,7 @@ pub const ParticleEffect = enum(u32) {
     shockwave,
     heal_tracer,
     spawn_puff,
+    enemy_tracer,
 
     pub const count: usize = @typeInfo(ParticleEffect).@"enum".fields.len;
 };
@@ -313,6 +314,23 @@ pub const effects: std.EnumArray(ParticleEffect, Effect) = .init(.{
         },
         .glow = 2,
         .placement = .{ .burst = .{ .radius = 0.0, .speed = 0.0, .stretch = 6.0 } },
+    },
+    .enemy_tracer = .{
+        .count = 1,
+        .lifetime = 0.0,
+        .blend = .additive,
+        .size_start = 0.2,
+        .size_end = 0.2,
+        .ramp_steps = .{ 0.2, 0.4, 0.6, 0.8 },
+        .color_ramp = .{
+            .{ 0.9, 0.1, 0.4, 1.0 },
+            .{ 0.9, 0.1, 0.4, 1.0 },
+            .{ 1.0, 0.3, 0.6, 1.0 },
+            .{ 1.0, 0.4, 0.7, 1.0 },
+            .{ 1.0, 0.7, 0.9, 1.0 },
+        },
+        .glow = 2.5,
+        .placement = .{ .burst = .{ .radius = 0.0, .speed = 0.0, .stretch = 5.0 } },
     },
     .spawn_puff = .{
         .count = 14,

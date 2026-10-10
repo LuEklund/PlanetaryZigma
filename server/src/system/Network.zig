@@ -481,6 +481,11 @@ fn sendInventory(outbox: Outbox, client: *const Client, entity: *const system.En
     }
 }
 
+fn isHostile(world: *World, owner_id: shared.entity.Id) bool {
+    const owner = world.getPtr(owner_id) orelse return false;
+    return owner.kind == .enemy;
+}
+
 fn spawnPacket(
     world: *World,
     entity: *const system.Entity,
@@ -500,7 +505,8 @@ fn spawnPacket(
             .enemy => if (entity.flags.is_teleporter_boss) .is_teleporter_boss else .none,
             .player => .{ .player_name = .copy(player_name) },
             .item_pickup => .{ .item = entity.item.? },
-            .unknown, .projectile_heal, .projectile_cube, .projectile_rocket, .teleporter, .lootbox, .platform, .target_dummy, .barrel, .shrine_combat, .shrine_mountain, .shrine_chance => .none,
+            .projectile_heal, .projectile_cube, .projectile_rocket => if (isHostile(world, entity.owner_id)) .hostile_projectile else .none,
+            .unknown, .teleporter, .lootbox, .platform, .target_dummy, .barrel, .shrine_combat, .shrine_mountain, .shrine_chance => .none,
         },
     };
 }

@@ -152,6 +152,8 @@ pub const SpawnEntityData = union(enum) {
     is_teleporter_boss: void,
     player_name: PlayerName,
     item: root.Item.Kind,
+    /// A projectile fired by a monster (clients color it differently from player shots).
+    hostile_projectile: void,
 };
 
 pub const DespawnEntity = struct {

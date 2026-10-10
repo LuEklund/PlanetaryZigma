@@ -127,7 +127,7 @@ pub fn frame(system: *System, world: *World, draw_sky: bool) !void {
                     0,
                 };
                 system.particles.keepAlive(
-                    if (entity.kind == .projectile_heal) .heal_tracer else .tracer,
+                    if (entity.kind == .projectile_heal) .heal_tracer else if (entity.flags.hostile) .enemy_tracer else .tracer,
                     @intFromEnum(entity.id),
                     entity.transform.position,
                     entity.transform.position + velocity,
