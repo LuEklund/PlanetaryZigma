@@ -58,5 +58,6 @@ float4 fragment(VertexOutput input) : SV_Target {
         haze = smoothstep(0, 250, air);
     }
 
-    return float4(lerp(sky_color, fog_color, haze), 1.0);
+    float3 haze_color = lerp(night_horizon, scene_data.sky_horizon.rgb, day);
+    return float4(lerp(sky_color, haze_color, haze), 1.0);
 }

@@ -121,34 +121,54 @@ float shadowFactor(float3 world_position, float3 normal) {
     return sum / 12.0;
 }
 
+float lightLuminance(float3 color) {
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+// Sky hue with its brightness removed, so ambient and fog follow the biome's colors while the
+// light color decides how bright (day vs night) they are.
+float3 skyHue(float3 color) {
+    return color / max(lightLuminance(color), 0.2);
+}
+
 [shader("fragment")]
 float4 mesh_frag(VertexOutput input) : SV_Target {
     const float ambient = 0.4;
+    float3 normal = normalize(input.normal);
+    float3 up = normalize(input.world_position);
+    float brightness = max(lightLuminance(scene_data.light_color.rgb), 0.3);
 
     float3 incoming = normalize(scene_data.camera_position - input.world_position);
-    float facing = dot(incoming, input.normal);
-    float rim = 0.3 * smoothstep(0.0, 1.0, facing);
+    float facing = dot(incoming, normal);
+    float front_fill = 0.3 * smoothstep(0.0, 1.0, facing);
+    float rim = pow(1.0 - saturate(facing), 3.0) * 0.35;
 
     const float3 norm_to_sun = normalize(scene_data.to_sun);
     const float t = dot(-input.world_position, norm_to_sun);
     const float d = sqrt(dot(input.world_position, input.world_position) - t * t);
     const float sun_visibility = (t > 0) ? smoothstep(scene_data.planet_radius - 8, scene_data.planet_radius - 5, d) : 1;
-    
-    float direct = max(dot(normalize(input.normal), norm_to_sun), 0.0) * sun_visibility;
-    
-    float shading = ambient + rim + (direct > 0.0 ? (1.0 - ambient) * direct * shadowFactor(input.world_position, input.normal) : 0.0);
+
+    // Wrapped diffuse: a softer terminator, closer to RoR2's painterly shading.
+    float direct = saturate((dot(normal, norm_to_sun) + 0.25) / 1.25) * sun_visibility;
+    float lit_by_sun = direct > 0.0 ? (1.0 - ambient) * direct * shadowFactor(input.world_position, input.normal) : 0.0;
+
+    float hemisphere = dot(normal, up) * 0.5 + 0.5;
+    float3 sky_ambient = lerp(skyHue(scene_data.sky_horizon.rgb) * 0.8, skyHue(scene_data.sky_zenith.rgb), hemisphere);
+    float3 ambient_light = ambient * sky_ambient * brightness;
 
     float dist = distance(scene_data.camera_position.xyz, input.world_position);
     float fog = (1 - exp(-dist * 0.005));
+    float3 fog_tint = scene_data.sky_horizon.rgb * brightness;
 
     float4 texel = textures[push_constant.texture_index].Sample(input.uv);
     float3 albedo = texel.xyz * input.color.xyz;
     float3 tint = push_constant.tint.rgb;
     float recolor = (tint.r + tint.g + tint.b) < 2.99 ? 0.55 : 0.0;
-    float grey = dot(albedo, float3(0.2126, 0.7152, 0.0722));
+    float grey = lightLuminance(albedo);
     albedo = lerp(albedo, grey * tint * 1.8, recolor);
-    float3 lit = (albedo * shading) * scene_data.light_color.xyz;
+    float3 lit = albedo * (ambient_light + (front_fill + lit_by_sun) * scene_data.light_color.rgb);
+    lit += rim * scene_data.sky_horizon.rgb * brightness * albedo;
     lit = lerp(lit, float3(1.6, 1.6, 1.6), push_constant.tint.a);
-    lit = lerp(lit, fog_color, fog);
+    lit = lerp(lit, fog_tint, fog);
     return float4(lit, texel.a * input.color.a);
 }
