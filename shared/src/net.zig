@@ -381,81 +381,21 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
             );
             break :out val;
         },
-        .@"struct" => {
-            var out: Out = undefined;
-
-            inline for (@typeInfo(Out).@"struct".fields) |field| @field(
-                out,
-                field.name,
-            ) = switch (@typeInfo(field.type)) {
-                .bool => try reader.takeByte() == 1,
-                .int => try reader.takeInt(field.type, endian),
-                .float => |float| @bitCast(try reader.takeInt(@Int(.signed, float.bits), endian)),
-                .pointer => |ptr| slice: {
-                    const element_len_name = field.name ++ "_len";
-                    std.debug.assert(@typeInfo(@FieldType(Out, element_len_name)) == .int);
-                    const element_len: usize = @field(out, element_len_name);
-                    if (ptr.child == u8) {
-                        const slice = try reader.take(element_len);
-                        try reader.discardAll((4 - (slice.len % 4)) % 4);
-                        break :slice if (opt_allocator) |allocator| try allocator.dupe(
-                            u8,
-                            slice,
-                        ) else slice;
-                    } else {
-                        if (opt_allocator) |allocator| {
-                            const slice = try allocator.alloc(ptr.child, element_len);
-
-                            for (0..element_len) |i| {
-                                slice[i] = try unmarshal(allocator, reader, ptr.child);
-                            }
-                            break :slice slice;
-                        } else {
-                            for (0..element_len) |_| {
-                                _ = try unmarshal(null, reader, ptr.child);
-                            }
-
-                            break :slice &.{};
-                        }
-                    }
-                },
-                .array => |array| if (array.child == u8) (try reader.takeArray(
-                    array.len,
-                )).* else array: {
-                    var val: field.type = std.mem.zeroes(field.type);
-                    for (0..array.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, array.child);
-                    }
-                    break :array val;
-                },
-                .vector => |vector| vector: {
-                    var val: field.type = @splat(0);
-                    inline for (0..vector.len) |i| {
-                        val[i] = try unmarshal(opt_allocator, reader, vector.child);
-                    }
-                    break :vector val;
-                },
-                .@"enum" => e: {
-                    break :e reader.takeEnum(field.type, endian) catch |err| {
-                        std.log.err(
-                            "{s} {s} {s}",
-                            .{ @errorName(err), @typeName(Out), field.name },
-                        );
-                        return err;
-                    };
-                },
-                .@"struct" => |s| switch (s.layout) {
-                    .auto, .@"extern" => try unmarshal(opt_allocator, reader, field.type),
-                    .@"packed" => try reader.takeStruct(field.type, endian),
-                },
-                .@"union" => try unmarshal(opt_allocator, reader, field.type),
-                else => @compileError(
-                    "can not read type of " ++ @typeName(field.type) ++ " aka " ++ @tagName(
-                        @typeInfo(field.type),
-                    ),
-                ),
-            };
-            return out;
+        .@"struct" => |info| switch (info.layout) {
+            .@"packed" => try reader.takeStruct(Out, endian),
+            .auto, .@"extern" => out: {
+                var out: Out = undefined;
+                inline for (info.fields) |field| {
+                    @field(out, field.name) = try unmarshalField(
+                        opt_allocator,
+                        reader,
+                        Out,
+                        &out,
+                        field,
+                    );
+                }
+                break :out out;
+            },
         },
         .@"union" => |u| {
             const Tag = u.tag_type orelse @compileError("can only deserialize tagged unions");
@@ -476,4 +416,58 @@ fn unmarshal(opt_allocator: ?std.mem.Allocator, reader: *std.Io.Reader, Out: typ
         },
         else => unreachable,
     };
+}
+
+fn unmarshalField(
+    opt_allocator: ?std.mem.Allocator,
+    reader: *std.Io.Reader,
+    comptime Out: type,
+    out: *const Out,
+    comptime field: std.builtin.Type.StructField,
+) !field.type {
+    return switch (@typeInfo(field.type)) {
+        .pointer => unmarshalSlice(
+            opt_allocator,
+            reader,
+            field.type,
+            @field(out.*, field.name ++ "_len"),
+        ),
+        .array => |array| if (array.child == u8) (try reader.takeArray(array.len)).* else array: {
+            var val: field.type = std.mem.zeroes(field.type);
+            for (&val) |*element| element.* = try unmarshal(opt_allocator, reader, array.child);
+            break :array val;
+        },
+        .@"enum" => reader.takeEnum(field.type, endian) catch |err| {
+            std.log.err("{t} {s} {s}", .{ err, @typeName(Out), field.name });
+            return err;
+        },
+        .bool, .int, .float, .vector, .@"struct", .@"union" => unmarshal(
+            opt_allocator,
+            reader,
+            field.type,
+        ),
+        else => @compileError("can not read type of " ++ @typeName(field.type)),
+    };
+}
+
+/// Without an allocator, byte slices alias the reader and other slices are skipped.
+fn unmarshalSlice(
+    opt_allocator: ?std.mem.Allocator,
+    reader: *std.Io.Reader,
+    comptime Slice: type,
+    len: usize,
+) !Slice {
+    const Child = @typeInfo(Slice).pointer.child;
+    if (Child == u8) {
+        const bytes = try reader.take(len);
+        try reader.discardAll((4 - (bytes.len % 4)) % 4);
+        return if (opt_allocator) |allocator| try allocator.dupe(u8, bytes) else bytes;
+    }
+    const allocator = opt_allocator orelse {
+        for (0..len) |_| _ = try unmarshal(null, reader, Child);
+        return &.{};
+    };
+    const slice = try allocator.alloc(Child, len);
+    for (slice) |*element| element.* = try unmarshal(allocator, reader, Child);
+    return slice;
 }
