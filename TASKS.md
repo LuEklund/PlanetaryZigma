@@ -56,11 +56,12 @@ Each one: write a short proposal in `docs/decisions/` first (what, how it fits t
 - [ ] Z1 — Zoo = asset workbench (Lucas 2026-10-09). Presentation per entity lives in `assets/manifest/<entity>.zon` (model, clip per action/loop, sounds per event, scale, tint, icon), runtime-parsed and hot-reloaded by the asset watcher — edits take effect mid-run. Zoo scene: pick an entity, turntable preview, list the .glb's clips and the entity's actions, click to assign, writes the .zon. New files appear by copying into `assets/` (window drag-drop later, needs Window module support). Gameplay numbers stay in Zig rows. Replaces P1/I1. Vault: `entity-architecture.md` ModelRow / models.zon trigger.
 - [ ] P1 — Placeholders: reuse existing models, tint / scale / add a box "hat" per variant (new enemies, elites, survivors). Ability icons = plain quad with the ability name as text.
 - [ ] I1 — Item icons rendered from the item's 3D model (offscreen render at load), instead of needing a PNG per item.
-- [ ] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
+- [x] S1 — Settings file: options (audio volumes master/music/sfx, mouse sensitivity, keybinds, display) saved to a file next to the exe and loaded at start.
+  `client/src/Settings.zig`: Options + keybinds → `settings.zon` in the cwd, loaded at init, saved when the Options screen closes. Unknown fields ignored, missing fields default; bad file (e.g. action list changed) → defaults + warning. Built, needs playtest.
 - [x] S2 — Audio options in the Options screen (sliders), driven by S1.
   Master Volume slider (Options → Audio). Music/sfx split waits for separate buses. Not saved yet (S1). Built, needs playtest.
 - [x] M1 — Mouse sensitivity too fast (friend: slowest = 3×360 per swipe). Now Source/CS scale: 0.022°/count × sens, range 0.1–10, default 2. Built, needs playtest.
-- [ ] T1 — More terrain detail / caves. Vault: `caves-terrain.md`, `surface-nets.md`.
+- [ ] T1 — More terrain detail: caves + decoration (trees, grass, stones, water). Vault: `caves-terrain.md`, `surface-nets.md`. Trees/stones = placeholder primitives until Lucas has models.
 - [ ] C1 — Steam Deck / gamepad support (Steam Input).
 - [x] F1 — Terrain "toon" band: `mesh.slang` rim was a hard `facing > 0.3` step (+0.3 brightness). Now `0.3 * smoothstep(0, 1, facing)`. Needs a look.
 - [ ] R1 — Zig style guide pass (langref "Style Guide"): lines ≤ ~100, lists > 2 one per line with trailing comma, flat functions with early return (max ~3 nesting levels), no Manager/Data/Context/State/utils in type names, TitleCase files only with fields. Order: renames (mechanical commit) → flatten deepest files (server NetworkManager, gltf) → wrap long lines file by file.

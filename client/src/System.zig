@@ -6,6 +6,7 @@ const tracy = @import("ztracy");
 const nz = shared.numz;
 const Window = @import("Window");
 const Audio = @import("system/Audio.zig");
+const Settings = @import("Settings.zig");
 const Discord = @import("system/Discord.zig");
 const Network = @import("system/Network.zig");
 const Assets = @import("graphics").Assets;
@@ -74,6 +75,9 @@ pub fn init(self: *System, data: Init) !void {
     self.window = data.window;
     self.world = try .init(data.gpa);
     errdefer self.world.deinit(data.gpa);
+    const settings: Settings = .load(data.io, data.gpa);
+    self.world.options = settings.options;
+    self.world.controller.bindings = settings.bindings;
     self.clock = .init(data.io);
     self.fps_window_start = self.clock.previous;
     self.fps_window_steps = 0;
@@ -205,6 +209,11 @@ fn step(self: *System, world: *World) !void {
     const tracy_scope = tracy.zone(@src());
     defer tracy_scope.end();
     world.planet.clearOutboxes();
+    const options_were_open = self.hud.overlay == .options;
+    defer if (options_were_open and self.hud.overlay != .options) Settings.save(self.io, .{
+        .options = world.options,
+        .bindings = world.controller.bindings,
+    });
     var text_buffer: [1024]u8 = undefined;
     var text_writer: std.Io.Writer = .fixed(&text_buffer);
     try self.window.poll(.{ .text = if (world.chat.open) &text_writer else null });
