@@ -82,10 +82,7 @@ pub fn apply(
                 world.pings[world.next_ping] = .{ .event = ping, .expires_at = world.elapsed_time + World.ping_seconds };
                 world.next_ping = (world.next_ping + 1) % World.max_pings;
             },
-            .new_stage => |new_stage| {
-                world.teleporter_id = .none;
-                world.stage = new_stage;
-            },
+            .new_stage => {},
             .stun => |stun| if (world.getPtr(stun.id)) |entity| {
                 entity.stun_time = stun.duration;
             },

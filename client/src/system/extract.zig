@@ -254,6 +254,7 @@ fn kindTint(kind: shared.entity.Kind) ?[3]f32 {
         .shrine_mountain => .{ 0.4, 0.55, 1 },
         .shrine_chance => .{ 1, 0.85, 0.3 },
         .printer => .{ 0.5, 1, 0.6 },
+        .barrel => .{ 0.55, 0.4, 0.95 },
         else => null,
     };
 }

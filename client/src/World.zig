@@ -202,7 +202,15 @@ pub fn update(
             std.log.info("chat {s}: {s}", .{ name, chat_message.text });
             self.chat.push(name, chat_message.text, self.elapsed_time);
         },
-        .server_tick, .event => {},
+        .event => |event| switch (event) {
+            // In packet order with the spawns: the next stage's teleporter spawn comes after this.
+            .new_stage => |new_stage| {
+                self.teleporter_id = .none;
+                self.stage = new_stage;
+            },
+            else => {},
+        },
+        .server_tick => {},
     };
 }
 
