@@ -64,7 +64,8 @@ pub fn update(network: *Network, hud: *Hud, options: *Options) !Request {
     }
 
     dvui.labelNoFmt(@src(), "v" ++ shared.version, .{}, .{
-        .rect = .{ .x = 10, .y = area.h - 28, .w = 160, .h = 22 },
+        .rect = .{ .x = 10, .y = area.h - 30, .w = 160, .h = 26 },
+        .padding = .all(0),
         .font = style.font(18),
         .color_text = .fromColor(style.text_dim),
     });

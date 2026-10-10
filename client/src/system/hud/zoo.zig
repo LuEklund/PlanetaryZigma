@@ -120,7 +120,8 @@ fn gridLabels(state: *const zoo.State, world: *World, area: dvui.Rect) void {
         const screen = style.worldToScreen(view_proj, label.position) orelse continue;
         dvui.labelNoFmt(@src(), label.name, .{}, .{
             .id_extra = index,
-            .rect = .{ .x = screen[0] - 80, .y = screen[1] + 10, .w = 160, .h = 24 },
+            .rect = .{ .x = screen[0] - 80, .y = screen[1] + 10, .w = 160, .h = 26 },
+            .padding = .all(0),
             .font = style.font(18),
             .color_text = .fromColor(if (label.selected) style.accent else style.text),
             .gravity_x = 0.5,

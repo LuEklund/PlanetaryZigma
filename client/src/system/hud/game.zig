@@ -405,7 +405,8 @@ fn addActionBar(
             .{},
             .{
                 .id_extra = index,
-                .rect = .{ .x = rect.x + 2, .y = rect.y + 2, .w = rect.w, .h = 18 },
+                .rect = .{ .x = rect.x + 2, .y = rect.y + 2, .w = rect.w - 4, .h = 20 },
+                .padding = .all(0),
                 .font = style.font(14),
                 .color_text = .fromColor(style.text_dim),
             },
@@ -541,7 +542,8 @@ fn addDamagePopups(damage_popups: *const DamagePopup.List, view_proj: nz.Mat4x4(
         const rounded = @round(@abs(popup.amount) * 10) / 10;
         dvui.label(@src(), "{s}{d}", .{ if (popup.amount < 0) "+" else "", rounded }, .{
             .id_extra = index,
-            .rect = .{ .x = screen[0] - 60, .y = screen[1], .w = 120, .h = 28 },
+            .rect = .{ .x = screen[0] - 60, .y = screen[1], .w = 120, .h = 32 },
+            .padding = .all(0),
             .font = style.font(24),
             .color_text = .fromColor(
                 style.rgba(.{ popup.color[0], popup.color[1], popup.color[2], alpha }),
@@ -561,6 +563,8 @@ fn addPings(world: *World, view_proj: nz.Mat4x4(f32)) void {
             view_proj,
             position + nz.vec.scale(up, 2),
         ) orelse continue;
+        const remaining = (ping.expires_at - world.elapsed_time) / World.ping_seconds;
+        style.ring(.{ screen[0], screen[1] + 14 }, 9, 3, remaining, style.accent);
         const pinger = world.getPtr(ping.event.pinger);
         const name = if (pinger) |player| player.player_name.slice() else "";
         const what = if (target) |entity| kindLabel(entity.kind) else "here";
@@ -568,7 +572,8 @@ fn addPings(world: *World, view_proj: nz.Mat4x4(f32)) void {
         const text = std.fmt.bufPrint(&buffer, "v {s}: {s}", .{ name, what }) catch "v";
         dvui.labelNoFmt(@src(), text, .{}, .{
             .id_extra = index,
-            .rect = .{ .x = screen[0] - 120, .y = screen[1] - 30, .w = 240, .h = 28 },
+            .rect = .{ .x = screen[0] - 120, .y = screen[1] - 30, .w = 240, .h = 30 },
+            .padding = .all(0),
             .font = style.font(22),
             .color_text = .fromColor(style.accent),
             .gravity_x = 0.5,
@@ -598,6 +603,7 @@ fn addNameTags(world: *World, view_proj: nz.Mat4x4(f32)) void {
         dvui.labelNoFmt(@src(), name, .{}, .{
             .id_extra = index,
             .rect = .{ .x = screen[0] - 100, .y = screen[1] - 30, .w = 200, .h = 26 },
+            .padding = .all(0),
             .font = style.font(18),
             .color_text = .fromColor(style.text),
             .gravity_x = 0.5,

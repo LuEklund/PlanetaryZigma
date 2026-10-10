@@ -40,6 +40,7 @@ pings: [max_pings]Ping = @splat(.{ .event = .{ .pinger = .none, .position = @spl
 next_ping: u8 = 0,
 
 pub const max_pings = 8;
+pub const ping_seconds: f32 = 6;
 pub const Ping = struct {
     event: shared.net.Event.Ping,
     expires_at: f32,

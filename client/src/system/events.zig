@@ -4,8 +4,6 @@ const Audio = @import("Audio.zig");
 const Particle = @import("graphics").Particle;
 const World = @import("../World.zig");
 
-const ping_seconds: f32 = 6;
-
 pub fn apply(
     world: *World,
     packets: []const shared.net.ServerPacket,
@@ -53,7 +51,7 @@ pub fn apply(
             },
             .difficulty => |difficulty| world.difficulty = difficulty,
             .ping => |ping| {
-                world.pings[world.next_ping] = .{ .event = ping, .expires_at = world.elapsed_time + ping_seconds };
+                world.pings[world.next_ping] = .{ .event = ping, .expires_at = world.elapsed_time + World.ping_seconds };
                 world.next_ping = (world.next_ping + 1) % World.max_pings;
             },
             .new_stage => |new_stage| {

@@ -113,6 +113,23 @@ pub fn texture(handle: contract.TextureHandle) dvui.Texture {
     return Backend.textureFor(handle, 64, 64);
 }
 
+/// Circle around `center` (natural units) filled clockwise from 12 o'clock to `fraction`.
+pub fn ring(center: [2]f32, radius: f32, thickness: f32, fraction: f32, color: dvui.Color) void {
+    const scale = dvui.windowNaturalScale();
+    const middle: dvui.Point.Physical = .{ .x = center[0] * scale, .y = center[1] * scale };
+    arc(middle, radius * scale, thickness * scale, 1, .{ .r = 0, .g = 0, .b = 0, .a = 140 });
+    arc(middle, radius * scale, thickness * scale, std.math.clamp(fraction, 0, 1), color);
+}
+
+fn arc(center: dvui.Point.Physical, radius: f32, thickness: f32, fraction: f32, color: dvui.Color) void {
+    if (fraction <= 0) return;
+    const top = -std.math.pi / 2.0;
+    var path: dvui.Path.Builder = .init(dvui.currentWindow().lifo());
+    defer path.deinit();
+    path.addArc(center, radius, top + std.math.tau * fraction, top, false);
+    path.build().stroke(.{ .thickness = thickness, .color = .{ .color = color } });
+}
+
 pub fn bar(rect: dvui.Rect, fraction: f32, fill: dvui.Color) void {
     fillRect(rect, .{ .r = 0, .g = 0, .b = 0, .a = 140 });
     fillRect(
